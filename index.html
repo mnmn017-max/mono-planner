@@ -39,29 +39,35 @@ const subjectColors = {ko:'#4a7fff',en:'#3dba7e',ma:'#e8943a',hi:'#c9a84c',sc:'#
 
 // ── 로딩 (항상 2.5초) ──
 showScreen('screen-loading');
-let authUser = null;
-const timerDone = new Promise(r => setTimeout(r, 2500));
-const authDone = new Promise(r => {
-  const unsub = onAuthStateChanged(auth, u => { unsub(); authUser = u; r(u); });
-  setTimeout(() => r(null), 2000); // 2초 안에 응답 없으면 null 처리
-});
-Promise.all([timerDone, authDone]).then(async ([, user]) => {
-  if (user) {
-    currentUser = user;
-    const pd = await getDoc(doc(db, 'users', user.uid));
-    if (pd.exists()) {
-      currentProfile = pd.data();
-      // 주간 파일 정리 실행
-      setTimeout(() => runWeeklyCleanup(), 3000);
-      if (currentProfile.role === 'student') {
-        showScreen('screen-student'); syncStudentUI(); studentTab(0); listenNotices();
-      } else if (currentProfile.role === 'teacher' || currentProfile.role === 'master') {
-        showScreen('screen-teacher'); syncTeacherUI();
-        buildTeacherTabs(currentProfile.role === 'master'); renderTeacher(0);
-      } else { await signOut(auth); showScreen('screen-login'); }
-    } else { await signOut(auth); showScreen('screen-login'); }
-  } else { showScreen('screen-login'); }
-});
+
+setTimeout(async () => {
+  try {
+    const user = auth.currentUser;
+    if (user) {
+      currentUser = user;
+      const pd = await getDoc(doc(db, 'users', user.uid));
+      if (pd.exists()) {
+        currentProfile = pd.data();
+        setTimeout(() => runWeeklyCleanup(), 3000);
+        if (currentProfile.role === 'student') {
+          showScreen('screen-student'); syncStudentUI(); studentTab(0); listenNotices();
+        } else if (currentProfile.role === 'teacher' || currentProfile.role === 'master') {
+          showScreen('screen-teacher'); syncTeacherUI();
+          buildTeacherTabs(currentProfile.role === 'master'); renderTeacher(0);
+        } else {
+          await signOut(auth); showScreen('screen-login');
+        }
+      } else {
+        await signOut(auth); showScreen('screen-login');
+      }
+    } else {
+      showScreen('screen-login');
+    }
+  } catch(e) {
+    console.error(e);
+    showScreen('screen-login');
+  }
+}, 2500);
 
 // ── 로그인 ──
 window.doLogin = async function() {
@@ -80,19 +86,23 @@ window.doLogin = async function() {
       return isTeacher ? (r === 'teacher' || r === 'master') : r === 'student';
     });
     if (!matched.length) { err.textContent = '해당 탭에 맞는 계정이 없습니다.'; return; }
-    await signInWithEmailAndPassword(auth, matched[0].data().email, pw);
-    showScreen('screen-loading');
-    const pd = await getDoc(doc(db, 'users', auth.currentUser.uid));
+    const userData = matched[0].data();
+    await signInWithEmailAndPassword(auth, userData.email, pw);
     currentUser = auth.currentUser;
-    currentProfile = pd.data();
-    await new Promise(r => setTimeout(r, 2500));
-    if (currentProfile.role === 'student') {
-      showScreen('screen-student'); syncStudentUI(); studentTab(0); listenNotices();
-    } else {
-      showScreen('screen-teacher'); syncTeacherUI();
-      buildTeacherTabs(currentProfile.role === 'master'); renderTeacher(0);
-    }
-  } catch(e) { err.textContent = '아이디 또는 비밀번호가 올바르지 않습니다.'; }
+    currentProfile = userData;
+    // 로딩 화면 2.5초 표시 후 이동
+    showScreen('screen-loading');
+    setTimeout(() => {
+      if (currentProfile.role === 'student') {
+        showScreen('screen-student'); syncStudentUI(); studentTab(0); listenNotices();
+      } else {
+        showScreen('screen-teacher'); syncTeacherUI();
+        buildTeacherTabs(currentProfile.role === 'master'); renderTeacher(0);
+      }
+    }, 2500);
+  } catch(e) {
+    err.textContent = '아이디 또는 비밀번호가 올바르지 않습니다.';
+  }
 };
 
 window.doLogout = async function() {
