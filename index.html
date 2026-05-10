@@ -49,12 +49,18 @@
           syncStudentUI();
           studentTab(0);
           listenNotices();
-        } else {
+        } else if (currentProfile.role === 'teacher' || currentProfile.role === 'master') {
           showScreen('screen-teacher');
           syncTeacherUI();
           buildTeacherTabs(currentProfile.role === 'master');
           renderTeacher(0);
+        } else {
+          await signOut(auth);
+          showScreen('screen-login');
         }
+      } else {
+        await signOut(auth);
+        showScreen('screen-login');
       }
     } else {
       currentUser = null;
@@ -70,12 +76,20 @@
     const err = document.getElementById('login-err');
     err.textContent = '';
     if (!id || !pw) { err.textContent = '아이디와 비밀번호를 입력해주세요.'; return; }
-    // Firestore에서 아이디로 이메일 조회
     try {
+      // loginType 전역변수로 학생/선생님 구분
       const q = query(collection(db, 'users'), where('username', '==', id));
       const snap = await getDocs(q);
       if (snap.empty) { err.textContent = '아이디 또는 비밀번호가 올바르지 않습니다.'; return; }
-      const userData = snap.docs[0].data();
+      // 탭 선택에 맞는 role 필터링
+      const isTeacherTab = window._loginType === 'teacher';
+      const matchDocs = snap.docs.filter(d => {
+        const role = d.data().role;
+        if (isTeacherTab) return role === 'teacher' || role === 'master';
+        else return role === 'student';
+      });
+      if (matchDocs.length === 0) { err.textContent = '해당 탭에 맞는 계정이 없습니다.'; return; }
+      const userData = matchDocs[0].data();
       await signInWithEmailAndPassword(auth, userData.email, pw);
     } catch(e) {
       err.textContent = '아이디 또는 비밀번호가 올바르지 않습니다.';
@@ -880,6 +894,7 @@
   window.openModal = function(id) { document.getElementById(id).classList.add('open'); };
   window.closeModal = function(id) { document.getElementById(id).classList.remove('open'); };
   window.setLoginType = function(t) {
+    window._loginType = t;
     const s = document.getElementById('ltab-s'), tv = document.getElementById('ltab-t');
     if (!s || !tv) return;
     if (t === 'student') {
@@ -890,6 +905,7 @@
       s.style.background='transparent';s.style.color='var(--gray3)';s.style.fontWeight='400';
     }
   };
+  window._loginType = 'student'; // 기본값
   window.toggleNotifPanel = function() {
     const p = document.getElementById('notif-panel');
     const b = document.getElementById('notif-backdrop');
@@ -901,7 +917,12 @@
     m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
   });
 
-  setTimeout(() => showScreen('screen-login'), 2500);
+  // ── 로딩 화면 ──
+  showScreen('screen-loading');
+  setTimeout(() => {
+    // Firebase Auth 상태 확인 후 로그인 화면으로
+    if (!currentUser) showScreen('screen-login');
+  }, 2500);
 </script>
 
 <style>
