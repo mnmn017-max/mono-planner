@@ -43,7 +43,7 @@ let authUser = null;
 const timerDone = new Promise(r => setTimeout(r, 2500));
 const authDone = new Promise(r => {
   const unsub = onAuthStateChanged(auth, u => { unsub(); authUser = u; r(u); });
-  setTimeout(() => r(null), 4000);
+  setTimeout(() => r(null), 2000); // 2초 안에 응답 없으면 null 처리
 });
 Promise.all([timerDone, authDone]).then(async ([, user]) => {
   if (user) {
