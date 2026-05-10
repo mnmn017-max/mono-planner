@@ -38,7 +38,7 @@ const subjectNames = {ko:'국어',en:'영어',ma:'수학',hi:'한국사',sc:'과
 const subjectColors = {ko:'#4a7fff',en:'#3dba7e',ma:'#e8943a',hi:'#c9a84c',sc:'#a855f7',so:'#e05252'};
 
 // ── 로딩 (항상 2.5초) ──
-showScreen('screen-loading');
+window.showScreen('screen-loading');
 
 setTimeout(async () => {
   try {
@@ -1083,7 +1083,11 @@ window.showScreen=function(id){document.querySelectorAll('.screen').forEach(s=>s
 window.openModal=function(id){document.getElementById(id).classList.add('open');};
 window.closeModal=function(id){document.getElementById(id).classList.remove('open');};
 document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
-</script>
+
+// ── 로딩 (항상 2.5초) ──
+window.showScreen('screen-loading');
+
+setTimeout(async () => {</script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
 :root{--navy:#0a0f1e;--navy2:#111827;--navy3:#1a2235;--navy4:#243047;--gold:#c9a84c;--gold2:#e6c97a;--white:#ffffff;--gray3:#aaa;--gray4:#666;--accent:#4a7fff;--red:#e05252;--green:#3dba7e;--orange:#e8943a;}
