@@ -455,18 +455,30 @@ window.doLogin = async function() {
   const err = document.getElementById('login-err');
   err.textContent = '';
   if (!id || !pw) { err.textContent = '아이디와 비밀번호를 입력해주세요.'; return; }
+  // 로딩 화면 먼저 표시
+  showScreen('screen-loading');
   try {
     const q = query(collection(db, 'users'), where('username', '==', id));
     const snap = await getDocs(q);
-    if (snap.empty) { err.textContent = '아이디 또는 비밀번호가 올바르지 않습니다.'; return; }
+    if (snap.empty) {
+      showScreen('screen-login');
+      document.getElementById('login-err').textContent = '아이디 또는 비밀번호가 올바르지 않습니다.';
+      return;
+    }
     const isTeacher = window._loginType === 'teacher';
     const matched = snap.docs.filter(function(d) {
       const r = d.data().role;
       return isTeacher ? (r === 'teacher' || r === 'master') : r === 'student';
     });
-    if (!matched.length) { err.textContent = '해당 탭에 맞는 계정이 없습니다.'; return; }
+    if (!matched.length) {
+      showScreen('screen-login');
+      document.getElementById('login-err').textContent = '해당 탭에 맞는 계정이 없습니다.';
+      return;
+    }
     await signInWithEmailAndPassword(auth, matched[0].data().email, pw);
+    // onAuthStateChanged에서 화면 전환 처리
   } catch(e) {
+    showScreen('screen-login');
     document.getElementById('login-err').textContent = '아이디 또는 비밀번호가 올바르지 않습니다.';
   }
 };
