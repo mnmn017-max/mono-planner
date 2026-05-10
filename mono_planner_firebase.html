@@ -1,0 +1,1278 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>MONO PLANNER</title>
+
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc,
+    collection, query, where, orderBy, onSnapshot, serverTimestamp, getDocs }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  // ── Firebase 초기화 ──
+  const firebaseConfig = {
+    apiKey: "AIzaSyDnAr8er9NTegYGfIeVErrC96zvO9JlvgQ",
+    authDomain: "mono-planner-75a60.firebaseapp.com",
+    projectId: "mono-planner-75a60",
+    storageBucket: "mono-planner-75a60.firebasestorage.app",
+    messagingSenderId: "948778604548",
+    appId: "1:948778604548:web:99470273105c125d41fd51"
+  };
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  // ── 전역 상태 ──
+  let currentUser = null;      // Firebase Auth user
+  let currentProfile = null;   // Firestore 프로필 데이터
+  let unsubscribeTodos = null;
+  let unsubscribeNotices = null;
+  let unsubscribeChat = null;
+  let timerInterval = null, timerSeconds = 0, timerPaused = false, timerTargetId = null;
+  const subjectNames = {ko:'국어',en:'영어',ma:'수학',hi:'한국사',sc:'과학탐구',so:'사회탐구'};
+  const subjectColors = {ko:'#4a7fff',en:'#3dba7e',ma:'#e8943a',hi:'#c9a84c',sc:'#a855f7',so:'#e05252'};
+
+  // ── Auth 상태 감지 ──
+  onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      currentUser = user;
+      const profileDoc = await getDoc(doc(db, 'users', user.uid));
+      if (profileDoc.exists()) {
+        currentProfile = profileDoc.data();
+        if (currentProfile.role === 'student') {
+          showScreen('screen-student');
+          syncStudentUI();
+          studentTab(0);
+          listenNotices();
+        } else {
+          showScreen('screen-teacher');
+          syncTeacherUI();
+          buildTeacherTabs(currentProfile.role === 'master');
+          renderTeacher(0);
+        }
+      }
+    } else {
+      currentUser = null;
+      currentProfile = null;
+      showScreen('screen-login');
+    }
+  });
+
+  // ── 로그인 ──
+  window.doLogin = async function() {
+    const id = document.getElementById('login-id').value.trim();
+    const pw = document.getElementById('login-pw').value.trim();
+    const err = document.getElementById('login-err');
+    err.textContent = '';
+    if (!id || !pw) { err.textContent = '아이디와 비밀번호를 입력해주세요.'; return; }
+    // Firestore에서 아이디로 이메일 조회
+    try {
+      const q = query(collection(db, 'users'), where('username', '==', id));
+      const snap = await getDocs(q);
+      if (snap.empty) { err.textContent = '아이디 또는 비밀번호가 올바르지 않습니다.'; return; }
+      const userData = snap.docs[0].data();
+      await signInWithEmailAndPassword(auth, userData.email, pw);
+    } catch(e) {
+      err.textContent = '아이디 또는 비밀번호가 올바르지 않습니다.';
+    }
+  };
+
+  // ── 로그아웃 ──
+  window.doLogout = async function() {
+    if (unsubscribeTodos) unsubscribeTodos();
+    if (unsubscribeNotices) unsubscribeNotices();
+    if (unsubscribeChat) unsubscribeChat();
+    if (timerInterval) clearInterval(timerInterval);
+    await signOut(auth);
+  };
+
+  // ── 학생 UI 동기화 ──
+  function syncStudentUI() {
+    const p = currentProfile;
+    document.getElementById('student-avatar').textContent = (p.name||'').slice(0,2);
+    document.getElementById('ps-name').value = p.name || '';
+    document.getElementById('ps-school').value = p.school || '';
+    document.getElementById('ps-univ').value = p.univ || '';
+    document.getElementById('ps-dept').value = p.dept || '';
+    const g = document.getElementById('ps-grade');
+    if (g) for (let o of g.options) { if (o.value === p.grade) { o.selected = true; break; } }
+  }
+
+  // ── 선생님 UI 동기화 ──
+  function syncTeacherUI() {
+    const p = currentProfile;
+    document.getElementById('teacher-greeting').textContent = `안녕하세요, ${p.name} 👋`;
+    document.getElementById('teacher-avatar-btn').textContent = (p.name||'').slice(0,2);
+    document.getElementById('teacher-role-label').textContent =
+      `MONO PLANNER · ${p.role === 'master' ? '마스터 관리자' : '관리자'}`;
+    document.getElementById('pt-name').value = p.name || '';
+  }
+
+  // ── 프로필 저장 (학생) ──
+  window.saveProfileStudent = async function() {
+    const name = document.getElementById('ps-name').value;
+    const school = document.getElementById('ps-school').value;
+    const grade = document.getElementById('ps-grade').value;
+    const univ = document.getElementById('ps-univ').value;
+    const dept = document.getElementById('ps-dept').value;
+    const newPw = document.getElementById('ps-pw').value;
+    await setDoc(doc(db, 'users', currentUser.uid), { name, school, grade, univ, dept }, { merge: true });
+    currentProfile = { ...currentProfile, name, school, grade, univ, dept };
+    if (newPw && newPw.length >= 6) {
+      await updatePassword(currentUser, newPw);
+    }
+    syncStudentUI();
+    closeModal('modal-profile-student');
+    studentTab(0);
+  };
+
+  // ── 프로필 저장 (선생님) ──
+  window.saveProfileTeacher = async function() {
+    const name = document.getElementById('pt-name').value;
+    const newPw = document.getElementById('pt-pw').value;
+    await setDoc(doc(db, 'users', currentUser.uid), { name }, { merge: true });
+    currentProfile = { ...currentProfile, name };
+    if (newPw && newPw.length >= 6) {
+      await updatePassword(currentUser, newPw);
+    }
+    syncTeacherUI();
+    closeModal('modal-profile-teacher');
+  };
+
+  // ── 학생 탭 ──
+  window.studentTab = function(i) {
+    for (let j = 0; j < 4; j++) {
+      const n = document.getElementById('snav-' + j);
+      if (n) n.classList.toggle('active', i === j);
+    }
+    const c = document.getElementById('student-content');
+    let html = '';
+    if (i === 0) { html = buildDashboard(); }
+    else if (i === 1) { html = buildGradePage(); }
+    else if (i === 2) { html = buildRewardPage(); }
+    else if (i === 3) { html = buildChatPage(); }
+    html += `<div style="text-align:center;padding:10px 0 14px;font-size:12px;font-weight:700;color:rgba(201,168,76,0.85);letter-spacing:2.5px;border-top:1px solid rgba(201,168,76,0.12);margin-top:8px;">멘토즈 스터디카페 울산송정점</div>`;
+    c.innerHTML = html;
+    if (i === 0) {
+      listenTodos();
+    }
+    if (i === 3) {
+      listenChat();
+    }
+  };
+
+  // ── 대시보드 HTML ──
+  function buildDashboard() {
+    const p = currentProfile || {};
+    const hasGoal = p.univ || p.dept;
+    return `
+    ${hasGoal ? `<div class="goal-banner">
+      <div class="goal-icon">🎯</div>
+      <div>
+        <div class="goal-name">${p.univ || '목표 대학 미입력'}</div>
+        <div class="goal-dept">${p.dept || ''} · ${p.school || ''} ${p.grade || ''}</div>
+      </div>
+    </div>` : ''}
+    <div class="card comment-card">
+      <div class="card-title">멘토 코멘트</div>
+      <div id="mentor-comment-area"><div style="color:var(--gray3);font-size:13px">불러오는 중...</div></div>
+    </div>
+    <div class="timer-card" id="timer-card">
+      <div class="card-title">타이머</div>
+      <div class="timer-subject" id="timer-subject-display">공부할 항목을 선택해주세요</div>
+      <div class="timer-display" id="timer-display">00:00:00</div>
+      <div class="timer-btns">
+        <button class="timer-btn tbtn-reset" id="btn-reset" onclick="openModal('modal-reset-confirm')" style="display:none">초기화</button>
+        <button class="timer-btn tbtn-pause" id="btn-pause" onclick="togglePause()" style="display:none">일시정지</button>
+        <button class="timer-btn tbtn-stop" id="btn-stop" onclick="stopTimer()" style="display:none">완료</button>
+      </div>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="card-title" style="margin-bottom:0">오늘의 플래너</div>
+        <button class="submit-btn" style="width:auto;padding:7px 14px;margin-bottom:0;font-size:12px" onclick="openModal('modal-submit-planner')">제출하기</button>
+      </div>
+      <div id="todo-list"><div style="color:var(--gray3);font-size:13px;padding:10px 0">불러오는 중...</div></div>
+      <button class="add-todo-btn" onclick="openModal('modal-todo')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        할 일 추가
+      </button>
+    </div>
+    <div class="card">
+      <div class="card-title">오늘 학습 리포트</div>
+      <div id="study-report"><div style="color:var(--gray3);font-size:13px">불러오는 중...</div></div>
+    </div>`;
+  }
+
+  // ── Todos 실시간 리스닝 ──
+  function listenTodos() {
+    if (!currentUser) return;
+    if (unsubscribeTodos) unsubscribeTodos();
+    const today = new Date().toISOString().split('T')[0];
+    const q = query(
+      collection(db, 'todos'),
+      where('uid', '==', currentUser.uid),
+      where('date', '==', today),
+      orderBy('createdAt', 'asc')
+    );
+    unsubscribeTodos = onSnapshot(q, (snap) => {
+      const todos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderTodos(todos);
+      renderStudyReport(todos);
+    });
+    // 멘토 코멘트 로드
+    loadMentorComment();
+  }
+
+  // ── 멘토 코멘트 로드 ──
+  async function loadMentorComment() {
+    const area = document.getElementById('mentor-comment-area');
+    if (!area) return;
+    const q = query(
+      collection(db, 'comments'),
+      where('studentUid', '==', currentUser.uid),
+      orderBy('createdAt', 'desc')
+    );
+    const snap = await getDocs(q);
+    if (snap.empty) {
+      area.innerHTML = `<div style="color:var(--gray3);font-size:13px">아직 코멘트가 없습니다</div>`;
+      return;
+    }
+    const latest = snap.docs[0].data();
+    const date = latest.createdAt?.toDate().toLocaleDateString('ko-KR') || '';
+    area.innerHTML = `
+      <div class="comment-bubble">
+        <div class="teacher-av">T</div>
+        <div>
+          <div class="comment-text">${latest.content}</div>
+          <div class="comment-meta">${date}</div>
+        </div>
+      </div>`;
+  }
+
+  // ── Todos 렌더링 ──
+  function renderTodos(todos) {
+    const list = document.getElementById('todo-list');
+    if (!list) return;
+    if (todos.length === 0) {
+      list.innerHTML = `<div style="color:var(--gray3);font-size:13px;padding:10px 0">할 일을 추가해주세요</div>`;
+      return;
+    }
+    list.innerHTML = todos.map(t => `
+    <div class="todo-item">
+      <div class="status-btn ${t.status === 'progressing' ? 'progressing' : t.status === 'done' ? 'done' : ''}"
+        onclick="cycleTodoStatus('${t.id}','${t.status}')">
+        ${t.status === 'done'
+          ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="3.5"><polyline points="20 6 9 17 4 12"/></svg>'
+          : t.status === 'progressing'
+          ? '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="3"><polyline points="5 12 12 19 19 12"/></svg>'
+          : ''}
+      </div>
+      <div class="todo-content" onclick="startTimerFor('${t.id}','${t.subject}','${t.title}')">
+        <div class="todo-title ${t.status === 'done' ? 'done-text' : ''}">${t.title}</div>
+        <div class="todo-meta">
+          <span class="subject-tag subj-${t.subject}">${subjectNames[t.subject]}</span>
+          ${timerTargetId === t.id ? '<span style="font-size:10px;color:var(--green)" class="pulse">● 측정중</span>' : ''}
+        </div>
+      </div>
+      <div style="font-size:11px;${t.certified ? 'color:#7aa8ff' : 'color:var(--gray3)'}">
+        ${t.studyTime ? (t.certified ? '🔵 ' : '⚪ ') + t.studyTime : '<span style="font-size:12px;color:var(--gray4)">시작 ▶</span>'}
+      </div>
+    </div>`).join('');
+  }
+
+  // ── 학습 리포트 렌더링 ──
+  function renderStudyReport(todos) {
+    const el = document.getElementById('study-report');
+    if (!el) return;
+    const done = todos.filter(t => t.studyTime);
+    if (done.length === 0) {
+      el.innerHTML = `<div style="color:var(--gray3);font-size:13px">아직 학습 기록이 없습니다</div>`;
+      return;
+    }
+    const bySubject = {};
+    let totalSec = 0;
+    done.forEach(t => {
+      const parts = (t.studyTime || '0:00:00').split(':');
+      const sec = parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseInt(parts[2] || 0);
+      bySubject[t.subject] = (bySubject[t.subject] || 0) + sec;
+      totalSec += sec;
+    });
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    const totalStr = `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    const bars = Object.entries(bySubject).sort((a,b) => b[1]-a[1]).map(([subj, sec]) => {
+      const pct = totalSec > 0 ? Math.round(sec / totalSec * 100) : 0;
+      const hh = Math.floor(sec/3600), mm = Math.floor((sec%3600)/60);
+      return `<div class="subj-bar-row">
+        <div class="subj-bar-label">${subjectNames[subj]||subj}</div>
+        <div class="subj-bar-wrap"><div class="subj-bar-fill" style="width:${pct}%;background:${subjectColors[subj]}"></div></div>
+        <div class="subj-bar-time">${hh}:${String(mm).padStart(2,'0')}</div>
+      </div>`;
+    }).join('');
+    el.innerHTML = `
+      <div style="text-align:center;font-size:40px;font-weight:700;color:var(--gold2);letter-spacing:2px;margin:4px 0">${totalStr}</div>
+      <div style="text-align:center;font-size:12px;color:var(--gray3);margin-bottom:14px">오늘 총 학습 시간</div>
+      ${bars}`;
+  }
+
+  // ── Todo 상태 변경 ──
+  window.cycleTodoStatus = async function(id, current) {
+    const order = ['none', 'progressing', 'done'];
+    const next = order[(order.indexOf(current) + 1) % 3];
+    await updateDoc(doc(db, 'todos', id), { status: next });
+  };
+
+  // ── Todo 추가 ──
+  window.addTodo = async function() {
+    const title = document.getElementById('todo-title-input').value.trim();
+    if (!title) return;
+    const subject = document.getElementById('todo-subject').value;
+    const today = new Date().toISOString().split('T')[0];
+    await addDoc(collection(db, 'todos'), {
+      uid: currentUser.uid,
+      title, subject,
+      status: 'none',
+      studyTime: null,
+      certified: false,
+      date: today,
+      createdAt: serverTimestamp()
+    });
+    closeModal('modal-todo');
+    document.getElementById('todo-title-input').value = '';
+  };
+
+  // ── 플래너 제출 ──
+  window.doSubmitPlanner = async function() {
+    const today = new Date().toISOString().split('T')[0];
+    await setDoc(doc(db, 'planners', `${currentUser.uid}_${today}`), {
+      uid: currentUser.uid,
+      name: currentProfile.name,
+      date: today,
+      submittedAt: serverTimestamp()
+    });
+    closeModal('modal-submit-planner');
+    alert('플래너가 제출되었습니다!');
+  };
+
+  // ── 타이머 ──
+  window.startTimerFor = function(id, subject, title) {
+    if (timerTargetId === id) { togglePause(); return; }
+    if (timerInterval) clearInterval(timerInterval);
+    timerTargetId = id; timerSeconds = 0; timerPaused = false;
+    ['btn-reset','btn-pause','btn-stop'].forEach(b => {
+      const el = document.getElementById(b); if (el) el.style.display = 'inline-block';
+    });
+    const subj = document.getElementById('timer-subject-display');
+    if (subj) subj.textContent = `${subjectNames[subject]} · ${title}`;
+    document.getElementById('btn-pause').textContent = '일시정지';
+    timerInterval = setInterval(() => {
+      if (!timerPaused) {
+        timerSeconds++;
+        if (timerSeconds >= 6000) stopTimer();
+      }
+      const h = Math.floor(timerSeconds/3600), m = Math.floor((timerSeconds%3600)/60), s = timerSeconds%60;
+      const el = document.getElementById('timer-display');
+      if (el) el.textContent = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    }, 1000);
+  };
+  window.togglePause = function() {
+    timerPaused = !timerPaused;
+    const bp = document.getElementById('btn-pause');
+    if (bp) bp.textContent = timerPaused ? '재개' : '일시정지';
+  };
+  window.stopTimer = function() {
+    if (timerInterval) clearInterval(timerInterval);
+    timerInterval = null;
+    openModal('modal-timer-done');
+  };
+  window.certifyTimer = function() { finalizeTimer(true); closeModal('modal-timer-done'); };
+  window.skipCert = function() { finalizeTimer(false); closeModal('modal-timer-done'); };
+  window.doResetTimer = function() {
+    if (timerInterval) clearInterval(timerInterval);
+    timerInterval = null; timerSeconds = 0; timerPaused = false; timerTargetId = null;
+    const td = document.getElementById('timer-display'), ts = document.getElementById('timer-subject-display');
+    if (td) td.textContent = '00:00:00';
+    if (ts) ts.textContent = '공부할 항목을 선택해주세요';
+    ['btn-reset','btn-pause','btn-stop'].forEach(b => { const el = document.getElementById(b); if (el) el.style.display = 'none'; });
+    closeModal('modal-reset-confirm');
+  };
+  async function finalizeTimer(certified) {
+    if (timerTargetId) {
+      const h = Math.floor(timerSeconds/3600), m = Math.floor((timerSeconds%3600)/60), s = timerSeconds%60;
+      const timeStr = `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+      await updateDoc(doc(db, 'todos', timerTargetId), {
+        status: 'done',
+        studyTime: timeStr,
+        certified,
+        completedAt: serverTimestamp()
+      });
+    }
+    timerTargetId = null; timerSeconds = 0; timerPaused = false;
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    const td = document.getElementById('timer-display'), ts = document.getElementById('timer-subject-display');
+    if (td) td.textContent = '00:00:00';
+    if (ts) ts.textContent = '공부할 항목을 선택해주세요';
+    ['btn-reset','btn-pause','btn-stop'].forEach(b => { const el = document.getElementById(b); if (el) el.style.display = 'none'; });
+  }
+
+  // ── 공지 리스닝 (학생) ──
+  function listenNotices() {
+    if (!currentUser) return;
+    const q = query(
+      collection(db, 'notices'),
+      where('target', 'in', ['all', currentProfile.name]),
+      orderBy('createdAt', 'desc')
+    );
+    unsubscribeNotices = onSnapshot(q, (snap) => {
+      const notices = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      updateNotifBadge(notices.filter(n => !n.readBy?.includes(currentUser.uid)).length);
+      // 새 공지 팝업
+      snap.docChanges().forEach(change => {
+        if (change.type === 'added') {
+          const n = change.doc.data();
+          const addedAt = n.createdAt?.toMillis() || 0;
+          if (Date.now() - addedAt < 5000) {
+            showNoticePopup(n.title, n.content, n.senderName);
+          }
+        }
+      });
+    });
+  }
+
+  // ── 공지 전송 (선생님) ──
+  window.sendNotice = async function() {
+    const target = document.getElementById('notice-target').value;
+    const title = document.getElementById('notice-title-input').value.trim();
+    const content = document.getElementById('notice-body-input').value.trim();
+    if (!title || !content) { alert('제목과 내용을 입력해주세요.'); return; }
+    await addDoc(collection(db, 'notices'), {
+      target, title, content,
+      senderUid: currentUser.uid,
+      senderName: currentProfile.name,
+      readBy: [],
+      createdAt: serverTimestamp()
+    });
+    closeModal('modal-notice');
+    document.getElementById('notice-title-input').value = '';
+    document.getElementById('notice-body-input').value = '';
+    alert('공지가 전송되었습니다!');
+    renderTeacher(5);
+  };
+
+  // ── 채팅 리스닝 ──
+  function listenChat() {
+    if (!currentUser) return;
+    if (unsubscribeChat) unsubscribeChat();
+    const chatId = currentProfile.role === 'student'
+      ? `${currentUser.uid}_chat`
+      : null;
+    if (!chatId) return;
+    const q = query(
+      collection(db, 'chats', chatId, 'messages'),
+      orderBy('createdAt', 'asc')
+    );
+    unsubscribeChat = onSnapshot(q, (snap) => {
+      const list = document.getElementById('chat-msg-list');
+      if (!list) return;
+      list.innerHTML = snap.docs.map(d => {
+        const m = d.data();
+        const isMe = m.senderUid === currentUser.uid;
+        const time = m.createdAt?.toDate().toLocaleTimeString('ko-KR', {hour:'2-digit',minute:'2-digit'}) || '';
+        return `<div class="msg ${isMe ? 'mine' : 'theirs'}">
+          ${!isMe ? `<div class="teacher-av" style="width:30px;height:30px;font-size:11px;flex-shrink:0">${(m.senderName||'T').slice(0,2)}</div>` : ''}
+          <div><div class="msg-bubble">${m.text}</div><div class="msg-time" style="${isMe?'text-align:right':''}">${time}</div></div>
+        </div>`;
+      }).join('');
+      list.scrollTop = list.scrollHeight;
+    });
+  }
+
+  // ── 메시지 전송 ──
+  window.sendChatMsg = async function() {
+    const input = document.getElementById('chat-text-input');
+    const text = input?.value.trim();
+    if (!text) return;
+    const chatId = `${currentUser.uid}_chat`;
+    await addDoc(collection(db, 'chats', chatId, 'messages'), {
+      text,
+      senderUid: currentUser.uid,
+      senderName: currentProfile.name,
+      createdAt: serverTimestamp()
+    });
+    input.value = '';
+  };
+
+  // ── 선생님: 학생 목록 로드 ──
+  async function loadStudentList() {
+    const q = query(collection(db, 'users'), where('role', '==', 'student'));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ uid: d.id, ...d.data() }));
+  }
+
+  // ── 선생님: 상벌점 부여 ──
+  window.givePoints = async function() {
+    const studentUid = document.getElementById('reward-student-select').value;
+    const type = document.getElementById('reward-type-select').value;
+    const reason = document.getElementById('reward-reason-input').value.trim();
+    const points = parseInt(document.getElementById('reward-points-input').value);
+    if (!studentUid || !reason || !points) { alert('모든 항목을 입력해주세요.'); return; }
+    await addDoc(collection(db, 'points'), {
+      studentUid, type, reason, points,
+      givenBy: currentUser.uid,
+      givenByName: currentProfile.name,
+      createdAt: serverTimestamp()
+    });
+    alert('상벌점이 부여되었습니다!');
+  };
+
+  // ── 선생님: 코멘트 저장 ──
+  window.saveComment = async function() {
+    const studentUid = document.getElementById('comment-student-select').value;
+    const content = document.getElementById('comment-input').value.trim();
+    if (!studentUid || !content) { alert('학생과 코멘트를 입력해주세요.'); return; }
+    await addDoc(collection(db, 'comments'), {
+      studentUid, content,
+      teacherUid: currentUser.uid,
+      teacherName: currentProfile.name,
+      createdAt: serverTimestamp()
+    });
+    alert('코멘트가 저장되었습니다!');
+  };
+
+  // ── 계정 생성 ──
+  window.addAccount = async function() {
+    const type = document.getElementById('acc-type').value;
+    const name = document.getElementById('acc-name').value.trim();
+    const username = document.getElementById('acc-id').value.trim();
+    const pw = document.getElementById('acc-pw').value.trim();
+    if (!name || !username || !pw) { alert('모든 항목을 입력해주세요.'); return; }
+    // 이메일 형식으로 변환 (Firebase Auth는 이메일 필요)
+    const email = `${username}@mono-planner.app`;
+    try {
+      // 별도 앱 인스턴스로 계정 생성 (현재 로그인 유지)
+      const { createUserWithEmailAndPassword } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js");
+      const secondApp = initializeApp(firebaseConfig, `second-${Date.now()}`);
+      const secondAuth = getAuth(secondApp);
+      const cred = await createUserWithEmailAndPassword(secondAuth, email, pw);
+      await setDoc(doc(db, 'users', cred.user.uid), {
+        name, username, email,
+        role: type,
+        school: '', grade: '', univ: '', dept: '',
+        createdAt: serverTimestamp()
+      });
+      await secondAuth.signOut();
+      closeModal('modal-add-account');
+      alert(`${name} 계정이 생성되었습니다!`);
+      renderTeacher(6);
+    } catch(e) {
+      alert('계정 생성 실패: ' + e.message);
+    }
+  };
+
+  // ── 선생님 탭 렌더링 ──
+  window.buildTeacherTabs = function(isMaster) {
+    const tabs = [
+      {label:'학생 현황', icon:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'},
+      {label:'플래너', icon:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>'},
+      {label:'성적관리', icon:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>'},
+      {label:'상벌점', icon:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>'},
+      {label:'메시지', icon:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'},
+      {label:'공지', icon:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 17H2a3 3 0 0 0 3-3V9a7 7 0 0 1 14 0v5a3 3 0 0 0 3 3zm-8.27 4a2 2 0 0 1-3.46 0"/></svg>'},
+      {label:'계정관리', icon:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>'},
+    ];
+    if (isMaster) tabs.push({label:'전체채팅', icon:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'});
+    tabs.push({label:'로그아웃', icon:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>', logout:true});
+    const container = document.getElementById('teacher-tabs');
+    container.innerHTML = tabs.map((t, i) => `
+    <div class="teacher-nav-item ${i===0?'active':''}" id="tnav-${i}" onclick="${t.logout ? 'doLogout()' : `teacherTab(${i})`}">
+      ${t.icon}<span>${t.label}</span>
+    </div>`).join('');
+  };
+
+  window.teacherTab = function(i) {
+    document.querySelectorAll('.teacher-nav-item').forEach((t,j) => t.classList.toggle('active', i===j));
+    renderTeacher(i);
+  };
+
+  window.renderTeacher = async function(i) {
+    const isMaster = currentProfile?.role === 'master';
+    const c = document.getElementById('teacher-content');
+    c.innerHTML = '<div style="color:var(--gray3);font-size:13px;padding:20px">불러오는 중...</div>';
+    if (i === 0) c.innerHTML = await buildTDashboard();
+    else if (i === 1) c.innerHTML = await buildTPlanner();
+    else if (i === 2) c.innerHTML = buildTGrades();
+    else if (i === 3) c.innerHTML = await buildTRewards();
+    else if (i === 4) c.innerHTML = buildTChat();
+    else if (i === 5) c.innerHTML = await buildTNotice();
+    else if (i === 6) c.innerHTML = await buildTAccounts();
+    else if (i === 7 && isMaster) c.innerHTML = buildAllChats();
+  };
+
+  // ── 선생님 대시보드 ──
+  async function buildTDashboard() {
+    const students = await loadStudentList();
+    const today = new Date().toISOString().split('T')[0];
+    // 오늘 제출된 플래너 확인
+    const plannerSnap = await getDocs(collection(db, 'planners'));
+    const submittedToday = plannerSnap.docs
+      .filter(d => d.id.includes(`_${today}`))
+      .map(d => d.data().name);
+    return `
+    <div class="stat-grid">
+      <div class="stat-card"><div class="stat-val">${students.length}</div><div class="stat-lbl">전체 학생</div></div>
+      <div class="stat-card"><div class="stat-val" style="color:var(--green)">${submittedToday.length}</div><div class="stat-lbl">플래너 제출</div></div>
+    </div>
+    <div class="section-label">플래너 제출 현황</div>
+    <div style="display:flex;gap:10px;margin-bottom:12px">
+      <div style="flex:1;background:rgba(61,186,126,0.1);border:1px solid rgba(61,186,126,0.25);border-radius:10px;padding:10px;text-align:center">
+        <div style="font-size:22px;font-weight:700;color:var(--green)">${submittedToday.length}</div>
+        <div style="font-size:11px;color:var(--gray3)">제출 완료</div>
+      </div>
+      <div style="flex:1;background:rgba(224,82,82,0.08);border:1px solid rgba(224,82,82,0.2);border-radius:10px;padding:10px;text-align:center">
+        <div style="font-size:22px;font-weight:700;color:var(--red)">${students.length - submittedToday.length}</div>
+        <div style="font-size:11px;color:var(--gray3)">미제출</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
+      ${students.map(s => `<span style="background:${submittedToday.includes(s.name)?'rgba(61,186,126,0.12)':'rgba(224,82,82,0.08)'};border:1px solid ${submittedToday.includes(s.name)?'rgba(61,186,126,0.22)':'rgba(224,82,82,0.2)'};border-radius:6px;padding:4px 10px;font-size:12px;color:${submittedToday.includes(s.name)?'var(--green)':'#f87171'}">${submittedToday.includes(s.name)?'✅':'❌'} ${s.name}</span>`).join('')}
+    </div>
+    <div class="section-label">학생 목록</div>
+    ${students.map(s => `
+    <div class="student-row">
+      <div class="student-av-t">${(s.name||'?').slice(0,2)}</div>
+      <div style="flex:1"><div style="font-size:14px;font-weight:600">${s.name}</div><div style="font-size:11px;color:var(--gray3);margin-top:2px">${s.grade||''} · ${s.school||''}</div></div>
+    </div>`).join('')}`;
+  }
+
+  // ── 선생님 플래너 ──
+  async function buildTPlanner() {
+    const students = await loadStudentList();
+    const today = new Date().toISOString().split('T')[0];
+    // 오늘 제출된 플래너
+    const plannerSnap = await getDocs(collection(db, 'planners'));
+    const todayPlanners = plannerSnap.docs.filter(d => d.id.includes(`_${today}`)).map(d => d.data());
+    return `
+    <div class="section-label">오늘 제출된 플래너</div>
+    ${todayPlanners.length === 0
+      ? '<div style="color:var(--gray3);font-size:13px;padding:10px 0">아직 제출된 플래너가 없습니다</div>'
+      : todayPlanners.map(p => `
+    <div class="planner-thumb">
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px">${p.name}</div>
+      <div style="font-size:11px;color:var(--green)">✅ 제출 완료</div>
+    </div>`).join('')}
+    <div class="section-label" style="margin-top:20px">코멘트 작성</div>
+    <select class="modal-select" id="comment-student-select">
+      <option value="">학생 선택</option>
+      ${students.map(s => `<option value="${s.uid}">${s.name}</option>`).join('')}
+    </select>
+    <textarea class="modal-input" id="comment-input" rows="4" placeholder="학생에게 전달할 코멘트..." style="resize:none;margin-bottom:10px"></textarea>
+    <button class="modal-btn primary" onclick="saveComment()">코멘트 저장</button>`;
+  }
+
+  // ── 선생님 성적 ──
+  function buildTGrades() {
+    return `
+    <div class="section-label">성적 관리</div>
+    <div class="card"><div style="font-size:13px;color:var(--gray3)">성적 입력 및 조회 기능은 추후 업데이트 예정입니다.</div></div>`;
+  }
+
+  // ── 선생님 상벌점 ──
+  async function buildTRewards() {
+    const students = await loadStudentList();
+    const pointsSnap = await getDocs(query(collection(db, 'points'), orderBy('createdAt', 'desc')));
+    const points = pointsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    return `
+    <div class="section-label">상벌점 부여</div>
+    <select class="modal-select" id="reward-student-select">
+      <option value="">학생 선택</option>
+      ${students.map(s => `<option value="${s.uid}">${s.name}</option>`).join('')}
+    </select>
+    <select class="modal-select" id="reward-type-select"><option value="plus">상점</option><option value="minus">벌점</option></select>
+    <input class="modal-input" id="reward-reason-input" placeholder="사유 입력" />
+    <input class="modal-input" id="reward-points-input" type="number" placeholder="점수 입력" />
+    <button class="modal-btn primary" style="margin-bottom:16px" onclick="givePoints()">부여하기</button>
+    <div class="section-label">상벌점 내역</div>
+    ${points.slice(0,10).map(p => {
+      const student = students.find(s => s.uid === p.studentUid);
+      const date = p.createdAt?.toDate().toLocaleDateString('ko-KR') || '';
+      return `<div class="history-item">
+        <div class="history-dot ${p.type}"></div>
+        <div style="flex:1;font-size:13px">${student?.name||'?'} · ${p.reason}</div>
+        <div style="font-size:13px;font-weight:600;${p.type==='plus'?'color:var(--gold2)':'color:var(--red)'}">${p.type==='plus'?'+':''}${p.points}점</div>
+        <div style="font-size:11px;color:var(--gray3)">${date}</div>
+      </div>`;
+    }).join('')}`;
+  }
+
+  // ── 선생님 채팅 ──
+  function buildTChat() {
+    return `
+    <div class="section-label">채팅 대상 선택</div>
+    <select class="modal-select" id="teacher-chat-student" style="margin-bottom:12px">
+      <option value="">학생 선택</option>
+    </select>
+    <div class="card" style="padding:12px;min-height:200px" id="teacher-chat-area">
+      <div style="color:var(--gray3);font-size:13px">학생을 선택하면 채팅이 표시됩니다</div>
+    </div>
+    <div class="chat-input-area" style="margin:0 -16px;padding:12px 16px">
+      <input class="chat-input" id="teacher-chat-input" placeholder="메시지 입력..." onkeydown="if(event.key==='Enter')sendTeacherMsg()" />
+      <button class="chat-send" onclick="sendTeacherMsg()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+    </div>`;
+  }
+
+  window.sendTeacherMsg = async function() {
+    const sel = document.getElementById('teacher-chat-student');
+    const input = document.getElementById('teacher-chat-input');
+    const studentUid = sel?.value;
+    const text = input?.value.trim();
+    if (!studentUid || !text) return;
+    const chatId = `${studentUid}_chat`;
+    await addDoc(collection(db, 'chats', chatId, 'messages'), {
+      text,
+      senderUid: currentUser.uid,
+      senderName: currentProfile.name,
+      createdAt: serverTimestamp()
+    });
+    if (input) input.value = '';
+  };
+
+  // ── 선생님 공지 ──
+  async function buildTNotice() {
+    const snap = await getDocs(query(collection(db, 'notices'), orderBy('createdAt', 'desc')));
+    const notices = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    return `
+    <button class="appeal-btn" onclick="openModal('modal-notice')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 17H2a3 3 0 0 0 3-3V9a7 7 0 0 1 14 0v5a3 3 0 0 0 3 3zm-8.27 4a2 2 0 0 1-3.46 0"/></svg>
+      새 공지 보내기
+    </button>
+    <div class="section-label">공지 발송 내역</div>
+    ${notices.length === 0
+      ? '<div style="color:var(--gray3);font-size:13px;padding:10px 0">발송된 공지가 없습니다</div>'
+      : notices.map(n => {
+          const date = n.createdAt?.toDate().toLocaleDateString('ko-KR') || '';
+          return `<div class="planner-thumb">
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+              <div style="font-size:13px;font-weight:600">${n.title}</div>
+              <span style="font-size:11px;color:var(--gray3)">${date}</span>
+            </div>
+            <div style="font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:4px">${n.content}</div>
+            <div style="font-size:11px;color:var(--gray3)">수신: ${n.target === 'all' ? '전체' : n.target}</div>
+          </div>`;
+        }).join('')}`;
+  }
+
+  // ── 계정 관리 ──
+  async function buildTAccounts() {
+    const students = await loadStudentList();
+    const teacherSnap = await getDocs(query(collection(db, 'users'), where('role', 'in', ['teacher','master'])));
+    const teachers = teacherSnap.docs.map(d => ({ uid: d.id, ...d.data() }));
+    return `
+    <div class="stat-grid">
+      <div class="stat-card"><div class="stat-val">${students.length}</div><div class="stat-lbl">학생 계정</div></div>
+      <div class="stat-card"><div class="stat-val" style="color:var(--gold)">${teachers.length}</div><div class="stat-lbl">선생님 계정</div></div>
+    </div>
+    <button class="appeal-btn" onclick="openModal('modal-add-account')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      새 계정 추가
+    </button>
+    <div class="section-label">선생님 계정</div>
+    ${teachers.map(t => `
+    <div class="student-row">
+      <div class="teacher-av" style="width:36px;height:36px;font-size:12px">${(t.name||'?').slice(0,2)}</div>
+      <div style="flex:1"><div style="font-size:14px;font-weight:600">${t.name}</div><div style="font-size:11px;color:var(--gray3);margin-top:2px">ID: ${t.username||''}</div></div>
+    </div>`).join('')}
+    <div class="section-label">학생 계정</div>
+    ${students.map(s => `
+    <div class="student-row">
+      <div class="student-av-t">${(s.name||'?').slice(0,2)}</div>
+      <div style="flex:1"><div style="font-size:14px;font-weight:600">${s.name}</div><div style="font-size:11px;color:var(--gray3);margin-top:2px">${s.grade||''} · ID: ${s.username||''}</div></div>
+    </div>`).join('')}`;
+  }
+
+  function buildAllChats() {
+    return `<div style="background:rgba(232,148,58,0.1);border:1px solid rgba(232,148,58,0.25);border-radius:10px;padding:11px 14px;font-size:13px;color:#f0a855">⚠️ 마스터 전용 — 전체 채팅 내역 열람 기능은 추후 업데이트 예정입니다.</div>`;
+  }
+
+  // ── 학생 성적/리워드/채팅 페이지 ──
+  function buildGradePage() {
+    return `<div class="card"><div style="font-size:13px;color:var(--gray3)">성적 입력 기능은 추후 업데이트 예정입니다.</div></div>`;
+  }
+  function buildRewardPage() {
+    return `<div class="card"><div style="font-size:13px;color:var(--gray3);padding:10px 0">상벌점 조회 기능은 추후 업데이트 예정입니다.</div></div>`;
+  }
+  function buildChatPage() {
+    return `
+    <div style="padding:13px 0 13px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:11px;">
+      <div class="teacher-av" style="width:38px;height:38px;font-size:13px">T</div>
+      <div><div style="font-size:14px;font-weight:600">선생님</div><div style="font-size:11px;color:var(--green)" class="pulse">● 온라인</div></div>
+    </div>
+    <div id="chat-msg-list" style="padding:14px 0;min-height:200px;display:flex;flex-direction:column;gap:0;"></div>
+    <div id="chat-file-preview" style="display:none;padding:8px 0;background:var(--navy3);border-radius:8px;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:10px;padding:0 12px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span id="chat-file-name" style="font-size:13px;color:var(--gold2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+        <button onclick="cancelFile()" style="background:none;border:none;color:var(--gray3);cursor:pointer;font-size:18px;">✕</button>
+      </div>
+    </div>
+    <div class="chat-input-area" style="margin:0 -16px;padding:12px 16px">
+      <input type="file" id="chat-file-input" style="display:none;" onchange="handleFileSelect(this)" />
+      <button onclick="document.getElementById('chat-file-input').click()" style="background:none;border:none;cursor:pointer;display:flex;align-items:center;padding:0;flex-shrink:0;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+      </button>
+      <input id="chat-text-input" class="chat-input" placeholder="메시지 입력..." onkeydown="if(event.key==='Enter')sendChatMsg()" />
+      <button class="chat-send" onclick="sendChatMsg()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+    </div>`;
+  }
+
+  // ── 공지 팝업 ──
+  window.showNoticePopup = function(title, body, from) {
+    document.getElementById('notice-title-text').textContent = title;
+    document.getElementById('notice-body-text').textContent = body;
+    document.getElementById('notice-from-text').textContent = from || '';
+    document.getElementById('notice-overlay').classList.add('open');
+  };
+  window.closeNotice = function() {
+    document.getElementById('notice-overlay').classList.remove('open');
+  };
+
+  // ── 알림 배지 ──
+  function updateNotifBadge(count) {
+    const badge = document.getElementById('notif-badge');
+    if (badge) {
+      if (count > 0) { badge.style.display = 'flex'; badge.textContent = count; }
+      else badge.style.display = 'none';
+    }
+  }
+
+  // ── 파일 첨부 ──
+  let selectedFile = null;
+  window.handleFileSelect = function(input) {
+    if (!input.files || !input.files[0]) return;
+    selectedFile = input.files[0];
+    const preview = document.getElementById('chat-file-preview');
+    const nameEl = document.getElementById('chat-file-name');
+    if (preview && nameEl) { nameEl.textContent = selectedFile.name; preview.style.display = 'block'; }
+  };
+  window.cancelFile = function() {
+    selectedFile = null;
+    const preview = document.getElementById('chat-file-preview');
+    const fi = document.getElementById('chat-file-input');
+    if (preview) preview.style.display = 'none';
+    if (fi) fi.value = '';
+  };
+
+  // ── 유틸 ──
+  window.showScreen = function(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  };
+  window.openModal = function(id) { document.getElementById(id).classList.add('open'); };
+  window.closeModal = function(id) { document.getElementById(id).classList.remove('open'); };
+  window.setLoginType = function(t) {
+    const s = document.getElementById('ltab-s'), tv = document.getElementById('ltab-t');
+    if (!s || !tv) return;
+    if (t === 'student') {
+      s.style.background='rgba(201,168,76,0.15)';s.style.color='var(--gold)';s.style.fontWeight='600';
+      tv.style.background='transparent';tv.style.color='var(--gray3)';tv.style.fontWeight='400';
+    } else {
+      tv.style.background='rgba(201,168,76,0.15)';tv.style.color='var(--gold)';tv.style.fontWeight='600';
+      s.style.background='transparent';s.style.color='var(--gray3)';s.style.fontWeight='400';
+    }
+  };
+  window.toggleNotifPanel = function() {
+    const p = document.getElementById('notif-panel');
+    const b = document.getElementById('notif-backdrop');
+    const isOpen = p.classList.contains('open');
+    if (isOpen) { p.classList.remove('open'); b.style.display='none'; }
+    else { p.classList.add('open'); b.style.display='block'; }
+  };
+  document.querySelectorAll('.modal-overlay').forEach(m => {
+    m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+  });
+
+  setTimeout(() => showScreen('screen-login'), 2500);
+</script>
+
+<style>
+/* 기존 스타일 그대로 유지 */
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+:root{
+  --navy:#0a0f1e;--navy2:#111827;--navy3:#1a2235;--navy4:#243047;
+  --gold:#c9a84c;--gold2:#e6c97a;--white:#ffffff;
+  --gray3:#aaa;--gray4:#666;
+  --accent:#4a7fff;--red:#e05252;--green:#3dba7e;--orange:#e8943a;
+}
+html,body{margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',sans-serif;background:var(--navy);color:var(--white);overflow-x:hidden;font-size:15px;}
+.screen{display:none;min-height:100vh;flex-direction:column;}
+.screen.active{display:flex;}
+.logo-inline{display:flex;align-items:center;gap:8px;}
+.logo-icon{width:28px;height:28px;flex-shrink:0;}
+.logo-text{font-size:13px;font-weight:700;letter-spacing:3px;color:var(--gold);}
+#screen-loading{background:var(--navy);align-items:center;justify-content:center;}
+.loading-wrap{display:flex;flex-direction:column;align-items:center;gap:18px;animation:fadeInUp .8s ease both;padding:0 24px;text-align:center;}
+.loading-wrap .app-title{font-size:30px;font-weight:700;letter-spacing:7px;}
+.loading-wrap .app-sub{font-size:14px;color:var(--gold);letter-spacing:1.5px;line-height:2.1;margin-top:2px;}
+.loading-bar{width:220px;height:2px;background:rgba(255,255,255,0.1);border-radius:2px;margin-top:36px;overflow:hidden;}
+.loading-bar-fill{height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));animation:loadBar 2.3s ease forwards;}
+.loading-brand{position:fixed;bottom:32px;left:0;right:0;text-align:center;font-size:13px;color:rgba(201,168,76,0.6);letter-spacing:2.5px;}
+@keyframes loadBar{0%{width:0}100%{width:100%}}
+@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+#screen-login{background:var(--navy);align-items:center;justify-content:center;padding:24px;}
+.login-box{width:100%;max-width:400px;display:flex;flex-direction:column;align-items:center;min-height:100vh;justify-content:center;padding-bottom:60px;}
+.login-logo{display:flex;flex-direction:column;align-items:center;gap:14px;margin-bottom:36px;}
+.login-logo .app-title{font-size:24px;font-weight:700;letter-spacing:6px;}
+.login-logo .app-sub{font-size:13px;color:var(--gold);letter-spacing:1.5px;text-align:center;line-height:2.1;}
+.login-err{color:#f87171;font-size:14px;text-align:center;min-height:20px;margin-bottom:6px;}
+.login-brand{position:fixed;bottom:28px;left:0;right:0;text-align:center;font-size:13px;color:rgba(201,168,76,0.55);letter-spacing:2.5px;}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 18px 8px;flex-shrink:0;background:var(--navy2);border-bottom:1px solid rgba(201,168,76,0.1);}
+.topbar-right{display:flex;align-items:center;gap:12px;}
+.topbar-avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--gold2));display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--navy);cursor:pointer;flex-shrink:0;}
+.notif-btn{position:relative;cursor:pointer;display:flex;align-items:center;}
+.notif-badge{position:absolute;top:-3px;right:-4px;width:16px;height:16px;background:var(--red);border-radius:50%;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;color:#fff;display:none;}
+.content-area{flex:1;overflow-y:auto;padding:0 16px 16px;}
+.content-area::-webkit-scrollbar{width:2px;}
+.content-area::-webkit-scrollbar-thumb{background:rgba(201,168,76,0.2);border-radius:2px;}
+.bottom-nav{display:flex;width:100%;background:var(--navy2);border-top:1px solid rgba(201,168,76,0.15);flex-shrink:0;}
+.bottom-brand-bar{width:100%;text-align:center;padding:5px 0 8px;font-size:11px;font-weight:700;color:rgba(201,168,76,0.85);letter-spacing:2.5px;background:var(--navy2);}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 0 6px;cursor:pointer;}
+.nav-item svg{color:var(--gray3);}
+.nav-item span{font-size:10px;color:var(--gray3);}
+.nav-item.active svg,.nav-item.active span{color:var(--gold);}
+.teacher-topbar{background:var(--navy2);padding:14px 18px 12px;border-bottom:1px solid rgba(201,168,76,0.15);flex-shrink:0;display:flex;align-items:center;justify-content:space-between;}
+.teacher-title-area{flex:1;}
+.teacher-title{font-size:11px;letter-spacing:3px;color:var(--gold);font-weight:700;}
+.teacher-sub{font-size:14px;color:rgba(255,255,255,0.75);margin-top:2px;}
+.teacher-bottom-nav{display:flex;flex-direction:column;flex-shrink:0;background:var(--navy2);border-top:1px solid rgba(201,168,76,0.15);}
+.teacher-nav-scroll{display:flex;width:100%;}
+.teacher-nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:9px 4px 10px;cursor:pointer;border-top:2px solid transparent;min-width:0;}
+.teacher-nav-item svg{color:var(--gray3);width:21px;height:21px;flex-shrink:0;}
+.teacher-nav-item span{font-size:9px;color:var(--gray3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;text-align:center;}
+.teacher-nav-item.active{border-top-color:var(--gold);}
+.teacher-nav-item.active svg,.teacher-nav-item.active span{color:var(--gold);}
+.teacher-brand-bar{text-align:center;padding:5px 0 8px;font-size:11px;font-weight:700;color:rgba(201,168,76,0.7);letter-spacing:2.5px;background:var(--navy2);}
+.teacher-content{flex:1;overflow-y:auto;padding:16px;}
+.teacher-content::-webkit-scrollbar{width:2px;}
+.teacher-content::-webkit-scrollbar-thumb{background:rgba(201,168,76,0.2);border-radius:2px;}
+.card{background:var(--navy3);border:1px solid rgba(201,168,76,0.12);border-radius:14px;padding:16px;margin-bottom:12px;}
+.card-title{font-size:12px;font-weight:700;color:var(--gold);letter-spacing:1.5px;margin-bottom:12px;text-transform:uppercase;}
+.section-label{font-size:12px;font-weight:700;color:var(--gold);letter-spacing:1.5px;margin:16px 0 8px;text-transform:uppercase;}
+.comment-card{background:linear-gradient(135deg,rgba(201,168,76,0.08),rgba(201,168,76,0.03));border:1px solid rgba(201,168,76,0.25);}
+.comment-bubble{display:flex;gap:10px;}
+.teacher-av{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#4a7fff,#7a9fff);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;}
+.comment-text{font-size:14px;line-height:1.8;color:rgba(255,255,255,0.9);}
+.comment-meta{font-size:11px;color:var(--gray3);margin-top:5px;}
+.goal-banner{background:linear-gradient(135deg,rgba(74,127,255,0.12),rgba(74,127,255,0.04));border:1px solid rgba(74,127,255,0.25);border-radius:12px;padding:13px 16px;margin-bottom:12px;display:flex;gap:12px;align-items:center;}
+.goal-icon{font-size:26px;}
+.goal-name{font-size:16px;font-weight:700;color:#7aa8ff;}
+.goal-dept{font-size:13px;color:rgba(255,255,255,0.6);margin-top:2px;}
+.timer-card{background:linear-gradient(135deg,rgba(201,168,76,0.15),rgba(201,168,76,0.05));border:1px solid rgba(201,168,76,0.4);border-radius:14px;padding:16px;margin-bottom:12px;}
+.timer-display{text-align:center;font-size:42px;font-weight:700;letter-spacing:4px;color:var(--gold2);font-variant-numeric:tabular-nums;margin:8px 0;}
+.timer-subject{text-align:center;font-size:13px;color:var(--gray3);margin-bottom:12px;}
+.timer-btns{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;}
+.timer-btn{padding:10px 18px;border-radius:8px;border:none;font-size:13px;font-weight:600;cursor:pointer;}
+.tbtn-pause{background:rgba(255,255,255,0.1);color:var(--white);}
+.tbtn-stop{background:rgba(224,82,82,0.2);color:#ff8080;border:1px solid rgba(224,82,82,0.3);}
+.tbtn-reset{background:rgba(255,255,255,0.06);color:var(--gray3);border:1px solid rgba(255,255,255,0.1);}
+.todo-item{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid rgba(255,255,255,0.05);}
+.todo-item:last-child{border-bottom:none;}
+.status-btn{width:28px;height:28px;border-radius:50%;border:2px solid rgba(201,168,76,0.4);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
+.status-btn.progressing{background:rgba(201,168,76,0.2);border-color:var(--gold);}
+.status-btn.done{background:var(--gold);border-color:var(--gold);}
+.todo-content{flex:1;min-width:0;cursor:pointer;}
+.todo-title{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.todo-title.done-text{text-decoration:line-through;color:var(--gray3);}
+.todo-meta{display:flex;gap:6px;align-items:center;margin-top:3px;}
+.subject-tag{font-size:10px;padding:2px 8px;border-radius:4px;font-weight:600;}
+.subj-ko{background:rgba(74,127,255,0.2);color:#7aa8ff;}
+.subj-en{background:rgba(61,186,126,0.2);color:#5dd4a0;}
+.subj-ma{background:rgba(232,148,58,0.2);color:#f0a855;}
+.subj-hi{background:rgba(201,168,76,0.2);color:var(--gold2);}
+.subj-sc{background:rgba(147,51,234,0.2);color:#c084fc;}
+.subj-so{background:rgba(224,82,82,0.2);color:#f87171;}
+.add-todo-btn{width:100%;padding:11px;background:rgba(201,168,76,0.08);border:1px dashed rgba(201,168,76,0.25);border-radius:8px;color:var(--gold);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;margin-top:8px;}
+.submit-btn{width:100%;padding:13px;background:rgba(61,186,126,0.12);border:1px solid rgba(61,186,126,0.3);border-radius:10px;color:var(--green);font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:12px;}
+.subj-bar-row{display:flex;align-items:center;gap:8px;margin-bottom:9px;}
+.subj-bar-label{font-size:12px;color:var(--gray3);width:52px;flex-shrink:0;text-align:right;}
+.subj-bar-wrap{flex:1;background:rgba(255,255,255,0.05);border-radius:4px;height:7px;overflow:hidden;}
+.subj-bar-fill{height:100%;border-radius:4px;}
+.subj-bar-time{font-size:12px;color:var(--gray3);width:42px;text-align:right;}
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px;}
+.stat-card{background:var(--navy3);border:1px solid rgba(201,168,76,0.1);border-radius:10px;padding:13px;text-align:center;}
+.stat-val{font-size:22px;font-weight:700;color:var(--gold2);}
+.stat-lbl{font-size:11px;color:var(--gray3);margin-top:3px;}
+.student-row{display:flex;align-items:center;gap:10px;padding:11px 13px;background:var(--navy3);border-radius:10px;margin-bottom:7px;}
+.student-av-t{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#4a7fff,#7a9fff);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;}
+.history-item{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.05);}
+.history-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.history-dot.plus{background:var(--gold);}
+.history-dot.minus{background:var(--red);}
+.appeal-btn{width:100%;padding:13px;background:rgba(61,186,126,0.12);border:1px solid rgba(61,186,126,0.3);border-radius:10px;color:var(--green);font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:12px;}
+.planner-thumb{background:var(--navy4);border-radius:10px;padding:12px;margin-bottom:8px;border:1px solid rgba(255,255,255,0.06);}
+.msg{display:flex;gap:8px;align-items:flex-end;margin-bottom:8px;}
+.msg.mine{flex-direction:row-reverse;}
+.msg-bubble{max-width:72%;padding:11px 14px;border-radius:14px;font-size:14px;line-height:1.7;}
+.msg.theirs .msg-bubble{background:var(--navy3);border:1px solid rgba(255,255,255,0.08);}
+.msg.mine .msg-bubble{background:linear-gradient(135deg,var(--gold),var(--gold2));color:var(--navy);}
+.msg-time{font-size:10px;color:var(--gray3);}
+.chat-input-area{padding:12px 16px;background:var(--navy2);border-top:1px solid rgba(255,255,255,0.06);display:flex;gap:8px;align-items:center;flex-shrink:0;}
+.chat-input{flex:1;padding:11px 15px;background:var(--navy3);border:1px solid rgba(201,168,76,0.15);border-radius:22px;color:var(--white);font-size:14px;outline:none;}
+.chat-send{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--gold2));border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.78);z-index:500;display:none;align-items:flex-end;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal{background:var(--navy2);border:1px solid rgba(201,168,76,0.2);border-radius:20px 20px 0 0;padding:24px 20px 32px;width:100%;max-width:480px;max-height:85vh;overflow-y:auto;}
+.modal-title{font-size:17px;font-weight:700;color:var(--gold);margin-bottom:18px;text-align:center;}
+.modal-input{width:100%;padding:13px 15px;background:var(--navy3);border:1px solid rgba(201,168,76,0.2);border-radius:9px;color:var(--white);font-size:14px;outline:none;margin-bottom:10px;}
+.modal-input:focus{border-color:var(--gold);}
+.modal-select{width:100%;padding:13px 15px;background:var(--navy3);border:1px solid rgba(201,168,76,0.2);border-radius:9px;color:var(--white);font-size:14px;outline:none;margin-bottom:10px;appearance:none;}
+.modal-btn{width:100%;padding:14px;border:none;border-radius:9px;font-size:15px;font-weight:600;cursor:pointer;margin-top:4px;}
+.modal-btn.primary{background:linear-gradient(135deg,var(--gold),var(--gold2));color:var(--navy);}
+.modal-btn.cancel{background:rgba(255,255,255,0.07);color:var(--gray3);}
+.modal-btn.danger{background:rgba(224,82,82,0.15);color:#f87171;border:1px solid rgba(224,82,82,0.3);}
+.modal-label{font-size:12px;color:var(--gold);margin-bottom:5px;letter-spacing:.5px;}
+.notice-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.82);z-index:600;display:none;align-items:center;justify-content:center;padding:24px;}
+.notice-overlay.open{display:flex;}
+.notice-box{background:var(--navy2);border:2px solid rgba(201,168,76,0.45);border-radius:18px;padding:24px 22px 22px;width:100%;max-width:380px;}
+.notice-body{font-size:14px;line-height:1.9;color:rgba(255,255,255,0.85);margin-bottom:16px;}
+.notice-from{font-size:12px;color:var(--gray3);margin-bottom:16px;}
+.notice-close-btn{width:100%;padding:13px;background:linear-gradient(135deg,var(--gold),var(--gold2));border:none;border-radius:9px;color:var(--navy);font-size:14px;font-weight:700;cursor:pointer;}
+.notif-panel{position:fixed;top:0;right:0;bottom:0;width:280px;background:var(--navy2);border-left:1px solid rgba(201,168,76,0.2);z-index:400;transform:translateX(100%);transition:transform .25s ease;overflow-y:auto;padding:20px 16px;}
+.notif-panel.open{transform:translateX(0);}
+.pulse{animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div id="screen-loading" class="screen active">
+  <div class="loading-wrap">
+    <svg viewBox="0 0 90 90" fill="none" width="90" height="90">
+      <rect x="5" y="5" width="80" height="80" rx="22" fill="rgba(201,168,76,0.08)" stroke="rgba(201,168,76,0.3)" stroke-width="1.5"/>
+      <path d="M22 64 L22 28 L36 28 L45 50 L54 28 L68 28 L68 64" stroke="#c9a84c" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <circle cx="45" cy="68" r="3.5" fill="#c9a84c"/>
+    </svg>
+    <div class="app-title">MONO PLANNER</div>
+    <div class="app-sub">너의 꾸준함과 우리의 치열함이<br>기적을 이루길</div>
+    <div class="loading-bar"><div class="loading-bar-fill"></div></div>
+  </div>
+  <div class="loading-brand">멘토즈 스터디카페 울산송정점</div>
+</div>
+
+<!-- LOGIN -->
+<div id="screen-login" class="screen">
+  <div class="login-box">
+    <div class="login-logo">
+      <svg viewBox="0 0 72 72" fill="none" width="72" height="72">
+        <rect x="4" y="4" width="64" height="64" rx="18" fill="rgba(201,168,76,0.08)" stroke="rgba(201,168,76,0.28)" stroke-width="1.5"/>
+        <path d="M16 52 L16 22 L27 22 L36 42 L45 22 L56 22 L56 52" stroke="#c9a84c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <circle cx="36" cy="56" r="3" fill="#c9a84c"/>
+      </svg>
+      <div class="app-title">MONO PLANNER</div>
+      <div class="app-sub">너의 꾸준함과 우리의 치열함이 기적을 이루길</div>
+    </div>
+    <div style="width:100%;display:flex;flex-direction:column;gap:0">
+      <div style="display:flex;width:100%;height:58px;border:1px solid rgba(201,168,76,0.22);border-radius:12px;overflow:hidden;margin-bottom:14px;">
+        <button id="ltab-s" onclick="setLoginType('student')" style="flex:1;height:100%;font-size:16px;cursor:pointer;border:none;background:rgba(201,168,76,0.15);color:var(--gold);font-weight:600;">학생 로그인</button>
+        <button id="ltab-t" onclick="setLoginType('teacher')" style="flex:1;height:100%;font-size:16px;cursor:pointer;border:none;background:transparent;color:var(--gray3);">선생님 로그인</button>
+      </div>
+      <div style="position:relative;width:100%;margin-bottom:14px;">
+        <span style="position:absolute;left:18px;top:50%;transform:translateY(-50%);color:var(--gold);display:flex;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+        <input id="login-id" type="text" placeholder="아이디" style="width:100%;height:58px;padding:0 18px 0 52px;background:var(--navy3);border:1px solid rgba(201,168,76,0.2);border-radius:12px;color:var(--white);font-size:16px;outline:none;box-sizing:border-box;" />
+      </div>
+      <div style="position:relative;width:100%;margin-bottom:14px;">
+        <span style="position:absolute;left:18px;top:50%;transform:translateY(-50%);color:var(--gold);display:flex;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+        <input id="login-pw" type="password" placeholder="비밀번호" style="width:100%;height:58px;padding:0 18px 0 52px;background:var(--navy3);border:1px solid rgba(201,168,76,0.2);border-radius:12px;color:var(--white);font-size:16px;outline:none;box-sizing:border-box;" onkeydown="if(event.key==='Enter')doLogin()" />
+      </div>
+      <div class="login-err" id="login-err"></div>
+      <button onclick="doLogin()" style="width:100%;height:58px;background:linear-gradient(135deg,var(--gold),var(--gold2));border:none;border-radius:12px;color:var(--navy);font-size:16px;font-weight:700;cursor:pointer;letter-spacing:2px;box-sizing:border-box;">로그인</button>
+    </div>
+  </div>
+  <div class="login-brand">멘토즈 스터디카페 울산송정점</div>
+</div>
+
+<!-- STUDENT -->
+<div id="screen-student" class="screen">
+  <div class="topbar">
+    <div class="logo-inline">
+      <svg class="logo-icon" viewBox="0 0 36 36" fill="none"><rect x="2" y="2" width="32" height="32" rx="9" fill="rgba(201,168,76,0.1)" stroke="rgba(201,168,76,0.35)" stroke-width="1.2"/><path d="M8 26 L8 11 L14 11 L18 21 L22 11 L28 11 L28 26" stroke="#c9a84c" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="18" cy="29" r="1.8" fill="#c9a84c"/></svg>
+      <span class="logo-text">MONO PLANNER</span>
+    </div>
+    <div class="topbar-right">
+      <div class="notif-btn" onclick="toggleNotifPanel()">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(201,168,76,0.7)" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <div class="notif-badge" id="notif-badge">0</div>
+      </div>
+      <div class="topbar-avatar" id="student-avatar" onclick="openModal('modal-profile-student')">김민</div>
+    </div>
+  </div>
+  <div id="student-content" class="content-area"></div>
+  <nav class="bottom-nav">
+    <div class="nav-item active" id="snav-0" onclick="studentTab(0)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>홈</span></div>
+    <div class="nav-item" id="snav-1" onclick="studentTab(1)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span>성적관리</span></div>
+    <div class="nav-item" id="snav-2" onclick="studentTab(2)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3"/><path d="M12 11c-4 0-7 2-7 4v1h14v-1c0-2-3-4-7-4z"/><path d="M17 14l2 2 4-4"/></svg><span>리워드</span></div>
+    <div class="nav-item" id="snav-3" onclick="studentTab(3)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>채팅</span></div>
+    <div class="nav-item" onclick="doLogout()"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span>로그아웃</span></div>
+  </nav>
+  <div class="bottom-brand-bar">멘토즈 스터디카페 울산송정점</div>
+</div>
+
+<!-- TEACHER -->
+<div id="screen-teacher" class="screen">
+  <div class="teacher-topbar">
+    <div class="logo-inline" style="margin-right:10px">
+      <svg class="logo-icon" viewBox="0 0 36 36" fill="none"><rect x="2" y="2" width="32" height="32" rx="9" fill="rgba(201,168,76,0.1)" stroke="rgba(201,168,76,0.35)" stroke-width="1.2"/><path d="M8 26 L8 11 L14 11 L18 21 L22 11 L28 11 L28 26" stroke="#c9a84c" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="18" cy="29" r="1.8" fill="#c9a84c"/></svg>
+    </div>
+    <div class="teacher-title-area">
+      <div class="teacher-title" id="teacher-role-label">MONO PLANNER · 관리자</div>
+      <div class="teacher-sub" id="teacher-greeting">안녕하세요 👋</div>
+    </div>
+    <div class="topbar-right">
+      <div class="topbar-avatar" id="teacher-avatar-btn" onclick="openModal('modal-profile-teacher')">T</div>
+    </div>
+  </div>
+  <div id="teacher-content" class="teacher-content"></div>
+  <div class="teacher-bottom-nav">
+    <div class="teacher-nav-scroll" id="teacher-tabs"></div>
+    <div class="teacher-brand-bar">멘토즈 스터디카페 울산송정점</div>
+  </div>
+</div>
+
+<!-- 공지 팝업 -->
+<div class="notice-overlay" id="notice-overlay">
+  <div class="notice-box">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <span style="background:rgba(232,148,58,0.2);border:1px solid rgba(232,148,58,0.4);border-radius:6px;padding:4px 10px;font-size:11px;color:var(--orange);font-weight:700">📢 공지</span>
+      <span style="font-size:15px;font-weight:700;" id="notice-title-text"></span>
+    </div>
+    <div class="notice-body" id="notice-body-text"></div>
+    <div class="notice-from" id="notice-from-text"></div>
+    <button class="notice-close-btn" onclick="closeNotice()">확인</button>
+  </div>
+</div>
+
+<!-- 알림 패널 -->
+<div id="notif-panel" class="notif-panel">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+    <div style="font-size:14px;font-weight:700;color:var(--gold)">알림</div>
+    <button onclick="toggleNotifPanel()" style="background:none;border:none;color:var(--gray3);font-size:20px;cursor:pointer">✕</button>
+  </div>
+  <div id="notif-list"><div style="font-size:13px;color:var(--gray3);text-align:center;margin-top:40px">새 알림이 없습니다</div></div>
+</div>
+<div id="notif-backdrop" onclick="toggleNotifPanel()" style="display:none;position:fixed;inset:0;z-index:399;"></div>
+
+<!-- MODALS -->
+<div class="modal-overlay" id="modal-todo">
+  <div class="modal">
+    <div class="modal-title">할 일 추가</div>
+    <div class="modal-label">학습 내용</div>
+    <input class="modal-input" id="todo-title-input" placeholder="학습 내용 입력" />
+    <div class="modal-label">과목</div>
+    <select class="modal-select" id="todo-subject">
+      <option value="ko">국어</option><option value="en">영어</option><option value="ma">수학</option>
+      <option value="hi">한국사</option><option value="sc">과학탐구</option><option value="so">사회탐구</option>
+    </select>
+    <button class="modal-btn primary" onclick="addTodo()">추가하기</button>
+    <button class="modal-btn cancel" onclick="closeModal('modal-todo')">취소</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-timer-done">
+  <div class="modal">
+    <div style="text-align:center;font-size:44px;margin-bottom:8px">📸</div>
+    <div class="modal-title">학습 인증 사진</div>
+    <p style="font-size:14px;color:var(--gray3);text-align:center;margin-bottom:18px;line-height:1.9">공부한 내용을 사진으로 인증해 주세요.<br>인증된 시간은 🔵 파란색으로 표시됩니다.</p>
+    <button class="modal-btn primary" onclick="certifyTimer()">📷 사진 인증하기</button>
+    <button class="modal-btn cancel" onclick="skipCert()">인증 없이 완료</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-reset-confirm">
+  <div class="modal">
+    <div style="text-align:center;font-size:44px;margin-bottom:8px">⏱️</div>
+    <div class="modal-title">타이머 초기화</div>
+    <p style="font-size:14px;color:var(--gray3);text-align:center;margin-bottom:18px;line-height:1.9">지금까지 측정된 시간이 모두 사라집니다.<br>정말 초기화하시겠습니까?</p>
+    <button class="modal-btn danger" onclick="doResetTimer()">초기화하기</button>
+    <button class="modal-btn cancel" onclick="closeModal('modal-reset-confirm')">취소</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-submit-planner">
+  <div class="modal">
+    <div style="text-align:center;font-size:44px;margin-bottom:8px">📋</div>
+    <div class="modal-title">플래너 제출</div>
+    <p style="font-size:14px;color:var(--gray3);text-align:center;margin-bottom:18px;line-height:1.9">오늘 작성한 플래너를 선생님께 제출합니다.</p>
+    <button class="modal-btn primary" onclick="doSubmitPlanner()">제출하기</button>
+    <button class="modal-btn cancel" onclick="closeModal('modal-submit-planner')">취소</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-profile-student">
+  <div class="modal">
+    <div class="modal-title">내 정보 수정</div>
+    <div class="modal-label">이름</div><input class="modal-input" id="ps-name" placeholder="이름" />
+    <div class="modal-label">학교</div><input class="modal-input" id="ps-school" placeholder="학교명" />
+    <div class="modal-label">학년</div>
+    <select class="modal-select" id="ps-grade">
+      <option value="중학교 1학년">중학교 1학년</option><option value="중학교 2학년">중학교 2학년</option><option value="중학교 3학년">중학교 3학년</option>
+      <option value="고등학교 1학년">고등학교 1학년</option><option value="고등학교 2학년">고등학교 2학년</option><option value="고등학교 3학년">고등학교 3학년</option>
+    </select>
+    <div class="modal-label">목표 대학</div><input class="modal-input" id="ps-univ" placeholder="예: 연세대학교" />
+    <div class="modal-label">목표 학과</div><input class="modal-input" id="ps-dept" placeholder="예: 경영학과" />
+    <div class="modal-label">비밀번호 변경 (선택)</div><input class="modal-input" type="password" id="ps-pw" placeholder="새 비밀번호 (6자 이상)" />
+    <button class="modal-btn primary" onclick="saveProfileStudent()">저장하기</button>
+    <button class="modal-btn cancel" onclick="closeModal('modal-profile-student')">취소</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-profile-teacher">
+  <div class="modal">
+    <div class="modal-title">내 정보 수정</div>
+    <div class="modal-label">이름</div><input class="modal-input" id="pt-name" placeholder="이름" />
+    <div class="modal-label">비밀번호 변경 (선택)</div><input class="modal-input" type="password" id="pt-pw" placeholder="새 비밀번호 (6자 이상)" />
+    <button class="modal-btn primary" onclick="saveProfileTeacher()">저장하기</button>
+    <button class="modal-btn cancel" onclick="closeModal('modal-profile-teacher')">취소</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-add-account">
+  <div class="modal">
+    <div class="modal-title">계정 추가</div>
+    <div class="modal-label">계정 유형</div>
+    <select class="modal-select" id="acc-type"><option value="student">학생</option><option value="teacher">선생님</option></select>
+    <div class="modal-label">이름</div><input class="modal-input" id="acc-name" placeholder="이름" />
+    <div class="modal-label">아이디</div><input class="modal-input" id="acc-id" placeholder="아이디" />
+    <div class="modal-label">비밀번호</div><input class="modal-input" type="password" id="acc-pw" placeholder="비밀번호 (6자 이상)" />
+    <button class="modal-btn primary" onclick="addAccount()">계정 생성</button>
+    <button class="modal-btn cancel" onclick="closeModal('modal-add-account')">취소</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-notice">
+  <div class="modal">
+    <div class="modal-title">공지 보내기</div>
+    <div class="modal-label">수신 대상</div>
+    <select class="modal-select" id="notice-target">
+      <option value="all">전체 학생</option>
+    </select>
+    <div class="modal-label">공지 제목</div><input class="modal-input" id="notice-title-input" placeholder="제목 입력" />
+    <div class="modal-label">공지 내용</div>
+    <textarea class="modal-input" id="notice-body-input" rows="4" placeholder="내용 입력..." style="resize:none"></textarea>
+    <button class="modal-btn primary" onclick="sendNotice()">전송</button>
+    <button class="modal-btn cancel" onclick="closeModal('modal-notice')">취소</button>
+  </div>
+</div>
+
+</body>
+</html>
