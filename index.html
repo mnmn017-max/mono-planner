@@ -1091,61 +1091,76 @@ function listenChatNotifs() {
     if (!quiet) showChatNotif(senderName, preview);
   }
 
-  // Step 1: 앱 꺼져 있는 동안 쌓인 알림 먼저 처리 (조용히)
-  getDocs(query(collection(db,'chatNotifs',currentUser.uid,'items'), orderBy('createdAt','asc'))).then(function(snap){
-    // 처리 전 삭제할 ID 목록 수집
-    var ids = snap.docs.map(function(d){ return d.id; });
+  function _markRead(docId) {
+    updateDoc(doc(db,'chatNotifs',currentUser.uid,'items',docId), {read:true}).catch(function(){});
+  }
+
+  // 미읽은 알림 로드 (read 필드 없거나 false인 것)
+  getDocs(query(
+    collection(db,'chatNotifs',currentUser.uid,'items'),
+    where('read','==',false),
+    orderBy('createdAt','asc')
+  )).then(function(snap){
+    var shownIds = {};
     snap.docs.forEach(function(d){
-      _addToPanel(d.data(), true); // 토스트 없이 패널에만 추가
-    });
-    // 삭제
-    ids.forEach(function(id){
-      deleteDoc(doc(db,'chatNotifs',currentUser.uid,'items',id)).catch(function(){});
+      shownIds[d.id] = true;
+      _addToPanel(d.data(), true); // 조용히 패널에만
+      _markRead(d.id);
     });
 
-    // Step 2: 기존 알림 처리 완료 후 실시간 리스너 시작
-    // 처리된 ID 집합으로 중복 방지
-    var processedIds = {};
-    ids.forEach(function(id){ processedIds[id]=true; });
-
+    // 실시간 감지 - read 필드 없는 새 문서 (방금 생성된 알림)
     unsubChatNotif = onSnapshot(
       collection(db,'chatNotifs',currentUser.uid,'items'),
-      function(snap) {
-        snap.docChanges().forEach(function(change) {
+      function(snapshot) {
+        snapshot.docChanges().forEach(function(change) {
           if (change.type !== 'added') return;
           var docId = change.doc.id;
-          if (processedIds[docId]) return; // 이미 처리한 항목 스킵
-          processedIds[docId] = true;
+          if (shownIds[docId]) return; // 이미 표시한 것 스킵
+          shownIds[docId] = true;
           var n = change.doc.data();
-          // 현재 열려있는 대화 상대면 스킵
-          if (chatTargetUid && chatTargetUid === n.senderUid) {
-            deleteDoc(doc(db,'chatNotifs',currentUser.uid,'items',docId)).catch(function(){});
+          if (n.read) return; // 이미 읽은 것 스킵
+          // 현재 열린 대화 상대면 바로 읽음 처리만
+          if ((chatTargetUid && chatTargetUid === n.senderUid) ||
+              (teacherChatUid && teacherChatUid === n.senderUid)) {
+            _markRead(docId);
             return;
           }
-          if (teacherChatUid && teacherChatUid === n.senderUid) {
-            deleteDoc(doc(db,'chatNotifs',currentUser.uid,'items',docId)).catch(function(){});
-            return;
-          }
-          _addToPanel(n, false); // 토스트 + 패널 추가
-          deleteDoc(doc(db,'chatNotifs',currentUser.uid,'items',docId)).catch(function(){});
+          _addToPanel(n, false); // 토스트 + 패널
+          _markRead(docId);
         });
       }
     );
   }).catch(function(){
-    // getDocs 실패 시 바로 실시간 리스너만 시작
-    unsubChatNotif = onSnapshot(
-      collection(db,'chatNotifs',currentUser.uid,'items'),
-      function(snap) {
-        snap.docChanges().forEach(function(change) {
-          if (change.type !== 'added') return;
-          var n = change.doc.data();
-          if (chatTargetUid && chatTargetUid === n.senderUid) return;
-          if (teacherChatUid && teacherChatUid === n.senderUid) return;
-          _addToPanel(n, false);
-          deleteDoc(doc(db,'chatNotifs',currentUser.uid,'items',change.doc.id)).catch(function(){});
-        });
-      }
-    );
+    // read 필드 인덱스 없을 때 fallback: 전체 로드 후 JS 필터
+    getDocs(collection(db,'chatNotifs',currentUser.uid,'items')).then(function(snap){
+      var shownIds = {};
+      snap.docs.forEach(function(d){
+        var n = d.data();
+        if (n.read) { shownIds[d.id]=true; return; }
+        shownIds[d.id] = true;
+        _addToPanel(n, true);
+        _markRead(d.id);
+      });
+      unsubChatNotif = onSnapshot(
+        collection(db,'chatNotifs',currentUser.uid,'items'),
+        function(snapshot) {
+          snapshot.docChanges().forEach(function(change) {
+            if (change.type !== 'added') return;
+            var docId = change.doc.id;
+            if (shownIds[docId]) return;
+            shownIds[docId] = true;
+            var n = change.doc.data();
+            if (n.read) return;
+            if ((chatTargetUid && chatTargetUid === n.senderUid) ||
+                (teacherChatUid && teacherChatUid === n.senderUid)) {
+              _markRead(docId); return;
+            }
+            _addToPanel(n, false);
+            _markRead(docId);
+          });
+        }
+      );
+    }).catch(function(){});
   });
 }
 
@@ -1219,6 +1234,7 @@ function _sendChatNotif(receiverUid, senderName, preview) {
     senderUid: currentUser.uid,
     senderName: senderName,
     preview: preview,
+    read: false,
     createdAt: serverTimestamp()
   }).catch(function(){});
 }
