@@ -1481,38 +1481,37 @@ async function buildTNotice() {
   return '<button class="appeal-btn" onclick="openModal(\'modal-notice\')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 17H2a3 3 0 0 0 3-3V9a7 7 0 0 1 14 0v5a3 3 0 0 0 3 3zm-8.27 4a2 2 0 0 1-3.46 0"/></svg>새 공지 보내기</button><div class="section-label">공지 발송 내역</div>'+(!notices.length?'<div style="color:var(--gray3);font-size:13px;padding:10px 0">발송된 공지가 없습니다</div>':notices.map(function(n){const date=n.createdAt?n.createdAt.toDate().toLocaleDateString('ko-KR'):'';return '<div class="planner-thumb"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><div style="font-size:13px;font-weight:600">'+n.title+'</div><span style="font-size:11px;color:var(--gray3)">'+date+'</span></div><div style="font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:4px">'+n.content+'</div><div style="font-size:11px;color:var(--gray3)">수신: '+(n.target==='all'?'전체':n.target)+'</div></div>';}).join(''));
 }
 
+function accountRow(u, isTeacher, isMaster) {
+  const av = isTeacher
+    ? '<div class="teacher-av" style="width:36px;height:36px;font-size:12px">'+(u.name||'?').slice(0,2)+'</div>'
+    : '<div class="student-av-t">'+(u.name||'?').slice(0,2)+'</div>';
+  const info = '<div style="flex:1"><div style="font-size:14px;font-weight:600">'+u.name+'</div>'
+    +'<div style="font-size:11px;color:var(--gray3);margin-top:2px">'+(isTeacher?u.role:(u.grade||''))+' · ID: '+(u.username||'')+'</div></div>';
+  const btns = isMaster
+    ? '<div style="display:flex;gap:5px">'
+      +'<button onclick="openEditAccountModal(\''+u.uid+'\',\''+u.name+'\',\''+u.username+'\')" style="padding:6px 10px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.2);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer">수정</button>'
+      +'<button onclick="deleteAccount(\''+u.uid+'\',\''+u.name+'\')" style="padding:6px 10px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:6px;color:#f87171;font-size:11px;cursor:pointer">삭제</button>'
+      +'</div>'
+    : '';
+  return '<div class="student-row">'+av+info+btns+'</div>';
+}
+
 async function buildTAccounts() {
   const isMaster = currentProfile && currentProfile.role === 'master';
   const students = await loadStudentList();
   const teacherSnap = await getDocs(query(collection(db,'users'), where('role','in',['teacher','master'])));
   const teachers = teacherSnap.docs.map(function(d){return Object.assign({uid:d.id},d.data());});
-
-  function accountRow(u, isTeacher) {
-    const av = isTeacher
-      ? '<div class="teacher-av" style="width:36px;height:36px;font-size:12px">'+(u.name||'?').slice(0,2)+'</div>'
-      : '<div class="student-av-t">'+(u.name||'?').slice(0,2)+'</div>';
-    const info = '<div style="flex:1"><div style="font-size:14px;font-weight:600">'+u.name+'</div>'
-      +'<div style="font-size:11px;color:var(--gray3);margin-top:2px">'+(isTeacher?u.role:''+( u.grade||''))+' · ID: '+(u.username||'')+'</div></div>';
-    const btns = isMaster
-      ? '<div style="display:flex;gap:5px">'
-        +'<button onclick="openEditAccountModal(\''+u.uid+'\',\''+u.name+'\',\''+u.username+'\')" style="padding:6px 10px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.2);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer">수정</button>'
-        +'<button onclick="deleteAccount(\''+u.uid+'\',\''+u.name+'\')" style="padding:6px 10px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:6px;color:#f87171;font-size:11px;cursor:pointer">삭제</button>'
-        +'</div>'
-      : '';
-    return '<div class="student-row">'+av+info+btns+'</div>';
-  }
-
   return '<div class="stat-grid">'
     +'<div class="stat-card"><div class="stat-val">'+students.length+'</div><div class="stat-lbl">학생 계정</div></div>'
     +'<div class="stat-card"><div class="stat-val" style="color:var(--gold)">'+teachers.length+'</div><div class="stat-lbl">선생님 계정</div></div>'
     +'</div>'
     +'<button class="appeal-btn" onclick="openModal(\'modal-add-account\')">'
     +'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>새 계정 추가</button>'
-    +(isMaster ? '<div style="background:rgba(232,148,58,0.08);border:1px solid rgba(232,148,58,0.2);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#f0a855">⚠️ 마스터 전용 — 계정 수정 및 삭제 가능</div>' : '')
+    +(isMaster?'<div style="background:rgba(232,148,58,0.08);border:1px solid rgba(232,148,58,0.2);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#f0a855">⚠️ 마스터 전용 — 계정 수정 및 삭제 가능</div>':'')
     +'<div class="section-label">선생님 계정</div>'
-    +teachers.map(function(t){return accountRow(t, true);}).join('')
+    +teachers.map(function(t){return accountRow(t,true,isMaster);}).join('')
     +'<div class="section-label">학생 계정</div>'
-    +students.map(function(s){return accountRow(s, false);}).join('');
+    +students.map(function(s){return accountRow(s,false,isMaster);}).join('');
 }
 window.openEditAccountModal = function(uid, name, username) {
   document.getElementById('edit-acc-uid').value = uid;
