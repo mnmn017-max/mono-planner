@@ -978,14 +978,13 @@ function loadRewardData(){
     el.innerHTML='<pre style="font-size:12px;color:rgba(255,255,255,0.75);white-space:pre-wrap;line-height:1.9;font-family:inherit">'+content+'</pre>';
   }).catch(function(){var el=document.getElementById('rules-area');if(el)el.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패</div>';});
   // 히스토리
-  getDocs(query(collection(db,'points'),where('studentUid','==',currentUser.uid),orderBy('createdAt','desc'))).then(function(snap){
+  getDocs(query(collection(db,'points'),where('studentUid','==',currentUser.uid))).then(function(snap){
     var el=document.getElementById('points-history');if(!el)return;
     if(snap.empty){el.innerHTML='<div style="color:var(--gray3);font-size:13px">내역이 없습니다</div>';return;}
-    el.innerHTML=snap.docs.map(function(d){
-      var p=d.data();var date=p.createdAt?p.createdAt.toDate().toLocaleDateString('ko-KR'):'';
-      return '<div class="history-item"><div class="history-dot '+p.type+'"></div><div style="flex:1;font-size:13px">'+p.reason+'</div><div style="font-size:13px;font-weight:600;'+(p.type==='plus'?'color:var(--gold2)':'color:var(--red)')+'">'+( p.type==='plus'?'+':'-')+p.points+'점</div><div style="font-size:11px;color:var(--gray3);margin-left:6px">'+date+'</div></div>';
-    }).join('');
-  }).catch(function(){var el=document.getElementById('points-history');if(el)el.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패 (인덱스 필요)</div>';});
+    var items=snap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
+    items.sort(function(a,b){var at=a.createdAt?a.createdAt.toMillis():0;var bt=b.createdAt?b.createdAt.toMillis():0;return bt-at;});
+    el.innerHTML=items.map(function(p){var date=p.createdAt?p.createdAt.toDate().toLocaleDateString('ko-KR'):'';return '<div class="history-item"><div class="history-dot '+p.type+'"></div><div style="flex:1;font-size:13px">'+p.reason+'</div><div style="font-size:13px;font-weight:600;'+(p.type==='plus'?'color:var(--gold2)':'color:var(--red)')+'">'+(p.type==='plus'?'+':'-')+p.points+'점</div><div style="font-size:11px;color:var(--gray3);margin-left:6px">'+date+'</div></div>';}).join('');
+  }).catch(function(){var el=document.getElementById('points-history');if(el)el.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패</div>';});
 }
 window.sendAppeal=function(){
   var content=document.getElementById('appeal-content').value.trim();
