@@ -377,6 +377,30 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <button class="modal-btn cancel" onclick="closeModal('modal-appeal')">취소</button>
 </div></div>
 
+<div class="modal-overlay" id="modal-add-lecture"><div class="modal">
+  <div class="modal-title">📚 인강 추가</div>
+  <input type="hidden" id="lec-student-uid"/>
+  <input type="hidden" id="lec-student-name"/>
+  <div class="modal-label">인강 회사</div><input class="modal-input" id="lec-company" placeholder="예: 메가스터디, 대성마이맥"/>
+  <div class="modal-label">과목</div><input class="modal-input" id="lec-subject" placeholder="예: 수학, 영어"/>
+  <div class="modal-label">강사명</div><input class="modal-input" id="lec-instructor" placeholder="예: 현우진, 김민정"/>
+  <div class="modal-label">인강명</div><input class="modal-input" id="lec-name" placeholder="예: 뉴런 수학 시즌2"/>
+  <div class="modal-label">총 강의수</div><input class="modal-input" type="number" id="lec-total" placeholder="예: 60"/>
+  <div class="modal-label">수강 계획 (요일)</div><input class="modal-input" id="lec-schedule" placeholder="예: 월,수,금"/>
+  <div class="modal-label">주당 수강 강수</div><input class="modal-input" type="number" id="lec-count" placeholder="예: 3"/>
+  <button class="modal-btn primary" onclick="saveLecture()">등록하기</button>
+  <button class="modal-btn cancel" onclick="closeModal('modal-add-lecture')">취소</button>
+</div></div>
+
+<div class="modal-overlay" id="modal-update-lecture"><div class="modal">
+  <div class="modal-title">📚 수강 현황 업데이트</div>
+  <input type="hidden" id="update-lec-id"/>
+  <div class="modal-label">현재까지 수강 완료 강수</div>
+  <input class="modal-input" type="number" id="update-lec-completed" placeholder="완료한 강수 입력"/>
+  <button class="modal-btn primary" onclick="updateLecture()">업데이트</button>
+  <button class="modal-btn cancel" onclick="closeModal('modal-update-lecture')">취소</button>
+</div></div>
+
 <script>
 // ── 전역 유틸 (모듈 밖에서 먼저 정의) ──
 function showScreen(id) {
@@ -490,11 +514,16 @@ window.doLogin = async function() {
 };
 
 window.doLogout = async function() {
-  if (unsubTodos) unsubTodos();
-  if (unsubNotices) unsubNotices();
-  if (unsubChat) unsubChat();
-  if (timerInterval) clearInterval(timerInterval);
-  await signOut(auth);
+  // 즉시 로그인 화면으로 이동
+  showScreen('screen-login');
+  // 백그라운드에서 정리
+  if (unsubTodos) { unsubTodos(); unsubTodos = null; }
+  if (unsubNotices) { unsubNotices(); unsubNotices = null; }
+  if (unsubChat) { unsubChat(); unsubChat = null; }
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  currentUser = null;
+  currentProfile = null;
+  try { await signOut(auth); } catch(e) {}
 };
 
 window.setLoginType = function(t) {
@@ -566,12 +595,13 @@ window.studentTab = function(i) {
 
 function buildDashboard() {
   const p = currentProfile || {};
-  return (p.univ||p.dept ? '<div class="goal-banner"><div class="goal-icon">🎯</div><div><div class="goal-name">'+(p.univ||'목표 대학 미입력')+'</div><div class="goal-dept">'+(p.dept||'')+' · '+(p.school||'')+' '+(p.grade||'')+'</div></div></div>' : '') +
-  '<div class="card comment-card"><div class="card-title">멘토 코멘트</div><div id="mentor-comment-area"><div style="color:var(--gray3);font-size:13px">불러오는 중...</div></div></div>' +
-  '<div class="timer-card"><div class="card-title">타이머</div><div class="timer-subject" id="timer-subject-display">공부할 항목을 선택해주세요</div><div class="timer-display" id="timer-display">00:00:00</div><div class="timer-btns"><button class="timer-btn tbtn-reset" id="btn-reset" onclick="openModal(\'modal-reset-confirm\')" style="display:none">초기화</button><button class="timer-btn tbtn-pause" id="btn-pause" onclick="togglePause()" style="display:none">일시정지</button><button class="timer-btn tbtn-stop" id="btn-stop" onclick="stopTimer()" style="display:none">완료</button></div></div>' +
-  '<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><div class="card-title" style="margin-bottom:0">오늘의 플래너</div><button class="submit-btn" style="width:auto;padding:7px 14px;margin:0;font-size:12px" onclick="openModal(\'modal-submit-planner\')">제출하기</button></div><div id="todo-list"><div style="color:var(--gray3);font-size:13px">불러오는 중...</div></div><button class="add-todo-btn" onclick="openModal(\'modal-todo\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>할 일 추가</button></div>' +
-  '<div class="card"><div class="card-title">오늘 학습 리포트</div><div id="study-report"><div style="color:var(--gray3);font-size:13px">불러오는 중...</div></div></div>' +
-  '<div class="card"><div class="card-title">나의 주간 과목 몰입도</div><div id="weekly-report"><div style="color:var(--gray3);font-size:13px">불러오는 중...</div></div></div>';
+  return (p.univ||p.dept ? '<div class="goal-banner"><div class="goal-icon">🎯</div><div><div class="goal-name">'+(p.univ||'목표 대학 미입력')+'</div><div class="goal-dept">'+(p.dept||'')+' · '+(p.school||'')+' '+(p.grade||'')+'</div></div></div>' : '')
+  +'<div class="card comment-card"><div class="card-title">멘토 코멘트</div><div id="mentor-comment-area"><div style="color:var(--gray3);font-size:13px">불러오는 중...</div></div></div>'
+  +'<div id="lecture-dashboard"></div>'
+  +'<div class="timer-card"><div class="card-title">타이머</div><div class="timer-subject" id="timer-subject-display">공부할 항목을 선택해주세요</div><div class="timer-display" id="timer-display">00:00:00</div><div class="timer-btns"><button class="timer-btn tbtn-reset" id="btn-reset" onclick="openModal(\'modal-reset-confirm\')" style="display:none">초기화</button><button class="timer-btn tbtn-pause" id="btn-pause" onclick="togglePause()" style="display:none">일시정지</button><button class="timer-btn tbtn-stop" id="btn-stop" onclick="stopTimer()" style="display:none">완료</button></div></div>'
+  +'<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><div class="card-title" style="margin-bottom:0">오늘의 플래너</div><button class="submit-btn" style="width:auto;padding:7px 14px;margin:0;font-size:12px" onclick="openModal(\'modal-submit-planner\')">제출하기</button></div><div id="todo-list"><div style="color:var(--gray3);font-size:13px">불러오는 중...</div></div><button class="add-todo-btn" onclick="openModal(\'modal-todo\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>할 일 추가</button></div>'
+  +'<div class="card"><div class="card-title">오늘 학습 리포트</div><div id="study-report"><div style="color:var(--gray3);font-size:13px">불러오는 중...</div></div></div>'
+  +'<div class="card"><div class="card-title">나의 주간 과목 몰입도</div><div id="weekly-report"><div style="color:var(--gray3);font-size:13px">불러오는 중...</div></div></div>';
 }
 
 function listenTodos() {
@@ -585,6 +615,42 @@ function listenTodos() {
   });
   loadMentorComment();
   renderWeeklyReport();
+  loadLectureDashboard();
+}
+
+async function loadLectureDashboard() {
+  const el = document.getElementById('lecture-dashboard');
+  if (!el||!currentUser) return;
+  try {
+    const snap = await getDocs(query(collection(db,'lectures'), where('studentUid','==',currentUser.uid)));
+    if (snap.empty) return;
+    const html = '<div class="card" style="background:linear-gradient(135deg,rgba(74,127,255,0.08),rgba(74,127,255,0.03));border-color:rgba(74,127,255,0.2)">'
+      +'<div class="card-title" style="color:#7aa8ff">📚 내 인강 현황</div>'
+      +snap.docs.map(function(d) {
+        const lc = d.data();
+        const total = parseInt(lc.totalLessons)||0;
+        const done = parseInt(lc.completedLessons)||0;
+        const pct = total>0?Math.round(done/total*100):0;
+        let eta = '';
+        if (lc.scheduleCount && done < total) {
+          const remaining = total - done;
+          const weeksNeeded = Math.ceil(remaining / (parseInt(lc.scheduleCount)||1));
+          const etaDate = new Date(); etaDate.setDate(etaDate.getDate()+weeksNeeded*7);
+          eta = etaDate.toLocaleDateString('ko-KR');
+        }
+        return '<div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.06)">'
+          +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
+          +'<div><div style="font-size:13px;font-weight:600">'+lc.lectureName+'</div>'
+          +'<div style="font-size:11px;color:var(--gray3)">'+lc.company+' · '+lc.instructor+'</div></div>'
+          +'<span style="font-size:12px;font-weight:700;color:#7aa8ff">'+done+'/'+total+'강</span></div>'
+          +'<div style="background:rgba(255,255,255,0.05);border-radius:6px;height:6px;overflow:hidden;margin-bottom:5px">'
+          +'<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,#4a7fff,#7aa8ff);border-radius:6px;"></div></div>'
+          +(eta?'<div style="font-size:11px;color:var(--green)">✅ 완료 예상일: '+eta+'</div>':'')
+          +'</div>';
+      }).join('')
+      +'</div>';
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML=''; }
 }
 
 async function loadMentorComment() {
@@ -924,7 +990,12 @@ async function buildTDashboard() {
   const today = new Date().toISOString().split('T')[0];
   const plannerSnap = await getDocs(collection(db,'planners'));
   const submittedToday = plannerSnap.docs.filter(function(d){return d.id.includes('_'+today);}).map(function(d){return d.data().name;});
-  return '<div class="stat-grid"><div class="stat-card"><div class="stat-val">'+students.length+'</div><div class="stat-lbl">전체 학생</div></div><div class="stat-card"><div class="stat-val" style="color:var(--green)">'+submittedToday.length+'</div><div class="stat-lbl">플래너 제출</div></div><div class="stat-card"><div class="stat-val">'+(students.length-submittedToday.length)+'</div><div class="stat-lbl">미제출</div></div><div class="stat-card"><div class="stat-val" style="color:var(--gold);font-size:14px">'+new Date().toLocaleDateString('ko-KR')+'</div><div class="stat-lbl">오늘 날짜</div></div></div><div class="section-label">플래너 제출 현황</div><div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">'+students.map(function(s){return '<span style="background:'+(submittedToday.includes(s.name)?'rgba(61,186,126,0.12)':'rgba(224,82,82,0.08)')+';border:1px solid '+(submittedToday.includes(s.name)?'rgba(61,186,126,0.22)':'rgba(224,82,82,0.2)')+';border-radius:6px;padding:4px 10px;font-size:12px;color:'+(submittedToday.includes(s.name)?'var(--green)':'#f87171')+'">'+(submittedToday.includes(s.name)?'✅':'❌')+' '+s.name+'</span>';}).join('')+'</div><div class="section-label">학생 목록</div>'+students.map(function(s){return '<div class="student-row"><div class="student-av-t">'+(s.name||'?').slice(0,2)+'</div><div style="flex:1"><div style="font-size:14px;font-weight:600">'+s.name+'</div><div style="font-size:11px;color:var(--gray3);margin-top:2px">'+(s.grade||'')+' · '+(s.school||'')+'</div></div></div>';}).join('');
+  await checkConsultationAlerts();
+  const consultHtml = buildConsultSchedule();
+  return '<div class="stat-grid"><div class="stat-card"><div class="stat-val">'+students.length+'</div><div class="stat-lbl">전체 학생</div></div><div class="stat-card"><div class="stat-val" style="color:var(--green)">'+submittedToday.length+'</div><div class="stat-lbl">플래너 제출</div></div><div class="stat-card"><div class="stat-val">'+(students.length-submittedToday.length)+'</div><div class="stat-lbl">미제출</div></div><div class="stat-card"><div class="stat-val" style="color:var(--gold);font-size:14px">'+new Date().toLocaleDateString('ko-KR')+'</div><div class="stat-lbl">오늘 날짜</div></div></div>'
+  +'<div class="section-label">🔔 상담 일정 알림</div>'+consultHtml
+  +'<div class="section-label">플래너 제출 현황</div><div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">'+students.map(function(s){return '<span style="background:'+(submittedToday.includes(s.name)?'rgba(61,186,126,0.12)':'rgba(224,82,82,0.08)')+';border:1px solid '+(submittedToday.includes(s.name)?'rgba(61,186,126,0.22)':'rgba(224,82,82,0.2)')+';border-radius:6px;padding:4px 10px;font-size:12px;color:'+(submittedToday.includes(s.name)?'var(--green)':'#f87171')+'">'+(submittedToday.includes(s.name)?'✅':'❌')+' '+s.name+'</span>';}).join('')+'</div>'
+  +'<div class="section-label">학생 목록</div>'+students.map(function(s){return '<div class="student-row"><div class="student-av-t">'+(s.name||'?').slice(0,2)+'</div><div style="flex:1"><div style="font-size:14px;font-weight:600">'+s.name+'</div><div style="font-size:11px;color:var(--gray3);margin-top:2px">'+(s.grade||'')+' · '+(s.school||'')+'</div></div></div>';}).join('');
 }
 
 async function buildTPlanner() {
@@ -932,8 +1003,113 @@ async function buildTPlanner() {
   const today = new Date().toISOString().split('T')[0];
   const plannerSnap = await getDocs(collection(db,'planners'));
   const todayPlanners = plannerSnap.docs.filter(function(d){return d.id.includes('_'+today);}).map(function(d){return d.data();});
-  return '<div class="section-label">오늘 제출된 플래너</div>'+(!todayPlanners.length?'<div style="color:var(--gray3);font-size:13px;padding:10px 0">아직 제출된 플래너가 없습니다</div>':todayPlanners.map(function(p){return '<div class="planner-thumb"><div style="font-size:14px;font-weight:600;margin-bottom:4px">'+p.name+'</div><div style="font-size:11px;color:var(--green)">✅ 제출 완료</div></div>';}).join(''))+'<div class="section-label" style="margin-top:20px">코멘트 작성</div><select class="modal-select" id="comment-student-select"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select><textarea class="modal-input" id="comment-input" rows="4" placeholder="학생에게 전달할 코멘트..." style="resize:none;margin-bottom:10px"></textarea><button class="modal-btn primary" onclick="saveComment()">코멘트 저장</button>';
+  return '<div class="section-label">오늘 제출된 플래너</div>'+(!todayPlanners.length?'<div style="color:var(--gray3);font-size:13px;padding:10px 0">아직 제출된 플래너가 없습니다</div>':todayPlanners.map(function(p){return '<div class="planner-thumb"><div style="font-size:14px;font-weight:600;margin-bottom:4px">'+p.name+'</div><div style="font-size:11px;color:var(--green)">✅ 제출 완료</div></div>';}).join(''))
+  +'<div class="section-label" style="margin-top:20px">코멘트 작성</div><select class="modal-select" id="comment-student-select"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select><textarea class="modal-input" id="comment-input" rows="4" placeholder="학생에게 전달할 코멘트..." style="resize:none;margin-bottom:10px"></textarea><button class="modal-btn primary" onclick="saveComment()">코멘트 저장</button>'
+  +'<div class="section-label" style="margin-top:20px">📚 인강 관리</div>'
+  +'<select class="modal-select" id="lecture-student-select" onchange="loadStudentLectures(this.value)"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'|'+s.name+'">'+s.name+'</option>';}).join('')+'</select>'
+  +'<div id="lecture-list"><div style="color:var(--gray3);font-size:13px">학생을 선택하세요</div></div>'
+  +'<button class="appeal-btn" style="margin-top:12px" onclick="openAddLectureModal()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>인강 추가</button>';
 }
+
+window.loadStudentLectures = async function(val) {
+  const el = document.getElementById('lecture-list');
+  if (!val||!el) return;
+  const uid = val.split('|')[0];
+  el.innerHTML = '<div style="color:var(--gray3);font-size:13px">불러오는 중...</div>';
+  try {
+    const snap = await getDocs(query(collection(db,'lectures'), where('studentUid','==',uid), orderBy('createdAt','desc')));
+    if (snap.empty) { el.innerHTML='<div style="color:var(--gray3);font-size:13px">등록된 인강이 없습니다</div>'; return; }
+    el.innerHTML = snap.docs.map(function(d) {
+      const lc = d.data();
+      const totalLessons = parseInt(lc.totalLessons)||0;
+      const completedLessons = parseInt(lc.completedLessons)||0;
+      const pct = totalLessons>0 ? Math.round(completedLessons/totalLessons*100) : 0;
+      // 완료 예상일 계산
+      let eta = '';
+      if (lc.schedule && lc.scheduleCount && completedLessons < totalLessons) {
+        const remaining = totalLessons - completedLessons;
+        const daysPerWeek = (lc.schedule||'').split(',').length;
+        const lessonsPerWeek = parseInt(lc.scheduleCount)||0;
+        if (lessonsPerWeek > 0) {
+          const weeksNeeded = Math.ceil(remaining / lessonsPerWeek);
+          const etaDate = new Date(); etaDate.setDate(etaDate.getDate() + weeksNeeded*7);
+          eta = etaDate.toLocaleDateString('ko-KR');
+        }
+      }
+      const lastUpdate = lc.lastUpdateDate || '기록 없음';
+      return '<div class="score-card" style="margin-bottom:10px">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+        +'<div><div style="font-size:14px;font-weight:600">'+lc.lectureName+'</div>'
+        +'<div style="font-size:11px;color:var(--gray3);margin-top:2px">'+lc.company+' · '+lc.subject+' · '+lc.instructor+'</div></div>'
+        +'<button onclick="openUpdateLectureModal(\''+d.id+'\','+completedLessons+')" style="padding:5px 10px;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer">수강 업데이트</button>'
+        +'</div>'
+        +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+        +'<div style="flex:1;background:rgba(255,255,255,0.05);border-radius:6px;height:8px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:6px;"></div></div>'
+        +'<span style="font-size:12px;color:var(--gold2);font-weight:600;white-space:nowrap">'+completedLessons+'/'+totalLessons+'강 ('+pct+'%)</span>'
+        +'</div>'
+        +'<div style="display:flex;gap:16px;font-size:11px;color:var(--gray3)">'
+        +'<span>📅 수강계획: '+(lc.schedule||'-')+' '+( lc.scheduleCount||'-')+'강/주</span>'
+        +'<span>🕐 최근업데이트: '+lastUpdate+'</span>'
+        +(eta?'<span style="color:var(--green)">✅ 완료예상: '+eta+'</span>':'')
+        +'</div></div>';
+    }).join('');
+  } catch(e) { el.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패</div>'; }
+};
+
+window.openAddLectureModal = function() {
+  const sel = document.getElementById('lecture-student-select');
+  if (!sel||!sel.value) { alert('학생을 먼저 선택해주세요.'); return; }
+  const parts = sel.value.split('|');
+  document.getElementById('lec-student-uid').value = parts[0];
+  document.getElementById('lec-student-name').value = parts[1]||'';
+  document.getElementById('lec-company').value='';
+  document.getElementById('lec-subject').value='';
+  document.getElementById('lec-instructor').value='';
+  document.getElementById('lec-name').value='';
+  document.getElementById('lec-total').value='';
+  document.getElementById('lec-schedule').value='';
+  document.getElementById('lec-count').value='';
+  openModal('modal-add-lecture');
+};
+
+window.saveLecture = async function() {
+  const uid = document.getElementById('lec-student-uid').value;
+  const company = document.getElementById('lec-company').value.trim();
+  const subject = document.getElementById('lec-subject').value.trim();
+  const instructor = document.getElementById('lec-instructor').value.trim();
+  const lectureName = document.getElementById('lec-name').value.trim();
+  const totalLessons = document.getElementById('lec-total').value;
+  const schedule = document.getElementById('lec-schedule').value.trim();
+  const scheduleCount = document.getElementById('lec-count').value;
+  if (!uid||!company||!lectureName||!totalLessons) { alert('필수 항목을 입력해주세요.'); return; }
+  await addDoc(collection(db,'lectures'), {
+    studentUid:uid, company, subject, instructor, lectureName,
+    totalLessons:parseInt(totalLessons), completedLessons:0,
+    schedule, scheduleCount:parseInt(scheduleCount)||0,
+    lastUpdateDate:'', createdAt:serverTimestamp()
+  });
+  closeModal('modal-add-lecture');
+  alert('인강이 등록되었습니다!');
+  loadStudentLectures(document.getElementById('lecture-student-select').value);
+};
+
+window.openUpdateLectureModal = function(lectureId, currentCompleted) {
+  document.getElementById('update-lec-id').value = lectureId;
+  document.getElementById('update-lec-completed').value = currentCompleted;
+  openModal('modal-update-lecture');
+};
+
+window.updateLecture = async function() {
+  const lectureId = document.getElementById('update-lec-id').value;
+  const completed = parseInt(document.getElementById('update-lec-completed').value)||0;
+  const today = new Date().toLocaleDateString('ko-KR');
+  await updateDoc(doc(db,'lectures',lectureId), {
+    completedLessons:completed, lastUpdateDate:today, updatedAt:serverTimestamp()
+  });
+  closeModal('modal-update-lecture');
+  alert('수강 현황이 업데이트되었습니다!');
+  loadStudentLectures(document.getElementById('lecture-student-select').value);
+};
 window.saveComment = async function() {
   const studentUid = document.getElementById('comment-student-select').value;
   const content = document.getElementById('comment-input').value.trim();
@@ -971,11 +1147,34 @@ window.openTeacherGradeModal = function() {
 async function buildTRewards() {
   const students = await loadStudentList();
   const rulesSnap = await getDocs(query(collection(db,'rules'), limit(1)));
-  const rules = rulesSnap.docs[0] ? rulesSnap.docs[0].data().content : '등록된 규정이 없습니다';
+  const rules = rulesSnap.docs[0] ? rulesSnap.docs[0].data().content : defaultRules;
   const pointsSnap = await getDocs(query(collection(db,'points'), orderBy('createdAt','desc')));
   const points = pointsSnap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
-  return '<div class="section-label">상벌점 부여</div><select class="modal-select" id="reward-student-select"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select><select class="modal-select" id="reward-type-select"><option value="plus">상점</option><option value="minus">벌점</option></select><input class="modal-input" id="reward-reason-input" placeholder="사유 입력"/><input class="modal-input" id="reward-points-input" type="number" placeholder="점수 입력"/><button class="modal-btn primary" style="margin-bottom:16px" onclick="givePoints()">부여하기</button><div class="section-label">상벌점 규정 관리</div><textarea class="modal-input" id="rules-input" rows="5" style="resize:none">'+rules+'</textarea><button class="modal-btn primary" style="margin-bottom:16px" onclick="saveRules()">규정 저장</button><div class="section-label">이달의 장학생 설정</div><select class="modal-select" id="scholar-student"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'|'+s.name+'">'+s.name+'</option>';}).join('')+'</select><input class="modal-input" id="scholar-prize" placeholder="상품 (예: 스타벅스 5만원권)"/><input class="modal-input" id="scholar-reason" placeholder="선정 사유"/><button class="modal-btn primary" style="margin-bottom:16px" onclick="saveScholar()">장학생 등록</button><div class="section-label">최근 상벌점 내역</div>'+points.slice(0,10).map(function(p){const s=students.find(function(st){return st.uid===p.studentUid;});const date=p.createdAt?p.createdAt.toDate().toLocaleDateString('ko-KR'):'';return '<div class="history-item"><div class="history-dot '+p.type+'"></div><div style="flex:1;font-size:13px">'+(s?s.name:'?')+' · '+p.reason+'</div><div style="font-size:13px;font-weight:600;'+(p.type==='plus'?'color:var(--gold2)':'color:var(--red)')+'">'+( p.type==='plus'?'+':'')+p.points+'점</div><div style="font-size:11px;color:var(--gray3)">'+date+'</div></div>';}).join('');
+  return '<div class="section-label">상벌점 부여</div><select class="modal-select" id="reward-student-select"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select><select class="modal-select" id="reward-type-select"><option value="plus">상점</option><option value="minus">벌점</option></select><input class="modal-input" id="reward-reason-input" placeholder="사유 입력"/><input class="modal-input" id="reward-points-input" type="number" placeholder="점수 입력"/><button class="modal-btn primary" style="margin-bottom:16px" onclick="givePoints()">부여하기</button><div class="section-label">상벌점 규정 관리</div><textarea class="modal-input" id="rules-input" rows="10" style="resize:none">'+rules+'</textarea><button class="modal-btn primary" style="margin-bottom:16px" onclick="saveRules()">규정 저장</button><div class="section-label">이달의 장학생 설정</div><select class="modal-select" id="scholar-student"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'|'+s.name+'">'+s.name+'</option>';}).join('')+'</select><input class="modal-input" id="scholar-prize" placeholder="상품 (예: 스타벅스 5만원권)"/><input class="modal-input" id="scholar-reason" placeholder="선정 사유"/><button class="modal-btn primary" style="margin-bottom:16px" onclick="saveScholar()">장학생 등록</button><div class="section-label">최근 상벌점 내역</div>'+points.slice(0,15).map(function(p){const s=students.find(function(st){return st.uid===p.studentUid;});const date=p.createdAt?p.createdAt.toDate().toLocaleDateString('ko-KR'):'';return '<div class="history-item"><div class="history-dot '+p.type+'"></div><div style="flex:1;font-size:13px">'+(s?s.name:'?')+' · '+p.reason+'</div><div style="font-size:13px;font-weight:600;'+(p.type==='plus'?'color:var(--gold2)':'color:var(--red)')+'">'+( p.type==='plus'?'+':'')+p.points+'점</div><div style="font-size:11px;color:var(--gray3)">'+date+'</div></div>';}).join('');
 }
+
+const defaultRules = `【 상점 】
+• 주 단위 생활관리 벌점 없음 – 상점 5점 (자동)
+• 주 단위 결석 없음 – 상점 5점 (자동)
+• 모의고사·내신시험 성적향상 과목당 – 상점 10점
+• 모의고사·내신시험 1등급 과목당 – 상점 10점
+• 월간 학습 50시간 이상 달성 – 상점 10점
+• 모의고사 전 과목 응시 – 상점 5점
+• 플래너 30일 연속 제출 – 상점 20점
+• 타이머 하루 8시간 이상 – 상점 3점
+
+【 벌점 】
+• 무단 결석 – 벌점 20점
+• 무단 지각 – 벌점 10점
+• 무단 외출 – 벌점 5점
+• 교시중 입퇴실 – 벌점 3점
+• 핸드폰 미제출 – 벌점 15점
+• 3회 이상 수면 경고 – 벌점 2점
+• 출입카드 미지참 – 벌점 1점
+• 소음 발생 – 벌점 3점
+• 플래너 미제출 – 벌점 1점 (자동)
+• 학습 시간 중 인터넷 및 SNS 적발 – 벌점 10점
+• 게릴라 알림 하루 3회 이상 미응답 – 벌점 3점`;
 window.givePoints = async function() {
   const uid = document.getElementById('reward-student-select').value;
   const type = document.getElementById('reward-type-select').value;
@@ -993,6 +1192,81 @@ window.saveRules = async function() {
   else await updateDoc(doc(db,'rules',snap.docs[0].id), {content, updatedAt:serverTimestamp()});
   alert('규정이 저장되었습니다!');
 };
+
+// ── 주간 상점 자동 지급 ──
+async function autoWeeklyPoints() {
+  if (!currentUser || currentProfile?.role !== 'student') return;
+  const now = new Date();
+  const dayOfWeek = now.getDay(); // 0=일, 1=월
+  if (dayOfWeek !== 1) return; // 월요일에만 실행
+  const lastKey = 'weeklyPoints_' + currentUser.uid + '_' + getWeekKey();
+  if (localStorage.getItem(lastKey)) return; // 이미 처리됨
+
+  // 지난 주 벌점 체크
+  const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+  const pointsSnap = await getDocs(query(
+    collection(db,'points'),
+    where('studentUid','==',currentUser.uid),
+    where('type','==','minus'),
+    where('createdAt','>',weekAgo)
+  ));
+
+  // 지난 주 플래너 제출 체크 (결석 여부)
+  let absenceCount = 0;
+  for (let i = 1; i <= 7; i++) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split('T')[0];
+    const plannerDoc = await getDoc(doc(db,'planners',currentUser.uid+'_'+dateStr));
+    if (!plannerDoc.exists()) absenceCount++;
+  }
+
+  const reasons = [];
+  // 벌점 없으면 +5점
+  if (pointsSnap.empty) {
+    await addDoc(collection(db,'points'), {
+      studentUid:currentUser.uid, type:'plus', reason:'주 단위 생활관리 벌점 없음 (자동)',
+      points:5, givenBy:'system', givenByName:'자동지급', createdAt:serverTimestamp()
+    });
+    reasons.push('주 단위 벌점 없음 +5점');
+  }
+  // 결석 없으면 +5점
+  if (absenceCount === 0) {
+    await addDoc(collection(db,'points'), {
+      studentUid:currentUser.uid, type:'plus', reason:'주 단위 결석 없음 (자동)',
+      points:5, givenBy:'system', givenByName:'자동지급', createdAt:serverTimestamp()
+    });
+    reasons.push('주 단위 결석 없음 +5점');
+  }
+  if (reasons.length > 0) {
+    localStorage.setItem(lastKey, '1');
+    alert('🎉 주간 상점 자동 지급!\n' + reasons.join('\n'));
+  }
+}
+
+// ── 플래너 미제출 벌점 자동 체크 ──
+async function autoPlannerPenalty() {
+  if (!currentUser || currentProfile?.role !== 'student') return;
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+  const dateStr = yesterday.toISOString().split('T')[0];
+  const penaltyKey = 'plannerPenalty_' + currentUser.uid + '_' + dateStr;
+  if (localStorage.getItem(penaltyKey)) return;
+  const plannerDoc = await getDoc(doc(db,'planners',currentUser.uid+'_'+dateStr));
+  if (!plannerDoc.exists()) {
+    // 어제 플래너 미제출이면 -1점
+    await addDoc(collection(db,'points'), {
+      studentUid:currentUser.uid, type:'minus', reason:'플래너 미제출 ('+dateStr+') (자동)',
+      points:1, givenBy:'system', givenByName:'자동지급', createdAt:serverTimestamp()
+    });
+    localStorage.setItem(penaltyKey, '1');
+  }
+}
+
+function getWeekKey() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), 0, 1);
+  const week = Math.ceil(((now - start) / 86400000 + start.getDay() + 1) / 7);
+  return now.getFullYear() + '_' + week;
+}
 window.saveScholar = async function() {
   const val = document.getElementById('scholar-student').value;
   const prize = document.getElementById('scholar-prize').value.trim();
