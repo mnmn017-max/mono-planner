@@ -323,8 +323,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center"><span class="subject-tag subj-hi" style="width:52px;text-align:center">한국사</span><input class="modal-input" id="grade-hi-score" placeholder="점수" style="flex:1;margin-bottom:0" type="number"/><input class="modal-input" id="grade-hi-grade" placeholder="등급" style="width:60px;margin-bottom:0" type="number" min="1" max="9"/></div>
   <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center"><span class="subject-tag subj-sc" style="width:52px;text-align:center">과탐</span><input class="modal-input" id="grade-sc-score" placeholder="점수" style="flex:1;margin-bottom:0" type="number"/><input class="modal-input" id="grade-sc-grade" placeholder="등급" style="width:60px;margin-bottom:0" type="number" min="1" max="9"/></div>
   <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center"><span class="subject-tag subj-so" style="width:52px;text-align:center">사탐</span><input class="modal-input" id="grade-so-score" placeholder="점수" style="flex:1;margin-bottom:0" type="number"/><input class="modal-input" id="grade-so-grade" placeholder="등급" style="width:60px;margin-bottom:0" type="number" min="1" max="9"/></div>
-  <div class="modal-label">오답 문항 (쉼표로 구분)</div><input class="modal-input" id="grade-wrong" placeholder="예: 14, 22, 31"/>
-  <div class="modal-label">나의 다짐</div><textarea class="modal-input" id="grade-reflection" rows="3" placeholder="반성과 개선 계획..." style="resize:none"></textarea>
+  <div class="modal-label">오답 문항 (과목별)</div>
+  <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center"><span class="subject-tag subj-ko" style="width:52px;text-align:center;flex-shrink:0">국어</span><input class="modal-input" id="grade-wrong-ko" placeholder="예: 14, 22" style="margin-bottom:0;flex:1"/></div>
+  <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center"><span class="subject-tag subj-en" style="width:52px;text-align:center;flex-shrink:0">영어</span><input class="modal-input" id="grade-wrong-en" placeholder="예: 29, 38" style="margin-bottom:0;flex:1"/></div>
+  <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center"><span class="subject-tag subj-ma" style="width:52px;text-align:center;flex-shrink:0">수학</span><input class="modal-input" id="grade-wrong-ma" placeholder="예: 21, 29, 30" style="margin-bottom:0;flex:1"/></div>
+  <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center"><span class="subject-tag subj-hi" style="width:52px;text-align:center;flex-shrink:0">한국사</span><input class="modal-input" id="grade-wrong-hi" placeholder="예: 7, 12" style="margin-bottom:0;flex:1"/></div>
+  <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center"><span class="subject-tag subj-sc" style="width:52px;text-align:center;flex-shrink:0">과탐</span><input class="modal-input" id="grade-wrong-sc" placeholder="예: 8, 15" style="margin-bottom:0;flex:1"/></div>
+  <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><span class="subject-tag subj-so" style="width:52px;text-align:center;flex-shrink:0">사탐</span><input class="modal-input" id="grade-wrong-so" placeholder="예: 9, 18" style="margin-bottom:0;flex:1"/></div>
+  <div class="modal-label">실수한 부분</div><textarea class="modal-input" id="grade-ref-mistake" rows="2" placeholder="이번 시험에서 실수한 부분..." style="resize:none"></textarea>
+  <div class="modal-label">부족했던 부분</div><textarea class="modal-input" id="grade-ref-weak" rows="2" placeholder="이번 시험에서 부족했던 부분..." style="resize:none"></textarea>
+  <div class="modal-label">다음 시험까지 개선방안</div><textarea class="modal-input" id="grade-ref-plan" rows="2" placeholder="다음 시험까지 개선방안..." style="resize:none"></textarea>
   <button class="modal-btn primary" onclick="saveGrade()">저장하기</button>
   <button class="modal-btn cancel" onclick="closeModal('modal-add-grade')">취소</button>
 </div></div>
@@ -420,6 +428,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <button class="modal-btn cancel" onclick="closeModal('modal-update-lecture')">취소</button>
 </div></div>
 
+<div class="modal-overlay" id="modal-edit-point"><div class="modal">
+  <div class="modal-title">상벌점 수정</div>
+  <input type="hidden" id="edit-point-id"/>
+  <div class="modal-label">구분</div>
+  <select class="modal-select" id="edit-point-type"><option value="plus">상점</option><option value="minus">벌점</option></select>
+  <div class="modal-label">사유</div><input class="modal-input" id="edit-point-reason" placeholder="사유 입력"/>
+  <div class="modal-label">점수</div><input class="modal-input" type="number" id="edit-point-points" placeholder="점수 입력"/>
+  <button class="modal-btn primary" onclick="saveEditPoint()">저장하기</button>
+  <button class="modal-btn cancel" onclick="closeModal('modal-edit-point')">취소</button>
+</div></div>
+
 <!-- 전역 유틸 스크립트 (모듈 밖) -->
 <script>
 function showScreen(id) {
@@ -472,25 +491,32 @@ var subjectColors = {ko:'#4a7fff',en:'#3dba7e',ma:'#e8943a',hi:'#c9a84c',sc:'#a8
 var defaultRules = '【 상점 】\n• 주 단위 생활관리 벌점 없음 – 상점 5점 (자동)\n• 주 단위 결석 없음 – 상점 5점 (자동)\n• 모의고사·내신시험 성적향상 과목당 – 상점 10점\n• 모의고사·내신시험 1등급 과목당 – 상점 10점\n• 월간 학습 50시간 이상 달성 – 상점 10점\n• 플래너 30일 연속 제출 – 상점 20점\n\n【 벌점 】\n• 무단 결석 – 벌점 20점\n• 무단 지각 – 벌점 10점\n• 무단 외출 – 벌점 5점\n• 교시중 입퇴실 – 벌점 3점\n• 핸드폰 미제출 – 벌점 15점\n• 3회 이상 수면 경고 – 벌점 2점\n• 출입카드 미지참 – 벌점 1점\n• 소음 발생 – 벌점 3점\n• 플래너 미제출 – 벌점 1점 (자동)\n• 학습 시간 중 인터넷 및 SNS 적발 – 벌점 10점\n• 게릴라 알림 하루 3회 이상 미응답 – 벌점 3점';
 
 // ── Auth ──
-onAuthStateChanged(auth, function(user) {
+var _authResolved = false;
+function _goToScreen(user) {
+  if (_authResolved) return;
+  _authResolved = true;
   if (user) {
     currentUser = user;
     getDoc(doc(db, 'users', user.uid)).then(function(pd) {
       if (pd.exists()) {
         currentProfile = pd.data();
-        setTimeout(function() {
-          if (currentProfile.role === 'student') {
-            showScreen('screen-student'); syncStudentUI(); studentTab(0); listenNotices();
-            setTimeout(function() { autoWeeklyPoints(); autoPlannerPenalty(); }, 3000);
-          } else if (currentProfile.role === 'teacher' || currentProfile.role === 'master') {
-            showScreen('screen-teacher'); syncTeacherUI();
-            buildTeacherTabs(currentProfile.role === 'master'); renderTeacher(0);
-          } else { signOut(auth); showScreen('screen-login'); }
-        }, 2500);
-      } else { signOut(auth); setTimeout(function() { showScreen('screen-login'); }, 2500); }
-    }).catch(function() { setTimeout(function() { showScreen('screen-login'); }, 2500); });
-  } else { setTimeout(function() { showScreen('screen-login'); }, 2500); }
-});
+        if (currentProfile.role === 'student') {
+          showScreen('screen-student'); syncStudentUI(); studentTab(0); listenNotices();
+          setTimeout(function() { autoWeeklyPoints(); autoPlannerPenalty(); resumeActiveTimer(); }, 3000);
+        } else if (currentProfile.role === 'teacher' || currentProfile.role === 'master') {
+          showScreen('screen-teacher'); syncTeacherUI();
+          buildTeacherTabs(currentProfile.role === 'master'); renderTeacher(0);
+        } else { signOut(auth); showScreen('screen-login'); }
+      } else { signOut(auth); showScreen('screen-login'); }
+    }).catch(function() { showScreen('screen-login'); });
+  } else {
+    showScreen('screen-login');
+  }
+}
+// 2.5초 후 무조건 로그인 화면으로 (Firebase 무응답 대비)
+setTimeout(function() { _goToScreen(null); }, 2500);
+// Firebase 응답 오면 즉시 처리
+onAuthStateChanged(auth, function(user) { _goToScreen(user); });
 
 window.doLogin = function() {
   var id = document.getElementById('login-id').value.trim();
@@ -582,6 +608,7 @@ window.studentTab = function(i) {
   html += '<div style="text-align:center;padding:10px 0 14px;font-size:12px;font-weight:700;color:rgba(201,168,76,0.85);letter-spacing:2.5px;border-top:1px solid rgba(201,168,76,0.12);margin-top:8px;">멘토즈 스터디카페 울산송정점</div>';
   c.innerHTML = html;
   if (i===0) listenTodos();
+  if (i===2) loadRewardData();
   if (i===3) listenChat();
 };
 
@@ -726,47 +753,146 @@ window.doSubmitPlanner = function() {
   setDoc(doc(db,'planners',currentUser.uid+'_'+today),{uid:currentUser.uid,name:currentProfile.name,date:today,submittedAt:serverTimestamp()}).then(function(){closeModal('modal-submit-planner');alert('플래너가 제출되었습니다!');});
 };
 
-// ── 타이머 ──
+// ── 타이머 (백그라운드 대응 - 시작시각 기반) ──
+// timerSeconds = 일시정지 전까지 누적된 초
+// timerStartAt = 현재 구간 시작 Date.now()
+// timerPaused  = 일시정지 여부
+var timerStartAt = null;
+
+function _getElapsed() {
+  // 일시정지 중이면 누적값만, 실행 중이면 누적 + 현재 구간
+  if (timerPaused || timerStartAt === null) return timerSeconds;
+  return timerSeconds + Math.floor((Date.now() - timerStartAt) / 1000);
+}
+function _tickDisplay() {
+  var el = document.getElementById('timer-display');
+  if (!el || !timerTargetId) return;
+  var total = _getElapsed();
+  if (total >= 6000) { stopTimer(); return; }
+  var h=Math.floor(total/3600), m=Math.floor((total%3600)/60), s=total%60;
+  el.textContent = String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+}
+
 window.startTimerFor = function(id, subject, title) {
-  if (timerTargetId===id) { togglePause(); return; }
-  if (timerInterval) clearInterval(timerInterval);
-  timerTargetId=id; timerSeconds=0; timerPaused=false;
+  if (timerTargetId === id) { togglePause(); return; }
+  // 기존 타이머 정리
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  timerTargetId = id; timerSeconds = 0; timerPaused = false;
+  timerStartAt = Date.now();
+  // Firebase에 시작 시각 저장 (앱 종료 후 복구용)
+  updateDoc(doc(db,'todos',id), {timerStartAt: timerStartAt, timerAccum: 0, timerRunning: true}).catch(function(){});
   ['btn-reset','btn-pause','btn-stop'].forEach(function(b){var el=document.getElementById(b);if(el)el.style.display='inline-block';});
-  var subj=document.getElementById('timer-subject-display');
-  if(subj) subj.textContent=(subjectNames[subject]||subject)+' · '+title;
-  document.getElementById('btn-pause').textContent='일시정지';
-  timerInterval=setInterval(function(){
-    if(!timerPaused){timerSeconds++;if(timerSeconds>=6000)stopTimer();}
-    var h=Math.floor(timerSeconds/3600),m=Math.floor((timerSeconds%3600)/60),s=timerSeconds%60;
-    var el=document.getElementById('timer-display');
-    if(el) el.textContent=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
-  },1000);
+  var subj = document.getElementById('timer-subject-display');
+  if (subj) subj.textContent = (subjectNames[subject]||subject)+' · '+title;
+  var bp = document.getElementById('btn-pause'); if(bp) bp.textContent='일시정지';
+  timerInterval = setInterval(_tickDisplay, 500);
 };
-window.togglePause=function(){timerPaused=!timerPaused;var bp=document.getElementById('btn-pause');if(bp)bp.textContent=timerPaused?'재개':'일시정지';};
-window.stopTimer=function(){if(timerInterval)clearInterval(timerInterval);timerInterval=null;openModal('modal-timer-done');};
-window.certifyTimer=function(){finalizeTimer(true);closeModal('modal-timer-done');};
-window.skipCert=function(){finalizeTimer(false);closeModal('modal-timer-done');};
-window.doResetTimer=function(){
-  if(timerInterval)clearInterval(timerInterval);
-  timerInterval=null;timerSeconds=0;timerPaused=false;timerTargetId=null;
-  var td=document.getElementById('timer-display'),ts=document.getElementById('timer-subject-display');
-  if(td)td.textContent='00:00:00';if(ts)ts.textContent='공부할 항목을 선택해주세요';
+
+window.togglePause = function() {
+  if (!timerTargetId) return;
+  if (timerPaused) {
+    // 재개: 새 구간 시작
+    timerPaused = false;
+    timerStartAt = Date.now();
+    updateDoc(doc(db,'todos',timerTargetId), {timerStartAt: timerStartAt, timerAccum: timerSeconds, timerRunning: true}).catch(function(){});
+    if (!timerInterval) timerInterval = setInterval(_tickDisplay, 500);
+  } else {
+    // 일시정지: 누적에 현재 구간 더하고 멈춤
+    timerSeconds = _getElapsed();
+    timerPaused = true;
+    timerStartAt = null;
+    updateDoc(doc(db,'todos',timerTargetId), {timerAccum: timerSeconds, timerRunning: false}).catch(function(){});
+  }
+  var bp = document.getElementById('btn-pause'); if(bp) bp.textContent = timerPaused?'재개':'일시정지';
+};
+
+window.stopTimer = function() {
+  timerSeconds = _getElapsed(); // 최종 경과 시간 확정
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  openModal('modal-timer-done');
+};
+window.certifyTimer = function() { finalizeTimer(true); closeModal('modal-timer-done'); };
+window.skipCert    = function() { finalizeTimer(false); closeModal('modal-timer-done'); };
+
+window.doResetTimer = function() {
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  if (timerTargetId) {
+    updateDoc(doc(db,'todos',timerTargetId), {timerStartAt: null, timerAccum: 0, timerRunning: false}).catch(function(){});
+  }
+  timerTargetId = null; timerSeconds = 0; timerPaused = false; timerStartAt = null;
+  var td=document.getElementById('timer-display'), ts=document.getElementById('timer-subject-display');
+  if(td) td.textContent='00:00:00'; if(ts) ts.textContent='공부할 항목을 선택해주세요';
   ['btn-reset','btn-pause','btn-stop'].forEach(function(b){var el=document.getElementById(b);if(el)el.style.display='none';});
   closeModal('modal-reset-confirm');
 };
+
 function finalizeTimer(certified) {
-  if(timerTargetId){
-    var h=Math.floor(timerSeconds/3600),m=Math.floor((timerSeconds%3600)/60),s=timerSeconds%60;
-    updateDoc(doc(db,'todos',timerTargetId),{status:'done',studyTime:h+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0'),certified:certified,completedAt:serverTimestamp()});
+  if (timerTargetId) {
+    var total = timerSeconds; // stopTimer에서 이미 확정된 값
+    var h=Math.floor(total/3600), m=Math.floor((total%3600)/60), s=total%60;
+    updateDoc(doc(db,'todos',timerTargetId), {
+      status:'done',
+      studyTime: h+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0'),
+      certified: certified,
+      completedAt: serverTimestamp(),
+      timerStartAt: null, timerAccum: 0, timerRunning: false
+    });
   }
-  timerTargetId=null;timerSeconds=0;timerPaused=false;
-  if(timerInterval){clearInterval(timerInterval);timerInterval=null;}
-  var td=document.getElementById('timer-display'),ts=document.getElementById('timer-subject-display');
-  if(td)td.textContent='00:00:00';if(ts)ts.textContent='공부할 항목을 선택해주세요';
+  timerTargetId = null; timerSeconds = 0; timerPaused = false; timerStartAt = null;
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  var td=document.getElementById('timer-display'), ts=document.getElementById('timer-subject-display');
+  if(td) td.textContent='00:00:00'; if(ts) ts.textContent='공부할 항목을 선택해주세요';
   ['btn-reset','btn-pause','btn-stop'].forEach(function(b){var el=document.getElementById(b);if(el)el.style.display='none';});
 }
 
-// ── 성적 ──
+// ── 앱 복귀 시 타이머 복구 (visibilitychange) ──
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState === 'visible' && timerTargetId) {
+    // 화면 복귀: Firebase에서 실제 시작 시각 읽어서 경과 시간 재계산
+    getDoc(doc(db,'todos',timerTargetId)).then(function(d) {
+      if (!d.exists()) return;
+      var data = d.data();
+      if (data.timerRunning && data.timerStartAt) {
+        timerSeconds = (data.timerAccum||0) + Math.floor((Date.now() - data.timerStartAt) / 1000);
+        timerStartAt = data.timerStartAt;
+        timerPaused = false;
+        if (!timerInterval) timerInterval = setInterval(_tickDisplay, 500);
+        _tickDisplay();
+      }
+    }).catch(function(){});
+  }
+});
+
+// ── 진행 중 타이머 복구 (앱 재시작/재로그인 시) ──
+function resumeActiveTimer() {
+  if (!currentUser) return;
+  var today = new Date().toISOString().split('T')[0];
+  getDocs(query(collection(db,'todos'), where('uid','==',currentUser.uid), where('date','==',today), where('timerRunning','==',true))).then(function(snap) {
+    if (snap.empty) return;
+    var d = snap.docs[0];
+    var data = d.data();
+    if (!data.timerStartAt) return;
+    // 이미 다른 타이머가 돌고 있으면 스킵
+    if (timerTargetId) return;
+    timerTargetId = d.id;
+    timerSeconds = (data.timerAccum||0) + Math.floor((Date.now() - data.timerStartAt) / 1000);
+    timerStartAt = data.timerStartAt;
+    timerPaused = false;
+    // UI 복원
+    var subj = document.getElementById('timer-subject-display');
+    if (subj) subj.textContent = (subjectNames[data.subject]||data.subject)+' · '+data.title;
+    var bp = document.getElementById('btn-pause'); if(bp) {bp.textContent='일시정지'; bp.style.display='inline-block';}
+    ['btn-reset','btn-stop'].forEach(function(b){var el=document.getElementById(b);if(el)el.style.display='inline-block';});
+    if (!timerInterval) timerInterval = setInterval(_tickDisplay, 500);
+    _tickDisplay();
+    // 안내
+    var h=Math.floor(timerSeconds/3600), m=Math.floor((timerSeconds%3600)/60);
+    if (timerSeconds > 10) {
+      var msg = document.getElementById('timer-subject-display');
+      if(msg) msg.textContent += ' (복구됨 '+h+'h '+String(m).padStart(2,'0')+'m~)';
+    }
+  }).catch(function(){});
+}
 function buildGradePage(){
   return '<div style="display:flex;gap:8px;margin-bottom:14px"><button class="grade-tab-btn active" id="gtab-0" onclick="gradeSubTab(0)">모의고사</button><button class="grade-tab-btn" id="gtab-1" onclick="gradeSubTab(1)">내신</button></div><button class="appeal-btn" onclick="openModal(\'modal-add-grade\')">+ 성적 입력하기</button><div id="grade-list"><div style="color:var(--gray3);font-size:13px;padding:10px 0">불러오는 중...</div></div>';
 }
@@ -782,7 +908,26 @@ function loadGrades(type) {
     el.innerHTML=snap.docs.map(function(d){
       var g=d.data();
       var subjHtml=Object.keys(g.scores||{}).map(function(subj){return '<div class="score-cell"><div class="score-cell-subj">'+(subjectNames[subj]||subj)+'</div><div class="score-cell-val">'+(g.scores[subj].score||'-')+'</div><div class="score-cell-grade">'+(g.scores[subj].grade?g.scores[subj].grade+'등급':'-')+'</div></div>';}).join('');
-      return '<div class="score-card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-size:14px;font-weight:600">'+g.examName+'</div><div style="font-size:11px;color:var(--gray3)">'+g.examDate+'</div></div><div class="score-subjects">'+subjHtml+'</div>'+(g.wrongNumbers?'<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)"><div style="font-size:11px;color:var(--gray3);margin-bottom:7px">오답 문항</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+g.wrongNumbers.split(',').map(function(n){return '<span style="background:rgba(224,82,82,0.15);border:1px solid rgba(224,82,82,0.25);border-radius:4px;padding:3px 8px;font-size:12px;color:#f87171">'+n.trim()+'번</span>';}).join('')+'</div></div>':'')+(g.reflection?'<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)"><div style="font-size:11px;color:var(--gray3);margin-bottom:4px">나의 다짐</div><div style="font-size:13px;color:rgba(255,255,255,0.75);line-height:1.8">'+g.reflection+'</div></div>':'')+'</div>';
+      // 과목별 오답
+      var wrongHtml='';
+      if(g.wrongBySubj&&Object.keys(g.wrongBySubj).length){
+        wrongHtml='<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)"><div style="font-size:11px;color:var(--gray3);margin-bottom:7px">오답 문항 (과목별)</div>'+
+        Object.keys(g.wrongBySubj).map(function(subj){return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px"><span class="subject-tag subj-'+subj+'" style="font-size:10px;flex-shrink:0">'+(subjectNames[subj]||subj)+'</span><div style="display:flex;gap:4px;flex-wrap:wrap">'+g.wrongBySubj[subj].split(',').map(function(n){return '<span style="background:rgba(224,82,82,0.15);border:1px solid rgba(224,82,82,0.25);border-radius:4px;padding:2px 7px;font-size:12px;color:#f87171">'+n.trim()+'번</span>';}).join('')+'</div></div>';}).join('')+'</div>';
+      } else if(g.wrongNumbers){
+        wrongHtml='<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)"><div style="font-size:11px;color:var(--gray3);margin-bottom:7px">오답 문항</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+g.wrongNumbers.split(',').map(function(n){return '<span style="background:rgba(224,82,82,0.15);border:1px solid rgba(224,82,82,0.25);border-radius:4px;padding:3px 8px;font-size:12px;color:#f87171">'+n.trim()+'번</span>';}).join('')+'</div></div>';
+      }
+      // 3분할 다짐
+      var refHtml='';
+      if(g.refMistake||g.refWeak||g.refPlan){
+        refHtml='<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)">'
+          +(g.refMistake?'<div style="margin-bottom:8px"><div style="font-size:11px;color:var(--orange);margin-bottom:3px">⚠️ 실수한 부분</div><div style="font-size:13px;color:rgba(255,255,255,0.75);line-height:1.7">'+g.refMistake+'</div></div>':'')
+          +(g.refWeak?'<div style="margin-bottom:8px"><div style="font-size:11px;color:#f87171;margin-bottom:3px">📉 부족했던 부분</div><div style="font-size:13px;color:rgba(255,255,255,0.75);line-height:1.7">'+g.refWeak+'</div></div>':'')
+          +(g.refPlan?'<div><div style="font-size:11px;color:var(--green);margin-bottom:3px">✅ 다음 시험까지 개선방안</div><div style="font-size:13px;color:rgba(255,255,255,0.75);line-height:1.7">'+g.refPlan+'</div></div>':'')
+          +'</div>';
+      } else if(g.reflection){
+        refHtml='<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)"><div style="font-size:11px;color:var(--gray3);margin-bottom:4px">나의 다짐</div><div style="font-size:13px;color:rgba(255,255,255,0.75);line-height:1.8">'+g.reflection+'</div></div>';
+      }
+      return '<div class="score-card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-size:14px;font-weight:600">'+g.examName+'</div><div style="font-size:11px;color:var(--gray3)">'+g.examDate+'</div></div><div class="score-subjects">'+subjHtml+'</div>'+wrongHtml+refHtml+'<div style="margin-top:10px"><button onclick="loadExamStats(\''+encodeURIComponent(g.examName)+'\')" style="padding:6px 12px;background:rgba(74,127,255,0.1);border:1px solid rgba(74,127,255,0.2);border-radius:6px;color:#7aa8ff;font-size:11px;cursor:pointer;width:100%">📊 같은 시험 전체 통계 보기</button><div id="exam-stats-'+d.id+'" style="display:none"></div></div></div>';
     }).join('');
   }).catch(function(){el.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패 — Firestore 인덱스 설정 필요</div>';});
 }
@@ -798,12 +943,49 @@ window.saveGrade=function(){
     var g=document.getElementById('grade-'+subj+'-grade').value;
     if(s) scores[subj]={score:s,grade:g||''};
   });
-  addDoc(collection(db,'grades'),{uid:targetUid,type:type,examName:examName,examDate:examDate,scores:scores,wrongNumbers:document.getElementById('grade-wrong').value,reflection:document.getElementById('grade-reflection').value,createdAt:serverTimestamp()}).then(function(){closeModal('modal-add-grade');alert('성적이 저장되었습니다!');if(currentProfile.role==='student')loadGrades(type);});
+  var wrongBySubj={};
+  ['ko','en','ma','hi','sc','so'].forEach(function(subj){var v=document.getElementById('grade-wrong-'+subj);if(v&&v.value.trim())wrongBySubj[subj]=v.value.trim();});
+  var refMistake=document.getElementById('grade-ref-mistake').value;
+  var refWeak=document.getElementById('grade-ref-weak').value;
+  var refPlan=document.getElementById('grade-ref-plan').value;
+  addDoc(collection(db,'grades'),{uid:targetUid,type:type,examName:examName,examDate:examDate,scores:scores,wrongBySubj:wrongBySubj,refMistake:refMistake,refWeak:refWeak,refPlan:refPlan,createdAt:serverTimestamp()}).then(function(){closeModal('modal-add-grade');alert('성적이 저장되었습니다!');if(currentProfile.role==='student')loadGrades(type);});
 };
 
 // ── 리워드 ──
 function buildRewardPage(){
   return '<div id="scholar-banner"></div><div id="points-summary"></div><button class="appeal-btn" onclick="openModal(\'modal-appeal\')">👍 칭찬 어필하기</button><div class="card"><div class="card-title">상벌점 규정</div><div id="rules-area"><div style="color:var(--gray3);font-size:13px">불러오는 중...</div></div></div><div class="card"><div class="card-title">상벌점 히스토리</div><div id="points-history"><div style="color:var(--gray3);font-size:13px">불러오는 중...</div></div></div>';
+}
+function loadRewardData(){
+  if(!currentUser) return;
+  // 장학생 배너
+  var month=new Date().toISOString().slice(0,7);
+  getDoc(doc(db,'scholars',month)).then(function(d){
+    var b=document.getElementById('scholar-banner');if(!b)return;
+    if(d.exists()&&d.data().studentUid===currentUser.uid){b.innerHTML='<div style="background:linear-gradient(135deg,rgba(201,168,76,0.2),rgba(201,168,76,0.06));border:1px solid rgba(201,168,76,0.5);border-radius:12px;padding:14px 16px;margin-bottom:12px;text-align:center"><div style="font-size:20px;margin-bottom:4px">🏆</div><div style="font-size:15px;font-weight:700;color:var(--gold2)">이달의 장학생</div><div style="font-size:13px;color:rgba(255,255,255,0.7);margin-top:4px">'+d.data().reason+'</div><div style="font-size:12px;color:var(--gold);margin-top:6px">상품: '+d.data().prize+'</div></div>';}
+    else b.innerHTML='';
+  }).catch(function(){});
+  // 점수 합산
+  getDocs(query(collection(db,'points'),where('studentUid','==',currentUser.uid))).then(function(snap){
+    var plus=0,minus=0;
+    snap.docs.forEach(function(d){var p=d.data();if(p.type==='plus')plus+=parseInt(p.points)||0;else minus+=parseInt(p.points)||0;});
+    var el=document.getElementById('points-summary');if(!el)return;
+    el.innerHTML='<div class="stat-grid" style="margin-bottom:12px"><div class="stat-card"><div class="stat-val" style="color:var(--gold2)">'+plus+'점</div><div class="stat-lbl">누적 상점</div></div><div class="stat-card"><div class="stat-val" style="color:var(--red)">'+minus+'점</div><div class="stat-lbl">누적 벌점</div></div></div><div style="background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.2);border-radius:10px;padding:10px 14px;margin-bottom:12px;text-align:center"><span style="font-size:14px;font-weight:700;color:var(--gold2)">현재 점수: '+(plus-minus)+'점</span></div>';
+  }).catch(function(){});
+  // 상벌점 규정
+  getDocs(query(collection(db,'rules'),limit(1))).then(function(snap){
+    var el=document.getElementById('rules-area');if(!el)return;
+    var content=snap.empty?defaultRules:snap.docs[0].data().content;
+    el.innerHTML='<pre style="font-size:12px;color:rgba(255,255,255,0.75);white-space:pre-wrap;line-height:1.9;font-family:inherit">'+content+'</pre>';
+  }).catch(function(){var el=document.getElementById('rules-area');if(el)el.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패</div>';});
+  // 히스토리
+  getDocs(query(collection(db,'points'),where('studentUid','==',currentUser.uid),orderBy('createdAt','desc'))).then(function(snap){
+    var el=document.getElementById('points-history');if(!el)return;
+    if(snap.empty){el.innerHTML='<div style="color:var(--gray3);font-size:13px">내역이 없습니다</div>';return;}
+    el.innerHTML=snap.docs.map(function(d){
+      var p=d.data();var date=p.createdAt?p.createdAt.toDate().toLocaleDateString('ko-KR'):'';
+      return '<div class="history-item"><div class="history-dot '+p.type+'"></div><div style="flex:1;font-size:13px">'+p.reason+'</div><div style="font-size:13px;font-weight:600;'+(p.type==='plus'?'color:var(--gold2)':'color:var(--red)')+'">'+( p.type==='plus'?'+':'-')+p.points+'점</div><div style="font-size:11px;color:var(--gray3);margin-left:6px">'+date+'</div></div>';
+    }).join('');
+  }).catch(function(){var el=document.getElementById('points-history');if(el)el.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패 (인덱스 필요)</div>';});
 }
 window.sendAppeal=function(){
   var content=document.getElementById('appeal-content').value.trim();
@@ -813,24 +995,50 @@ window.sendAppeal=function(){
 
 // ── 채팅 ──
 function buildChatPage(){
-  return '<div style="padding:13px 0;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:11px;"><div class="teacher-av" style="width:38px;height:38px;font-size:13px">T</div><div><div style="font-size:14px;font-weight:600">선생님</div><div style="font-size:11px;color:var(--green)" class="pulse">● 온라인</div></div></div><div id="chat-msg-list" style="padding:14px 0;min-height:200px;"></div><div id="chat-file-preview" style="display:none;padding:8px;background:var(--navy3);border-radius:8px;margin-bottom:8px;"><div style="display:flex;align-items:center;gap:10px;"><span id="chat-file-name" style="font-size:13px;color:var(--gold2);flex:1;"></span><button onclick="cancelFile()" style="background:none;border:none;color:var(--gray3);cursor:pointer;font-size:18px;">✕</button></div></div><div class="chat-input-area" style="margin:0 -16px;padding:12px 16px"><input type="file" id="chat-file-input" style="display:none;" onchange="handleFileSelect(this)"/><button onclick="document.getElementById(\'chat-file-input\').click()" style="background:none;border:none;cursor:pointer;padding:0;flex-shrink:0;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></button><input id="chat-text-input" class="chat-input" placeholder="메시지 입력..." onkeydown="if(event.key===\'Enter\')sendChatMsg()"/><button class="chat-send" onclick="sendChatMsg()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button></div>';
+  return '<div id="chat-teacher-list" style="margin-bottom:10px"><div style="color:var(--gray3);font-size:13px">대화 상대 불러오는 중...</div></div><div id="chat-msg-list" style="padding:14px 0;min-height:200px;"></div><div id="chat-file-preview" style="display:none;padding:8px;background:var(--navy3);border-radius:8px;margin-bottom:8px;"><div style="display:flex;align-items:center;gap:10px;"><span id="chat-file-name" style="font-size:13px;color:var(--gold2);flex:1;"></span><button onclick="cancelFile()" style="background:none;border:none;color:var(--gray3);cursor:pointer;font-size:18px;">✕</button></div></div><div class="chat-input-area" style="margin:0 -16px;padding:12px 16px"><input type="file" id="chat-file-input" style="display:none;" onchange="handleFileSelect(this)"/><button onclick="document.getElementById(\'chat-file-input\').click()" style="background:none;border:none;cursor:pointer;padding:0;flex-shrink:0;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></button><input id="chat-text-input" class="chat-input" placeholder="메시지 입력..." onkeydown="if(event.key===\'Enter\')sendChatMsg()"/><button class="chat-send" onclick="sendChatMsg()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button></div>';
+}
+var chatTargetUid=null;
+window.selectChatTarget=function(teacherUid,teacherName){
+  chatTargetUid=teacherUid;
+  document.querySelectorAll('.chat-target-btn').forEach(function(b){b.classList.remove('active');b.style.background='rgba(255,255,255,0.04)';b.style.borderColor='rgba(255,255,255,0.08)';b.style.color='rgba(255,255,255,0.75)';});
+  var btn=document.getElementById('ctbtn_'+teacherUid);
+  if(btn){btn.style.background='rgba(201,168,76,0.12)';btn.style.borderColor='rgba(201,168,76,0.35)';btn.style.color='var(--gold2)';btn.classList.add('active');}
+  if(unsubChat) unsubChat();
+  var chatId=currentUser.uid+'_chat';
+  unsubChat=onSnapshot(query(collection(db,'chats',chatId,'messages'),where('targetTeacherUid','==',teacherUid),orderBy('createdAt','asc')),function(snap){
+    renderChatMessages(snap.docs,teacherName);
+  });
+};
+function renderChatMessages(docs,teacherName){
+  var list=document.getElementById('chat-msg-list');
+  if(!list) return;
+  list.innerHTML=docs.map(function(d){
+    var m=d.data(),isMe=m.senderUid===currentUser.uid;
+    var time=m.createdAt?m.createdAt.toDate().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}):'';
+    var avatar='<div class="teacher-av" style="width:30px;height:30px;font-size:11px;flex-shrink:0">'+(m.senderName||'T').slice(0,2)+'</div>';
+    if(m.fileUrl) return '<div class="msg '+(isMe?'mine':'theirs')+'">'+(isMe?'':avatar)+'<div><a href="'+m.fileUrl+'" target="_blank" style="display:flex;align-items:center;gap:8px;padding:10px 13px;background:'+(isMe?'linear-gradient(135deg,var(--gold),var(--gold2))':'var(--navy3)')+';border-radius:14px;text-decoration:none;max-width:72%;"><span style="font-size:13px;color:'+(isMe?'var(--navy)':'var(--gold2)')+'">📎 '+(m.fileName||'파일')+'</span></a><div class="msg-time" style="'+(isMe?'text-align:right':'')+'">'+time+'</div></div></div>';
+    return '<div class="msg '+(isMe?'mine':'theirs')+'">'+(isMe?'':avatar)+'<div>'+(isMe?'':'<div style="font-size:10px;color:var(--gray3);margin-bottom:2px">'+m.senderName+'</div>')+'<div class="msg-bubble">'+m.text+'</div><div class="msg-time" style="'+(isMe?'text-align:right':'')+'">'+time+'</div></div></div>';
+  }).join('');
+  if(list) list.scrollTop=list.scrollHeight;
 }
 function listenChat() {
   if(!currentUser) return;
   if(unsubChat) unsubChat();
-  var chatId=currentUser.uid+'_chat';
-  var q=query(collection(db,'chats',chatId,'messages'),orderBy('createdAt','asc'));
-  unsubChat=onSnapshot(q,function(snap){
-    var list=document.getElementById('chat-msg-list');
-    if(!list) return;
-    list.innerHTML=snap.docs.map(function(d){
-      var m=d.data(),isMe=m.senderUid===currentUser.uid;
-      var time=m.createdAt?m.createdAt.toDate().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}):'';
-      if(m.fileUrl) return '<div class="msg '+(isMe?'mine':'theirs')+'">'+(isMe?'':'<div class="teacher-av" style="width:30px;height:30px;font-size:11px;flex-shrink:0">'+(m.senderName||'T').slice(0,2)+'</div>')+'<div><a href="'+m.fileUrl+'" target="_blank" style="display:flex;align-items:center;gap:8px;padding:10px 13px;background:'+(isMe?'linear-gradient(135deg,var(--gold),var(--gold2))':'var(--navy3)')+';border-radius:14px;text-decoration:none;max-width:72%;"><span style="font-size:13px;color:'+(isMe?'var(--navy)':'var(--gold2)')+'">📎 '+(m.fileName||'파일')+'</span></a><div class="msg-time" style="'+(isMe?'text-align:right':'')+'">'+time+'</div></div></div>';
-      return '<div class="msg '+(isMe?'mine':'theirs')+'">'+(isMe?'':'<div class="teacher-av" style="width:30px;height:30px;font-size:11px;flex-shrink:0">'+(m.senderName||'T').slice(0,2)+'</div>')+'<div><div class="msg-bubble">'+m.text+'</div><div class="msg-time" style="'+(isMe?'text-align:right':'')+'">'+time+'</div></div></div>';
-    }).join('');
-    list.scrollTop=list.scrollHeight;
-  });
+  chatTargetUid=null;
+  // 선생님/마스터 목록 로드
+  getDocs(query(collection(db,'users'),where('role','in',['teacher','master']))).then(function(snap){
+    var teachers=snap.docs.map(function(d){return Object.assign({uid:d.id},d.data());});
+    var listEl=document.getElementById('chat-teacher-list');
+    if(!listEl) return;
+    if(!teachers.length){listEl.innerHTML='<div style="color:var(--gray3);font-size:13px">등록된 선생님이 없습니다</div>';return;}
+    listEl.innerHTML='<div style="font-size:11px;color:var(--gray3);margin-bottom:6px">대화 상대 선택</div><div style="display:flex;gap:7px;flex-wrap:wrap">'+
+      teachers.map(function(t){
+        var roleLabel=t.role==='master'?'마스터':'선생님';
+        return '<button id="ctbtn_'+t.uid+'" class="chat-target-btn" onclick="selectChatTarget(\''+t.uid+'\',\''+t.name+'\')" style="display:flex;align-items:center;gap:7px;padding:8px 13px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;cursor:pointer;"><div class="teacher-av" style="width:28px;height:28px;font-size:11px;flex-shrink:0">'+(t.name||'?').slice(0,2)+'</div><div style="text-align:left"><div style="font-size:13px;font-weight:600;color:rgba(255,255,255,0.9)">'+t.name+'</div><div style="font-size:10px;color:var(--gray3)">'+roleLabel+'</div></div></button>';
+      }).join('')+'</div><div style="border-top:1px solid rgba(255,255,255,0.06);margin:10px 0"></div>';
+    // 첫 번째 선생님 자동 선택
+    if(teachers.length>0) selectChatTarget(teachers[0].uid, teachers[0].name);
+  }).catch(function(){});
 }
 window.handleFileSelect=function(input){
   if(!input.files||!input.files[0]) return;
@@ -844,16 +1052,17 @@ window.cancelFile=function(){
   var fi=document.getElementById('chat-file-input');if(fi)fi.value='';
 };
 window.sendChatMsg=function(){
+  if(!chatTargetUid){alert('대화 상대를 먼저 선택해주세요.');return;}
   var chatId=currentUser.uid+'_chat';
   if(selectedFile){
     var fd=new FormData();fd.append('file',selectedFile);fd.append('upload_preset',CLOUDINARY_PRESET);fd.append('resource_type','auto');
     var fname=selectedFile.name;
-    fetch('https://api.cloudinary.com/v1_1/'+CLOUDINARY_CLOUD+'/auto/upload',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(data){addDoc(collection(db,'chats',chatId,'messages'),{fileUrl:data.secure_url,fileName:fname,senderUid:currentUser.uid,senderName:currentProfile.name,createdAt:serverTimestamp()});}).catch(function(e){alert('파일 업로드 실패: '+e.message);});
+    fetch('https://api.cloudinary.com/v1_1/'+CLOUDINARY_CLOUD+'/auto/upload',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(data){addDoc(collection(db,'chats',chatId,'messages'),{fileUrl:data.secure_url,fileName:fname,targetTeacherUid:chatTargetUid,senderUid:currentUser.uid,senderName:currentProfile.name,createdAt:serverTimestamp()});}).catch(function(e){alert('파일 업로드 실패: '+e.message);});
     cancelFile();
   }
   var input=document.getElementById('chat-text-input');
   var text=input?input.value.trim():'';
-  if(text){addDoc(collection(db,'chats',chatId,'messages'),{text:text,senderUid:currentUser.uid,senderName:currentProfile.name,createdAt:serverTimestamp()});if(input)input.value='';}
+  if(text){addDoc(collection(db,'chats',chatId,'messages'),{text:text,targetTeacherUid:chatTargetUid,senderUid:currentUser.uid,senderName:currentProfile.name,createdAt:serverTimestamp()});if(input)input.value='';}
 };
 
 // ── 공지 ──
@@ -981,21 +1190,27 @@ function buildTPlanner(){
       var todayPlanners=plannerSnap.docs.filter(function(d){return d.id.includes('_'+today);}).map(function(d){return d.data();});
       return getDocs(query(collection(db,'lectures'),orderBy('createdAt','desc'))).then(function(lectureSnap){
         var lectures=lectureSnap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
-        var lectureHtml=lectures.length?lectures.map(function(lc){
+        var activeLectures=lectures.filter(function(lc){var done=parseInt(lc.completedLessons)||0,total=parseInt(lc.totalLessons)||0;return done<total;});
+        var doneLectures=lectures.filter(function(lc){var done=parseInt(lc.completedLessons)||0,total=parseInt(lc.totalLessons)||0;return done>=total;});
+        var sortedLectures=activeLectures.concat(doneLectures);
+        var filterOptions='<option value="">전체 학생</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('');
+        var lectureHtml=sortedLectures.length?sortedLectures.map(function(lc){
           var total=parseInt(lc.totalLessons)||0,done=parseInt(lc.completedLessons)||0,pct=total>0?Math.round(done/total*100):0;
+          var isDone=done>=total;
           var student=students.find(function(s){return s.uid===lc.studentUid;});
           var eta='-';
           if(lc.scheduleCount&&done<total){var remaining=total-done;var weeksNeeded=Math.ceil(remaining/(parseInt(lc.scheduleCount)||1));var etaDate=new Date();etaDate.setDate(etaDate.getDate()+weeksNeeded*7);eta=etaDate.toLocaleDateString('ko-KR');}
-          else if(done>=total) eta='✅ 완료';
-          return '<div class="score-card" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px"><div><div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span style="background:rgba(74,127,255,0.2);border-radius:5px;padding:2px 8px;font-size:11px;color:#7aa8ff">'+(student?student.name:'?')+'</span><span style="font-size:14px;font-weight:600">'+lc.lectureName+'</span></div><div style="font-size:11px;color:var(--gray3)">'+lc.company+' · '+lc.subject+' · '+lc.instructor+'</div></div><button onclick="openUpdateLectureModal(\''+lc.id+'\','+done+','+total+')" style="padding:6px 12px;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;white-space:nowrap;flex-shrink:0">수강 업데이트</button></div><div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="flex:1;background:rgba(255,255,255,0.05);border-radius:6px;height:10px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:6px;"></div></div><span style="font-size:13px;font-weight:700;color:var(--gold2);white-space:nowrap">'+done+' / '+total+'강 ('+pct+'%)</span></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px"><div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:7px 10px"><div style="color:var(--gray3);margin-bottom:2px">수강 계획</div><div style="font-weight:600">'+(lc.schedule||'-')+' · 주 '+(lc.scheduleCount||'-')+'강</div></div><div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:7px 10px"><div style="color:var(--gray3);margin-bottom:2px">완료 예상일</div><div style="font-weight:600;color:'+(done>=total?'var(--green)':'var(--gold2)')+'">'+eta+'</div></div><div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:7px 10px"><div style="color:var(--gray3);margin-bottom:2px">마지막 업데이트</div><div style="font-weight:600">'+(lc.lastUpdateDate||'-')+'</div></div><div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:7px 10px"><div style="color:var(--gray3);margin-bottom:2px">남은 강의</div><div style="font-weight:600;color:var(--accent)">'+(total-done)+'강</div></div></div></div>';
+          else if(isDone) eta='✅ 완료';
+          return '<div class="score-card lecture-card" data-uid="'+(lc.studentUid||'')+'" style="margin-bottom:10px;'+(isDone?'opacity:0.6;':'')+'"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px"><div><div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'+(isDone?'<span style="background:rgba(61,186,126,0.15);border-radius:5px;padding:2px 7px;font-size:10px;color:var(--green)">완강</span>':'')+'<span style="background:rgba(74,127,255,0.2);border-radius:5px;padding:2px 8px;font-size:11px;color:#7aa8ff">'+(student?student.name:'?')+'</span><span style="font-size:14px;font-weight:600">'+lc.lectureName+'</span></div><div style="font-size:11px;color:var(--gray3)">'+lc.company+' · '+lc.subject+' · '+lc.instructor+'</div></div><button onclick="openUpdateLectureModal(\''+lc.id+'\','+done+','+total+')" style="padding:6px 12px;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;white-space:nowrap;flex-shrink:0">수강 업데이트</button></div><div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="flex:1;background:rgba(255,255,255,0.05);border-radius:6px;height:10px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:'+(isDone?'linear-gradient(90deg,var(--green),#5dd4a0)':'linear-gradient(90deg,var(--gold),var(--gold2))')+';border-radius:6px;"></div></div><span style="font-size:13px;font-weight:700;color:'+(isDone?'var(--green)':'var(--gold2)')+';white-space:nowrap">'+done+' / '+total+'강 ('+pct+'%)</span></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px"><div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:7px 10px"><div style="color:var(--gray3);margin-bottom:2px">수강 계획</div><div style="font-weight:600">'+(lc.schedule||'-')+' · 주 '+(lc.scheduleCount||'-')+'강</div></div><div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:7px 10px"><div style="color:var(--gray3);margin-bottom:2px">완료 예상일</div><div style="font-weight:600;color:'+(isDone?'var(--green)':'var(--gold2)')+'">'+eta+'</div></div><div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:7px 10px"><div style="color:var(--gray3);margin-bottom:2px">마지막 업데이트</div><div style="font-weight:600">'+(lc.lastUpdateDate||'-')+'</div></div><div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:7px 10px"><div style="color:var(--gray3);margin-bottom:2px">남은 강의</div><div style="font-weight:600;color:var(--accent)">'+(total-done)+'강</div></div></div></div>';
         }).join(''):'<div style="color:var(--gray3);font-size:13px;padding:10px 0">등록된 인강이 없습니다</div>';
         return '<div class="section-label">오늘 제출된 플래너</div>'
-          +(!todayPlanners.length?'<div style="color:var(--gray3);font-size:13px;padding:10px 0">아직 제출된 플래너가 없습니다</div>':todayPlanners.map(function(p){return '<div class="planner-thumb"><div style="font-size:14px;font-weight:600;margin-bottom:4px">'+p.name+'</div><div style="font-size:11px;color:var(--green)">✅ 제출 완료</div></div>';}).join(''))
+          +(!todayPlanners.length?'<div style="color:var(--gray3);font-size:13px;padding:10px 0">아직 제출된 플래너가 없습니다</div>':todayPlanners.map(function(p){return '<div class="planner-thumb" style="cursor:pointer" onclick="togglePlannerDetail(\'pd_'+p.uid+'\',\''+p.uid+'\')"><div style="display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:14px;font-weight:600;margin-bottom:4px">'+p.name+'</div><div style="font-size:11px;color:var(--green)">✅ 제출 완료 · 탭하여 상세 보기</div></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div><div id="pd_'+p.uid+'" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08)"><div style="color:var(--gray3);font-size:12px">불러오는 중...</div></div></div>';}).join(''))
           +'<div class="section-label" style="margin-top:20px">코멘트 작성</div>'
           +'<select class="modal-select" id="comment-student-select"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select>'
           +'<textarea class="modal-input" id="comment-input" rows="4" placeholder="학생에게 전달할 코멘트..." style="resize:none;margin-bottom:10px"></textarea>'
           +'<button class="modal-btn primary" onclick="saveComment()">코멘트 저장</button>'
           +'<div style="display:flex;align-items:center;justify-content:space-between;margin-top:20px;margin-bottom:8px"><div class="section-label" style="margin:0">📚 인강 관리 현황</div><button onclick="openAddLectureModal()" style="padding:7px 14px;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.3);border-radius:8px;color:var(--gold);font-size:13px;cursor:pointer;font-weight:600">+ 인강 추가</button></div>'
+          +'<select class="modal-select" onchange="filterLecturesByStudent(this.value)" style="margin-bottom:12px">'+filterOptions+'</select>'
           +lectureHtml;
       }).catch(function(){return '';});
     });
@@ -1056,6 +1271,57 @@ function buildTGrades(){
     return '<div class="section-label">학생 성적 조회</div><select class="modal-select" id="t-grade-student" onchange="loadStudentGrades(this.value)"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select><div id="t-grade-list"><div style="color:var(--gray3);font-size:13px">학생을 선택하세요</div></div><div class="section-label" style="margin-top:16px">성적 대행 입력</div><select class="modal-select" id="t-grade-input-student"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select><button class="modal-btn primary" onclick="openTeacherGradeModal()">성적 입력 시작</button>';
   });
 }
+window.loadExamStats=function(encodedName){
+  var examName=decodeURIComponent(encodedName);
+  // 시험명 정규화 (공백 제거, 소문자, 한글만)
+  var normalize=function(s){return s.replace(/\s+/g,'').toLowerCase();};
+  var normTarget=normalize(examName);
+  getDocs(collection(db,'grades')).then(function(snap){
+    // 시험명 정규화 매칭
+    var sameExam=snap.docs.filter(function(d){return normalize(d.data().examName||'')===normTarget;});
+    if(sameExam.length<2){
+      // 통계 표시할 영역 찾기 - examName 기준 가장 최근 카드
+      var cards=document.querySelectorAll('[id^="exam-stats-"]');
+      cards.forEach(function(el){el.style.display='block';el.innerHTML='<div style="font-size:12px;color:var(--gray3);padding:8px 0">아직 같은 시험을 본 다른 학생 데이터가 없습니다.</div>';});
+      return;
+    }
+    // 오답 집계
+    var wrongCount={};
+    sameExam.forEach(function(d){
+      var g=d.data();
+      if(g.wrongBySubj){Object.values(g.wrongBySubj).forEach(function(nums){nums.split(',').forEach(function(n){var k=n.trim();if(k){wrongCount[k]=(wrongCount[k]||0)+1;}});});}
+      else if(g.wrongNumbers){g.wrongNumbers.split(',').forEach(function(n){var k=n.trim();if(k){wrongCount[k]=(wrongCount[k]||0)+1;}});}
+    });
+    var top5=Object.keys(wrongCount).sort(function(a,b){return wrongCount[b]-wrongCount[a];}).slice(0,5);
+    // 과목별 우수자 TOP3
+    var bySubj={};
+    sameExam.forEach(function(d){
+      var g=d.data();
+      Object.keys(g.scores||{}).forEach(function(subj){
+        if(!bySubj[subj]) bySubj[subj]=[];
+        bySubj[subj].push({uid:g.uid,score:parseInt(g.scores[subj].score)||0,grade:g.scores[subj].grade});
+      });
+    });
+    // uid → 이름 매핑
+    loadStudentList().then(function(students){
+      var nameMap={};students.forEach(function(s){nameMap[s.uid]=s.name;});
+      var top3Html=Object.keys(bySubj).map(function(subj){
+        var sorted=bySubj[subj].sort(function(a,b){return a.grade?a.grade-b.grade:b.score-a.score;}).slice(0,3);
+        return '<div style="margin-bottom:8px"><span class="subject-tag subj-'+subj+'" style="font-size:10px">'+(subjectNames[subj]||subj)+'</span><div style="display:flex;gap:5px;margin-top:5px;flex-wrap:wrap">'+sorted.map(function(r,i){return '<span style="font-size:11px;padding:3px 9px;background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.15);border-radius:6px;color:var(--gold2)">'+(i+1)+'위 '+(nameMap[r.uid]||'?')+' '+(r.grade?r.grade+'등급':r.score+'점')+'</span>';}).join('')+'</div></div>';
+      }).join('');
+      var html='<div style="margin-top:10px;padding:12px;background:rgba(74,127,255,0.06);border:1px solid rgba(74,127,255,0.15);border-radius:10px">'
+        +'<div style="font-size:12px;font-weight:700;color:#7aa8ff;margin-bottom:10px">📊 전체 '+sameExam.length+'명 통계</div>'
+        +(top5.length?'<div style="font-size:11px;color:var(--gray3);margin-bottom:6px">🔴 오답 문항 TOP5</div><div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px">'+top5.map(function(n){return '<span style="background:rgba(224,82,82,0.15);border:1px solid rgba(224,82,82,0.25);border-radius:5px;padding:3px 9px;font-size:12px;color:#f87171">'+n+'번 ('+wrongCount[n]+'명)</span>';}).join('')+'</div>':'')
+        +'<div style="font-size:11px;color:var(--gray3);margin-bottom:6px">🥇 과목별 우수자 TOP3</div>'+top3Html
+        +'</div>';
+      // 모든 같은 시험 통계 영역에 표시
+      document.querySelectorAll('[id^="exam-stats-"]').forEach(function(el){
+        el.style.display='block';
+        el.innerHTML=html;
+      });
+    });
+  }).catch(function(){});
+};
 window.loadStudentGrades=function(uid){
   var el=document.getElementById('t-grade-list');if(!uid||!el) return;
   el.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오는 중...</div>';
@@ -1072,7 +1338,7 @@ function buildTRewards(){
       var rulesSnap=results[0],pointsSnap=results[1];
       var rules=rulesSnap.docs[0]?rulesSnap.docs[0].data().content:defaultRules;
       var points=pointsSnap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
-      return '<div class="section-label">상벌점 부여</div><select class="modal-select" id="reward-student-select"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select><select class="modal-select" id="reward-type-select"><option value="plus">상점</option><option value="minus">벌점</option></select><input class="modal-input" id="reward-reason-input" placeholder="사유 입력"/><input class="modal-input" id="reward-points-input" type="number" placeholder="점수 입력"/><button class="modal-btn primary" style="margin-bottom:16px" onclick="givePoints()">부여하기</button><div class="section-label">상벌점 규정 관리</div><textarea class="modal-input" id="rules-input" rows="10" style="resize:none">'+rules+'</textarea><button class="modal-btn primary" style="margin-bottom:16px" onclick="saveRules()">규정 저장</button><div class="section-label">이달의 장학생 설정</div><select class="modal-select" id="scholar-student"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'|'+s.name+'">'+s.name+'</option>';}).join('')+'</select><input class="modal-input" id="scholar-prize" placeholder="상품 (예: 스타벅스 5만원권)"/><input class="modal-input" id="scholar-reason" placeholder="선정 사유"/><button class="modal-btn primary" style="margin-bottom:16px" onclick="saveScholar()">장학생 등록</button><div class="section-label">최근 상벌점 내역</div>'+points.slice(0,15).map(function(p){var s=students.find(function(st){return st.uid===p.studentUid;});var date=p.createdAt?p.createdAt.toDate().toLocaleDateString('ko-KR'):'';return '<div class="history-item"><div class="history-dot '+p.type+'"></div><div style="flex:1;font-size:13px">'+(s?s.name:'자동')+' · '+p.reason+'</div><div style="font-size:13px;font-weight:600;'+(p.type==='plus'?'color:var(--gold2)':'color:var(--red)')+'">'+( p.type==='plus'?'+':'')+p.points+'점</div><div style="font-size:11px;color:var(--gray3)">'+date+'</div></div>';}).join('');
+      return '<div class="section-label">상벌점 부여</div><select class="modal-select" id="reward-student-select"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select><select class="modal-select" id="reward-type-select"><option value="plus">상점</option><option value="minus">벌점</option></select><input class="modal-input" id="reward-reason-input" placeholder="사유 입력"/><input class="modal-input" id="reward-points-input" type="number" placeholder="점수 입력"/><button class="modal-btn primary" style="margin-bottom:16px" onclick="givePoints()">부여하기</button><div class="section-label">상벌점 규정 관리</div><textarea class="modal-input" id="rules-input" rows="10" style="resize:none">'+rules+'</textarea><button class="modal-btn primary" style="margin-bottom:16px" onclick="saveRules()">규정 저장</button><div class="section-label">이달의 장학생 설정</div><select class="modal-select" id="scholar-student"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'|'+s.name+'">'+s.name+'</option>';}).join('')+'</select><input class="modal-input" id="scholar-prize" placeholder="상품 (예: 스타벅스 5만원권)"/><input class="modal-input" id="scholar-reason" placeholder="선정 사유"/><button class="modal-btn primary" style="margin-bottom:16px" onclick="saveScholar()">장학생 등록</button><div class="section-label">최근 상벌점 내역</div>'+points.slice(0,30).map(function(p){var s=students.find(function(st){return st.uid===p.studentUid;});var date=p.createdAt?p.createdAt.toDate().toLocaleDateString('ko-KR'):'';return '<div class="history-item"><div class="history-dot '+p.type+'"></div><div style="flex:1;font-size:13px">'+(s?s.name:'자동')+' · '+p.reason+'</div><div style="font-size:13px;font-weight:600;'+(p.type==='plus'?'color:var(--gold2)':'color:var(--red)')+'">'+( p.type==='plus'?'+':'')+p.points+'점</div><div style="font-size:11px;color:var(--gray3);margin:0 6px">'+date+'</div><button onclick="openEditPointModal(\''+p.id+'\',\''+p.studentUid+'\',\''+p.type+'\',\''+encodeURIComponent(p.reason)+'\','+p.points+')" style="padding:4px 8px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.2);border-radius:5px;color:var(--gold);font-size:10px;cursor:pointer;flex-shrink:0">수정</button><button onclick="deletePoint(\''+p.id+'\')" style="padding:4px 8px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:5px;color:#f87171;font-size:10px;cursor:pointer;flex-shrink:0;margin-left:4px">삭제</button></div>';}).join('');
     });
   });
 }
@@ -1083,6 +1349,58 @@ window.givePoints=function(){
   var points=parseInt(document.getElementById('reward-points-input').value);
   if(!uid||!reason||!points){alert('모든 항목을 입력해주세요.');return;}
   addDoc(collection(db,'points'),{studentUid:uid,type:type,reason:reason,points:points,givenBy:currentUser.uid,givenByName:currentProfile.name,createdAt:serverTimestamp()}).then(function(){alert('상벌점이 부여되었습니다!');renderTeacher(3);});
+};
+
+window.togglePlannerDetail=function(elId,studentUid){
+  var el=document.getElementById(elId);
+  if(!el) return;
+  if(el.style.display==='none'){
+    el.style.display='block';
+    var today=new Date().toISOString().split('T')[0];
+    getDocs(query(collection(db,'todos'),where('uid','==',studentUid),where('date','==',today),orderBy('createdAt','asc'))).then(function(snap){
+      if(snap.empty){el.innerHTML='<div style="color:var(--gray3);font-size:12px">할 일 항목 없음</div>';return;}
+      var todos=snap.docs.map(function(d){return d.data();});
+      var statusMap={'none':'⬜','progressing':'🔄','done':'✅'};
+      el.innerHTML='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px">'+
+        ['none','progressing','done'].map(function(s){var c=todos.filter(function(t){return t.status===s;}).length;var label={none:'미시작',progressing:'진행중',done:'완료'};var color={none:'var(--gray3)',progressing:'var(--gold)',done:'var(--green)'};return '<span style="font-size:11px;padding:3px 8px;background:rgba(255,255,255,0.05);border-radius:6px;color:'+color[s]+'">'+label[s]+' '+c+'</span>';}).join('')+
+        '</div>'+
+        todos.map(function(t){
+          var timeHtml=t.studyTime?'<span style="font-size:11px;color:var(--gold2)">⏱ '+t.studyTime+'</span>':'';
+          var certHtml=t.certified?'<span style="font-size:10px;color:#7aa8ff">📸인증</span>':'';
+          return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.04)">'
+            +'<span style="font-size:14px">'+(statusMap[t.status]||'⬜')+'</span>'
+            +'<span class="subject-tag subj-'+t.subject+'" style="font-size:10px">'+(subjectNames[t.subject]||t.subject)+'</span>'
+            +'<span style="flex:1;font-size:13px;'+(t.status==='done'?'text-decoration:line-through;color:var(--gray3)':'')+'">'+t.title+'</span>'
+            +timeHtml+certHtml+'</div>';
+        }).join('');
+    }).catch(function(){el.innerHTML='<div style="color:var(--red);font-size:12px">불러오기 실패</div>';});
+  } else {
+    el.style.display='none';
+  }
+};
+
+window.filterLecturesByStudent=function(uid){
+  var cards=document.querySelectorAll('.lecture-card');
+  cards.forEach(function(c){c.style.display=(uid===''||c.dataset.uid===uid)?'block':'none';});
+};
+window.openEditPointModal=function(id,studentUid,type,reason,points){
+  document.getElementById('edit-point-id').value=id;
+  document.getElementById('edit-point-type').value=type;
+  document.getElementById('edit-point-reason').value=decodeURIComponent(reason);
+  document.getElementById('edit-point-points').value=points;
+  openModal('modal-edit-point');
+};
+window.saveEditPoint=function(){
+  var id=document.getElementById('edit-point-id').value;
+  var type=document.getElementById('edit-point-type').value;
+  var reason=document.getElementById('edit-point-reason').value.trim();
+  var points=parseInt(document.getElementById('edit-point-points').value);
+  if(!reason||!points){alert('사유와 점수를 입력해주세요.');return;}
+  updateDoc(doc(db,'points',id),{type:type,reason:reason,points:points}).then(function(){closeModal('modal-edit-point');alert('수정되었습니다.');renderTeacher(3);}).catch(function(e){alert('수정 실패: '+e.message);});
+};
+window.deletePoint=function(id){
+  if(!confirm('이 상벌점 내역을 삭제하시겠습니까?')) return;
+  deleteDoc(doc(db,'points',id)).then(function(){alert('삭제되었습니다.');renderTeacher(3);}).catch(function(e){alert('삭제 실패: '+e.message);});
 };
 window.saveRules=function(){
   var content=document.getElementById('rules-input').value.trim();
