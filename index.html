@@ -245,6 +245,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
       <div class="teacher-sub" id="teacher-greeting">안녕하세요 👋</div>
     </div>
     <div class="topbar-avatar" id="teacher-avatar-btn" onclick="openModal('modal-profile-teacher')">T</div>
+    <div class="notif-btn" onclick="toggleTeacherNotifPanel()" style="margin-left:10px;position:relative">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1.8"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      <div class="notif-badge" id="teacher-notif-badge" style="display:none">0</div>
+    </div>
   </div>
   <div id="teacher-content" class="teacher-content"></div>
   <div class="teacher-bottom-nav">
@@ -254,6 +258,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 </div>
 
 <!-- 공지 팝업 -->
+<div id="teacher-notif-panel" class="notif-panel">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+    <div style="font-size:14px;font-weight:700;color:var(--gold)">채팅 알림</div>
+    <button onclick="toggleTeacherNotifPanel()" style="background:none;border:none;color:var(--gray3);font-size:20px;cursor:pointer">✕</button>
+  </div>
+  <div id="teacher-notif-list"><div style="font-size:13px;color:var(--gray3);text-align:center;margin-top:40px" data-empty="1">새 알림이 없습니다</div></div>
+</div>
+<div id="teacher-notif-backdrop" onclick="toggleTeacherNotifPanel()" style="display:none;position:fixed;inset:0;z-index:399;"></div>
 <div class="notice-overlay" id="notice-overlay">
   <div class="notice-box">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
@@ -1067,7 +1079,7 @@ function listenChatNotifs() {
 }
 
 function showChatNotif(senderName, preview) {
-  // 1) 토스트 팝업
+  // 1) 토스트 팝업 (공통)
   var existing = document.getElementById('chat-notif-toast');
   if (existing) existing.remove();
   var toast = document.createElement('div');
@@ -1088,12 +1100,16 @@ function showChatNotif(senderName, preview) {
   document.body.appendChild(toast);
   setTimeout(function(){ if(toast.parentNode) toast.remove(); }, 5000);
 
-  // 2) 우측 알림 패널에 채팅 알림 항목 추가
-  var list = document.getElementById('notif-list');
+  // 2) 역할에 따라 알림 패널 분기
+  var isTeacher = currentProfile && (currentProfile.role==='teacher'||currentProfile.role==='master');
+  var listId = isTeacher ? 'teacher-notif-list' : 'notif-list';
+  var badgeId = isTeacher ? 'teacher-notif-badge' : 'notif-badge';
+
+  var list = document.getElementById(listId);
   if (list) {
-    // "새 알림 없음" 메시지 제거
     if (list.querySelector('[data-empty]')) list.innerHTML = '';
     var item = document.createElement('div');
+    item.setAttribute('data-chat-item','1');
     item.style.cssText = 'background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.2);border-radius:10px;padding:12px;margin-bottom:8px;';
     item.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
       +'<span style="font-size:14px">💬</span>'
@@ -1103,14 +1119,29 @@ function showChatNotif(senderName, preview) {
       +'<div style="font-size:12px;color:rgba(255,255,255,0.65)">'+preview+'</div>';
     list.insertBefore(item, list.firstChild);
   }
-  // 3) 배지 카운트 +1
-  var badge = document.getElementById('notif-badge');
+
+  // 3) 배지 +1
+  var badge = document.getElementById(badgeId);
   if (badge) {
     var cur = parseInt(badge.textContent)||0;
     badge.textContent = cur+1;
     badge.style.display = 'flex';
   }
 }
+window.toggleTeacherNotifPanel = function() {
+  var p=document.getElementById('teacher-notif-panel');
+  var b=document.getElementById('teacher-notif-backdrop');
+  if (!p||!b) return;
+  var isOpen=p.classList.contains('open');
+  if (isOpen) { p.classList.remove('open'); b.style.display='none'; }
+  else {
+    p.classList.add('open'); b.style.display='block';
+    // 배지 초기화
+    var badge=document.getElementById('teacher-notif-badge');
+    if(badge){badge.style.display='none';badge.textContent='0';}
+  }
+};
+
 // 채팅 알림 전송 헬퍼
 function _sendChatNotif(receiverUid, senderName, preview) {
   addDoc(collection(db,'chatNotifs',receiverUid,'items'), {
@@ -1405,13 +1436,56 @@ function autoWeeklyPoints(){
 }
 function autoPlannerPenalty(){
   if(!currentUser||currentProfile.role!=='student') return;
-  var yesterday=new Date();yesterday.setDate(yesterday.getDate()-1);
-  var dateStr=yesterday.toISOString().split('T')[0];
-  var pk='plannerPenalty_'+currentUser.uid+'_'+dateStr;
+
+  // 오후 3시(15:00) 이전이면 아직 제출 기회 있으므로 실행 안 함
+  var now=new Date();
+  var hour=now.getHours();
+  if(hour < 15) return;
+
+  var today=now.toISOString().split('T')[0];
+
+  // 2026-05-10, 2026-05-11은 예외 처리 (소급 벌점 생성 방지)
+  var SKIP_DATES=['2026-05-10','2026-05-11'];
+  if(SKIP_DATES.indexOf(today)>=0) return;
+
+  // 오늘 플래너 미제출 체크 (어제 기준이 아닌 당일 3시 이후)
+  var pk='plannerPenalty_'+currentUser.uid+'_'+today;
+
+  // localStorage 1차 중복 체크
   if(localStorage.getItem(pk)) return;
-  getDoc(doc(db,'planners',currentUser.uid+'_'+dateStr)).then(function(d){
-    if(!d.exists()){addDoc(collection(db,'points'),{studentUid:currentUser.uid,type:'minus',reason:'플래너 미제출 ('+dateStr+') (자동)',points:1,givenBy:'system',givenByName:'자동지급',createdAt:serverTimestamp()});localStorage.setItem(pk,'1');}
-  }).catch(function(){});
+
+  // Firestore 2차 중복 체크 (다른 기기 대비)
+  getDocs(query(
+    collection(db,'points'),
+    where('studentUid','==',currentUser.uid),
+    where('reason','==','플래너 미제출 ('+today+') (자동)')
+  )).then(function(snap){
+    if(!snap.empty){ localStorage.setItem(pk,'1'); return; } // 이미 있으면 스킵
+    getDoc(doc(db,'planners',currentUser.uid+'_'+today)).then(function(d){
+      if(!d.exists()){
+        addDoc(collection(db,'points'),{
+          studentUid:currentUser.uid,
+          type:'minus',
+          reason:'플래너 미제출 ('+today+') (자동)',
+          points:1,
+          givenBy:'system',
+          givenByName:'자동지급',
+          createdAt:serverTimestamp()
+        });
+        localStorage.setItem(pk,'1');
+      } else {
+        localStorage.setItem(pk,'1'); // 제출했으면 체크만
+      }
+    }).catch(function(){});
+  }).catch(function(){
+    // Firestore 조회 실패 시 localStorage로만 fallback
+    getDoc(doc(db,'planners',currentUser.uid+'_'+today)).then(function(d){
+      if(!d.exists()){
+        addDoc(collection(db,'points'),{studentUid:currentUser.uid,type:'minus',reason:'플래너 미제출 ('+today+') (자동)',points:1,givenBy:'system',givenByName:'자동지급',createdAt:serverTimestamp()});
+        localStorage.setItem(pk,'1');
+      }
+    }).catch(function(){});
+  });
 }
 
 // ── 선생님 탭 ──
