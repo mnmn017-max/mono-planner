@@ -1334,72 +1334,68 @@ window.saveRules = async function() {
   alert('규정이 저장되었습니다!');
 };
 
-// ── 주간 상점 자동 지급 ──
 async function autoWeeklyPoints() {
-  if (!currentUser || currentProfile?.role !== 'student') return;
+  if (!currentUser || currentProfile.role !== 'student') return;
   const now = new Date();
-  const dayOfWeek = now.getDay(); // 0=일, 1=월
-  if (dayOfWeek !== 1) return; // 월요일에만 실행
+  if (now.getDay() !== 1) return;
   const lastKey = 'weeklyPoints_' + currentUser.uid + '_' + getWeekKey();
-  if (localStorage.getItem(lastKey)) return; // 이미 처리됨
-
-  // 지난 주 벌점 체크
-  const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
-  const pointsSnap = await getDocs(query(
-    collection(db,'points'),
-    where('studentUid','==',currentUser.uid),
-    where('type','==','minus'),
-    where('createdAt','>',weekAgo)
-  ));
-
-  // 지난 주 플래너 제출 체크 (결석 여부)
-  let absenceCount = 0;
-  for (let i = 1; i <= 7; i++) {
-    const d = new Date(); d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().split('T')[0];
-    const plannerDoc = await getDoc(doc(db,'planners',currentUser.uid+'_'+dateStr));
-    if (!plannerDoc.exists()) absenceCount++;
-  }
-
-  const reasons = [];
-  // 벌점 없으면 +5점
-  if (pointsSnap.empty) {
-    await addDoc(collection(db,'points'), {
-      studentUid:currentUser.uid, type:'plus', reason:'주 단위 생활관리 벌점 없음 (자동)',
-      points:5, givenBy:'system', givenByName:'자동지급', createdAt:serverTimestamp()
-    });
-    reasons.push('주 단위 벌점 없음 +5점');
-  }
-  // 결석 없으면 +5점
-  if (absenceCount === 0) {
-    await addDoc(collection(db,'points'), {
-      studentUid:currentUser.uid, type:'plus', reason:'주 단위 결석 없음 (자동)',
-      points:5, givenBy:'system', givenByName:'자동지급', createdAt:serverTimestamp()
-    });
-    reasons.push('주 단위 결석 없음 +5점');
-  }
-  if (reasons.length > 0) {
-    localStorage.setItem(lastKey, '1');
-    alert('🎉 주간 상점 자동 지급!\n' + reasons.join('\n'));
-  }
+  if (localStorage.getItem(lastKey)) return;
+  try {
+    const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+    const pointsSnap = await getDocs(query(
+      collection(db,'points'),
+      where('studentUid','==',currentUser.uid),
+      where('type','==','minus'),
+      where('createdAt','>',weekAgo)
+    ));
+    let absenceCount = 0;
+    for (let i = 1; i <= 7; i++) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      const plannerDoc = await getDoc(doc(db,'planners',currentUser.uid+'_'+dateStr));
+      if (!plannerDoc.exists()) absenceCount++;
+    }
+    const reasons = [];
+    if (pointsSnap.empty) {
+      await addDoc(collection(db,'points'), {
+        studentUid:currentUser.uid, type:'plus',
+        reason:'주 단위 생활관리 벌점 없음 (자동)',
+        points:5, givenBy:'system', givenByName:'자동지급', createdAt:serverTimestamp()
+      });
+      reasons.push('주 단위 벌점 없음 +5점');
+    }
+    if (absenceCount === 0) {
+      await addDoc(collection(db,'points'), {
+        studentUid:currentUser.uid, type:'plus',
+        reason:'주 단위 결석 없음 (자동)',
+        points:5, givenBy:'system', givenByName:'자동지급', createdAt:serverTimestamp()
+      });
+      reasons.push('주 단위 결석 없음 +5점');
+    }
+    if (reasons.length > 0) {
+      localStorage.setItem(lastKey, '1');
+      alert('🎉 주간 상점 자동 지급!\n' + reasons.join('\n'));
+    }
+  } catch(e) { console.log('주간 상점 오류:', e); }
 }
 
-// ── 플래너 미제출 벌점 자동 체크 ──
 async function autoPlannerPenalty() {
-  if (!currentUser || currentProfile?.role !== 'student') return;
+  if (!currentUser || currentProfile.role !== 'student') return;
   const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
   const dateStr = yesterday.toISOString().split('T')[0];
   const penaltyKey = 'plannerPenalty_' + currentUser.uid + '_' + dateStr;
   if (localStorage.getItem(penaltyKey)) return;
-  const plannerDoc = await getDoc(doc(db,'planners',currentUser.uid+'_'+dateStr));
-  if (!plannerDoc.exists()) {
-    // 어제 플래너 미제출이면 -1점
-    await addDoc(collection(db,'points'), {
-      studentUid:currentUser.uid, type:'minus', reason:'플래너 미제출 ('+dateStr+') (자동)',
-      points:1, givenBy:'system', givenByName:'자동지급', createdAt:serverTimestamp()
-    });
-    localStorage.setItem(penaltyKey, '1');
-  }
+  try {
+    const plannerDoc = await getDoc(doc(db,'planners',currentUser.uid+'_'+dateStr));
+    if (!plannerDoc.exists()) {
+      await addDoc(collection(db,'points'), {
+        studentUid:currentUser.uid, type:'minus',
+        reason:'플래너 미제출 ('+dateStr+') (자동)',
+        points:1, givenBy:'system', givenByName:'자동지급', createdAt:serverTimestamp()
+      });
+      localStorage.setItem(penaltyKey, '1');
+    }
+  } catch(e) { console.log('플래너 벌점 오류:', e); }
 }
 
 function getWeekKey() {
