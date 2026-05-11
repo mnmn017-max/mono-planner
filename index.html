@@ -1529,7 +1529,6 @@ window.openEditAccountModal = function(uid, name, username) {
   document.getElementById('edit-acc-uid').value = uid;
   document.getElementById('edit-acc-name').value = name;
   document.getElementById('edit-acc-id').value = username;
-  document.getElementById('edit-acc-pw').value = '';
   openModal('modal-edit-account');
 };
 
@@ -1537,30 +1536,23 @@ window.saveEditAccount = async function() {
   const uid = document.getElementById('edit-acc-uid').value;
   const name = document.getElementById('edit-acc-name').value.trim();
   const username = document.getElementById('edit-acc-id').value.trim();
-  const newPw = document.getElementById('edit-acc-pw').value.trim();
-  if (!name||!username) { alert('이름과 아이디를 입력해주세요.'); return; }
-  // 아이디 중복 확인
+  if (!name || !username) { alert('이름과 아이디를 입력해주세요.'); return; }
   const q = query(collection(db,'users'), where('username','==',username));
   const snap = await getDocs(q);
-  const conflict = snap.docs.find(function(d){ return d.id !== uid; });
+  let conflict = false;
+  snap.docs.forEach(function(d) { if (d.id !== uid) conflict = true; });
   if (conflict) { alert('이미 사용 중인 아이디입니다.'); return; }
-  const updateData = { name, username };
-  await updateDoc(doc(db,'users',uid), updateData);
-  // 비밀번호 변경은 해당 계정이 로그인된 상태에서만 가능해서 안내 메시지 표시
-  if (newPw && newPw.length >= 6) {
-    alert('이름과 아이디가 변경되었습니다.\n⚠️ 비밀번호 변경은 해당 학생이 직접 앱에서 내 정보 수정으로 변경해야 합니다.');
-  } else {
-    alert('계정 정보가 수정되었습니다.');
-  }
+  await updateDoc(doc(db,'users',uid), { name: name, username: username });
+  alert('계정 정보가 수정되었습니다.');
   closeModal('modal-edit-account');
   renderTeacher(6);
 };
 
 window.deleteAccount = async function(uid, name) {
-  if (!confirm(name + ' 계정을 정말 삭제하시겠습니까?\n\n⚠️ 이 작업은 되돌릴 수 없습니다.\n(관련 데이터는 유지됩니다)')) return;
+  if (!confirm(name + ' 계정을 정말 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) { return; }
   try {
     await deleteDoc(doc(db,'users',uid));
-    alert(name + ' 계정이 삭제되었습니다.\n(Firebase Auth 계정은 Firebase 콘솔에서 별도 삭제 가능)');
+    alert(name + ' 계정이 삭제되었습니다.');
     renderTeacher(6);
   } catch(e) {
     alert('삭제 실패: ' + e.message);
