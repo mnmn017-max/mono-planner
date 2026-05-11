@@ -990,8 +990,31 @@ async function buildTDashboard() {
   const today = new Date().toISOString().split('T')[0];
   const plannerSnap = await getDocs(collection(db,'planners'));
   const submittedToday = plannerSnap.docs.filter(function(d){return d.id.includes('_'+today);}).map(function(d){return d.data().name;});
-  await window.checkConsultationAlerts();
-  const consultHtml = window.buildConsultSchedule();
+
+  // 상담 알림 직접 처리
+  const alerts = [];
+  try {
+    const todayDate = new Date();
+    for (const s of students) {
+      const cq = query(collection(db,'comments'), where('studentUid','==',s.uid), orderBy('createdAt','desc'), limit(1));
+      const csnap = await getDocs(cq);
+      if (csnap.empty) { alerts.push({name:s.name, message:'상담 기록 없음', urgent:true}); continue; }
+      const lastDate = csnap.docs[0].data().createdAt?.toDate();
+      if (!lastDate) continue;
+      const days = Math.floor((todayDate - lastDate)/(1000*60*60*24));
+      if (days >= 7) alerts.push({name:s.name, message:'마지막 상담 '+days+'일 전', urgent:days>=14});
+    }
+  } catch(e) {}
+
+  const consultHtml = alerts.length === 0
+    ? '<div style="color:var(--gray3);font-size:13px;padding:10px 0">모든 학생 상담이 최신 상태입니다 ✅</div>'
+    : alerts.map(function(a){
+        return '<div style="display:flex;align-items:center;gap:10px;padding:10px 13px;background:'+(a.urgent?'rgba(224,82,82,0.1)':'rgba(201,168,76,0.08)')+';border:1px solid '+(a.urgent?'rgba(224,82,82,0.25)':'rgba(201,168,76,0.2)')+';border-radius:10px;margin-bottom:7px">'
+        +'<div style="font-size:18px">'+(a.urgent?'🔴':'🟡')+'</div>'
+        +'<div style="flex:1"><div style="font-size:14px;font-weight:600">'+a.name+'</div><div style="font-size:12px;color:var(--gray3);margin-top:2px">'+a.message+'</div></div>'
+        +'<div style="font-size:11px;color:'+(a.urgent?'var(--red)':'var(--gold)')+'">'+( a.urgent?'⚠️ 긴급':'상담 필요')+'</div></div>';
+      }).join('');
+
   return '<div class="stat-grid"><div class="stat-card"><div class="stat-val">'+students.length+'</div><div class="stat-lbl">전체 학생</div></div><div class="stat-card"><div class="stat-val" style="color:var(--green)">'+submittedToday.length+'</div><div class="stat-lbl">플래너 제출</div></div><div class="stat-card"><div class="stat-val">'+(students.length-submittedToday.length)+'</div><div class="stat-lbl">미제출</div></div><div class="stat-card"><div class="stat-val" style="color:var(--gold);font-size:14px">'+new Date().toLocaleDateString('ko-KR')+'</div><div class="stat-lbl">오늘 날짜</div></div></div>'
   +'<div class="section-label">🔔 상담 일정 알림</div>'+consultHtml
   +'<div class="section-label">플래너 제출 현황</div><div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">'+students.map(function(s){return '<span style="background:'+(submittedToday.includes(s.name)?'rgba(61,186,126,0.12)':'rgba(224,82,82,0.08)')+';border:1px solid '+(submittedToday.includes(s.name)?'rgba(61,186,126,0.22)':'rgba(224,82,82,0.2)')+';border-radius:6px;padding:4px 10px;font-size:12px;color:'+(submittedToday.includes(s.name)?'var(--green)':'#f87171')+'">'+(submittedToday.includes(s.name)?'✅':'❌')+' '+s.name+'</span>';}).join('')+'</div>'
