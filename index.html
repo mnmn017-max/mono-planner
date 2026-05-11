@@ -379,15 +379,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 
 <div class="modal-overlay" id="modal-add-lecture"><div class="modal">
   <div class="modal-title">📚 인강 추가</div>
-  <input type="hidden" id="lec-student-uid"/>
-  <input type="hidden" id="lec-student-name"/>
-  <div class="modal-label">인강 회사</div><input class="modal-input" id="lec-company" placeholder="예: 메가스터디, 대성마이맥"/>
-  <div class="modal-label">과목</div><input class="modal-input" id="lec-subject" placeholder="예: 수학, 영어"/>
-  <div class="modal-label">강사명</div><input class="modal-input" id="lec-instructor" placeholder="예: 현우진, 김민정"/>
-  <div class="modal-label">인강명</div><input class="modal-input" id="lec-name" placeholder="예: 뉴런 수학 시즌2"/>
-  <div class="modal-label">총 강의수</div><input class="modal-input" type="number" id="lec-total" placeholder="예: 60"/>
-  <div class="modal-label">수강 계획 (요일)</div><input class="modal-input" id="lec-schedule" placeholder="예: 월,수,금"/>
-  <div class="modal-label">주당 수강 강수</div><input class="modal-input" type="number" id="lec-count" placeholder="예: 3"/>
+  <div class="modal-label">학생 선택 *</div>
+  <select class="modal-select" id="lec-student-uid-select"><option value="">학생 선택</option></select>
+  <div class="modal-label">인강 회사 *</div>
+  <input class="modal-input" id="lec-company" placeholder="예: 메가스터디, 대성마이맥, 이투스"/>
+  <div class="modal-label">과목 *</div>
+  <input class="modal-input" id="lec-subject" placeholder="예: 수학, 영어, 국어"/>
+  <div class="modal-label">강사명</div>
+  <input class="modal-input" id="lec-instructor" placeholder="예: 현우진, 김민정"/>
+  <div class="modal-label">인강명 *</div>
+  <input class="modal-input" id="lec-name" placeholder="예: 뉴런 수학 시즌2"/>
+  <div class="modal-label">총 강의수 *</div>
+  <input class="modal-input" type="number" id="lec-total" placeholder="예: 60"/>
+  <div class="modal-label">현재까지 수강 완료 강수</div>
+  <input class="modal-input" type="number" id="lec-completed-init" placeholder="예: 10 (처음이면 0)"/>
+  <div style="background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.2);border-radius:10px;padding:12px;margin-bottom:10px">
+    <div style="font-size:12px;font-weight:600;color:var(--gold);margin-bottom:8px">📅 수강 계획</div>
+    <div class="modal-label">수강 요일</div>
+    <input class="modal-input" id="lec-schedule" placeholder="예: 월,수,금 또는 매일"/>
+    <div class="modal-label">주당 수강 강수</div>
+    <input class="modal-input" type="number" id="lec-count" placeholder="예: 3"/>
+  </div>
   <button class="modal-btn primary" onclick="saveLecture()">등록하기</button>
   <button class="modal-btn cancel" onclick="closeModal('modal-add-lecture')">취소</button>
 </div></div>
@@ -395,8 +407,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 <div class="modal-overlay" id="modal-update-lecture"><div class="modal">
   <div class="modal-title">📚 수강 현황 업데이트</div>
   <input type="hidden" id="update-lec-id"/>
-  <div class="modal-label">현재까지 수강 완료 강수</div>
+  <div style="text-align:center;font-size:13px;color:var(--gray3);margin-bottom:14px" id="update-lec-total-display"></div>
+  <div class="modal-label">현재까지 수강 완료 강수 *</div>
   <input class="modal-input" type="number" id="update-lec-completed" placeholder="완료한 강수 입력"/>
+  <div style="background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.2);border-radius:10px;padding:12px;margin-bottom:10px">
+    <div style="font-size:12px;font-weight:600;color:var(--gold);margin-bottom:8px">📅 수강 계획 변경 (선택)</div>
+    <div class="modal-label">수강 요일 변경</div>
+    <input class="modal-input" id="update-lec-schedule-new" placeholder="변경할 요일 (예: 월,목,토)"/>
+    <div class="modal-label">주당 수강 강수 변경</div>
+    <input class="modal-input" type="number" id="update-lec-count-new" placeholder="변경할 주당 강수"/>
+  </div>
   <button class="modal-btn primary" onclick="updateLecture()">업데이트</button>
   <button class="modal-btn cancel" onclick="closeModal('modal-update-lecture')">취소</button>
 </div></div>
@@ -1026,12 +1046,89 @@ async function buildTPlanner() {
   const today = new Date().toISOString().split('T')[0];
   const plannerSnap = await getDocs(collection(db,'planners'));
   const todayPlanners = plannerSnap.docs.filter(function(d){return d.id.includes('_'+today);}).map(function(d){return d.data();});
-  return '<div class="section-label">오늘 제출된 플래너</div>'+(!todayPlanners.length?'<div style="color:var(--gray3);font-size:13px;padding:10px 0">아직 제출된 플래너가 없습니다</div>':todayPlanners.map(function(p){return '<div class="planner-thumb"><div style="font-size:14px;font-weight:600;margin-bottom:4px">'+p.name+'</div><div style="font-size:11px;color:var(--green)">✅ 제출 완료</div></div>';}).join(''))
-  +'<div class="section-label" style="margin-top:20px">코멘트 작성</div><select class="modal-select" id="comment-student-select"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select><textarea class="modal-input" id="comment-input" rows="4" placeholder="학생에게 전달할 코멘트..." style="resize:none;margin-bottom:10px"></textarea><button class="modal-btn primary" onclick="saveComment()">코멘트 저장</button>'
-  +'<div class="section-label" style="margin-top:20px">📚 인강 관리</div>'
-  +'<select class="modal-select" id="lecture-student-select" onchange="loadStudentLectures(this.value)"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'|'+s.name+'">'+s.name+'</option>';}).join('')+'</select>'
-  +'<div id="lecture-list"><div style="color:var(--gray3);font-size:13px">학생을 선택하세요</div></div>'
-  +'<button class="appeal-btn" style="margin-top:12px" onclick="openAddLectureModal()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>인강 추가</button>';
+
+  // 전체 학생 인강 현황 로드
+  let allLecturesHtml = '';
+  try {
+    const lectureSnap = await getDocs(query(collection(db,'lectures'), orderBy('createdAt','desc')));
+    const lectures = lectureSnap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
+    if (lectures.length) {
+      allLecturesHtml = lectures.map(function(lc) {
+        const total = parseInt(lc.totalLessons)||0;
+        const done = parseInt(lc.completedLessons)||0;
+        const pct = total>0 ? Math.round(done/total*100) : 0;
+        const student = students.find(function(s){return s.uid===lc.studentUid;});
+        // 완료 예상일 계산
+        let eta = '-';
+        if (lc.scheduleCount && done < total) {
+          const remaining = total - done;
+          const weeksNeeded = Math.ceil(remaining / (parseInt(lc.scheduleCount)||1));
+          const etaDate = new Date();
+          etaDate.setDate(etaDate.getDate() + weeksNeeded*7);
+          eta = etaDate.toLocaleDateString('ko-KR');
+        } else if (done >= total) { eta = '✅ 완료'; }
+        return '<div class="score-card" style="margin-bottom:10px">'
+          +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">'
+          +'<div>'
+          +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'
+          +'<span style="background:rgba(74,127,255,0.2);border-radius:5px;padding:2px 8px;font-size:11px;color:#7aa8ff">'+(student?student.name:'?')+'</span>'
+          +'<span style="font-size:14px;font-weight:600">'+lc.lectureName+'</span>'
+          +'</div>'
+          +'<div style="font-size:11px;color:var(--gray3)">'+lc.company+' · '+lc.subject+' · '+lc.instructor+'</div>'
+          +'</div>'
+          +'<button onclick="openUpdateLectureModal(\''+lc.id+'\','+done+','+total+')" style="padding:6px 12px;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;white-space:nowrap;flex-shrink:0">수강 업데이트</button>'
+          +'</div>'
+          // 진도 바
+          +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
+          +'<div style="flex:1;background:rgba(255,255,255,0.05);border-radius:6px;height:10px;overflow:hidden">'
+          +'<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:6px;transition:width .4s"></div>'
+          +'</div>'
+          +'<span style="font-size:13px;font-weight:700;color:var(--gold2);white-space:nowrap">'+done+' / '+total+'강 ('+pct+'%)</span>'
+          +'</div>'
+          // 상세 정보
+          +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">'
+          +'<div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:7px 10px">'
+          +'<div style="color:var(--gray3);margin-bottom:2px">수강 계획</div>'
+          +'<div style="font-weight:600">'+(lc.schedule||'-')+' · 주 '+(lc.scheduleCount||'-')+'강</div>'
+          +'</div>'
+          +'<div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:7px 10px">'
+          +'<div style="color:var(--gray3);margin-bottom:2px">완료 예상일</div>'
+          +'<div style="font-weight:600;color:'+(done>=total?'var(--green)':'var(--gold2)')+'">'+eta+'</div>'
+          +'</div>'
+          +'<div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:7px 10px">'
+          +'<div style="color:var(--gray3);margin-bottom:2px">마지막 업데이트</div>'
+          +'<div style="font-weight:600">'+(lc.lastUpdateDate||'-')+'</div>'
+          +'</div>'
+          +'<div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:7px 10px">'
+          +'<div style="color:var(--gray3);margin-bottom:2px">남은 강의</div>'
+          +'<div style="font-weight:600;color:var(--accent)">'+(total-done)+'강</div>'
+          +'</div>'
+          +'</div>'
+          +'</div>';
+      }).join('');
+    } else {
+      allLecturesHtml = '<div style="color:var(--gray3);font-size:13px;padding:10px 0">등록된 인강이 없습니다</div>';
+    }
+  } catch(e) {
+    allLecturesHtml = '<div style="color:var(--gray3);font-size:13px">불러오기 실패</div>';
+  }
+
+  return '<div class="section-label">오늘 제출된 플래너</div>'
+    +(!todayPlanners.length
+      ?'<div style="color:var(--gray3);font-size:13px;padding:10px 0">아직 제출된 플래너가 없습니다</div>'
+      :todayPlanners.map(function(p){return '<div class="planner-thumb"><div style="font-size:14px;font-weight:600;margin-bottom:4px">'+p.name+'</div><div style="font-size:11px;color:var(--green)">✅ 제출 완료</div></div>';}).join(''))
+    +'<div class="section-label" style="margin-top:20px">코멘트 작성</div>'
+    +'<select class="modal-select" id="comment-student-select"><option value="">학생 선택</option>'
+    +students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')
+    +'</select>'
+    +'<textarea class="modal-input" id="comment-input" rows="4" placeholder="학생에게 전달할 코멘트..." style="resize:none;margin-bottom:10px"></textarea>'
+    +'<button class="modal-btn primary" onclick="saveComment()">코멘트 저장</button>'
+    // 인강 관리 섹션
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-top:20px;margin-bottom:8px">'
+    +'<div class="section-label" style="margin:0">📚 인강 관리 현황</div>'
+    +'<button onclick="openAddLectureModal()" style="padding:7px 14px;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.3);border-radius:8px;color:var(--gold);font-size:13px;cursor:pointer;font-weight:600">+ 인강 추가</button>'
+    +'</div>'
+    +allLecturesHtml;
 }
 
 window.loadStudentLectures = async function(val) {
@@ -1080,58 +1177,66 @@ window.loadStudentLectures = async function(val) {
 };
 
 window.openAddLectureModal = function() {
-  const sel = document.getElementById('lecture-student-select');
-  if (!sel||!sel.value) { alert('학생을 먼저 선택해주세요.'); return; }
-  const parts = sel.value.split('|');
-  document.getElementById('lec-student-uid').value = parts[0];
-  document.getElementById('lec-student-name').value = parts[1]||'';
-  document.getElementById('lec-company').value='';
-  document.getElementById('lec-subject').value='';
-  document.getElementById('lec-instructor').value='';
-  document.getElementById('lec-name').value='';
-  document.getElementById('lec-total').value='';
-  document.getElementById('lec-schedule').value='';
-  document.getElementById('lec-count').value='';
+  // 학생 선택 드롭다운 동적 생성
+  loadStudentList().then(function(students) {
+    const sel = document.getElementById('lec-student-uid-select');
+    if (sel) {
+      sel.innerHTML = '<option value="">학생 선택</option>'
+        + students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('');
+    }
+  });
+  ['lec-company','lec-subject','lec-instructor','lec-name','lec-total','lec-schedule','lec-count','lec-completed-init'].forEach(function(id){
+    const el = document.getElementById(id); if(el) el.value='';
+  });
   openModal('modal-add-lecture');
 };
 
 window.saveLecture = async function() {
-  const uid = document.getElementById('lec-student-uid').value;
+  const uid = document.getElementById('lec-student-uid-select').value;
   const company = document.getElementById('lec-company').value.trim();
   const subject = document.getElementById('lec-subject').value.trim();
   const instructor = document.getElementById('lec-instructor').value.trim();
   const lectureName = document.getElementById('lec-name').value.trim();
-  const totalLessons = document.getElementById('lec-total').value;
+  const totalLessons = parseInt(document.getElementById('lec-total').value)||0;
   const schedule = document.getElementById('lec-schedule').value.trim();
-  const scheduleCount = document.getElementById('lec-count').value;
+  const scheduleCount = parseInt(document.getElementById('lec-count').value)||0;
+  const completedInit = parseInt(document.getElementById('lec-completed-init').value)||0;
   if (!uid||!company||!lectureName||!totalLessons) { alert('필수 항목을 입력해주세요.'); return; }
+  const today = new Date().toLocaleDateString('ko-KR');
   await addDoc(collection(db,'lectures'), {
     studentUid:uid, company, subject, instructor, lectureName,
-    totalLessons:parseInt(totalLessons), completedLessons:0,
-    schedule, scheduleCount:parseInt(scheduleCount)||0,
-    lastUpdateDate:'', createdAt:serverTimestamp()
+    totalLessons, completedLessons:completedInit,
+    schedule, scheduleCount,
+    lastUpdateDate:completedInit>0?today:'',
+    createdAt:serverTimestamp()
   });
   closeModal('modal-add-lecture');
   alert('인강이 등록되었습니다!');
-  loadStudentLectures(document.getElementById('lecture-student-select').value);
+  renderTeacher(1);
 };
 
-window.openUpdateLectureModal = function(lectureId, currentCompleted) {
+window.openUpdateLectureModal = function(lectureId, currentCompleted, totalLessons) {
   document.getElementById('update-lec-id').value = lectureId;
   document.getElementById('update-lec-completed').value = currentCompleted;
+  document.getElementById('update-lec-total-display').textContent = '총 '+totalLessons+'강';
+  document.getElementById('update-lec-schedule-new').value = '';
+  document.getElementById('update-lec-count-new').value = '';
   openModal('modal-update-lecture');
 };
 
 window.updateLecture = async function() {
   const lectureId = document.getElementById('update-lec-id').value;
   const completed = parseInt(document.getElementById('update-lec-completed').value)||0;
+  const newSchedule = document.getElementById('update-lec-schedule-new').value.trim();
+  const newCount = parseInt(document.getElementById('update-lec-count-new').value)||0;
   const today = new Date().toLocaleDateString('ko-KR');
-  await updateDoc(doc(db,'lectures',lectureId), {
-    completedLessons:completed, lastUpdateDate:today, updatedAt:serverTimestamp()
-  });
+  const updateData = { completedLessons:completed, lastUpdateDate:today, updatedAt:serverTimestamp() };
+  if (newSchedule) updateData.schedule = newSchedule;
+  if (newCount) updateData.scheduleCount = newCount;
+  await updateDoc(doc(db,'lectures',lectureId), updateData);
   closeModal('modal-update-lecture');
   alert('수강 현황이 업데이트되었습니다!');
-  loadStudentLectures(document.getElementById('lecture-student-select').value);
+  renderTeacher(1);
 };
 window.saveComment = async function() {
   const studentUid = document.getElementById('comment-student-select').value;
