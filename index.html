@@ -38,6 +38,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .topbar-avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--gold2));display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--navy);cursor:pointer;flex-shrink:0;}
 .notif-btn{position:relative;cursor:pointer;display:flex;align-items:center;}
 .notif-badge{position:absolute;top:-3px;right:-4px;width:16px;height:16px;background:var(--red);border-radius:50%;font-size:9px;font-weight:700;display:none;align-items:center;justify-content:center;color:#fff;}
+@keyframes slideDown{from{opacity:0;transform:translateX(-50%) translateY(-16px);}to{opacity:1;transform:translateX(-50%) translateY(0);}}
 .content-area{flex:1;overflow-y:auto;padding:0 16px 16px;}
 .content-area::-webkit-scrollbar{width:2px;}
 .content-area::-webkit-scrollbar-thumb{background:rgba(201,168,76,0.2);border-radius:2px;}
@@ -275,6 +276,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 </div>
 <div id="notif-backdrop" onclick="toggleNotifPanel()" style="display:none;position:fixed;inset:0;z-index:399;"></div>
 
+<div class="modal-overlay" id="modal-edit-todo"><div class="modal">
+  <div class="modal-title">할 일 수정</div>
+  <input type="hidden" id="edit-todo-id"/>
+  <div class="modal-label">학습 내용</div><input class="modal-input" id="edit-todo-title" placeholder="학습 내용 입력"/>
+  <div class="modal-label">과목</div>
+  <select class="modal-select" id="edit-todo-subject">
+    <option value="ko">국어</option><option value="en">영어</option><option value="ma">수학</option>
+    <option value="hi">한국사</option><option value="sc">과학탐구</option><option value="so">사회탐구</option>
+  </select>
+  <button class="modal-btn primary" onclick="saveEditTodo()">저장하기</button>
+  <button class="modal-btn" onclick="confirmDeleteTodo()" style="background:rgba(224,82,82,0.12);border:1px solid rgba(224,82,82,0.25);color:#f87171;">🗑 삭제하기</button>
+  <button class="modal-btn cancel" onclick="closeModal('modal-edit-todo')">취소</button>
+</div></div>
+
 <!-- MODALS -->
 <div class="modal-overlay" id="modal-todo"><div class="modal">
   <div class="modal-title">할 일 추가</div>
@@ -317,22 +332,82 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <div class="modal-label">시험명</div><input class="modal-input" id="grade-exam-name" placeholder="예: 2025년 9월 모의평가"/>
   <div class="modal-label">응시일</div><input class="modal-input" type="date" id="grade-exam-date"/>
   <div class="modal-label">과목별 점수 / 등급</div>
-  <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center"><span class="subject-tag subj-ko" style="width:52px;text-align:center">국어</span><input class="modal-input" id="grade-ko-score" placeholder="점수" style="flex:1;margin-bottom:0" type="number"/><input class="modal-input" id="grade-ko-grade" placeholder="등급" style="width:60px;margin-bottom:0" type="number" min="1" max="9"/></div>
-  <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center"><span class="subject-tag subj-en" style="width:52px;text-align:center">영어</span><input class="modal-input" id="grade-en-score" placeholder="점수" style="flex:1;margin-bottom:0" type="number"/><input class="modal-input" id="grade-en-grade" placeholder="등급" style="width:60px;margin-bottom:0" type="number" min="1" max="9"/></div>
-  <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center"><span class="subject-tag subj-ma" style="width:52px;text-align:center">수학</span><input class="modal-input" id="grade-ma-score" placeholder="점수" style="flex:1;margin-bottom:0" type="number"/><input class="modal-input" id="grade-ma-grade" placeholder="등급" style="width:60px;margin-bottom:0" type="number" min="1" max="9"/></div>
-  <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center"><span class="subject-tag subj-hi" style="width:52px;text-align:center">한국사</span><input class="modal-input" id="grade-hi-score" placeholder="점수" style="flex:1;margin-bottom:0" type="number"/><input class="modal-input" id="grade-hi-grade" placeholder="등급" style="width:60px;margin-bottom:0" type="number" min="1" max="9"/></div>
-  <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center"><span class="subject-tag subj-sc" style="width:52px;text-align:center">과탐</span><input class="modal-input" id="grade-sc-score" placeholder="점수" style="flex:1;margin-bottom:0" type="number"/><input class="modal-input" id="grade-sc-grade" placeholder="등급" style="width:60px;margin-bottom:0" type="number" min="1" max="9"/></div>
-  <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center"><span class="subject-tag subj-so" style="width:52px;text-align:center">사탐</span><input class="modal-input" id="grade-so-score" placeholder="점수" style="flex:1;margin-bottom:0" type="number"/><input class="modal-input" id="grade-so-grade" placeholder="등급" style="width:60px;margin-bottom:0" type="number" min="1" max="9"/></div>
-  <div class="modal-label">오답 문항 (과목별)</div>
-  <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center"><span class="subject-tag subj-ko" style="width:52px;text-align:center;flex-shrink:0">국어</span><input class="modal-input" id="grade-wrong-ko" placeholder="예: 14, 22" style="margin-bottom:0;flex:1"/></div>
-  <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center"><span class="subject-tag subj-en" style="width:52px;text-align:center;flex-shrink:0">영어</span><input class="modal-input" id="grade-wrong-en" placeholder="예: 29, 38" style="margin-bottom:0;flex:1"/></div>
-  <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center"><span class="subject-tag subj-ma" style="width:52px;text-align:center;flex-shrink:0">수학</span><input class="modal-input" id="grade-wrong-ma" placeholder="예: 21, 29, 30" style="margin-bottom:0;flex:1"/></div>
-  <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center"><span class="subject-tag subj-hi" style="width:52px;text-align:center;flex-shrink:0">한국사</span><input class="modal-input" id="grade-wrong-hi" placeholder="예: 7, 12" style="margin-bottom:0;flex:1"/></div>
-  <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center"><span class="subject-tag subj-sc" style="width:52px;text-align:center;flex-shrink:0">과탐</span><input class="modal-input" id="grade-wrong-sc" placeholder="예: 8, 15" style="margin-bottom:0;flex:1"/></div>
-  <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><span class="subject-tag subj-so" style="width:52px;text-align:center;flex-shrink:0">사탐</span><input class="modal-input" id="grade-wrong-so" placeholder="예: 9, 18" style="margin-bottom:0;flex:1"/></div>
-  <div class="modal-label">실수한 부분</div><textarea class="modal-input" id="grade-ref-mistake" rows="2" placeholder="이번 시험에서 실수한 부분..." style="resize:none"></textarea>
-  <div class="modal-label">부족했던 부분</div><textarea class="modal-input" id="grade-ref-weak" rows="2" placeholder="이번 시험에서 부족했던 부분..." style="resize:none"></textarea>
-  <div class="modal-label">다음 시험까지 개선방안</div><textarea class="modal-input" id="grade-ref-plan" rows="2" placeholder="다음 시험까지 개선방안..." style="resize:none"></textarea>
+  <!-- 국어 -->
+  <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:10px;margin-bottom:8px">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:7px">
+      <span class="subject-tag subj-ko" style="width:52px;text-align:center;flex-shrink:0">국어</span>
+      <select class="modal-select" id="grade-ko-opt" style="flex:1;margin-bottom:0;font-size:12px"><option value="">선택과목 없음</option><option value="화법과 작문">화법과 작문</option><option value="언어와 매체">언어와 매체</option></select>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span style="font-size:11px;color:var(--gray3);width:52px;flex-shrink:0">점수/등급</span>
+      <input class="modal-input" id="grade-ko-score" placeholder="점수" style="flex:1;margin-bottom:0" type="number"/>
+      <input class="modal-input" id="grade-ko-grade" placeholder="등급" style="width:60px;margin-bottom:0" type="number" min="1" max="9"/>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:7px">
+      <span style="font-size:11px;color:var(--gray3);width:52px;flex-shrink:0">오답</span>
+      <input class="modal-input" id="grade-wrong-ko" placeholder="예: 14, 22" style="margin-bottom:0;flex:1"/>
+    </div>
+  </div>
+  <!-- 영어 -->
+  <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:10px;margin-bottom:8px">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:7px">
+      <span class="subject-tag subj-en" style="width:52px;text-align:center;flex-shrink:0">영어</span>
+      <span style="font-size:11px;color:var(--gray3)">절대평가</span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span style="font-size:11px;color:var(--gray3);width:52px;flex-shrink:0">점수/등급</span>
+      <input class="modal-input" id="grade-en-score" placeholder="점수" style="flex:1;margin-bottom:0" type="number"/>
+      <input class="modal-input" id="grade-en-grade" placeholder="등급" style="width:60px;margin-bottom:0" type="number" min="1" max="9"/>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:7px">
+      <span style="font-size:11px;color:var(--gray3);width:52px;flex-shrink:0">오답</span>
+      <input class="modal-input" id="grade-wrong-en" placeholder="예: 29, 38" style="margin-bottom:0;flex:1"/>
+    </div>
+  </div>
+  <!-- 수학 -->
+  <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:10px;margin-bottom:8px">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:7px">
+      <span class="subject-tag subj-ma" style="width:52px;text-align:center;flex-shrink:0">수학</span>
+      <select class="modal-select" id="grade-ma-opt" style="flex:1;margin-bottom:0;font-size:12px"><option value="">선택과목 없음</option><option value="미적분">미적분</option><option value="확률과 통계">확률과 통계</option><option value="기하">기하</option></select>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span style="font-size:11px;color:var(--gray3);width:52px;flex-shrink:0">점수/등급</span>
+      <input class="modal-input" id="grade-ma-score" placeholder="점수" style="flex:1;margin-bottom:0" type="number"/>
+      <input class="modal-input" id="grade-ma-grade" placeholder="등급" style="width:60px;margin-bottom:0" type="number" min="1" max="9"/>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:7px">
+      <span style="font-size:11px;color:var(--gray3);width:52px;flex-shrink:0">오답</span>
+      <input class="modal-input" id="grade-wrong-ma" placeholder="예: 21, 29, 30" style="margin-bottom:0;flex:1"/>
+    </div>
+  </div>
+  <!-- 한국사 -->
+  <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:10px;margin-bottom:8px">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:7px">
+      <span class="subject-tag subj-hi" style="width:52px;text-align:center;flex-shrink:0">한국사</span>
+      <span style="font-size:11px;color:var(--gray3)">절대평가</span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span style="font-size:11px;color:var(--gray3);width:52px;flex-shrink:0">점수/등급</span>
+      <input class="modal-input" id="grade-hi-score" placeholder="점수" style="flex:1;margin-bottom:0" type="number"/>
+      <input class="modal-input" id="grade-hi-grade" placeholder="등급" style="width:60px;margin-bottom:0" type="number" min="1" max="9"/>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:7px">
+      <span style="font-size:11px;color:var(--gray3);width:52px;flex-shrink:0">오답</span>
+      <input class="modal-input" id="grade-wrong-hi" placeholder="예: 7, 12" style="margin-bottom:0;flex:1"/>
+    </div>
+  </div>
+  <!-- 동적 추가 과목 영역 -->
+  <div id="grade-extra-rows"></div>
+  <!-- 추가 버튼들 -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px">
+    <button type="button" onclick="addGradeRow('sc')" style="padding:7px;background:rgba(74,127,255,0.08);border:1px dashed rgba(74,127,255,0.3);border-radius:8px;color:#7aa8ff;font-size:12px;cursor:pointer">+ 과탐 추가</button>
+    <button type="button" onclick="addGradeRow('so')" style="padding:7px;background:rgba(61,186,126,0.08);border:1px dashed rgba(61,186,126,0.3);border-radius:8px;color:var(--green);font-size:12px;cursor:pointer">+ 사탐 추가</button>
+    <button type="button" onclick="addGradeRow('etc')" style="padding:7px;background:rgba(201,168,76,0.08);border:1px dashed rgba(201,168,76,0.3);border-radius:8px;color:var(--gold);font-size:12px;cursor:pointer">+ 기타 추가</button>
+  </div>
+  <div class="modal-label">반성 및 다짐</div>
+  <div class="modal-label" style="font-size:11px;color:var(--orange);margin-bottom:4px">⚠️ 실수한 부분</div><textarea class="modal-input" id="grade-ref-mistake" rows="2" placeholder="이번 시험에서 실수한 부분..." style="resize:none"></textarea>
+  <div class="modal-label" style="font-size:11px;color:#f87171;margin-bottom:4px">📉 부족했던 부분</div><textarea class="modal-input" id="grade-ref-weak" rows="2" placeholder="이번 시험에서 부족했던 부분..." style="resize:none"></textarea>
+  <div class="modal-label" style="font-size:11px;color:var(--green);margin-bottom:4px">✅ 다음 시험까지 개선방안</div><textarea class="modal-input" id="grade-ref-plan" rows="2" placeholder="다음 시험까지 개선방안..." style="resize:none"></textarea>
   <button class="modal-btn primary" onclick="saveGrade()">저장하기</button>
   <button class="modal-btn cancel" onclick="closeModal('modal-add-grade')">취소</button>
 </div></div>
@@ -501,10 +576,10 @@ function _goToScreen(user) {
       if (pd.exists()) {
         currentProfile = pd.data();
         if (currentProfile.role === 'student') {
-          showScreen('screen-student'); syncStudentUI(); studentTab(0); listenNotices();
+          showScreen('screen-student'); syncStudentUI(); studentTab(0); listenNotices(); listenChatNotifs();
           setTimeout(function() { autoWeeklyPoints(); autoPlannerPenalty(); resumeActiveTimer(); }, 3000);
         } else if (currentProfile.role === 'teacher' || currentProfile.role === 'master') {
-          showScreen('screen-teacher'); syncTeacherUI();
+          showScreen('screen-teacher'); syncTeacherUI(); listenChatNotifs();
           buildTeacherTabs(currentProfile.role === 'master'); renderTeacher(0);
         } else { signOut(auth); showScreen('screen-login'); }
       } else { signOut(auth); showScreen('screen-login'); }
@@ -542,6 +617,7 @@ window.doLogout = function() {
   if (unsubTodos) { unsubTodos(); unsubTodos = null; }
   if (unsubNotices) { unsubNotices(); unsubNotices = null; }
   if (unsubChat) { unsubChat(); unsubChat = null; }
+  if (unsubChatNotif) { unsubChatNotif(); unsubChatNotif = null; }
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
   currentUser = null; currentProfile = null;
   signOut(auth).catch(function(){});
@@ -691,12 +767,15 @@ function renderTodos(todos) {
     var chk = t.status==='done' ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="3.5"><polyline points="20 6 9 17 4 12"/></svg>' : t.status==='progressing' ? '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="3"><polyline points="5 12 12 19 19 12"/></svg>' : '';
     var timeHtml = t.studyTime ? (t.certified?'🔵 ':'⚪ ')+t.studyTime : '<span style="font-size:12px;color:var(--gray4)">시작 ▶</span>';
     var safeTitle = t.title.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"');
+    var safeSubj = t.subject||'ko';
     return '<div class="todo-item"><div class="status-btn '+(t.status==='progressing'?'progressing':t.status==='done'?'done':'')+'" onclick="cycleTodoStatus(\''+t.id+'\',\''+t.status+'\')">'+chk+'</div>'
       +'<div class="todo-content" onclick="startTimerFor(\''+t.id+'\',\''+t.subject+'\',\''+safeTitle+'\')">'
       +'<div class="todo-title '+(t.status==='done'?'done-text':'')+'">'+t.title+'</div>'
       +'<div class="todo-meta"><span class="subject-tag subj-'+t.subject+'">'+(subjectNames[t.subject]||t.subject)+'</span>'
       +(timerTargetId===t.id?'<span style="font-size:10px;color:var(--green)" class="pulse">● 측정중</span>':'')+'</div></div>'
-      +'<div style="font-size:11px;'+(t.certified?'color:#7aa8ff':'color:var(--gray3)')+'">'+timeHtml+'</div></div>';
+      +'<div style="font-size:11px;'+(t.certified?'color:#7aa8ff':'color:var(--gray3)')+'">'+timeHtml+'</div>'
+      +'<button onclick="openEditTodoModal(\''+t.id+'\',\''+safeTitle+'\',\''+safeSubj+'\')" style="background:none;border:none;padding:4px 6px;cursor:pointer;flex-shrink:0;color:var(--gray3);font-size:15px" title="수정/삭제">✏️</button>'
+      +'</div>';
   }).join('');
 }
 
@@ -744,6 +823,27 @@ function renderWeeklyReport() {
 window.cycleTodoStatus = function(id, current) {
   var order=['none','progressing','done'];
   updateDoc(doc(db,'todos',id), {status:order[(order.indexOf(current)+1)%3]});
+};
+window.openEditTodoModal = function(id, title, subject) {
+  document.getElementById('edit-todo-id').value = id;
+  document.getElementById('edit-todo-title').value = title;
+  var sel = document.getElementById('edit-todo-subject');
+  for(var i=0;i<sel.options.length;i++){ if(sel.options[i].value===subject){sel.options[i].selected=true;break;} }
+  openModal('modal-edit-todo');
+};
+window.saveEditTodo = function() {
+  var id = document.getElementById('edit-todo-id').value;
+  var title = document.getElementById('edit-todo-title').value.trim();
+  var subject = document.getElementById('edit-todo-subject').value;
+  if(!title){alert('학습 내용을 입력해주세요.');return;}
+  updateDoc(doc(db,'todos',id),{title:title,subject:subject}).then(function(){closeModal('modal-edit-todo');});
+};
+window.confirmDeleteTodo = function() {
+  var id = document.getElementById('edit-todo-id').value;
+  if(!confirm('이 할 일을 삭제하시겠습니까?')) return;
+  // 타이머 실행 중이면 중단
+  if(timerTargetId===id){ if(timerInterval){clearInterval(timerInterval);timerInterval=null;} timerTargetId=null; timerSeconds=0; timerPaused=false; timerStartAt=null; }
+  deleteDoc(doc(db,'todos',id)).then(function(){closeModal('modal-edit-todo');});
 };
 window.addTodo = function() {
   var title=document.getElementById('todo-title-input').value.trim();
@@ -910,12 +1010,20 @@ function loadGrades(type) {
     if(snap.empty){el.innerHTML='<div style="color:var(--gray3);font-size:13px;padding:10px 0">입력된 성적이 없습니다</div>';return;}
     el.innerHTML=snap.docs.map(function(d){
       var g=d.data();
-      var subjHtml=Object.keys(g.scores||{}).map(function(subj){return '<div class="score-cell"><div class="score-cell-subj">'+(subjectNames[subj]||subj)+'</div><div class="score-cell-val">'+(g.scores[subj].score||'-')+'</div><div class="score-cell-grade">'+(g.scores[subj].grade?g.scores[subj].grade+'등급':'-')+'</div></div>';}).join('');
+      var subjHtml=Object.keys(g.scores||{}).map(function(subj){
+        var s=g.scores[subj];
+        var dispName=s.label||(subjectNames[subj]||subj);
+        return '<div class="score-cell"><div class="score-cell-subj">'+dispName+'</div><div class="score-cell-val">'+(s.score||'-')+'</div><div class="score-cell-grade">'+(s.grade?s.grade+'등급':'-')+'</div></div>';
+      }).join('');
       // 과목별 오답
       var wrongHtml='';
       if(g.wrongBySubj&&Object.keys(g.wrongBySubj).length){
         wrongHtml='<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)"><div style="font-size:11px;color:var(--gray3);margin-bottom:7px">오답 문항 (과목별)</div>'+
-        Object.keys(g.wrongBySubj).map(function(subj){return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px"><span class="subject-tag subj-'+subj+'" style="font-size:10px;flex-shrink:0">'+(subjectNames[subj]||subj)+'</span><div style="display:flex;gap:4px;flex-wrap:wrap">'+g.wrongBySubj[subj].split(',').map(function(n){return '<span style="background:rgba(224,82,82,0.15);border:1px solid rgba(224,82,82,0.25);border-radius:4px;padding:2px 7px;font-size:12px;color:#f87171">'+n.trim()+'번</span>';}).join('')+'</div></div>';}).join('')+'</div>';
+        Object.keys(g.wrongBySubj).map(function(subj){
+          var label=g.scores&&g.scores[subj]&&g.scores[subj].label?g.scores[subj].label:(subjectNames[subj]||subj);
+          var grp=(g.scores&&g.scores[subj]&&g.scores[subj].group)||subj.replace(/\d/g,'');
+          return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px"><span class="subject-tag subj-'+grp+'" style="font-size:10px;flex-shrink:0">'+label+'</span><div style="display:flex;gap:4px;flex-wrap:wrap">'+g.wrongBySubj[subj].split(',').map(function(n){return '<span style="background:rgba(224,82,82,0.15);border:1px solid rgba(224,82,82,0.25);border-radius:4px;padding:2px 7px;font-size:12px;color:#f87171">'+n.trim()+'번</span>';}).join('')+'</div></div>';
+        }).join('')+'</div>';
       } else if(g.wrongNumbers){
         wrongHtml='<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)"><div style="font-size:11px;color:var(--gray3);margin-bottom:7px">오답 문항</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+g.wrongNumbers.split(',').map(function(n){return '<span style="background:rgba(224,82,82,0.15);border:1px solid rgba(224,82,82,0.25);border-radius:4px;padding:3px 8px;font-size:12px;color:#f87171">'+n.trim()+'번</span>';}).join('')+'</div></div>';
       }
@@ -934,6 +1042,142 @@ function loadGrades(type) {
     }).join('');
   }).catch(function(){el.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패 — Firestore 인덱스 설정 필요</div>';});
 }
+// ── 채팅 알림 ──
+var unsubChatNotif = null;
+function listenChatNotifs() {
+  if (!currentUser) return;
+  if (unsubChatNotif) unsubChatNotif();
+  unsubChatNotif = onSnapshot(
+    query(collection(db,'chatNotifs',currentUser.uid,'items'), orderBy('createdAt','desc'), limit(1)),
+    function(snap) {
+      snap.docChanges().forEach(function(change) {
+        if (change.type !== 'added') return;
+        var n = change.doc.data();
+        var age = n.createdAt ? (Date.now() - n.createdAt.toMillis()) : 9999;
+        if (age > 8000) return; // 8초 이내 메시지만 알림
+        // 현재 채팅창 열려있는 상대면 스킵
+        if (chatTargetUid && chatTargetUid === n.senderUid) return;
+        if (teacherChatUid && teacherChatUid === n.senderUid) return;
+        showChatNotif(n.senderName, n.preview);
+        // 읽음 처리
+        deleteDoc(doc(db,'chatNotifs',currentUser.uid,'items',change.doc.id)).catch(function(){});
+      });
+    }
+  );
+}
+
+function showChatNotif(senderName, preview) {
+  // 1) 토스트 팝업
+  var existing = document.getElementById('chat-notif-toast');
+  if (existing) existing.remove();
+  var toast = document.createElement('div');
+  toast.id = 'chat-notif-toast';
+  toast.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:9999;'
+    +'background:linear-gradient(135deg,rgba(20,24,40,0.97),rgba(30,35,55,0.97));'
+    +'border:1px solid rgba(201,168,76,0.4);border-radius:14px;padding:13px 18px;'
+    +'box-shadow:0 8px 32px rgba(0,0,0,0.5);display:flex;align-items:center;gap:12px;'
+    +'min-width:260px;max-width:320px;animation:slideDown 0.3s ease;';
+  toast.innerHTML =
+    '<div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--gold2));'
+    +'display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">💬</div>'
+    +'<div style="flex:1;min-width:0">'
+    +'<div style="font-size:13px;font-weight:700;color:var(--gold2);margin-bottom:2px">'+senderName+'</div>'
+    +'<div style="font-size:12px;color:rgba(255,255,255,0.7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+preview+'</div>'
+    +'</div>'
+    +'<button onclick="this.parentNode.remove()" style="background:none;border:none;color:var(--gray3);font-size:18px;cursor:pointer;padding:0;flex-shrink:0">✕</button>';
+  document.body.appendChild(toast);
+  setTimeout(function(){ if(toast.parentNode) toast.remove(); }, 5000);
+
+  // 2) 우측 알림 패널에 채팅 알림 항목 추가
+  var list = document.getElementById('notif-list');
+  if (list) {
+    // "새 알림 없음" 메시지 제거
+    if (list.querySelector('[data-empty]')) list.innerHTML = '';
+    var item = document.createElement('div');
+    item.style.cssText = 'background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.2);border-radius:10px;padding:12px;margin-bottom:8px;';
+    item.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+      +'<span style="font-size:14px">💬</span>'
+      +'<div style="font-size:13px;font-weight:600;color:var(--gold2)">'+senderName+'</div>'
+      +'<div style="font-size:10px;color:var(--gray3);margin-left:auto">방금</div>'
+      +'</div>'
+      +'<div style="font-size:12px;color:rgba(255,255,255,0.65)">'+preview+'</div>';
+    list.insertBefore(item, list.firstChild);
+  }
+  // 3) 배지 카운트 +1
+  var badge = document.getElementById('notif-badge');
+  if (badge) {
+    var cur = parseInt(badge.textContent)||0;
+    badge.textContent = cur+1;
+    badge.style.display = 'flex';
+  }
+}
+// 채팅 알림 전송 헬퍼
+function _sendChatNotif(receiverUid, senderName, preview) {
+  addDoc(collection(db,'chatNotifs',receiverUid,'items'), {
+    senderUid: currentUser.uid,
+    senderName: senderName,
+    preview: preview,
+    createdAt: serverTimestamp()
+  }).catch(function(){});
+}
+var _gradeRowCount = 0;
+var _gradeRowMeta = {}; // rowId -> {type, label}
+
+window.addGradeRow = function(type) {
+  var id = ++_gradeRowCount;
+  var cfg = {
+    sc: {label:'과탐', cls:'subj-sc', bg:'rgba(74,127,255,0.06)', bd:'rgba(74,127,255,0.2)', tc:'#7aa8ff', ph:'예: 물리학1'},
+    so: {label:'사탐', cls:'subj-so', bg:'rgba(61,186,126,0.06)', bd:'rgba(61,186,126,0.2)', tc:'var(--green)', ph:'예: 한국지리'},
+    etc:{label:'기타', cls:'subj-etc', bg:'rgba(201,168,76,0.06)', bd:'rgba(201,168,76,0.2)', tc:'var(--gold)', ph:'예: 제2외국어'}
+  }[type] || {label:'기타', cls:'', bg:'rgba(255,255,255,0.04)', bd:'rgba(255,255,255,0.1)', tc:'#ccc', ph:'과목명'};
+  _gradeRowMeta[id] = {type:type};
+  var row = document.createElement('div');
+  row.id = 'grade-row-'+id;
+  row.setAttribute('data-row-type', type);
+  row.style.cssText = 'background:'+cfg.bg+';border:1px solid '+cfg.bd+';border-radius:10px;padding:10px;margin-bottom:8px;';
+  row.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'
+    +'<div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0">'
+    +'<span class="subject-tag '+cfg.cls+'" style="font-size:11px;flex-shrink:0">'+cfg.label+'</span>'
+    +'<input class="modal-input" data-rid="'+id+'" data-field="name" placeholder="'+cfg.ph+'" style="margin-bottom:0;font-size:13px;flex:1"/>'
+    +'</div>'
+    +'<button onclick="removeGradeRow('+id+')" style="margin-left:8px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:6px;color:#f87171;font-size:11px;padding:4px 8px;cursor:pointer;flex-shrink:0">삭제</button>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;align-items:center;margin-bottom:7px">'
+    +'<span style="font-size:11px;color:var(--gray3);width:52px;flex-shrink:0">점수/등급</span>'
+    +'<input class="modal-input" type="number" data-rid="'+id+'" data-field="score" placeholder="점수" style="flex:1;margin-bottom:0"/>'
+    +'<input class="modal-input" type="number" data-rid="'+id+'" data-field="grade" placeholder="등급" min="1" max="9" style="width:60px;margin-bottom:0"/>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;align-items:center">'
+    +'<span style="font-size:11px;color:var(--gray3);width:52px;flex-shrink:0">오답</span>'
+    +'<input class="modal-input" data-rid="'+id+'" data-field="wrong" placeholder="예: 8, 15" style="flex:1;margin-bottom:0"/>'
+    +'</div>';
+  document.getElementById('grade-extra-rows').appendChild(row);
+};
+window.removeGradeRow = function(id) {
+  var r = document.getElementById('grade-row-'+id); if(r) r.remove();
+  delete _gradeRowMeta[id];
+};
+
+// 모달 열 때 초기화
+var _origOpenModal = window.openModal;
+window.openModal = function(id) {
+  if (id === 'modal-add-grade') {
+    _gradeRowCount = 0; _gradeRowMeta = {};
+    var er = document.getElementById('grade-extra-rows'); if(er) er.innerHTML = '';
+    ['ko','en','ma','hi'].forEach(function(s){
+      ['score','grade'].forEach(function(f){var el=document.getElementById('grade-'+s+'-'+f);if(el)el.value='';});
+      var w=document.getElementById('grade-wrong-'+s);if(w)w.value='';
+    });
+    var koOpt=document.getElementById('grade-ko-opt');if(koOpt)koOpt.value='';
+    var maOpt=document.getElementById('grade-ma-opt');if(maOpt)maOpt.value='';
+    ['exam-name','ref-mistake','ref-weak','ref-plan'].forEach(function(f){var el=document.getElementById('grade-'+f);if(el)el.value='';});
+    // 기본 과탐1, 사탐1 추가
+    addGradeRow('sc'); addGradeRow('so');
+  }
+  if (_origOpenModal) _origOpenModal(id);
+};
+
 window.saveGrade=function(){
   var targetUid=document.getElementById('grade-target-uid').value||currentUser.uid;
   var type=document.getElementById('grade-type').value;
@@ -941,13 +1185,43 @@ window.saveGrade=function(){
   var examDate=document.getElementById('grade-exam-date').value;
   if(!examName||!examDate){alert('시험명과 날짜를 입력해주세요.');return;}
   var scores={};
-  ['ko','en','ma','hi','sc','so'].forEach(function(subj){
-    var s=document.getElementById('grade-'+subj+'-score').value;
-    var g=document.getElementById('grade-'+subj+'-grade').value;
-    if(s) scores[subj]={score:s,grade:g||''};
-  });
   var wrongBySubj={};
-  ['ko','en','ma','hi','sc','so'].forEach(function(subj){var v=document.getElementById('grade-wrong-'+subj);if(v&&v.value.trim())wrongBySubj[subj]=v.value.trim();});
+  // 국어
+  var koScore=document.getElementById('grade-ko-score').value;
+  var koGrade=document.getElementById('grade-ko-grade').value;
+  var koOpt=document.getElementById('grade-ko-opt').value;
+  if(koScore) scores['ko']={score:koScore,grade:koGrade||'',label:'국어'+(koOpt?' ('+koOpt+')':''),group:'ko',option:koOpt};
+  var koW=document.getElementById('grade-wrong-ko');if(koW&&koW.value.trim())wrongBySubj['ko']=koW.value.trim();
+  // 영어
+  var enScore=document.getElementById('grade-en-score').value;
+  var enGrade=document.getElementById('grade-en-grade').value;
+  if(enScore) scores['en']={score:enScore,grade:enGrade||'',label:'영어',group:'en'};
+  var enW=document.getElementById('grade-wrong-en');if(enW&&enW.value.trim())wrongBySubj['en']=enW.value.trim();
+  // 수학
+  var maScore=document.getElementById('grade-ma-score').value;
+  var maGrade=document.getElementById('grade-ma-grade').value;
+  var maOpt=document.getElementById('grade-ma-opt').value;
+  if(maScore) scores['ma']={score:maScore,grade:maGrade||'',label:'수학'+(maOpt?' ('+maOpt+')':''),group:'ma',option:maOpt};
+  var maW=document.getElementById('grade-wrong-ma');if(maW&&maW.value.trim())wrongBySubj['ma']=maW.value.trim();
+  // 한국사
+  var hiScore=document.getElementById('grade-hi-score').value;
+  var hiGrade=document.getElementById('grade-hi-grade').value;
+  if(hiScore) scores['hi']={score:hiScore,grade:hiGrade||'',label:'한국사',group:'hi'};
+  var hiW=document.getElementById('grade-wrong-hi');if(hiW&&hiW.value.trim())wrongBySubj['hi']=hiW.value.trim();
+  // 동적 추가 과목
+  Object.keys(_gradeRowMeta).forEach(function(rid){
+    var nameEl=document.querySelector('[data-rid="'+rid+'"][data-field="name"]');
+    var scoreEl=document.querySelector('[data-rid="'+rid+'"][data-field="score"]');
+    var gradeEl=document.querySelector('[data-rid="'+rid+'"][data-field="grade"]');
+    var wrongEl=document.querySelector('[data-rid="'+rid+'"][data-field="wrong"]');
+    var t=_gradeRowMeta[rid].type;
+    var nm=(nameEl&&nameEl.value.trim())||(t==='sc'?'과탐':'사탐');
+    var key=t+rid;
+    var s=scoreEl?scoreEl.value:'';
+    var g=gradeEl?gradeEl.value:'';
+    if(s) scores[key]={score:s,grade:g||'',label:nm,group:t};
+    if(wrongEl&&wrongEl.value.trim()) wrongBySubj[key]=wrongEl.value.trim();
+  });
   var refMistake=document.getElementById('grade-ref-mistake').value;
   var refWeak=document.getElementById('grade-ref-weak').value;
   var refPlan=document.getElementById('grade-ref-plan').value;
@@ -1063,7 +1337,11 @@ window.sendChatMsg=function(){
   }
   var input=document.getElementById('chat-text-input');
   var text=input?input.value.trim():'';
-  if(text){addDoc(collection(db,'chats',roomId,'messages'),{text:text,senderUid:currentUser.uid,senderName:currentProfile.name,createdAt:serverTimestamp()});if(input)input.value='';}
+  if(text){
+    addDoc(collection(db,'chats',roomId,'messages'),{text:text,senderUid:currentUser.uid,senderName:currentProfile.name,createdAt:serverTimestamp()});
+    _sendChatNotif(chatTargetUid, currentProfile.name, text);
+    if(input)input.value='';
+  }
 };
 
 // ── 공지 ──
@@ -1093,9 +1371,20 @@ window.toggleNotifPanel=function(){
   var isOpen=p.classList.contains('open');
   if(isOpen){p.classList.remove('open');b.style.display='none';}
   else{
+    p.classList.add('open');b.style.display='block';
+    // 공지 목록 렌더 + 채팅 알림은 이미 DOM에 있으니 유지
     var list=document.getElementById('notif-list');
-    if(list) list.innerHTML=notifications.length===0?'<div style="font-size:13px;color:var(--gray3);text-align:center;margin-top:40px">새 알림이 없습니다</div>':notifications.map(function(n){return '<div style="background:var(--navy3);border-radius:10px;padding:12px;margin-bottom:8px"><div style="font-size:13px;font-weight:600;margin-bottom:4px">'+n.title+'</div><div style="font-size:12px;color:rgba(255,255,255,0.65);line-height:1.7">'+n.content+'</div></div>';}).join('');
-    p.classList.add('open');b.style.display='block';updateNotifBadge(0);
+    // 공지 항목만 재렌더 (💬로 시작하지 않는 기존 공지 교체)
+    var noticeHtml = notifications.length===0
+      ? '<div style="font-size:13px;color:var(--gray3);text-align:center;margin-top:40px" data-empty="1">새 알림이 없습니다</div>'
+      : notifications.map(function(n){return '<div style="background:var(--navy3);border-radius:10px;padding:12px;margin-bottom:8px"><div style="font-size:13px;font-weight:600;margin-bottom:4px">'+n.title+'</div><div style="font-size:12px;color:rgba(255,255,255,0.65);line-height:1.7">'+n.content+'</div></div>';}).join('');
+    // 기존 채팅 알림 항목 보존 후 공지 뒤에 붙이기
+    var chatItems = Array.from(list.querySelectorAll('[data-chat-item]'));
+    list.innerHTML = noticeHtml;
+    chatItems.forEach(function(el){ list.appendChild(el); });
+    // 배지 리셋
+    var badge=document.getElementById('notif-badge');
+    if(badge){badge.style.display='none';badge.textContent='0';}
   }
 };
 
@@ -1449,7 +1738,11 @@ window.sendTeacherMsg=function(){
   }
   var input=document.getElementById('teacher-chat-input');
   var text=input?input.value.trim():'';
-  if(text){addDoc(collection(db,'chats',roomId,'messages'),{text:text,senderUid:currentUser.uid,senderName:currentProfile.name,createdAt:serverTimestamp()});if(input)input.value='';}
+  if(text){
+    addDoc(collection(db,'chats',roomId,'messages'),{text:text,senderUid:currentUser.uid,senderName:currentProfile.name,createdAt:serverTimestamp()});
+    _sendChatNotif(teacherChatUid, currentProfile.name, text);
+    if(input)input.value='';
+  }
 };
 
 function buildTNotice(){
