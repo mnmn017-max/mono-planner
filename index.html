@@ -513,9 +513,8 @@ function _goToScreen(user) {
     showScreen('screen-login');
   }
 }
-// 2.5초 후 무조건 로그인 화면으로 (Firebase 무응답 대비)
+// 앱 첫 로드 시 2.5초 타임아웃 (자동 로그인 복구용)
 setTimeout(function() { _goToScreen(null); }, 2500);
-// Firebase 응답 오면 즉시 처리
 onAuthStateChanged(auth, function(user) { _goToScreen(user); });
 
 window.doLogin = function() {
@@ -530,7 +529,11 @@ window.doLogin = function() {
     var isTeacher = window._loginType === 'teacher';
     var matched = snap.docs.filter(function(d) { var r = d.data().role; return isTeacher ? (r==='teacher'||r==='master') : r==='student'; });
     if (!matched.length) { showScreen('screen-login'); document.getElementById('login-err').textContent = '해당 탭에 맞는 계정이 없습니다.'; return; }
-    signInWithEmailAndPassword(auth, matched[0].data().email, pw).catch(function() { showScreen('screen-login'); document.getElementById('login-err').textContent = '아이디 또는 비밀번호가 올바르지 않습니다.'; });
+    signInWithEmailAndPassword(auth, matched[0].data().email, pw).then(function(cred) {
+      // _authResolved 리셋 후 직접 처리 (타임아웃으로 이미 resolved된 경우 대비)
+      _authResolved = false;
+      _goToScreen(cred.user);
+    }).catch(function() { showScreen('screen-login'); document.getElementById('login-err').textContent = '아이디 또는 비밀번호가 올바르지 않습니다.'; });
   }).catch(function() { showScreen('screen-login'); document.getElementById('login-err').textContent = '오류가 발생했습니다.'; });
 };
 
@@ -997,45 +1000,44 @@ function buildChatPage(){
   return '<div id="chat-teacher-list" style="margin-bottom:10px"><div style="color:var(--gray3);font-size:13px">대화 상대 불러오는 중...</div></div><div id="chat-msg-list" style="padding:14px 0;min-height:200px;"></div><div id="chat-file-preview" style="display:none;padding:8px;background:var(--navy3);border-radius:8px;margin-bottom:8px;"><div style="display:flex;align-items:center;gap:10px;"><span id="chat-file-name" style="font-size:13px;color:var(--gold2);flex:1;"></span><button onclick="cancelFile()" style="background:none;border:none;color:var(--gray3);cursor:pointer;font-size:18px;">✕</button></div></div><div class="chat-input-area" style="margin:0 -16px;padding:12px 16px"><input type="file" id="chat-file-input" style="display:none;" onchange="handleFileSelect(this)"/><button onclick="document.getElementById(\'chat-file-input\').click()" style="background:none;border:none;cursor:pointer;padding:0;flex-shrink:0;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></button><input id="chat-text-input" class="chat-input" placeholder="메시지 입력..." onkeydown="if(event.key===\'Enter\')sendChatMsg()"/><button class="chat-send" onclick="sendChatMsg()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button></div>';
 }
 var chatTargetUid=null;
+
+// 채팅 경로: chats/{studentUid}_{teacherUid}/messages (양방향 공유)
+function _chatRoomId(sUid, tUid){ return sUid+'_'+tUid; }
+
 window.selectChatTarget=function(teacherUid,teacherName){
   chatTargetUid=teacherUid;
   document.querySelectorAll('.chat-target-btn').forEach(function(b){b.classList.remove('active');b.style.background='rgba(255,255,255,0.04)';b.style.borderColor='rgba(255,255,255,0.08)';b.style.color='rgba(255,255,255,0.75)';});
   var btn=document.getElementById('ctbtn_'+teacherUid);
   if(btn){btn.style.background='rgba(201,168,76,0.12)';btn.style.borderColor='rgba(201,168,76,0.35)';btn.style.color='var(--gold2)';btn.classList.add('active');}
   if(unsubChat) unsubChat();
-  var chatId=currentUser.uid+'_chat';
-  unsubChat=onSnapshot(query(collection(db,'chats',chatId,'messages'),where('targetTeacherUid','==',teacherUid),orderBy('createdAt','asc')),function(snap){
-    renderChatMessages(snap.docs,teacherName);
+  var roomId=_chatRoomId(currentUser.uid, teacherUid);
+  unsubChat=onSnapshot(query(collection(db,'chats',roomId,'messages'),orderBy('createdAt','asc')),function(snap){
+    var list=document.getElementById('chat-msg-list');
+    if(!list) return;
+    list.innerHTML=snap.docs.map(function(d){
+      var m=d.data(),isMe=m.senderUid===currentUser.uid;
+      var time=m.createdAt?m.createdAt.toDate().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}):'';
+      var avatar='<div class="teacher-av" style="width:30px;height:30px;font-size:11px;flex-shrink:0">'+(m.senderName||'?').slice(0,2)+'</div>';
+      if(m.fileUrl) return '<div class="msg '+(isMe?'mine':'theirs')+'">'+(isMe?'':avatar)+'<div><a href="'+m.fileUrl+'" target="_blank" style="display:flex;align-items:center;gap:8px;padding:10px 13px;background:'+(isMe?'linear-gradient(135deg,var(--gold),var(--gold2))':'var(--navy3)')+';border-radius:14px;text-decoration:none;"><span style="font-size:13px;color:'+(isMe?'var(--navy)':'var(--gold2)')+'">\uD83D\uDCCE '+(m.fileName||'\uD30C\uC77C')+'</span></a><div class="msg-time" style="'+(isMe?'text-align:right':'')+'">' +time+'</div></div></div>';
+      return '<div class="msg '+(isMe?'mine':'theirs')+'">'+(isMe?'':avatar)+'<div>'+(isMe?'':'<div style="font-size:10px;color:var(--gray3);margin-bottom:2px">'+m.senderName+'</div>')+'<div class="msg-bubble">'+m.text+'</div><div class="msg-time" style="'+(isMe?'text-align:right':'')+'">'+time+'</div></div></div>';
+    }).join('');
+    list.scrollTop=list.scrollHeight;
   });
 };
-function renderChatMessages(docs,teacherName){
-  var list=document.getElementById('chat-msg-list');
-  if(!list) return;
-  list.innerHTML=docs.map(function(d){
-    var m=d.data(),isMe=m.senderUid===currentUser.uid;
-    var time=m.createdAt?m.createdAt.toDate().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}):'';
-    var avatar='<div class="teacher-av" style="width:30px;height:30px;font-size:11px;flex-shrink:0">'+(m.senderName||'T').slice(0,2)+'</div>';
-    if(m.fileUrl) return '<div class="msg '+(isMe?'mine':'theirs')+'">'+(isMe?'':avatar)+'<div><a href="'+m.fileUrl+'" target="_blank" style="display:flex;align-items:center;gap:8px;padding:10px 13px;background:'+(isMe?'linear-gradient(135deg,var(--gold),var(--gold2))':'var(--navy3)')+';border-radius:14px;text-decoration:none;max-width:72%;"><span style="font-size:13px;color:'+(isMe?'var(--navy)':'var(--gold2)')+'">📎 '+(m.fileName||'파일')+'</span></a><div class="msg-time" style="'+(isMe?'text-align:right':'')+'">'+time+'</div></div></div>';
-    return '<div class="msg '+(isMe?'mine':'theirs')+'">'+(isMe?'':avatar)+'<div>'+(isMe?'':'<div style="font-size:10px;color:var(--gray3);margin-bottom:2px">'+m.senderName+'</div>')+'<div class="msg-bubble">'+m.text+'</div><div class="msg-time" style="'+(isMe?'text-align:right':'')+'">'+time+'</div></div></div>';
-  }).join('');
-  if(list) list.scrollTop=list.scrollHeight;
-}
 function listenChat() {
   if(!currentUser) return;
   if(unsubChat) unsubChat();
   chatTargetUid=null;
-  // 선생님/마스터 목록 로드
   getDocs(query(collection(db,'users'),where('role','in',['teacher','master']))).then(function(snap){
     var teachers=snap.docs.map(function(d){return Object.assign({uid:d.id},d.data());});
     var listEl=document.getElementById('chat-teacher-list');
     if(!listEl) return;
-    if(!teachers.length){listEl.innerHTML='<div style="color:var(--gray3);font-size:13px">등록된 선생님이 없습니다</div>';return;}
-    listEl.innerHTML='<div style="font-size:11px;color:var(--gray3);margin-bottom:6px">대화 상대 선택</div><div style="display:flex;gap:7px;flex-wrap:wrap">'+
+    if(!teachers.length){listEl.innerHTML='<div style="color:var(--gray3);font-size:13px">\ub4f1\ub85d\ub41c \uc120\uc0dd\ub2d8\uc774 \uc5c6\uc2b5\ub2c8\ub2e4</div>';return;}
+    listEl.innerHTML='<div style="font-size:11px;color:var(--gray3);margin-bottom:6px">\ub300\ud654 \uc0c1\ub300 \uc120\ud0dd</div><div style="display:flex;gap:7px;flex-wrap:wrap">'+
       teachers.map(function(t){
-        var roleLabel=t.role==='master'?'마스터':'선생님';
+        var roleLabel=t.role==='master'?'\ub9c8\uc2a4\ud130':'\uc120\uc0dd\ub2d8';
         return '<button id="ctbtn_'+t.uid+'" class="chat-target-btn" onclick="selectChatTarget(\''+t.uid+'\',\''+t.name+'\')" style="display:flex;align-items:center;gap:7px;padding:8px 13px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;cursor:pointer;"><div class="teacher-av" style="width:28px;height:28px;font-size:11px;flex-shrink:0">'+(t.name||'?').slice(0,2)+'</div><div style="text-align:left"><div style="font-size:13px;font-weight:600;color:rgba(255,255,255,0.9)">'+t.name+'</div><div style="font-size:10px;color:var(--gray3)">'+roleLabel+'</div></div></button>';
       }).join('')+'</div><div style="border-top:1px solid rgba(255,255,255,0.06);margin:10px 0"></div>';
-    // 첫 번째 선생님 자동 선택
     if(teachers.length>0) selectChatTarget(teachers[0].uid, teachers[0].name);
   }).catch(function(){});
 }
@@ -1051,17 +1053,17 @@ window.cancelFile=function(){
   var fi=document.getElementById('chat-file-input');if(fi)fi.value='';
 };
 window.sendChatMsg=function(){
-  if(!chatTargetUid){alert('대화 상대를 먼저 선택해주세요.');return;}
-  var chatId=currentUser.uid+'_chat';
+  if(!chatTargetUid){alert('\ub300\ud654 \uc0c1\ub300\ub97c \uba3c\uc800 \uc120\ud0dd\ud574\uc8fc\uc138\uc694.');return;}
+  var roomId=_chatRoomId(currentUser.uid, chatTargetUid);
   if(selectedFile){
     var fd=new FormData();fd.append('file',selectedFile);fd.append('upload_preset',CLOUDINARY_PRESET);fd.append('resource_type','auto');
     var fname=selectedFile.name;
-    fetch('https://api.cloudinary.com/v1_1/'+CLOUDINARY_CLOUD+'/auto/upload',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(data){addDoc(collection(db,'chats',chatId,'messages'),{fileUrl:data.secure_url,fileName:fname,targetTeacherUid:chatTargetUid,senderUid:currentUser.uid,senderName:currentProfile.name,createdAt:serverTimestamp()});}).catch(function(e){alert('파일 업로드 실패: '+e.message);});
+    fetch('https://api.cloudinary.com/v1_1/'+CLOUDINARY_CLOUD+'/auto/upload',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(data){addDoc(collection(db,'chats',roomId,'messages'),{fileUrl:data.secure_url,fileName:fname,senderUid:currentUser.uid,senderName:currentProfile.name,createdAt:serverTimestamp()});}).catch(function(e){alert('\ud30c\uc77c \uc5c5\ub85c\ub4dc \uc2e4\ud328: '+e.message);});
     cancelFile();
   }
   var input=document.getElementById('chat-text-input');
   var text=input?input.value.trim():'';
-  if(text){addDoc(collection(db,'chats',chatId,'messages'),{text:text,targetTeacherUid:chatTargetUid,senderUid:currentUser.uid,senderName:currentProfile.name,createdAt:serverTimestamp()});if(input)input.value='';}
+  if(text){addDoc(collection(db,'chats',roomId,'messages'),{text:text,senderUid:currentUser.uid,senderName:currentProfile.name,createdAt:serverTimestamp()});if(input)input.value='';}
 };
 
 // ── 공지 ──
@@ -1083,6 +1085,10 @@ window.sendNotice=function(){
   var content=document.getElementById('notice-body-input').value.trim();
   if(!title||!content){alert('제목과 내용을 입력해주세요.');return;}
   addDoc(collection(db,'notices'),{target:target,title:title,content:content,senderUid:currentUser.uid,senderName:currentProfile.name,readBy:[],createdAt:serverTimestamp()}).then(function(){closeModal('modal-notice');document.getElementById('notice-title-input').value='';document.getElementById('notice-body-input').value='';alert('공지가 전송되었습니다!');renderTeacher(5);});
+};
+window.deleteNotice=function(id){
+  if(!confirm('이 공지를 삭제하시겠습니까?')) return;
+  deleteDoc(doc(db,'notices',id)).then(function(){renderTeacher(5);}).catch(function(e){alert('삭제 실패: '+e.message);});
 };
 window.showNoticePopup=function(title,body,from){document.getElementById('notice-title-text').textContent=title;document.getElementById('notice-body-text').textContent=body;document.getElementById('notice-from-text').textContent=from||'';document.getElementById('notice-overlay').classList.add('open');};
 function updateNotifBadge(count){var b=document.getElementById('notif-badge');if(b){if(count>0){b.style.display='flex';b.textContent=count;}else b.style.display='none';}}
@@ -1427,8 +1433,9 @@ window.handleTeacherFile=function(input){if(!input.files||!input.files[0]) retur
 window.loadTeacherChat=function(uid){
   teacherChatUid=uid;if(!uid) return;
   if(unsubChat) unsubChat();
-  var chatId=uid+'_chat';
-  unsubChat=onSnapshot(query(collection(db,'chats',chatId,'messages'),orderBy('createdAt','asc')),function(snap){
+  // 선생님→학생: 동일 roomId 사용 (studentUid_teacherUid)
+  var roomId=_chatRoomId(uid, currentUser.uid);
+  unsubChat=onSnapshot(query(collection(db,'chats',roomId,'messages'),orderBy('createdAt','asc')),function(snap){
     var area=document.getElementById('teacher-chat-area');if(!area) return;
     if(!snap.docs.length){area.innerHTML='<div style="color:var(--gray3);font-size:13px">채팅 내역이 없습니다</div>';return;}
     area.innerHTML=snap.docs.map(function(d){var m=d.data(),isMe=m.senderUid===currentUser.uid;var time=m.createdAt?m.createdAt.toDate().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}):'';if(m.fileUrl) return '<div class="msg '+(isMe?'mine':'theirs')+'" style="margin-bottom:8px">'+(isMe?'':'<div class="teacher-av" style="width:28px;height:28px;font-size:10px;flex-shrink:0">'+(m.senderName||'?').slice(0,2)+'</div>')+'<div><a href="'+m.fileUrl+'" target="_blank" style="display:flex;align-items:center;gap:6px;padding:8px 12px;background:'+(isMe?'linear-gradient(135deg,var(--gold),var(--gold2))':'var(--navy4)')+';border-radius:10px;text-decoration:none;"><span style="font-size:12px;color:'+(isMe?'var(--navy)':'var(--gold2)')+'">📎 '+(m.fileName||'파일')+'</span></a><div class="msg-time" style="'+(isMe?'text-align:right':'')+'">'+time+'</div></div></div>';return '<div class="msg '+(isMe?'mine':'theirs')+'" style="margin-bottom:8px">'+(isMe?'':'<div class="teacher-av" style="width:28px;height:28px;font-size:10px;flex-shrink:0">'+(m.senderName||'?').slice(0,2)+'</div>')+'<div>'+(isMe?'':'<div style="font-size:10px;color:var(--gray3);margin-bottom:2px">'+m.senderName+'</div>')+'<div class="msg-bubble">'+m.text+'</div><div class="msg-time" style="'+(isMe?'text-align:right':'')+'">'+time+'</div></div></div>';}).join('');
@@ -1437,16 +1444,16 @@ window.loadTeacherChat=function(uid){
 };
 window.sendTeacherMsg=function(){
   if(!teacherChatUid){alert('학생을 먼저 선택해주세요.');return;}
-  var chatId=teacherChatUid+'_chat';
+  var roomId=_chatRoomId(teacherChatUid, currentUser.uid);
   if(teacherSelectedFile){
     var fd=new FormData();fd.append('file',teacherSelectedFile);fd.append('upload_preset',CLOUDINARY_PRESET);fd.append('resource_type','auto');
     var fname=teacherSelectedFile.name;
-    fetch('https://api.cloudinary.com/v1_1/'+CLOUDINARY_CLOUD+'/auto/upload',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(data){addDoc(collection(db,'chats',chatId,'messages'),{fileUrl:data.secure_url,fileName:fname,senderUid:currentUser.uid,senderName:currentProfile.name,createdAt:serverTimestamp()});}).catch(function(){alert('파일 업로드 실패');});
+    fetch('https://api.cloudinary.com/v1_1/'+CLOUDINARY_CLOUD+'/auto/upload',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(data){addDoc(collection(db,'chats',roomId,'messages'),{fileUrl:data.secure_url,fileName:fname,senderUid:currentUser.uid,senderName:currentProfile.name,createdAt:serverTimestamp()});}).catch(function(){alert('파일 업로드 실패');});
     teacherSelectedFile=null;var fi=document.getElementById('teacher-file-input');if(fi)fi.value='';
   }
   var input=document.getElementById('teacher-chat-input');
   var text=input?input.value.trim():'';
-  if(text){addDoc(collection(db,'chats',chatId,'messages'),{text:text,senderUid:currentUser.uid,senderName:currentProfile.name,createdAt:serverTimestamp()});if(input)input.value='';}
+  if(text){addDoc(collection(db,'chats',roomId,'messages'),{text:text,senderUid:currentUser.uid,senderName:currentProfile.name,createdAt:serverTimestamp()});if(input)input.value='';}
 };
 
 function buildTNotice(){
@@ -1455,7 +1462,7 @@ function buildTNotice(){
     if(sel) sel.innerHTML='<option value="all">전체 학생</option>'+students.map(function(s){return '<option value="'+s.name+'">'+s.name+'</option>';}).join('');
     return getDocs(query(collection(db,'notices'),orderBy('createdAt','desc'))).then(function(snap){
       var notices=snap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
-      return '<button class="appeal-btn" onclick="openModal(\'modal-notice\')">📢 새 공지 보내기</button><div class="section-label">공지 발송 내역</div>'+(!notices.length?'<div style="color:var(--gray3);font-size:13px;padding:10px 0">발송된 공지가 없습니다</div>':notices.map(function(n){var date=n.createdAt?n.createdAt.toDate().toLocaleDateString('ko-KR'):'';return '<div class="planner-thumb"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><div style="font-size:13px;font-weight:600">'+n.title+'</div><span style="font-size:11px;color:var(--gray3)">'+date+'</span></div><div style="font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:4px">'+n.content+'</div><div style="font-size:11px;color:var(--gray3)">수신: '+(n.target==='all'?'전체':n.target)+'</div></div>';}).join(''));
+      return '<button class="appeal-btn" onclick="openModal(\'modal-notice\')">📢 새 공지 보내기</button><div class="section-label">공지 발송 내역</div>'+(!notices.length?'<div style="color:var(--gray3);font-size:13px;padding:10px 0">발송된 공지가 없습니다</div>':notices.map(function(n){var date=n.createdAt?n.createdAt.toDate().toLocaleDateString('ko-KR'):'';return '<div class="planner-thumb"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><div style="font-size:13px;font-weight:600;flex:1">'+n.title+'</div><div style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;color:var(--gray3)">'+date+'</span><button onclick="deleteNotice(\'+n.id+\')" style="padding:4px 8px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:5px;color:#f87171;font-size:10px;cursor:pointer">삭제</button></div></div><div style="font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:4px">'+n.content+'</div><div style="font-size:11px;color:var(--gray3)">수신: '+(n.target==='all'?'전체':n.target)+'</div></div>';}).join(''));
     });
   });
 }
