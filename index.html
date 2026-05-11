@@ -128,7 +128,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .planner-thumb{background:var(--navy4);border-radius:10px;padding:12px;margin-bottom:8px;border:1px solid rgba(255,255,255,0.06);}
 .msg{display:flex;gap:8px;align-items:flex-end;margin-bottom:8px;}
 .msg.mine{flex-direction:row-reverse;}
-.msg-bubble{max-width:72%;padding:11px 14px;border-radius:14px;font-size:14px;line-height:1.7;}
+.msg-bubble{max-width:72%;padding:11px 14px;border-radius:14px;font-size:14px;line-height:1.7;white-space:pre-wrap;word-break:break-word;}
 .msg.theirs .msg-bubble{background:var(--navy3);border:1px solid rgba(255,255,255,0.08);}
 .msg.mine .msg-bubble{background:linear-gradient(135deg,var(--gold),var(--gold2));color:var(--navy);}
 .msg-time{font-size:10px;color:var(--gray3);}
@@ -1059,6 +1059,45 @@ var unsubChatNotif = null;
 function listenChatNotifs() {
   if (!currentUser) return;
   if (unsubChatNotif) unsubChatNotif();
+
+  // 앱 시작 시 기존 미읽은 알림 한 번에 로드 (앱 꺼져 있는 동안 쌓인 것 포함)
+  getDocs(query(collection(db,'chatNotifs',currentUser.uid,'items'), orderBy('createdAt','asc'))).then(function(snap){
+    if (snap.empty) return;
+    snap.docs.forEach(function(d){
+      var n = d.data();
+      var senderName = n.senderName || '알 수 없음';
+      var preview = n.preview || '(메시지)';
+      // 패널에만 추가 (토스트 없이 조용히)
+      var isTeacher = currentProfile && (currentProfile.role==='teacher'||currentProfile.role==='master');
+      var listId = isTeacher ? 'teacher-notif-list' : 'notif-list';
+      var badgeId = isTeacher ? 'teacher-notif-badge' : 'notif-badge';
+      var list = document.getElementById(listId);
+      if (list) {
+        if (list.querySelector('[data-empty]')) list.innerHTML = '';
+        var item = document.createElement('div');
+        item.setAttribute('data-chat-item','1');
+        item.style.cssText = 'background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.2);border-radius:10px;padding:12px;margin-bottom:8px;';
+        var date = n.createdAt ? n.createdAt.toDate().toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+        item.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+          +'<span style="font-size:14px">💬</span>'
+          +'<div style="font-size:13px;font-weight:600;color:var(--gold2)">'+senderName+'</div>'
+          +'<div style="font-size:10px;color:var(--gray3);margin-left:auto">'+date+'</div>'
+          +'</div>'
+          +'<div style="font-size:12px;color:rgba(255,255,255,0.65)">'+preview+'</div>';
+        list.appendChild(item);
+      }
+      var badge = document.getElementById(badgeId);
+      if (badge) {
+        var cur = parseInt(badge.textContent)||0;
+        badge.textContent = cur+1;
+        badge.style.display = 'flex';
+      }
+      // 읽음 처리
+      deleteDoc(doc(db,'chatNotifs',currentUser.uid,'items',d.id)).catch(function(){});
+    });
+  }).catch(function(){});
+
+  // 이후 실시간 감지 (앱 켜져 있는 동안 새 메시지)
   unsubChatNotif = onSnapshot(
     query(collection(db,'chatNotifs',currentUser.uid,'items'), orderBy('createdAt','desc'), limit(1)),
     function(snap) {
@@ -1066,12 +1105,10 @@ function listenChatNotifs() {
         if (change.type !== 'added') return;
         var n = change.doc.data();
         var age = n.createdAt ? (Date.now() - n.createdAt.toMillis()) : 9999;
-        if (age > 8000) return; // 8초 이내 메시지만 알림
-        // 현재 채팅창 열려있는 상대면 스킵
+        if (age > 15000) return; // 15초 이내 메시지만 토스트
         if (chatTargetUid && chatTargetUid === n.senderUid) return;
         if (teacherChatUid && teacherChatUid === n.senderUid) return;
         showChatNotif(n.senderName, n.preview);
-        // 읽음 처리
         deleteDoc(doc(db,'chatNotifs',currentUser.uid,'items',change.doc.id)).catch(function(){});
       });
     }
