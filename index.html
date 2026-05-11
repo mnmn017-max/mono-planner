@@ -1086,10 +1086,6 @@ window.sendNotice=function(){
   if(!title||!content){alert('제목과 내용을 입력해주세요.');return;}
   addDoc(collection(db,'notices'),{target:target,title:title,content:content,senderUid:currentUser.uid,senderName:currentProfile.name,readBy:[],createdAt:serverTimestamp()}).then(function(){closeModal('modal-notice');document.getElementById('notice-title-input').value='';document.getElementById('notice-body-input').value='';alert('공지가 전송되었습니다!');renderTeacher(5);});
 };
-window.deleteNotice=function(id){
-  if(!confirm('이 공지를 삭제하시겠습니까?')) return;
-  deleteDoc(doc(db,'notices',id)).then(function(){renderTeacher(5);}).catch(function(e){alert('삭제 실패: '+e.message);});
-};
 window.showNoticePopup=function(title,body,from){document.getElementById('notice-title-text').textContent=title;document.getElementById('notice-body-text').textContent=body;document.getElementById('notice-from-text').textContent=from||'';document.getElementById('notice-overlay').classList.add('open');};
 function updateNotifBadge(count){var b=document.getElementById('notif-badge');if(b){if(count>0){b.style.display='flex';b.textContent=count;}else b.style.display='none';}}
 window.toggleNotifPanel=function(){
@@ -1462,10 +1458,38 @@ function buildTNotice(){
     if(sel) sel.innerHTML='<option value="all">전체 학생</option>'+students.map(function(s){return '<option value="'+s.name+'">'+s.name+'</option>';}).join('');
     return getDocs(query(collection(db,'notices'),orderBy('createdAt','desc'))).then(function(snap){
       var notices=snap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
-      return '<button class="appeal-btn" onclick="openModal(\'modal-notice\')">📢 새 공지 보내기</button><div class="section-label">공지 발송 내역</div>'+(!notices.length?'<div style="color:var(--gray3);font-size:13px;padding:10px 0">발송된 공지가 없습니다</div>':notices.map(function(n){var date=n.createdAt?n.createdAt.toDate().toLocaleDateString('ko-KR'):'';return '<div class="planner-thumb"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><div style="font-size:13px;font-weight:600;flex:1">'+n.title+'</div><div style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;color:var(--gray3)">'+date+'</span><button onclick="deleteNotice(\'+n.id+\')" style="padding:4px 8px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:5px;color:#f87171;font-size:10px;cursor:pointer">삭제</button></div></div><div style="font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:4px">'+n.content+'</div><div style="font-size:11px;color:var(--gray3)">수신: '+(n.target==='all'?'전체':n.target)+'</div></div>';}).join(''));
+      // 공지 카드를 DOM으로 직접 생성하여 id 전달 문제 해결
+      var html='<button class="appeal-btn" onclick="openModal(\'modal-notice\')">📢 새 공지 보내기</button><div class="section-label">공지 발송 내역</div>';
+      if(!notices.length){
+        html+='<div style="color:var(--gray3);font-size:13px;padding:10px 0">발송된 공지가 없습니다</div>';
+      } else {
+        notices.forEach(function(n){
+          var date=n.createdAt?n.createdAt.toDate().toLocaleDateString('ko-KR'):'';
+          html+='<div class="planner-thumb">'
+            +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
+            +'<div style="font-size:13px;font-weight:600;flex:1">'+n.title+'</div>'
+            +'<div style="display:flex;align-items:center;gap:6px">'
+            +'<span style="font-size:11px;color:var(--gray3)">'+date+'</span>'
+            +'<button data-nid="'+n.id+'" class="del-notice-btn" style="padding:4px 8px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:5px;color:#f87171;font-size:10px;cursor:pointer">삭제</button>'
+            +'</div></div>'
+            +'<div style="font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:4px">'+n.content+'</div>'
+            +'<div style="font-size:11px;color:var(--gray3)">수신: '+(n.target==='all'?'전체':n.target)+'</div>'
+            +'</div>';
+        });
+      }
+      return html;
     });
   });
 }
+// 공지 삭제 - 이벤트 위임 방식 (id를 data-nid 속성에서 읽음)
+document.addEventListener('click', function(e){
+  var btn=e.target.closest('.del-notice-btn');
+  if(!btn) return;
+  var nid=btn.getAttribute('data-nid');
+  if(!nid) return;
+  if(!confirm('이 공지를 삭제하시겠습니까?')) return;
+  deleteDoc(doc(db,'notices',nid)).then(function(){renderTeacher(5);}).catch(function(err){alert('삭제 실패: '+err.message);});
+});
 
 function buildTAccounts(){
   return loadStudentList().then(function(students){
