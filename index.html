@@ -1058,61 +1058,95 @@ function loadGrades(type) {
 var unsubChatNotif = null;
 function listenChatNotifs() {
   if (!currentUser) return;
-  if (unsubChatNotif) unsubChatNotif();
+  if (unsubChatNotif) { unsubChatNotif(); unsubChatNotif = null; }
 
-  // 앱 시작 시 기존 미읽은 알림 한 번에 로드 (앱 꺼져 있는 동안 쌓인 것 포함)
-  getDocs(query(collection(db,'chatNotifs',currentUser.uid,'items'), orderBy('createdAt','asc'))).then(function(snap){
-    if (snap.empty) return;
-    snap.docs.forEach(function(d){
-      var n = d.data();
-      var senderName = n.senderName || '알 수 없음';
-      var preview = n.preview || '(메시지)';
-      // 패널에만 추가 (토스트 없이 조용히)
-      var isTeacher = currentProfile && (currentProfile.role==='teacher'||currentProfile.role==='master');
-      var listId = isTeacher ? 'teacher-notif-list' : 'notif-list';
-      var badgeId = isTeacher ? 'teacher-notif-badge' : 'notif-badge';
-      var list = document.getElementById(listId);
-      if (list) {
-        if (list.querySelector('[data-empty]')) list.innerHTML = '';
-        var item = document.createElement('div');
-        item.setAttribute('data-chat-item','1');
-        item.style.cssText = 'background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.2);border-radius:10px;padding:12px;margin-bottom:8px;';
-        var date = n.createdAt ? n.createdAt.toDate().toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
-        item.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
-          +'<span style="font-size:14px">💬</span>'
-          +'<div style="font-size:13px;font-weight:600;color:var(--gold2)">'+senderName+'</div>'
-          +'<div style="font-size:10px;color:var(--gray3);margin-left:auto">'+date+'</div>'
-          +'</div>'
-          +'<div style="font-size:12px;color:rgba(255,255,255,0.65)">'+preview+'</div>';
-        list.appendChild(item);
-      }
-      var badge = document.getElementById(badgeId);
-      if (badge) {
-        var cur = parseInt(badge.textContent)||0;
-        badge.textContent = cur+1;
-        badge.style.display = 'flex';
-      }
-      // 읽음 처리
-      deleteDoc(doc(db,'chatNotifs',currentUser.uid,'items',d.id)).catch(function(){});
-    });
-  }).catch(function(){});
+  var isTeacher = currentProfile && (currentProfile.role==='teacher'||currentProfile.role==='master');
+  var listId  = isTeacher ? 'teacher-notif-list' : 'notif-list';
+  var badgeId = isTeacher ? 'teacher-notif-badge' : 'notif-badge';
 
-  // 이후 실시간 감지 (앱 켜져 있는 동안 새 메시지)
-  unsubChatNotif = onSnapshot(
-    query(collection(db,'chatNotifs',currentUser.uid,'items'), orderBy('createdAt','desc'), limit(1)),
-    function(snap) {
-      snap.docChanges().forEach(function(change) {
-        if (change.type !== 'added') return;
-        var n = change.doc.data();
-        var age = n.createdAt ? (Date.now() - n.createdAt.toMillis()) : 9999;
-        if (age > 15000) return; // 15초 이내 메시지만 토스트
-        if (chatTargetUid && chatTargetUid === n.senderUid) return;
-        if (teacherChatUid && teacherChatUid === n.senderUid) return;
-        showChatNotif(n.senderName, n.preview);
-        deleteDoc(doc(db,'chatNotifs',currentUser.uid,'items',change.doc.id)).catch(function(){});
-      });
+  function _addToPanel(n, quiet) {
+    var senderName = n.senderName||'알 수 없음';
+    var preview    = n.preview||'(메시지)';
+    var list = document.getElementById(listId);
+    if (list) {
+      if (list.querySelector('[data-empty]')) list.innerHTML = '';
+      var item = document.createElement('div');
+      item.setAttribute('data-chat-item','1');
+      item.style.cssText = 'background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.2);border-radius:10px;padding:12px;margin-bottom:8px;';
+      var dateStr = n.createdAt ? n.createdAt.toDate().toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+      item.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+        +'<span style="font-size:14px">💬</span>'
+        +'<div style="font-size:13px;font-weight:600;color:var(--gold2)">'+senderName+'</div>'
+        +'<div style="font-size:10px;color:var(--gray3);margin-left:auto">'+dateStr+'</div>'
+        +'</div>'
+        +'<div style="font-size:12px;color:rgba(255,255,255,0.65)">'+preview+'</div>';
+      list.insertBefore(item, list.firstChild);
     }
-  );
+    var badge = document.getElementById(badgeId);
+    if (badge) {
+      var cur = parseInt(badge.textContent)||0;
+      badge.textContent = cur+1;
+      badge.style.display = 'flex';
+    }
+    if (!quiet) showChatNotif(senderName, preview);
+  }
+
+  // Step 1: 앱 꺼져 있는 동안 쌓인 알림 먼저 처리 (조용히)
+  getDocs(query(collection(db,'chatNotifs',currentUser.uid,'items'), orderBy('createdAt','asc'))).then(function(snap){
+    // 처리 전 삭제할 ID 목록 수집
+    var ids = snap.docs.map(function(d){ return d.id; });
+    snap.docs.forEach(function(d){
+      _addToPanel(d.data(), true); // 토스트 없이 패널에만 추가
+    });
+    // 삭제
+    ids.forEach(function(id){
+      deleteDoc(doc(db,'chatNotifs',currentUser.uid,'items',id)).catch(function(){});
+    });
+
+    // Step 2: 기존 알림 처리 완료 후 실시간 리스너 시작
+    // 처리된 ID 집합으로 중복 방지
+    var processedIds = {};
+    ids.forEach(function(id){ processedIds[id]=true; });
+
+    unsubChatNotif = onSnapshot(
+      collection(db,'chatNotifs',currentUser.uid,'items'),
+      function(snap) {
+        snap.docChanges().forEach(function(change) {
+          if (change.type !== 'added') return;
+          var docId = change.doc.id;
+          if (processedIds[docId]) return; // 이미 처리한 항목 스킵
+          processedIds[docId] = true;
+          var n = change.doc.data();
+          // 현재 열려있는 대화 상대면 스킵
+          if (chatTargetUid && chatTargetUid === n.senderUid) {
+            deleteDoc(doc(db,'chatNotifs',currentUser.uid,'items',docId)).catch(function(){});
+            return;
+          }
+          if (teacherChatUid && teacherChatUid === n.senderUid) {
+            deleteDoc(doc(db,'chatNotifs',currentUser.uid,'items',docId)).catch(function(){});
+            return;
+          }
+          _addToPanel(n, false); // 토스트 + 패널 추가
+          deleteDoc(doc(db,'chatNotifs',currentUser.uid,'items',docId)).catch(function(){});
+        });
+      }
+    );
+  }).catch(function(){
+    // getDocs 실패 시 바로 실시간 리스너만 시작
+    unsubChatNotif = onSnapshot(
+      collection(db,'chatNotifs',currentUser.uid,'items'),
+      function(snap) {
+        snap.docChanges().forEach(function(change) {
+          if (change.type !== 'added') return;
+          var n = change.doc.data();
+          if (chatTargetUid && chatTargetUid === n.senderUid) return;
+          if (teacherChatUid && teacherChatUid === n.senderUid) return;
+          _addToPanel(n, false);
+          deleteDoc(doc(db,'chatNotifs',currentUser.uid,'items',change.doc.id)).catch(function(){});
+        });
+      }
+    );
+  });
 }
 
 function showChatNotif(senderName, preview) {
