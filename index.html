@@ -1058,10 +1058,10 @@ window.showPlannerHistory=function(){
     +'<div id="hist-day-detail" style="display:none"></div>';
   document.body.appendChild(panel);
   pushHistory(function(){var p=document.getElementById('planner-hist-panel');if(p)p.remove();});
-  getDocs(query(collection(db,'todos'),where('uid','==',uid),orderBy('date','desc'),limit(90))).then(function(snap){
+  getDocs(query(collection(db,'todos'),where('uid','==',uid),limit(180))).then(function(snap){
     var dateMap={};
     snap.docs.forEach(function(d){var dt=d.data().date;if(dt){if(!dateMap[dt])dateMap[dt]={count:0,done:0};dateMap[dt].count++;if(d.data().status==='done')dateMap[dt].done++;}});
-    var dates=Object.keys(dateMap).sort().reverse();
+    var dates=Object.keys(dateMap).sort(function(a,b){return b>a?1:-1;});
     var dateList=document.getElementById('hist-date-list');
     if(!dateList)return;
     if(!dates.length){dateList.innerHTML='<div style="color:var(--gray3);font-size:13px">기록이 없습니다</div>';return;}
@@ -1101,18 +1101,18 @@ window.histShowDay=function(date,uid){
   detail.innerHTML='<button onclick="document.getElementById(\'hist-date-list\').style.display=\'\';document.getElementById(\'hist-day-detail\').style.display=\'none\';" style="display:flex;align-items:center;gap:6px;background:none;border:none;color:var(--gold);font-size:13px;cursor:pointer;padding:0;margin-bottom:12px">← 날짜 목록</button>'
     +'<div style="font-size:15px;font-weight:700;color:var(--gold2);margin-bottom:12px">'+date+'</div>'
     +'<div id="hist-day-items"><div style="color:var(--gray3);font-size:13px">불러오는 중...</div></div>';
-  getDocs(query(collection(db,'todos'),where('uid','==',uid),where('date','==',date),orderBy('createdAt','asc'))).then(function(snap){
+  getDocs(query(collection(db,'todos'),where('uid','==',uid),where('date','==',date))).then(function(snap){
     var el=document.getElementById('hist-day-items');if(!el)return;
     if(snap.empty){el.innerHTML='<div style="color:var(--gray3);font-size:13px">기록 없음</div>';return;}
+    var todos=snap.docs.map(function(d){return d.data();}).sort(function(a,b){var at=a.createdAt?a.createdAt.toMillis():0,bt=b.createdAt?b.createdAt.toMillis():0;return at-bt;});
     var statusMap={'none':'⬜','progressing':'🔄','done':'✅'};
-    var done=snap.docs.filter(function(d){return d.data().status==='done';}).length;
+    var done=todos.filter(function(t){return t.status==='done';}).length;
     el.innerHTML='<div style="background:rgba(255,255,255,0.03);border-radius:10px;padding:10px 12px;margin-bottom:12px;display:flex;gap:16px">'
-      +'<div style="text-align:center"><div style="font-size:20px;font-weight:700;color:var(--gold2)">'+snap.docs.length+'</div><div style="font-size:10px;color:var(--gray3)">전체</div></div>'
+      +'<div style="text-align:center"><div style="font-size:20px;font-weight:700;color:var(--gold2)">'+todos.length+'</div><div style="font-size:10px;color:var(--gray3)">전체</div></div>'
       +'<div style="text-align:center"><div style="font-size:20px;font-weight:700;color:var(--green)">'+done+'</div><div style="font-size:10px;color:var(--gray3)">완료</div></div>'
-      +'<div style="text-align:center"><div style="font-size:20px;font-weight:700;color:var(--red)">'+(snap.docs.length-done)+'</div><div style="font-size:10px;color:var(--gray3)">미완료</div></div>'
+      +'<div style="text-align:center"><div style="font-size:20px;font-weight:700;color:var(--red)">'+(todos.length-done)+'</div><div style="font-size:10px;color:var(--gray3)">미완료</div></div>'
       +'</div>'
-      +snap.docs.map(function(d){
-        var t=d.data();
+      +todos.map(function(t){
         return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05)">'
           +'<span style="font-size:16px">'+(statusMap[t.status]||'⬜')+'</span>'
           +'<span class="subject-tag subj-'+(t.subject||'ko')+'" style="font-size:10px;flex-shrink:0">'+(subjectNames[t.subject]||t.subject||'')+'</span>'
@@ -1155,10 +1155,10 @@ window.teacherSelectStudent=function(uid,name){
   dateList.style.display='block';
   if(dayDetail) dayDetail.style.display='none';
   dateList.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오는 중...</div>';
-  getDocs(query(collection(db,'todos'),where('uid','==',uid),orderBy('date','desc'),limit(90))).then(function(snap){
+  getDocs(query(collection(db,'todos'),where('uid','==',uid),limit(180))).then(function(snap){
     var dateMap={};
     snap.docs.forEach(function(d){var dt=d.data().date;if(dt){if(!dateMap[dt])dateMap[dt]={count:0,done:0};dateMap[dt].count++;if(d.data().status==='done')dateMap[dt].done++;}});
-    var dates=Object.keys(dateMap).sort().reverse();
+    var dates=Object.keys(dateMap).sort(function(a,b){return b>a?1:-1;});
     if(!dates.length){dateList.innerHTML='<div style="color:var(--gray3);font-size:13px">'+name+' 기록 없음</div>';return;}
     getDocs(collection(db,'planners')).then(function(pSnap){
       var submitted={};
@@ -1189,18 +1189,18 @@ window.teacherShowDay=function(date,uid,name){
   detail.innerHTML='<button onclick="document.getElementById(\'tph-date-list\').style.display=\'\';document.getElementById(\'tph-day-detail\').style.display=\'none\';" style="display:flex;align-items:center;gap:6px;background:none;border:none;color:var(--gold);font-size:13px;cursor:pointer;padding:0;margin-bottom:12px">← 날짜 목록</button>'
     +'<div style="font-size:14px;font-weight:700;color:var(--gold2);margin-bottom:10px">'+name+' · '+date+'</div>'
     +'<div id="tph-items"><div style="color:var(--gray3);font-size:13px">불러오는 중...</div></div>';
-  getDocs(query(collection(db,'todos'),where('uid','==',uid),where('date','==',date),orderBy('createdAt','asc'))).then(function(snap){
+  getDocs(query(collection(db,'todos'),where('uid','==',uid),where('date','==',date))).then(function(snap){
     var el=document.getElementById('tph-items');if(!el) return;
     if(snap.empty){el.innerHTML='<div style="color:var(--gray3);font-size:13px">기록 없음</div>';return;}
+    var todos=snap.docs.map(function(d){return d.data();}).sort(function(a,b){var at=a.createdAt?a.createdAt.toMillis():0,bt=b.createdAt?b.createdAt.toMillis():0;return at-bt;});
     var statusMap={'none':'⬜','progressing':'🔄','done':'✅'};
-    var done=snap.docs.filter(function(d){return d.data().status==='done';}).length;
+    var done=todos.filter(function(t){return t.status==='done';}).length;
     el.innerHTML='<div style="background:rgba(255,255,255,0.03);border-radius:10px;padding:10px 12px;margin-bottom:10px;display:flex;gap:16px">'
-      +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--gold2)">'+snap.docs.length+'</div><div style="font-size:10px;color:var(--gray3)">전체</div></div>'
+      +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--gold2)">'+todos.length+'</div><div style="font-size:10px;color:var(--gray3)">전체</div></div>'
       +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--green)">'+done+'</div><div style="font-size:10px;color:var(--gray3)">완료</div></div>'
-      +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--red)">'+(snap.docs.length-done)+'</div><div style="font-size:10px;color:var(--gray3)">미완료</div></div>'
+      +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--red)">'+(todos.length-done)+'</div><div style="font-size:10px;color:var(--gray3)">미완료</div></div>'
       +'</div>'
-      +snap.docs.map(function(d){
-        var t=d.data();
+      +todos.map(function(t){
         return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.05)">'
           +'<span style="font-size:15px">'+(statusMap[t.status]||'⬜')+'</span>'
           +'<span class="subject-tag subj-'+(t.subject||'ko')+'" style="font-size:10px;flex-shrink:0">'+(subjectNames[t.subject]||t.subject||'')+'</span>'
@@ -1899,7 +1899,7 @@ window.renderTeacher=function(i){
   var c=document.getElementById('teacher-content');
   c.innerHTML='<div style="color:var(--gray3);font-size:13px;padding:20px">불러오는 중...</div>';
   if(i===0) buildTDashboard().then(function(h){c.innerHTML=h;});
-  else if(i===1) buildTPlanner().then(function(h){c.innerHTML=h;});
+  else if(i===1) buildTPlanner().then(function(h){c.innerHTML=h; teacherPlannerHistory();});
   else if(i===2) buildTGrades().then(function(h){c.innerHTML=h;});
   else if(i===3) buildTRewards().then(function(h){c.innerHTML=h;});
   else if(i===4) buildTChat().then(function(h){c.innerHTML=h;});
@@ -1961,9 +1961,8 @@ function buildTPlanner(){
           +(!todayPlanners.length?'<div style="color:var(--gray3);font-size:13px;padding:10px 0">아직 제출된 플래너가 없습니다</div>':todayPlanners.map(function(p){return '<div class="planner-thumb" style="cursor:pointer" onclick="togglePlannerDetail(\'pd_'+p.uid+'\',\''+p.uid+'\')"><div style="display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:14px;font-weight:600;margin-bottom:4px">'+p.name+'</div><div style="font-size:11px;color:var(--green)">✅ 제출 완료 · 탭하여 상세 보기</div></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div><div id="pd_'+p.uid+'" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08)"><div style="color:var(--gray3);font-size:12px">불러오는 중...</div></div></div>';}).join(''))
           +'<div style="margin-top:20px;background:rgba(201,168,76,0.05);border:1px solid rgba(201,168,76,0.15);border-radius:12px;padding:14px">'
           +'<div class="section-label" style="margin:0 0 10px">📅 플래너 기록 조회</div>'
-          +'<div id="teacher-planner-hist"><div style="color:var(--gray3);font-size:13px">아래에서 학생을 선택하면 기록을 볼 수 있습니다</div></div>'
+          +'<div id="teacher-planner-hist"><div style="color:var(--gray3);font-size:13px">불러오는 중...</div></div>'
           +'</div>'
-          +'<script>setTimeout(function(){teacherPlannerHistory();},100);<\/script>'
           +'<div class="section-label" style="margin-top:20px">코멘트 작성</div>'
           +'<select class="modal-select" id="comment-student-select"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select>'
           +'<textarea class="modal-input" id="comment-input" rows="4" placeholder="학생에게 전달할 코멘트..." style="resize:none;margin-bottom:10px"></textarea>'
@@ -2116,7 +2115,7 @@ window.togglePlannerDetail=function(elId,studentUid){
   if(el.style.display==='none'){
     el.style.display='block';
     var today=getPlannerDate();
-    getDocs(query(collection(db,'todos'),where('uid','==',studentUid),where('date','==',today),orderBy('createdAt','asc'))).then(function(snap){
+    getDocs(query(collection(db,'todos'),where('uid','==',studentUid),where('date','==',today))).then(function(snap){
       if(snap.empty){el.innerHTML='<div style="color:var(--gray3);font-size:12px">할 일 항목 없음</div>';return;}
       var todos=snap.docs.map(function(d){return d.data();});
       var statusMap={'none':'⬜','progressing':'🔄','done':'✅'};
@@ -2181,18 +2180,18 @@ window.saveScholar=function(){
 function buildTChat(){
   return loadStudentList().then(function(students){
     var html='<div id="tchat-room-list">'
-      +'<div class="section-label">대화방</div>';
+      +'<div class="section-label">대화방</div>'
+      +'<input id="tchat-search" class="modal-input" placeholder="🔍 학생 이름 검색..." style="margin-bottom:10px" oninput="filterTChatRooms(this.value)"/>';
     if(!students.length){
       html+='<div style="color:var(--gray3);font-size:13px">등록된 학생이 없습니다</div>';
     } else {
       students.forEach(function(s){
-        html+='<div class="planner-thumb" style="cursor:pointer;display:flex;align-items:center;gap:12px" onclick="openTeacherChatRoom(\''+s.uid+'\',\''+s.name+'\')">'
+        html+='<div class="tchat-room-card planner-thumb" data-name="'+s.name+'" style="cursor:pointer;display:flex;align-items:center;gap:12px" onclick="openTeacherChatRoom(\''+s.uid+'\',\''+s.name+'\')">'
           +'<div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,rgba(201,168,76,0.3),rgba(201,168,76,0.1));display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:var(--gold2);flex-shrink:0">'+s.name.slice(0,1)+'</div>'
           +'<div style="flex:1;min-width:0">'
           +'<div style="font-size:14px;font-weight:600">'+s.name+'</div>'
           +'<div style="font-size:11px;color:var(--gray3);margin-top:2px">탭하여 대화</div>'
           +'</div>'
-          +'<div id="tchat-badge-'+s.uid+'" style="display:none;background:var(--red);border-radius:50%;width:18px;height:18px;font-size:10px;font-weight:700;color:#fff;display:none;align-items:center;justify-content:center"></div>'
           +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gray3)" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>'
           +'</div>';
       });
@@ -2200,8 +2199,9 @@ function buildTChat(){
     html+='</div>';
     html+='<div id="tchat-room-view" style="display:none">'
       +'<button onclick="closeTeacherChatRoom()" style="display:flex;align-items:center;gap:6px;background:none;border:none;color:var(--gold);font-size:13px;cursor:pointer;padding:0;margin-bottom:12px">← 대화방 목록</button>'
-      +'<div id="tchat-room-title" style="font-size:15px;font-weight:700;color:var(--gold2);margin-bottom:10px"></div>'
-      +'<div id="teacher-chat-area" style="min-height:200px;max-height:400px;overflow-y:auto;padding:4px 0;margin-bottom:8px;"></div>'
+      +'<div id="tchat-room-title" style="font-size:15px;font-weight:700;color:var(--gold2);margin-bottom:8px"></div>'
+      +'<input id="tchat-msg-search" class="modal-input" placeholder="🔍 메시지 검색..." style="margin-bottom:8px" oninput="filterTChatMessages(this.value)"/>'
+      +'<div id="teacher-chat-area" style="min-height:200px;max-height:380px;overflow-y:auto;padding:4px 0;margin-bottom:8px;"></div>'
       +'<div class="chat-input-area" style="margin:0 -16px;padding:12px 16px">'
       +'<input type="file" id="teacher-file-input" style="display:none;" onchange="handleTeacherFile(this)"/>'
       +'<button onclick="document.getElementById(\'teacher-file-input\').click()" style="background:none;border:none;cursor:pointer;padding:0;flex-shrink:0;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></button>'
@@ -2212,27 +2212,57 @@ function buildTChat(){
     return html;
   });
 }
+window.filterTChatRooms=function(q){
+  q=(q||'').trim();
+  document.querySelectorAll('.tchat-room-card').forEach(function(card){
+    var name=card.dataset.name||'';
+    card.style.display=(!q||name.includes(q))?'flex':'none';
+  });
+};
+var _tchatAllMessages=[];
+window.filterTChatMessages=function(q){
+  var area=document.getElementById('teacher-chat-area');
+  if(!area) return;
+  q=(q||'').trim().toLowerCase();
+  if(!q){renderTChatMessages(_tchatAllMessages);return;}
+  var filtered=_tchatAllMessages.filter(function(m){return m.text&&m.text.toLowerCase().includes(q);});
+  renderTChatMessages(filtered,q);
+};
+function renderTChatMessages(msgs,highlight){
+  var area=document.getElementById('teacher-chat-area');
+  if(!area) return;
+  if(!msgs.length){area.innerHTML='<div style="color:var(--gray3);font-size:13px">'+(highlight?'검색 결과 없음':'대화 내역이 없습니다')+'</div>';return;}
+  var wasBottom=area.scrollHeight-area.scrollTop-area.clientHeight<60;
+  area.innerHTML=msgs.map(function(m){
+    var isMe=m.senderUid===currentUser.uid;
+    var time=m.createdAt?m.createdAt.toDate().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}):'';
+    if(m.fileUrl) return '<div class="msg '+(isMe?'mine':'theirs')+'" style="margin-bottom:8px">'+(isMe?'':'<div class="teacher-av" style="width:28px;height:28px;font-size:10px;flex-shrink:0">'+(m.senderName||'?').slice(0,2)+'</div>')+'<div><a href="'+m.fileUrl+'" target="_blank" style="display:flex;align-items:center;gap:6px;padding:8px 12px;background:'+(isMe?'linear-gradient(135deg,var(--gold),var(--gold2))':'var(--navy4)')+';border-radius:10px;text-decoration:none;"><span style="font-size:12px;color:'+(isMe?'var(--navy)':'var(--gold2)')+'">📎 '+(m.fileName||'파일')+'</span></a><div class="msg-time" style="'+(isMe?'text-align:right':'')+'">'+time+'</div></div></div>';
+    var text=m.text||'';
+    if(highlight){
+      var re=new RegExp('('+highlight.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi');
+      text=text.replace(re,'<mark style="background:rgba(201,168,76,0.35);border-radius:3px;padding:0 2px">$1</mark>');
+    }
+    return '<div class="msg '+(isMe?'mine':'theirs')+'" style="margin-bottom:8px">'+(isMe?'':'<div class="teacher-av" style="width:28px;height:28px;font-size:10px;flex-shrink:0">'+(m.senderName||'?').slice(0,2)+'</div>')+'<div>'+(isMe?'':'<div style="font-size:10px;color:var(--gray3);margin-bottom:2px">'+m.senderName+'</div>')+'<div class="msg-bubble">'+text+'</div><div class="msg-time" style="'+(isMe?'text-align:right':'')+'">'+time+'</div></div></div>';
+  }).join('');
+  if(wasBottom) area.scrollTop=area.scrollHeight;
+}
 window.openTeacherChatRoom=function(uid,name){
   document.getElementById('tchat-room-list').style.display='none';
   var view=document.getElementById('tchat-room-view');
   view.style.display='block';
   var title=document.getElementById('tchat-room-title');
   if(title) title.textContent=name;
+  var msgSearch=document.getElementById('tchat-msg-search');
+  if(msgSearch) msgSearch.value='';
   teacherChatUid=uid;
+  _tchatAllMessages=[];
   pushHistory(function(){ closeTeacherChatRoom(); });
   if(unsubChat) unsubChat();
   var roomId=_chatRoomId(uid, currentUser.uid);
   unsubChat=onSnapshot(query(collection(db,'chats',roomId,'messages'),orderBy('createdAt','asc')),function(snap){
-    var area=document.getElementById('teacher-chat-area');if(!area) return;
-    if(!snap.docs.length){area.innerHTML='<div style="color:var(--gray3);font-size:13px">대화 내역이 없습니다</div>';return;}
-    var wasBottom=area.scrollHeight-area.scrollTop-area.clientHeight<60;
-    area.innerHTML=snap.docs.map(function(d){
-      var m=d.data(),isMe=m.senderUid===currentUser.uid;
-      var time=m.createdAt?m.createdAt.toDate().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}):'';
-      if(m.fileUrl) return '<div class="msg '+(isMe?'mine':'theirs')+'" style="margin-bottom:8px">'+(isMe?'':'<div class="teacher-av" style="width:28px;height:28px;font-size:10px;flex-shrink:0">'+(m.senderName||'?').slice(0,2)+'</div>')+'<div><a href="'+m.fileUrl+'" target="_blank" style="display:flex;align-items:center;gap:6px;padding:8px 12px;background:'+(isMe?'linear-gradient(135deg,var(--gold),var(--gold2))':'var(--navy4)')+';border-radius:10px;text-decoration:none;"><span style="font-size:12px;color:'+(isMe?'var(--navy)':'var(--gold2)')+'">📎 '+(m.fileName||'파일')+'</span></a><div class="msg-time" style="'+(isMe?'text-align:right':'')+'">'+time+'</div></div></div>';
-      return '<div class="msg '+(isMe?'mine':'theirs')+'" style="margin-bottom:8px">'+(isMe?'':'<div class="teacher-av" style="width:28px;height:28px;font-size:10px;flex-shrink:0">'+(m.senderName||'?').slice(0,2)+'</div>')+'<div>'+(isMe?'':'<div style="font-size:10px;color:var(--gray3);margin-bottom:2px">'+m.senderName+'</div>')+'<div class="msg-bubble">'+m.text+'</div><div class="msg-time" style="'+(isMe?'text-align:right':'')+'">'+time+'</div></div></div>';
-    }).join('');
-    if(wasBottom) area.scrollTop=area.scrollHeight;
+    _tchatAllMessages=snap.docs.map(function(d){return d.data();});
+    var q=(document.getElementById('tchat-msg-search')||{}).value||'';
+    filterTChatMessages(q);
   });
 };
 window.closeTeacherChatRoom=function(){
