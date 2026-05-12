@@ -641,9 +641,16 @@ onMessage(messaging, function(payload) {
 
 // 새벽 4시 기준 오늘 날짜 (4시 이전이면 어제로 처리)
 function getPlannerDate() {
+  // 한국 시간(UTC+9) 기준으로 날짜 계산
   var now = new Date();
-  if (now.getHours() < 4) now.setDate(now.getDate() - 1);
-  return now.toISOString().split('T')[0];
+  var kstOffset = 9 * 60; // 분
+  var kst = new Date(now.getTime() + (kstOffset + now.getTimezoneOffset()) * 60000);
+  // 새벽 4시 이전이면 전날로 처리
+  if (kst.getHours() < 4) kst.setDate(kst.getDate() - 1);
+  var y = kst.getFullYear();
+  var m = String(kst.getMonth() + 1).padStart(2, '0');
+  var d = String(kst.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + d;
 }
 
 var currentUser = null, currentProfile = null;
