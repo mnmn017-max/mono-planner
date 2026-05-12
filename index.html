@@ -2179,123 +2179,18 @@ window.loadExamStats=function(encodedName){
 };
 window.loadStudentGrades=function(uid){
   var el=document.getElementById('t-grade-list');if(!uid||!el) return;
-  var studentName='';
-  loadStudentList().then(function(students){
-    var s=students.find(function(s){return s.uid===uid;});
-    if(s) studentName=s.name;
-  });
   el.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오는 중...</div>';
   getDocs(query(collection(db,'grades'),where('uid','==',uid))).then(function(snap){
-    if(snap.empty){el.innerHTML='<div style="color:var(--gray3);font-size:13px">입력된 성적이 없습니다</div>';return;}
-    var grades=snap.docs.map(function(d){return Object.assign({_id:d.id},d.data());})
-      .sort(function(a,b){return (b.examDate||'').localeCompare(a.examDate||'');});
-    // 디버그: 첫 번째 성적의 scores 구조를 화면에 표시
-    el.innerHTML='<div style="background:rgba(74,127,255,0.1);border-radius:8px;padding:10px;margin-bottom:10px;font-size:11px;color:#7aa8ff;word-break:break-all"><b>[DEBUG] scores 구조:</b><br>'+JSON.stringify(grades[0].scores)+'</div>';
-    // 과목별 추이 계산용
-    var subjTrend={};
-    grades.slice().reverse().forEach(function(g){
-      Object.keys(g.scores||{}).forEach(function(k){
-        if(!subjTrend[k]) subjTrend[k]=[];
-        subjTrend[k].push({date:g.examDate,score:g.scores[k].score,grade:g.scores[k].grade,exam:g.examName});
-      });
-    });
-    el.innerHTML=grades.map(function(g,idx){
-      // ── 과목 점수 ──
-      var subjHtml=Object.keys(g.scores||{}).map(function(k){
-        var s=g.scores[k];
-        var label=s.label||(subjectNames[k]||k);
-        var grp=s.group||k.replace(/\d/g,'');
-        // 이전 시험 대비 변화
-        var arr=subjTrend[k]||[];
-        var curIdx=arr.findIndex(function(x){return x.date===g.examDate&&x.exam===g.examName;});
-        var diff='';
-        if(curIdx>0){
-          var prev=parseInt(arr[curIdx-1].score||0),cur=parseInt(s.score||0);
-          if(!isNaN(prev)&&!isNaN(cur)&&cur!==prev){
-            diff='<span style="font-size:10px;margin-left:4px;color:'+(cur>prev?'var(--green)':'var(--red)')+'">'+( cur>prev?'▲':'▼')+(Math.abs(cur-prev))+'</span>';
-          }
-        }
-        var scoreVal = (s.score !== null && s.score !== undefined && s.score !== '') ? s.score : '-';
-        var gradeVal = s.grade ? s.grade+'등급' : '-';
-        return '<div class="score-cell" style="position:relative"><div class="score-cell-subj">'+label+'</div><div class="score-cell-val">'+scoreVal+diff+'</div><div class="score-cell-grade">'+gradeVal+'</div></div>';
-      }).join('');
-
-      // ── 오답 문항 ──
-      var wrongHtml='';
-      if(g.wrongBySubj&&Object.keys(g.wrongBySubj).length){
-        wrongHtml='<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)">'
-          +'<div style="font-size:11px;color:var(--gray3);margin-bottom:7px">오답 문항</div>'
-          +Object.keys(g.wrongBySubj).map(function(k){
-            var label=g.scores&&g.scores[k]&&g.scores[k].label?g.scores[k].label:(subjectNames[k]||k);
-            var grp=g.scores&&g.scores[k]&&g.scores[k].group||k.replace(/\d/g,'');
-            return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">'
-              +'<span class="subject-tag subj-'+grp+'" style="font-size:10px;flex-shrink:0">'+label+'</span>'
-              +'<div style="display:flex;gap:4px;flex-wrap:wrap">'
-              +g.wrongBySubj[k].split(',').map(function(n){return '<span style="background:rgba(224,82,82,0.15);border:1px solid rgba(224,82,82,0.25);border-radius:4px;padding:2px 7px;font-size:12px;color:#f87171">'+n.trim()+'번</span>';}).join('')
-              +'</div></div>';
-          }).join('')
-          +'</div>';
-      }
-
-      // ── 다짐/반성 ──
-      var refHtml='';
-      if(g.refMistake||g.refWeak||g.refPlan){
-        refHtml='<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)">'
-          +(g.refMistake?'<div style="margin-bottom:8px"><div style="font-size:11px;color:var(--orange);margin-bottom:3px">⚠️ 실수한 부분</div><div style="font-size:13px;color:rgba(255,255,255,0.75);line-height:1.7">'+g.refMistake+'</div></div>':'')
-          +(g.refWeak?'<div style="margin-bottom:8px"><div style="font-size:11px;color:#f87171;margin-bottom:3px">📉 부족했던 부분</div><div style="font-size:13px;color:rgba(255,255,255,0.75);line-height:1.7">'+g.refWeak+'</div></div>':'')
-          +(g.refPlan?'<div><div style="font-size:11px;color:var(--green);margin-bottom:3px">✅ 개선방안</div><div style="font-size:13px;color:rgba(255,255,255,0.75);line-height:1.7">'+g.refPlan+'</div></div>':'')
-          +'</div>';
-      } else if(g.reflection){
-        refHtml='<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)"><div style="font-size:11px;color:var(--gray3);margin-bottom:4px">나의 다짐</div><div style="font-size:13px;color:rgba(255,255,255,0.75);line-height:1.8">'+g.reflection+'</div></div>';
-      }
-
-      // ── 이전 시험 비교 ──
-      var prevHtml='';
-      if(idx<grades.length-1){
-        var prev=grades[idx+1];
-        var diffs=[];
-        Object.keys(g.scores||{}).forEach(function(k){
-          var cur=parseInt((g.scores[k]||{}).score||0);
-          var prv=parseInt(((prev.scores||{})[k]||{}).score||0);
-          var label=g.scores[k].label||(subjectNames[k]||k);
-          if(!isNaN(cur)&&!isNaN(prv)&&prv>0){
-            diffs.push({label:label,diff:cur-prv,cur:cur,prv:prv});
-          }
-        });
-        if(diffs.length){
-          prevHtml='<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)">'
-            +'<div style="font-size:11px;color:var(--gray3);margin-bottom:7px">📈 이전 시험('+prev.examName+') 대비</div>'
-            +'<div style="display:flex;flex-wrap:wrap;gap:5px">'
-            +diffs.map(function(d){
-              var color=d.diff>0?'var(--green)':d.diff<0?'var(--red)':'var(--gray3)';
-              var arrow=d.diff>0?'▲':d.diff<0?'▼':'━';
-              return '<span style="font-size:12px;padding:4px 8px;background:rgba(255,255,255,0.04);border-radius:6px;color:'+color+'">'+d.label+' '+arrow+(d.diff!==0?Math.abs(d.diff):'')+'점</span>';
-            }).join('')
-            +'</div></div>';
-        }
-      }
-
-      // ── 전체 학생 비교 버튼 ──
-      var examKey = encodeURIComponent(g.examName)+'-'+g.examDate;
-      var statsBtn='<div style="margin-top:10px">'
-        +'<button onclick="loadExamStatsForTeacher(\''+encodeURIComponent(g.examName)+'\',\''+uid+'\',\''+examKey+'\')" '
-        +'style="padding:7px 12px;background:rgba(74,127,255,0.1);border:1px solid rgba(74,127,255,0.2);border-radius:6px;color:#7aa8ff;font-size:11px;cursor:pointer;width:100%">'
-        +'📊 같은 시험 응시 학생 비교분석</button>'
-        +'<div id="teacher-exam-stats-'+examKey+'" style="display:none;margin-top:8px"></div>'
-        +'</div>';
-
+    if(snap.empty){el.innerHTML='<div style="color:var(--gray3)">성적 없음</div>';return;}
+    el.innerHTML=snap.docs.map(function(d){
+      var g=d.data();
       return '<div class="score-card" style="margin-bottom:12px">'
-        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'
-        +'<div><div style="font-size:15px;font-weight:700">'+g.examName+'</div>'
-        +'<div style="font-size:11px;color:var(--gray3);margin-top:2px">'+g.examDate+' · '+(g.type==='mock'?'모의고사':'내신')+'</div></div>'
-        +'</div>'
-        +'<div class="score-subjects">'+subjHtml+'</div>'
-        +wrongHtml+refHtml+prevHtml+statsBtn
+        +'<div style="font-size:14px;font-weight:700;margin-bottom:8px">'+g.examName+' ('+g.examDate+')</div>'
+        +'<pre style="font-size:10px;color:#7aa8ff;white-space:pre-wrap;word-break:break-all;background:rgba(0,0,0,0.2);padding:8px;border-radius:6px">'+JSON.stringify(g.scores,null,2)+'</pre>'
         +'</div>';
     }).join('');
-  }).catch(function(e){el.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패: '+e.message+'</div>';});
+  }).catch(function(e){el.innerHTML='<div style="color:#f87171">오류: '+e.message+'</div>';});
 };
-
 window.loadExamStatsForTeacher=function(encodedName,targetUid,examKey){
   var examName=decodeURIComponent(encodedName);
   var normalize=function(s){return s.replace(/\s+/g,'').toLowerCase();};
