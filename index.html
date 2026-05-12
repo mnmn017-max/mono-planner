@@ -1250,10 +1250,12 @@ window.gradeSubTab=function(i){
 function loadGrades(type) {
   var el=document.getElementById('grade-list');
   if(!el||!currentUser) return;
-  getDocs(query(collection(db,'grades'),where('uid','==',currentUser.uid),where('type','==',type),orderBy('examDate','desc'))).then(function(snap){
+  getDocs(query(collection(db,'grades'),where('uid','==',currentUser.uid),where('type','==',type))).then(function(snap){
     if(snap.empty){el.innerHTML='<div style="color:var(--gray3);font-size:13px;padding:10px 0">입력된 성적이 없습니다</div>';return;}
-    el.innerHTML=snap.docs.map(function(d){
-      var g=d.data();
+    var grades=snap.docs.map(function(d){return d.data();}).sort(function(a,b){
+      return (b.examDate||'').localeCompare(a.examDate||'');
+    });
+    el.innerHTML=grades.map(function(g){
       var subjHtml=Object.keys(g.scores||{}).map(function(subj){
         var s=g.scores[subj];
         var dispName=s.label||(subjectNames[subj]||subj);
@@ -1282,9 +1284,9 @@ function loadGrades(type) {
       } else if(g.reflection){
         refHtml='<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)"><div style="font-size:11px;color:var(--gray3);margin-bottom:4px">나의 다짐</div><div style="font-size:13px;color:rgba(255,255,255,0.75);line-height:1.8">'+g.reflection+'</div></div>';
       }
-      return '<div class="score-card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-size:14px;font-weight:600">'+g.examName+'</div><div style="font-size:11px;color:var(--gray3)">'+g.examDate+'</div></div><div class="score-subjects">'+subjHtml+'</div>'+wrongHtml+refHtml+'<div style="margin-top:10px"><button onclick="loadExamStats(\''+encodeURIComponent(g.examName)+'\')" style="padding:6px 12px;background:rgba(74,127,255,0.1);border:1px solid rgba(74,127,255,0.2);border-radius:6px;color:#7aa8ff;font-size:11px;cursor:pointer;width:100%">📊 같은 시험 전체 통계 보기</button><div id="exam-stats-'+d.id+'" style="display:none"></div></div></div>';
+      return '<div class="score-card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-size:14px;font-weight:600">'+g.examName+'</div><div style="font-size:11px;color:var(--gray3)">'+g.examDate+'</div></div><div class="score-subjects">'+subjHtml+'</div>'+wrongHtml+refHtml+'<div style="margin-top:10px"><button onclick="loadExamStats(\''+encodeURIComponent(g.examName)+'\')" style="padding:6px 12px;background:rgba(74,127,255,0.1);border:1px solid rgba(74,127,255,0.2);border-radius:6px;color:#7aa8ff;font-size:11px;cursor:pointer;width:100%">📊 같은 시험 전체 통계 보기</button><div id="exam-stats-'+encodeURIComponent(g.examName)+'-'+g.examDate+'" style="display:none"></div></div></div>';
     }).join('');
-  }).catch(function(){el.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패 — Firestore 인덱스 설정 필요</div>';});
+  }).catch(function(e){el.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패: '+e.message+'</div>';});
 }
 // ── 채팅 알림 ──
 var unsubChatNotif = null;
@@ -2083,10 +2085,20 @@ window.loadExamStats=function(encodedName){
 window.loadStudentGrades=function(uid){
   var el=document.getElementById('t-grade-list');if(!uid||!el) return;
   el.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오는 중...</div>';
-  getDocs(query(collection(db,'grades'),where('uid','==',uid),orderBy('examDate','desc'))).then(function(snap){
+  getDocs(query(collection(db,'grades'),where('uid','==',uid))).then(function(snap){
     if(snap.empty){el.innerHTML='<div style="color:var(--gray3);font-size:13px">성적 없음</div>';return;}
-    el.innerHTML=snap.docs.map(function(d){var g=d.data();return '<div class="score-card"><div style="display:flex;justify-content:space-between;margin-bottom:8px"><div style="font-size:14px;font-weight:600">'+g.examName+'</div><div style="font-size:11px;color:var(--gray3)">'+g.examDate+'</div></div><div class="score-subjects">'+Object.keys(g.scores||{}).map(function(subj){return '<div class="score-cell"><div class="score-cell-subj">'+(subjectNames[subj]||subj)+'</div><div class="score-cell-val">'+(g.scores[subj].score||'-')+'</div><div class="score-cell-grade">'+(g.scores[subj].grade?g.scores[subj].grade+'등급':'-')+'</div></div>';}).join('')+'</div></div>';}).join('');
-  }).catch(function(){el.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패</div>';});
+    var grades=snap.docs.map(function(d){return d.data();}).sort(function(a,b){
+      return (b.examDate||'').localeCompare(a.examDate||'');
+    });
+    el.innerHTML=grades.map(function(g){
+      var subjHtml=Object.keys(g.scores||{}).map(function(subj){
+        var s=g.scores[subj];
+        var label=s.label||(subjectNames[subj]||subj);
+        return '<div class="score-cell"><div class="score-cell-subj">'+label+'</div><div class="score-cell-val">'+(s.score||'-')+'</div><div class="score-cell-grade">'+(s.grade?s.grade+'등급':'-')+'</div></div>';
+      }).join('');
+      return '<div class="score-card"><div style="display:flex;justify-content:space-between;margin-bottom:8px"><div style="font-size:14px;font-weight:600">'+g.examName+'</div><div style="font-size:11px;color:var(--gray3)">'+g.examDate+'</div></div><div class="score-subjects">'+subjHtml+'</div></div>';
+    }).join('');
+  }).catch(function(e){el.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패: '+e.message+'</div>';});
 };
 window.openTeacherGradeModal=function(){var uid=document.getElementById('t-grade-input-student').value;if(!uid){alert('학생을 선택해주세요.');return;}document.getElementById('grade-target-uid').value=uid;openModal('modal-add-grade');};
 
