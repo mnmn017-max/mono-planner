@@ -820,12 +820,17 @@ function listenTodos() {
 function loadMentorComment() {
   var area = document.getElementById('mentor-comment-area');
   if (!area) return;
-  getDocs(query(collection(db,'comments'), where('studentUid','==',currentUser.uid), orderBy('createdAt','desc'), limit(1))).then(function(snap) {
+  getDocs(query(collection(db,'comments'), where('studentUid','==',currentUser.uid))).then(function(snap) {
     if (snap.empty) { area.innerHTML='<div style="color:var(--gray3);font-size:13px">아직 코멘트가 없습니다</div>'; return; }
-    var d = snap.docs[0].data();
+    // JS에서 최신순 정렬 후 1개
+    var docs=snap.docs.map(function(d){return d.data();}).sort(function(a,b){
+      var at=a.createdAt?a.createdAt.toMillis():0, bt=b.createdAt?b.createdAt.toMillis():0;
+      return bt-at;
+    });
+    var d=docs[0];
     var date = d.createdAt ? d.createdAt.toDate().toLocaleDateString('ko-KR') : '';
-    area.innerHTML = '<div class="comment-bubble"><div class="teacher-av">T</div><div><div class="comment-text">'+d.content+'</div><div class="comment-meta">'+date+'</div></div></div>';
-  }).catch(function() { area.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패</div>'; });
+    area.innerHTML = '<div class="comment-bubble"><div class="teacher-av">'+( d.teacherName||'T').slice(0,2)+'</div><div><div class="comment-text">'+d.content+'</div><div class="comment-meta">'+d.teacherName+' · '+date+'</div></div></div>';
+  }).catch(function(e) { area.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패: '+e.message+'</div>'; });
 }
 
 function loadLectureDashboard() {
@@ -2044,10 +2049,10 @@ function buildTDashboard(){
     return getDocs(collection(db,'planners')).then(function(plannerSnap){
       var submittedToday=plannerSnap.docs.filter(function(d){return d.id.includes('_'+today);}).map(function(d){return d.data().name;});
       var consultPromises=students.map(function(s){
-        return getDocs(query(collection(db,'comments'),where('studentUid','==',s.uid),orderBy('createdAt','desc'),limit(1))).then(function(snap){
+        return getDocs(query(collection(db,'comments'),where('studentUid','==',s.uid))).then(function(snap){
           if(snap.empty) return {name:s.name,message:'상담 기록 없음',urgent:true};
-          var lastDate=snap.docs[0].data().createdAt?snap.docs[0].data().createdAt.toDate():null;
-          if(!lastDate) return null;
+          var sorted2=snap.docs.map(function(d){return d.data();}).sort(function(a,b){var at=a.createdAt?a.createdAt.toMillis():0,bt=b.createdAt?b.createdAt.toMillis():0;return bt-at;});
+          var lastDate=sorted2[0].createdAt?sorted2[0].createdAt.toDate():null;
           var days=Math.floor((new Date()-lastDate)/(1000*60*60*24));
           if(days>=7) return {name:s.name,message:'마지막 상담 '+days+'일 전',urgent:days>=14};
           return null;
