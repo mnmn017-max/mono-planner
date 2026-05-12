@@ -740,6 +740,8 @@ window.saveProfileTeacher = function() {
 
 // ── 학생 탭 ──
 window.studentTab = function(i) {
+  var prev = window._prevStudentTab || 0;
+  window._prevStudentTab = i;
   for (var j=0;j<4;j++) { var n=document.getElementById('snav-'+j); if(n) n.classList.toggle('active',i===j); }
   var c = document.getElementById('student-content');
   var html = '';
@@ -752,6 +754,10 @@ window.studentTab = function(i) {
   if (i===0) listenTodos();
   if (i===2) loadRewardData();
   if (i===3) listenChat();
+  // 홈(0)이 아닌 탭으로 이동 시 뒤로가기 스택 추가
+  if (i !== 0 && prev !== i) {
+    pushHistory(function(){ studentTab(0); });
+  }
 };
 
 function buildDashboard() {
@@ -1030,78 +1036,180 @@ document.addEventListener('visibilitychange', function() {
 });
 
 // ── 이전 플래너 조회 ──
+// ── 플래너 기록 조회 ──
+
+// 학생: 홈 화면 내 슬라이드 패널 (모달 없이)
 window.showPlannerHistory=function(){
-  if(!currentUser) return;
-  openModal('modal-planner-history');
-  var list=document.getElementById('planner-history-list');
-  if(list) list.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오는 중...</div>';
-  // 본인 todos에서 날짜 목록 추출
-  getDocs(query(collection(db,'todos'),where('uid','==',currentUser.uid),orderBy('date','desc'),limit(60))).then(function(snap){
+  if(!currentUser||!currentProfile) return;
+  var uid=currentUser.uid; // 반드시 본인 uid
+  var content=document.getElementById('student-content');
+  if(!content) return;
+  // 기존 패널 있으면 제거
+  var existing=document.getElementById('planner-hist-panel');
+  if(existing){existing.remove();return;}
+  var panel=document.createElement('div');
+  panel.id='planner-hist-panel';
+  panel.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:var(--navy);z-index:500;overflow-y:auto;padding:16px;';
+  panel.innerHTML='<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">'
+    +'<button onclick="document.getElementById(\'planner-hist-panel\').remove()" style="background:none;border:none;color:var(--gold);font-size:20px;cursor:pointer;padding:0">←</button>'
+    +'<div style="font-size:16px;font-weight:700;color:var(--gold2)">📅 나의 플래너 기록</div>'
+    +'</div>'
+    +'<div id="hist-date-list"><div style="color:var(--gray3);font-size:13px">불러오는 중...</div></div>'
+    +'<div id="hist-day-detail" style="display:none"></div>';
+  document.body.appendChild(panel);
+  pushHistory(function(){var p=document.getElementById('planner-hist-panel');if(p)p.remove();});
+  getDocs(query(collection(db,'todos'),where('uid','==',uid),orderBy('date','desc'),limit(90))).then(function(snap){
     var dateMap={};
-    snap.docs.forEach(function(d){var dt=d.data().date;if(dt)dateMap[dt]=(dateMap[dt]||0)+1;});
+    snap.docs.forEach(function(d){var dt=d.data().date;if(dt){if(!dateMap[dt])dateMap[dt]={count:0,done:0};dateMap[dt].count++;if(d.data().status==='done')dateMap[dt].done++;}});
     var dates=Object.keys(dateMap).sort().reverse();
-    if(!dates.length){list.innerHTML='<div style="color:var(--gray3);font-size:13px">기록이 없습니다</div>';return;}
-    list.innerHTML=dates.map(function(dt){
-      var submitted=document.createElement; // placeholder
-      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.06);cursor:pointer" onclick="loadPlannerDay(\''+dt+'\')">'
-        +'<div><div style="font-size:14px;font-weight:600">'+dt+'</div>'
-        +'<div style="font-size:11px;color:var(--gray3);margin-top:2px">할 일 '+dateMap[dt]+'개</div></div>'
-        +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gray3)" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>'
-        +'</div>';
-    }).join('');
-  }).catch(function(){list.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패</div>';});
+    var dateList=document.getElementById('hist-date-list');
+    if(!dateList)return;
+    if(!dates.length){dateList.innerHTML='<div style="color:var(--gray3);font-size:13px">기록이 없습니다</div>';return;}
+    // 제출 여부도 확인
+    getDocs(collection(db,'planners')).then(function(pSnap){
+      var submitted={};
+      pSnap.docs.forEach(function(d){if(d.data().uid===uid)submitted[d.data().date]=true;});
+      dateList.innerHTML=dates.map(function(dt){
+        var info=dateMap[dt];
+        var pct=info.count?Math.round(info.done/info.count*100):0;
+        var isSubmit=submitted[dt];
+        return '<div onclick="histShowDay(\''+dt+'\',\''+uid+'\')" style="display:flex;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid rgba(255,255,255,0.06);cursor:pointer">'
+          +'<div style="flex:1">'
+          +'<div style="font-size:14px;font-weight:600;margin-bottom:4px">'+dt+'</div>'
+          +'<div style="display:flex;align-items:center;gap:8px">'
+          +'<div style="flex:1;background:rgba(255,255,255,0.05);border-radius:4px;height:5px;overflow:hidden;max-width:100px"><div style="width:'+pct+'%;height:100%;background:'+(pct>=80?'var(--green)':pct>=50?'var(--gold)':'var(--red)')+';border-radius:4px"></div></div>'
+          +'<span style="font-size:11px;color:var(--gray3)">'+info.done+'/'+info.count+'개 완료</span>'
+          +(isSubmit?'<span style="font-size:10px;padding:2px 6px;background:rgba(61,186,126,0.12);border-radius:4px;color:var(--green)">제출✓</span>':'')
+          +'</div></div>'
+          +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gray3)" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>'
+          +'</div>';
+      }).join('');
+    }).catch(function(){
+      dateList.innerHTML=dates.map(function(dt){
+        return '<div onclick="histShowDay(\''+dt+'\',\''+uid+'\')" style="display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-bottom:1px solid rgba(255,255,255,0.06);cursor:pointer"><div style="font-size:14px;font-weight:600">'+dt+'</div><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gray3)" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></div>';
+      }).join('');
+    });
+  }).catch(function(){var d=document.getElementById('hist-date-list');if(d)d.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패</div>';});
 };
-window.loadPlannerDay=function(date,studentUid){
-  var uid=studentUid||currentUser.uid;
-  var detail=document.getElementById('planner-history-detail');
-  var listEl=document.getElementById('planner-history-list');
-  if(detail){
-    detail.style.display='block';
-    if(listEl) listEl.style.display='none';
-    document.getElementById('planner-history-date').textContent=date;
-    var items=document.getElementById('planner-history-items');
-    items.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오는 중...</div>';
-    getDocs(query(collection(db,'todos'),where('uid','==',uid),where('date','==',date),orderBy('createdAt','asc'))).then(function(snap){
-      if(snap.empty){items.innerHTML='<div style="color:var(--gray3);font-size:13px">기록 없음</div>';return;}
-      var statusMap={'none':'⬜','progressing':'🔄','done':'✅'};
-      items.innerHTML=snap.docs.map(function(d){
+
+window.histShowDay=function(date,uid){
+  var dateList=document.getElementById('hist-date-list');
+  var detail=document.getElementById('hist-day-detail');
+  if(!detail) return;
+  if(dateList) dateList.style.display='none';
+  detail.style.display='block';
+  detail.innerHTML='<button onclick="document.getElementById(\'hist-date-list\').style.display=\'\';document.getElementById(\'hist-day-detail\').style.display=\'none\';" style="display:flex;align-items:center;gap:6px;background:none;border:none;color:var(--gold);font-size:13px;cursor:pointer;padding:0;margin-bottom:12px">← 날짜 목록</button>'
+    +'<div style="font-size:15px;font-weight:700;color:var(--gold2);margin-bottom:12px">'+date+'</div>'
+    +'<div id="hist-day-items"><div style="color:var(--gray3);font-size:13px">불러오는 중...</div></div>';
+  getDocs(query(collection(db,'todos'),where('uid','==',uid),where('date','==',date),orderBy('createdAt','asc'))).then(function(snap){
+    var el=document.getElementById('hist-day-items');if(!el)return;
+    if(snap.empty){el.innerHTML='<div style="color:var(--gray3);font-size:13px">기록 없음</div>';return;}
+    var statusMap={'none':'⬜','progressing':'🔄','done':'✅'};
+    var done=snap.docs.filter(function(d){return d.data().status==='done';}).length;
+    el.innerHTML='<div style="background:rgba(255,255,255,0.03);border-radius:10px;padding:10px 12px;margin-bottom:12px;display:flex;gap:16px">'
+      +'<div style="text-align:center"><div style="font-size:20px;font-weight:700;color:var(--gold2)">'+snap.docs.length+'</div><div style="font-size:10px;color:var(--gray3)">전체</div></div>'
+      +'<div style="text-align:center"><div style="font-size:20px;font-weight:700;color:var(--green)">'+done+'</div><div style="font-size:10px;color:var(--gray3)">완료</div></div>'
+      +'<div style="text-align:center"><div style="font-size:20px;font-weight:700;color:var(--red)">'+(snap.docs.length-done)+'</div><div style="font-size:10px;color:var(--gray3)">미완료</div></div>'
+      +'</div>'
+      +snap.docs.map(function(d){
         var t=d.data();
         return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05)">'
           +'<span style="font-size:16px">'+(statusMap[t.status]||'⬜')+'</span>'
           +'<span class="subject-tag subj-'+(t.subject||'ko')+'" style="font-size:10px;flex-shrink:0">'+(subjectNames[t.subject]||t.subject||'')+'</span>'
           +'<span style="flex:1;font-size:13px;'+(t.status==='done'?'text-decoration:line-through;color:var(--gray3)':'')+'">'+t.title+'</span>'
-          +(t.studyTime?'<span style="font-size:11px;color:var(--gold2)">'+t.studyTime+'</span>':'')
+          +(t.studyTime?'<span style="font-size:11px;color:var(--gold2)">⏱'+t.studyTime+'</span>':'')
+          +(t.certified?'<span style="font-size:10px;color:#7aa8ff">📸</span>':'')
           +'</div>';
       }).join('');
-    }).catch(function(){items.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패</div>';});
-  }
-};
-window.backToPlannerList=function(){
-  var detail=document.getElementById('planner-history-detail');
-  var listEl=document.getElementById('planner-history-list');
-  if(detail) detail.style.display='none';
-  if(listEl) listEl.style.display='';
+  }).catch(function(){var el=document.getElementById('hist-day-items');if(el)el.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패</div>';});
 };
 
-// 선생님용 학생 플래너 날짜별 조회
-window.loadStudentPlannerDates=function(studentUid,studentName){
-  openModal('modal-planner-history');
-  document.getElementById('planner-history-title').textContent=studentName+' 플래너 기록';
-  var list=document.getElementById('planner-history-list');
-  list.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오는 중...</div>';
-  getDocs(query(collection(db,'todos'),where('uid','==',studentUid),orderBy('date','desc'),limit(60))).then(function(snap){
+// 선생님 플래너 탭 내 통합 조회 함수
+window.teacherPlannerHistory=function(){
+  var panel=document.getElementById('teacher-planner-hist');
+  if(!panel) return;
+  panel.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오는 중...</div>';
+  loadStudentList().then(function(students){
+    if(!students.length){panel.innerHTML='<div style="color:var(--gray3);font-size:13px">등록된 학생이 없습니다</div>';return;}
+    panel.innerHTML='<div class="section-label" style="margin-bottom:8px">학생 선택</div>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">'
+      +students.map(function(s){
+        return '<button onclick="teacherSelectStudent(\''+s.uid+'\',\''+s.name+'\')" id="tph-btn-'+s.uid+'" '
+          +'style="padding:7px 13px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:rgba(255,255,255,0.8);font-size:13px;cursor:pointer">'+s.name+'</button>';
+      }).join('')
+      +'</div>'
+      +'<div id="tph-date-list" style="display:none"></div>'
+      +'<div id="tph-day-detail" style="display:none"></div>';
+  });
+};
+window.teacherSelectStudent=function(uid,name){
+  // 버튼 활성화
+  document.querySelectorAll('[id^="tph-btn-"]').forEach(function(b){
+    b.style.background='rgba(255,255,255,0.04)';b.style.borderColor='rgba(255,255,255,0.1)';b.style.color='rgba(255,255,255,0.8)';
+  });
+  var btn=document.getElementById('tph-btn-'+uid);
+  if(btn){btn.style.background='rgba(201,168,76,0.12)';btn.style.borderColor='rgba(201,168,76,0.35)';btn.style.color='var(--gold2)';}
+  var dateList=document.getElementById('tph-date-list');
+  var dayDetail=document.getElementById('tph-day-detail');
+  if(!dateList) return;
+  dateList.style.display='block';
+  if(dayDetail) dayDetail.style.display='none';
+  dateList.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오는 중...</div>';
+  getDocs(query(collection(db,'todos'),where('uid','==',uid),orderBy('date','desc'),limit(90))).then(function(snap){
     var dateMap={};
-    snap.docs.forEach(function(d){var dt=d.data().date;if(dt)dateMap[dt]=(dateMap[dt]||0)+1;});
+    snap.docs.forEach(function(d){var dt=d.data().date;if(dt){if(!dateMap[dt])dateMap[dt]={count:0,done:0};dateMap[dt].count++;if(d.data().status==='done')dateMap[dt].done++;}});
     var dates=Object.keys(dateMap).sort().reverse();
-    if(!dates.length){list.innerHTML='<div style="color:var(--gray3);font-size:13px">기록이 없습니다</div>';return;}
-    list.innerHTML=dates.map(function(dt){
-      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.06);cursor:pointer" onclick="loadPlannerDay(\''+dt+'\',\''+studentUid+'\')">'
-        +'<div><div style="font-size:14px;font-weight:600">'+dt+'</div>'
-        +'<div style="font-size:11px;color:var(--gray3);margin-top:2px">할 일 '+dateMap[dt]+'개</div></div>'
-        +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gray3)" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>'
-        +'</div>';
-    }).join('');
-  }).catch(function(){list.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패</div>';});
+    if(!dates.length){dateList.innerHTML='<div style="color:var(--gray3);font-size:13px">'+name+' 기록 없음</div>';return;}
+    getDocs(collection(db,'planners')).then(function(pSnap){
+      var submitted={};
+      pSnap.docs.forEach(function(d){if(d.data().uid===uid)submitted[d.data().date]=true;});
+      dateList.innerHTML='<div style="font-size:13px;font-weight:700;color:var(--gold2);margin-bottom:8px">'+name+' · 날짜 선택</div>'
+        +dates.map(function(dt){
+          var info=dateMap[dt];
+          var pct=info.count?Math.round(info.done/info.count*100):0;
+          return '<div onclick="teacherShowDay(\''+dt+'\',\''+uid+'\',\''+name+'\')" style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid rgba(255,255,255,0.06);cursor:pointer">'
+            +'<div style="flex:1"><div style="font-size:13px;font-weight:600;margin-bottom:4px">'+dt+'</div>'
+            +'<div style="display:flex;align-items:center;gap:8px">'
+            +'<div style="flex:1;max-width:80px;background:rgba(255,255,255,0.05);border-radius:4px;height:4px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:'+(pct>=80?'var(--green)':pct>=50?'var(--gold)':'var(--red)')+';border-radius:4px"></div></div>'
+            +'<span style="font-size:11px;color:var(--gray3)">'+info.done+'/'+info.count+'</span>'
+            +(submitted[dt]?'<span style="font-size:10px;padding:2px 6px;background:rgba(61,186,126,0.12);border-radius:4px;color:var(--green)">제출✓</span>':'')
+            +'</div></div>'
+            +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gray3)" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>'
+            +'</div>';
+        }).join('');
+    }).catch(function(){dateList.innerHTML='<div style="color:var(--gray3)">불러오기 실패</div>';});
+  }).catch(function(){dateList.innerHTML='<div style="color:var(--gray3)">불러오기 실패</div>';});
+};
+window.teacherShowDay=function(date,uid,name){
+  var detail=document.getElementById('tph-day-detail');
+  var dateList=document.getElementById('tph-date-list');
+  if(!detail) return;
+  detail.style.display='block';
+  if(dateList) dateList.style.display='none';
+  detail.innerHTML='<button onclick="document.getElementById(\'tph-date-list\').style.display=\'\';document.getElementById(\'tph-day-detail\').style.display=\'none\';" style="display:flex;align-items:center;gap:6px;background:none;border:none;color:var(--gold);font-size:13px;cursor:pointer;padding:0;margin-bottom:12px">← 날짜 목록</button>'
+    +'<div style="font-size:14px;font-weight:700;color:var(--gold2);margin-bottom:10px">'+name+' · '+date+'</div>'
+    +'<div id="tph-items"><div style="color:var(--gray3);font-size:13px">불러오는 중...</div></div>';
+  getDocs(query(collection(db,'todos'),where('uid','==',uid),where('date','==',date),orderBy('createdAt','asc'))).then(function(snap){
+    var el=document.getElementById('tph-items');if(!el) return;
+    if(snap.empty){el.innerHTML='<div style="color:var(--gray3);font-size:13px">기록 없음</div>';return;}
+    var statusMap={'none':'⬜','progressing':'🔄','done':'✅'};
+    var done=snap.docs.filter(function(d){return d.data().status==='done';}).length;
+    el.innerHTML='<div style="background:rgba(255,255,255,0.03);border-radius:10px;padding:10px 12px;margin-bottom:10px;display:flex;gap:16px">'
+      +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--gold2)">'+snap.docs.length+'</div><div style="font-size:10px;color:var(--gray3)">전체</div></div>'
+      +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--green)">'+done+'</div><div style="font-size:10px;color:var(--gray3)">완료</div></div>'
+      +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--red)">'+(snap.docs.length-done)+'</div><div style="font-size:10px;color:var(--gray3)">미완료</div></div>'
+      +'</div>'
+      +snap.docs.map(function(d){
+        var t=d.data();
+        return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.05)">'
+          +'<span style="font-size:15px">'+(statusMap[t.status]||'⬜')+'</span>'
+          +'<span class="subject-tag subj-'+(t.subject||'ko')+'" style="font-size:10px;flex-shrink:0">'+(subjectNames[t.subject]||t.subject||'')+'</span>'
+          +'<span style="flex:1;font-size:13px;'+(t.status==='done'?'text-decoration:line-through;color:var(--gray3)':'')+'">'+t.title+'</span>'
+          +(t.studyTime?'<span style="font-size:11px;color:var(--gold2)">⏱'+t.studyTime+'</span>':'')
+          +(t.certified?'<span style="font-size:10px;color:#7aa8ff">📸</span>':'')
+          +'</div>';
+      }).join('');
+  }).catch(function(){var el=document.getElementById('tph-items');if(el)el.innerHTML='<div style="color:var(--gray3)">불러오기 실패</div>';});
 };
 function resumeActiveTimer() {
   if (!currentUser) return;
@@ -1388,6 +1496,21 @@ function _sendChatNotif(receiverUid, senderName, preview) {
     }).catch(function(){});
   }).catch(function(){});
 }
+
+// ── 뒤로가기 히스토리 관리 ──
+var _historyStack = [];
+function pushHistory(action) {
+  _historyStack.push(action);
+  history.pushState({idx: _historyStack.length}, '');
+}
+window.addEventListener('popstate', function() {
+  if (_historyStack.length > 0) {
+    var action = _historyStack.pop();
+    if (typeof action === 'function') action();
+    if (_historyStack.length > 0) history.pushState({idx: _historyStack.length}, '');
+  }
+});
+
 var _gradeRowCount = 0;
 var _gradeRowMeta = {}; // rowId -> {type, label}
 
@@ -1443,6 +1566,8 @@ window.openModal = function(id) {
     // 기본 과탐1, 사탐1 추가
     addGradeRow('sc'); addGradeRow('so');
   }
+  // 뒤로가기로 모달 닫기
+  pushHistory(function(){ closeModal(id); });
   if (_origOpenModal) _origOpenModal(id);
 };
 
@@ -1562,6 +1687,7 @@ window.openChatRoom=function(teacherUid,teacherName){
   document.getElementById('chat-room-list').style.display='none';
   var view=document.getElementById('chat-room-view');view.style.display='block';
   var title=document.getElementById('chat-room-title');if(title)title.textContent=teacherName;
+  pushHistory(function(){ closeChatRoom(); });
   if(unsubChat)unsubChat();
   var roomId=_chatRoomId(currentUser.uid,teacherUid);
   unsubChat=onSnapshot(query(collection(db,'chats',roomId,'messages'),orderBy('createdAt','asc')),function(snap){
@@ -1832,7 +1958,12 @@ function buildTPlanner(){
           return '<div class="score-card lecture-card" data-uid="'+(lc.studentUid||'')+'" style="margin-bottom:10px;'+(isDone?'opacity:0.6;':'')+'"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px"><div><div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'+(isDone?'<span style="background:rgba(61,186,126,0.15);border-radius:5px;padding:2px 7px;font-size:10px;color:var(--green)">완강</span>':'')+'<span style="background:rgba(74,127,255,0.2);border-radius:5px;padding:2px 8px;font-size:11px;color:#7aa8ff">'+(student?student.name:'?')+'</span><span style="font-size:14px;font-weight:600">'+lc.lectureName+'</span></div><div style="font-size:11px;color:var(--gray3)">'+lc.company+' · '+lc.subject+' · '+lc.instructor+'</div></div><button onclick="openUpdateLectureModal(\''+lc.id+'\','+done+','+total+')" style="padding:6px 12px;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;white-space:nowrap;flex-shrink:0">수강 업데이트</button></div><div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="flex:1;background:rgba(255,255,255,0.05);border-radius:6px;height:10px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:'+(isDone?'linear-gradient(90deg,var(--green),#5dd4a0)':'linear-gradient(90deg,var(--gold),var(--gold2))')+';border-radius:6px;"></div></div><span style="font-size:13px;font-weight:700;color:'+(isDone?'var(--green)':'var(--gold2)')+';white-space:nowrap">'+done+' / '+total+'강 ('+pct+'%)</span></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px"><div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:7px 10px"><div style="color:var(--gray3);margin-bottom:2px">수강 계획</div><div style="font-weight:600">'+(lc.schedule||'-')+' · 주 '+(lc.scheduleCount||'-')+'강</div></div><div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:7px 10px"><div style="color:var(--gray3);margin-bottom:2px">완료 예상일</div><div style="font-weight:600;color:'+(isDone?'var(--green)':'var(--gold2)')+'">'+eta+'</div></div><div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:7px 10px"><div style="color:var(--gray3);margin-bottom:2px">마지막 업데이트</div><div style="font-weight:600">'+(lc.lastUpdateDate||'-')+'</div></div><div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:7px 10px"><div style="color:var(--gray3);margin-bottom:2px">남은 강의</div><div style="font-weight:600;color:var(--accent)">'+(total-done)+'강</div></div></div></div>';
         }).join(''):'<div style="color:var(--gray3);font-size:13px;padding:10px 0">등록된 인강이 없습니다</div>';
         return '<div class="section-label">오늘 제출된 플래너</div>'
-          +(!todayPlanners.length?'<div style="color:var(--gray3);font-size:13px;padding:10px 0">아직 제출된 플래너가 없습니다</div>':todayPlanners.map(function(p){return '<div class="planner-thumb" style="cursor:pointer" onclick="togglePlannerDetail(\'pd_'+p.uid+'\',\''+p.uid+'\')"><div style="display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:14px;font-weight:600;margin-bottom:4px">'+p.name+'</div><div style="font-size:11px;color:var(--green)">✅ 제출 완료 · 탭하여 상세 보기</div></div><div style="display:flex;align-items:center;gap:8px"><button onclick="event.stopPropagation();loadStudentPlannerDates(\''+p.uid+'\',\''+p.name+'\')" style="padding:5px 9px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.2);border-radius:6px;color:var(--gold);font-size:10px;cursor:pointer">📅 기록</button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div></div><div id="pd_'+p.uid+'" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08)"><div style="color:var(--gray3);font-size:12px">불러오는 중...</div></div></div>';}).join(''))
+          +(!todayPlanners.length?'<div style="color:var(--gray3);font-size:13px;padding:10px 0">아직 제출된 플래너가 없습니다</div>':todayPlanners.map(function(p){return '<div class="planner-thumb" style="cursor:pointer" onclick="togglePlannerDetail(\'pd_'+p.uid+'\',\''+p.uid+'\')"><div style="display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:14px;font-weight:600;margin-bottom:4px">'+p.name+'</div><div style="font-size:11px;color:var(--green)">✅ 제출 완료 · 탭하여 상세 보기</div></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div><div id="pd_'+p.uid+'" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08)"><div style="color:var(--gray3);font-size:12px">불러오는 중...</div></div></div>';}).join(''))
+          +'<div style="margin-top:20px;background:rgba(201,168,76,0.05);border:1px solid rgba(201,168,76,0.15);border-radius:12px;padding:14px">'
+          +'<div class="section-label" style="margin:0 0 10px">📅 플래너 기록 조회</div>'
+          +'<div id="teacher-planner-hist"><div style="color:var(--gray3);font-size:13px">아래에서 학생을 선택하면 기록을 볼 수 있습니다</div></div>'
+          +'</div>'
+          +'<script>setTimeout(function(){teacherPlannerHistory();},100);<\/script>'
           +'<div class="section-label" style="margin-top:20px">코멘트 작성</div>'
           +'<select class="modal-select" id="comment-student-select"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select>'
           +'<textarea class="modal-input" id="comment-input" rows="4" placeholder="학생에게 전달할 코멘트..." style="resize:none;margin-bottom:10px"></textarea>'
@@ -2088,6 +2219,7 @@ window.openTeacherChatRoom=function(uid,name){
   var title=document.getElementById('tchat-room-title');
   if(title) title.textContent=name;
   teacherChatUid=uid;
+  pushHistory(function(){ closeTeacherChatRoom(); });
   if(unsubChat) unsubChat();
   var roomId=_chatRoomId(uid, currentUser.uid);
   unsubChat=onSnapshot(query(collection(db,'chats',roomId,'messages'),orderBy('createdAt','asc')),function(snap){
@@ -2168,12 +2300,44 @@ document.addEventListener('click', function(e){
   deleteDoc(doc(db,'notices',nid)).then(function(){renderTeacher(5);}).catch(function(err){alert('삭제 실패: '+err.message);});
 });
 
+window.resetTodayPlanner=function(){
+  if(!confirm('오늘('+getPlannerDate()+') 모든 학생의 플래너 할일과 제출 기록을 초기화합니다.\n이 작업은 되돌릴 수 없습니다. 계속할까요?')) return;
+  var today=getPlannerDate();
+  var tasks=[];
+  // todos 삭제
+  getDocs(query(collection(db,'todos'),where('date','==',today))).then(function(snap){
+    snap.docs.forEach(function(d){tasks.push(deleteDoc(doc(db,'todos',d.id)));});
+    // planners 삭제
+    return getDocs(collection(db,'planners'));
+  }).then(function(snap){
+    snap.docs.forEach(function(d){
+      if(d.id.includes('_'+today)) tasks.push(deleteDoc(doc(db,'planners',d.id)));
+    });
+    return Promise.all(tasks);
+  }).then(function(){
+    // localStorage plannerPenalty 키도 정리
+    Object.keys(localStorage).forEach(function(k){
+      if(k.includes('plannerPenalty')&&k.includes(today)) localStorage.removeItem(k);
+    });
+    alert('초기화 완료! 오늘('+today+') 플래너와 제출 기록이 모두 삭제되었습니다.');
+    renderTeacher(6);
+  }).catch(function(e){alert('초기화 실패: '+e.message);});
+};
+
 function buildTAccounts(){
   return loadStudentList().then(function(students){
     return getDocs(query(collection(db,'users'),where('role','in',['teacher','master']))).then(function(teacherSnap){
       var teachers=teacherSnap.docs.map(function(d){return Object.assign({uid:d.id},d.data());});
-      var isMaster=currentProfile&&currentProfile.role==='master';
-      var masterBadge=isMaster?'<div style="background:rgba(232,148,58,0.08);border:1px solid rgba(232,148,58,0.2);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#f0a855">⚠️ 마스터 전용 — 계정 수정 및 삭제 가능</div>':'';
+      // role 비교 - trim/소문자 처리로 오타 대응
+      var myRole=(currentProfile&&currentProfile.role||'').trim().toLowerCase();
+      var isMaster=(myRole==='master');
+      var masterTools=isMaster
+        ?'<div style="background:rgba(232,148,58,0.1);border:2px solid rgba(232,148,58,0.35);border-radius:12px;padding:14px;margin-bottom:16px">'
+          +'<div style="font-size:13px;font-weight:700;color:#f0a855;margin-bottom:10px">⚙️ 마스터 도구</div>'
+          +'<button onclick="resetTodayPlanner()" style="width:100%;padding:12px;background:rgba(224,82,82,0.12);border:1px solid rgba(224,82,82,0.3);border-radius:8px;color:#f87171;font-size:13px;font-weight:700;cursor:pointer">🗑 오늘 플래너 즉시 초기화 (제출 포함)</button>'
+          +'</div>'
+        :'';
+      var masterBadge=isMaster?'<div style="background:rgba(232,148,58,0.08);border:1px solid rgba(232,148,58,0.2);border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#f0a855">⚠️ 마스터 전용 — 계정 수정 및 삭제 가능</div>':'';
       var teacherRows=teachers.map(function(t){
         var btns=isMaster?'<div style="display:flex;gap:5px"><button onclick="openEditAccountModal(\''+t.uid+'\',\''+t.name+'\',\''+t.username+'\')" style="padding:6px 10px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.2);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer">수정</button><button onclick="deleteAccount(\''+t.uid+'\',\''+t.name+'\')" style="padding:6px 10px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:6px;color:#f87171;font-size:11px;cursor:pointer">삭제</button></div>':'';
         return '<div class="student-row"><div class="teacher-av" style="width:36px;height:36px;font-size:12px">'+(t.name||'?').slice(0,2)+'</div><div style="flex:1"><div style="font-size:14px;font-weight:600">'+t.name+'</div><div style="font-size:11px;color:var(--gray3);margin-top:2px">'+t.role+' · ID: '+(t.username||'')+'</div></div>'+btns+'</div>';
@@ -2182,7 +2346,7 @@ function buildTAccounts(){
         var btns=isMaster?'<div style="display:flex;gap:5px"><button onclick="openEditAccountModal(\''+s.uid+'\',\''+s.name+'\',\''+s.username+'\')" style="padding:6px 10px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.2);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer">수정</button><button onclick="deleteAccount(\''+s.uid+'\',\''+s.name+'\')" style="padding:6px 10px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:6px;color:#f87171;font-size:11px;cursor:pointer">삭제</button></div>':'';
         return '<div class="student-row"><div class="student-av-t">'+(s.name||'?').slice(0,2)+'</div><div style="flex:1"><div style="font-size:14px;font-weight:600">'+s.name+'</div><div style="font-size:11px;color:var(--gray3);margin-top:2px">'+(s.grade||'')+' · ID: '+(s.username||'')+'</div></div>'+btns+'</div>';
       }).join('');
-      return '<div class="stat-grid"><div class="stat-card"><div class="stat-val">'+students.length+'</div><div class="stat-lbl">학생 계정</div></div><div class="stat-card"><div class="stat-val" style="color:var(--gold)">'+teachers.length+'</div><div class="stat-lbl">선생님 계정</div></div></div><button class="appeal-btn" onclick="openModal(\'modal-add-account\')">+ 새 계정 추가</button>'+masterBadge+'<div class="section-label">선생님 계정</div>'+teacherRows+'<div class="section-label">학생 계정</div>'+studentRows;
+      return masterTools+'<div class="stat-grid"><div class="stat-card"><div class="stat-val">'+students.length+'</div><div class="stat-lbl">학생 계정</div></div><div class="stat-card"><div class="stat-val" style="color:var(--gold)">'+teachers.length+'</div><div class="stat-lbl">선생님 계정</div></div></div><button class="appeal-btn" onclick="openModal(\'modal-add-account\')">+ 새 계정 추가</button>'+masterBadge+'<div class="section-label">선생님 계정</div>'+teacherRows+'<div class="section-label">학생 계정</div>'+studentRows;
     });
   });
 }
@@ -2232,17 +2396,16 @@ function buildAllChats(){
   return loadStudentList().then(function(students){
     return getDocs(query(collection(db,'users'),where('role','in',['teacher','master']))).then(function(tSnap){
       var teachers=tSnap.docs.map(function(d){return Object.assign({uid:d.id},d.data());});
-      var rooms=[];
+      var allRooms=[];
       students.forEach(function(s){
         teachers.forEach(function(t){
-          rooms.push({studentUid:s.uid,studentName:s.name,teacherUid:t.uid,teacherName:t.name,teacherRole:t.role});
+          allRooms.push({studentUid:s.uid,studentName:s.name,teacherUid:t.uid,teacherName:t.name,teacherRole:t.role});
         });
       });
-      var html='<div style="background:rgba(232,148,58,0.1);border:1px solid rgba(232,148,58,0.25);border-radius:10px;padding:11px 14px;margin-bottom:14px;font-size:13px;color:#f0a855">⚠️ 마스터 전용 — 전체 채팅 내역 열람</div>';
-      html+='<div id="master-room-list">';
-      rooms.forEach(function(r){
-        var roomId=_chatRoomId(r.studentUid,r.teacherUid);
-        html+='<div class="planner-thumb" style="cursor:pointer;display:flex;align-items:center;gap:12px" onclick="loadMasterChat(\''+r.studentUid+'\',\''+r.teacherUid+'\',\''+r.studentName+'\',\''+r.teacherName+'\')">'
+      var studentOpts='<option value="">전체 학생</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('');
+      var teacherOpts='<option value="">전체 선생님</option>'+teachers.map(function(t){return '<option value="'+t.uid+'">'+t.name+'</option>';}).join('');
+      var roomsHtml=allRooms.map(function(r){
+        return '<div class="planner-thumb master-room-card" data-suid="'+r.studentUid+'" data-tuid="'+r.teacherUid+'" style="cursor:pointer;display:flex;align-items:center;gap:12px" onclick="loadMasterChat(\''+r.studentUid+'\',\''+r.teacherUid+'\',\''+r.studentName+'\',\''+r.teacherName+'\')">'
           +'<div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--gold2));display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--navy);flex-shrink:0">'+r.studentName.slice(0,1)+'</div>'
           +'<div style="flex:1;min-width:0">'
           +'<div style="font-size:14px;font-weight:600;margin-bottom:2px">'+r.studentName+'</div>'
@@ -2250,14 +2413,21 @@ function buildAllChats(){
           +'</div>'
           +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gray3)" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>'
           +'</div>';
-      });
-      html+='</div>';
-      html+='<div id="master-chat-view" style="display:none">'
+      }).join('');
+      return '<div style="background:rgba(232,148,58,0.1);border:1px solid rgba(232,148,58,0.25);border-radius:10px;padding:11px 14px;margin-bottom:14px;font-size:13px;color:#f0a855">⚠️ 마스터 전용 — 전체 채팅 내역 열람</div>'
+        +'<div id="master-room-list">'
+        +'<div style="display:flex;gap:8px;margin-bottom:12px">'
+        +'<select class="modal-select" id="mf-student" onchange="filterMasterRooms()" style="flex:1;margin-bottom:0">'+studentOpts+'</select>'
+        +'<select class="modal-select" id="mf-teacher" onchange="filterMasterRooms()" style="flex:1;margin-bottom:0">'+teacherOpts+'</select>'
+        +'</div>'
+        +roomsHtml
+        +'</div>'
+        +'<div id="master-chat-view" style="display:none">'
         +'<button onclick="document.getElementById(\'master-room-list\').style.display=\'\';document.getElementById(\'master-chat-view\').style.display=\'none\'" style="display:flex;align-items:center;gap:6px;background:none;border:none;color:var(--gold);font-size:13px;cursor:pointer;padding:0;margin-bottom:12px">← 목록으로</button>'
         +'<div id="master-chat-title" style="font-size:14px;font-weight:700;margin-bottom:10px;color:var(--gold2)"></div>'
-        +'<div id="master-chat-area" style="min-height:200px;max-height:400px;overflow-y:auto;padding:12px;background:var(--navy3);border-radius:10px;"><div style="color:var(--gray3);font-size:13px">대화방을 선택하세요</div></div>'
+        +'<div id="master-msg-search-wrap" style="margin-bottom:8px"><input id="master-msg-search" class="modal-input" placeholder="🔍 메시지 검색..." style="margin-bottom:0" oninput="filterMasterMessages(this.value)"/></div>'
+        +'<div id="master-chat-area" style="min-height:200px;max-height:400px;overflow-y:auto;padding:12px;background:var(--navy3);border-radius:10px;"></div>'
         +'</div>';
-      return html;
     });
   });
 }
@@ -2267,23 +2437,73 @@ window.loadMasterChat=function(studentUid,teacherUid,studentName,teacherName){
   view.style.display='block';
   var title=document.getElementById('master-chat-title');
   if(title) title.textContent=studentName+' ↔ '+teacherName;
+  var search=document.getElementById('master-msg-search');
+  if(search) search.value='';
+  _masterAllMessages=[];
+  pushHistory(function(){
+    document.getElementById('master-room-list').style.display='';
+    document.getElementById('master-chat-view').style.display='none';
+    if(unsubChat){unsubChat();unsubChat=null;}
+  });
   if(unsubChat) unsubChat();
   var roomId=_chatRoomId(studentUid,teacherUid);
   unsubChat=onSnapshot(query(collection(db,'chats',roomId,'messages'),orderBy('createdAt','asc')),function(snap){
-    var area=document.getElementById('master-chat-area');if(!area) return;
-    if(!snap.docs.length){area.innerHTML='<div style="color:var(--gray3);font-size:13px">대화 내역이 없습니다</div>';return;}
-    area.innerHTML=snap.docs.map(function(d){
+    _masterAllMessages=snap.docs.map(function(d){
       var m=d.data();
-      var time=m.createdAt?m.createdAt.toDate().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}):'';
-      var isStudent=m.senderUid===studentUid;
-      return '<div style="margin-bottom:10px;padding:8px 12px;background:'+(isStudent?'rgba(255,255,255,0.04)':'rgba(201,168,76,0.08)')+';border-radius:10px;border-left:3px solid '+(isStudent?'rgba(255,255,255,0.15)':'rgba(201,168,76,0.4)')+';">'
-        +'<div style="font-size:11px;color:'+(isStudent?'var(--gray3)':'var(--gold)')+';margin-bottom:4px;font-weight:600">'+m.senderName+' · '+time+'</div>'
-        +'<div style="font-size:13px;white-space:pre-wrap;word-break:break-word">'+(m.fileUrl?'<a href="'+m.fileUrl+'" target="_blank" style="color:var(--gold2)">📎 '+(m.fileName||'파일')+'</a>':m.text)+'</div>'
-        +'</div>';
-    }).join('');
-    area.scrollTop=area.scrollHeight;
+      m._isStudent=(m.senderUid===studentUid);
+      return m;
+    });
+    var q=(document.getElementById('master-msg-search')||{}).value||'';
+    filterMasterMessages(q);
   });
 };
+window.filterMasterRooms=function(){
+  var suid=(document.getElementById('mf-student')||{}).value||'';
+  var tuid=(document.getElementById('mf-teacher')||{}).value||'';
+  document.querySelectorAll('.master-room-card').forEach(function(card){
+    var show=(!suid||card.dataset.suid===suid)&&(!tuid||card.dataset.tuid===tuid);
+    card.style.display=show?'flex':'none';
+  });
+};
+var _masterAllMessages=[];
+window.filterMasterMessages=function(q){
+  var area=document.getElementById('master-chat-area');
+  if(!area) return;
+  q=(q||'').trim().toLowerCase();
+  if(!q){renderMasterMessages(_masterAllMessages);return;}
+  var filtered=_masterAllMessages.filter(function(m){return m.text&&m.text.toLowerCase().includes(q);});
+  renderMasterMessages(filtered,q);
+};
+function renderMasterMessages(msgs,highlight){
+  var area=document.getElementById('master-chat-area');
+  if(!area) return;
+  if(!msgs.length){area.innerHTML='<div style="color:var(--gray3);font-size:13px">'+(highlight?'검색 결과 없음':'대화 내역이 없습니다')+'</div>';return;}
+  area.innerHTML=msgs.map(function(m){
+    var time=m.createdAt?m.createdAt.toDate().toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
+    var isStudent=m._isStudent;
+    var text=m.fileUrl?'<a href="'+m.fileUrl+'" target="_blank" style="color:var(--gold2)">📎 '+(m.fileName||'파일')+'</a>':m.text||'';
+    if(highlight&&!m.fileUrl){
+      var re=new RegExp('('+highlight.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi');
+      text=text.replace(re,'<mark style="background:rgba(201,168,76,0.35);border-radius:3px;padding:0 2px">$1</mark>');
+    }
+    return '<div style="margin-bottom:10px;padding:8px 12px;background:'+(isStudent?'rgba(255,255,255,0.04)':'rgba(201,168,76,0.08)')+';border-radius:10px;border-left:3px solid '+(isStudent?'rgba(255,255,255,0.15)':'rgba(201,168,76,0.4)')+';">'
+      +'<div style="font-size:11px;color:'+(isStudent?'var(--gray3)':'var(--gold)')+';margin-bottom:4px;font-weight:600">'+m.senderName+' · '+time+'</div>'
+      +'<div style="font-size:13px;white-space:pre-wrap;word-break:break-word">'+text+'</div>'
+      +'</div>';
+  }).join('');
+  area.scrollTop=area.scrollHeight;
+}
+  document.getElementById('master-room-list').style.display='none';
+  var view=document.getElementById('master-chat-view');
+  view.style.display='block';
+  var title=document.getElementById('master-chat-title');
+  if(title) title.textContent=studentName+' ↔ '+teacherName;
+  pushHistory(function(){
+    document.getElementById('master-room-list').style.display='';
+    document.getElementById('master-chat-view').style.display='none';
+    if(unsubChat){unsubChat();unsubChat=null;}
+  });
+
 </script>
 </body>
 </html>
