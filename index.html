@@ -2189,6 +2189,9 @@ window.loadStudentGrades=function(uid){
     if(snap.empty){el.innerHTML='<div style="color:var(--gray3);font-size:13px">입력된 성적이 없습니다</div>';return;}
     var grades=snap.docs.map(function(d){return Object.assign({_id:d.id},d.data());})
       .sort(function(a,b){return (b.examDate||'').localeCompare(a.examDate||'');});
+    // 디버그: 첫 번째 성적 데이터 콘솔 출력
+    console.log('[DEBUG] grades[0]:', JSON.stringify(grades[0]));
+    console.log('[DEBUG] scores:', JSON.stringify(grades[0].scores));
     // 과목별 추이 계산용
     var subjTrend={};
     grades.slice().reverse().forEach(function(g){
