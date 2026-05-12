@@ -2189,9 +2189,8 @@ window.loadStudentGrades=function(uid){
     if(snap.empty){el.innerHTML='<div style="color:var(--gray3);font-size:13px">입력된 성적이 없습니다</div>';return;}
     var grades=snap.docs.map(function(d){return Object.assign({_id:d.id},d.data());})
       .sort(function(a,b){return (b.examDate||'').localeCompare(a.examDate||'');});
-    // 디버그: 첫 번째 성적 데이터 콘솔 출력
-    console.log('[DEBUG] grades[0]:', JSON.stringify(grades[0]));
-    console.log('[DEBUG] scores:', JSON.stringify(grades[0].scores));
+    // 디버그: 첫 번째 성적의 scores 구조를 화면에 표시
+    el.innerHTML='<div style="background:rgba(74,127,255,0.1);border-radius:8px;padding:10px;margin-bottom:10px;font-size:11px;color:#7aa8ff;word-break:break-all"><b>[DEBUG] scores 구조:</b><br>'+JSON.stringify(grades[0].scores)+'</div>';
     // 과목별 추이 계산용
     var subjTrend={};
     grades.slice().reverse().forEach(function(g){
@@ -2787,16 +2786,6 @@ function renderMasterMessages(msgs,highlight){
   }).join('');
   area.scrollTop=area.scrollHeight;
 }
-  document.getElementById('master-room-list').style.display='none';
-  var view=document.getElementById('master-chat-view');
-  view.style.display='block';
-  var title=document.getElementById('master-chat-title');
-  if(title) title.textContent=studentName+' ↔ '+teacherName;
-  pushHistory(function(){
-    document.getElementById('master-room-list').style.display='';
-    document.getElementById('master-chat-view').style.display='none';
-    if(unsubChat){unsubChat();unsubChat=null;}
-  });
 
 </script>
 </body>
