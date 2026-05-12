@@ -1148,14 +1148,17 @@ function finalizeTimer(certified) {
 // ── 앱 복귀 시 타이머 복구 (visibilitychange) ──
 document.addEventListener('visibilitychange', function() {
   if (document.visibilityState === 'visible' && timerTargetId) {
-    // 화면 복귀: Firebase에서 실제 시작 시각 읽어서 경과 시간 재계산
     getDoc(doc(db,'todos',timerTargetId)).then(function(d) {
       if (!d.exists()) return;
       var data = d.data();
       if (data.timerRunning && data.timerStartAt) {
-        timerSeconds = (data.timerAccum||0) + Math.floor((Date.now() - data.timerStartAt) / 1000);
-        timerStartAt = data.timerStartAt;
-        timerPaused = false;
+        var sm = (typeof data.timerStartAt.toMillis === 'function')
+          ? data.timerStartAt.toMillis()
+          : (typeof data.timerStartAt === 'number' ? data.timerStartAt : 0);
+        if (!sm) return;
+        var el = (data.timerAccum||0) + Math.floor((Date.now() - sm) / 1000);
+        if (el > 21600 || el < 0) return;
+        timerSeconds = el; timerStartAt = sm; timerPaused = false;
         if (!timerInterval) timerInterval = setInterval(_tickDisplay, 500);
         _tickDisplay();
       }
@@ -1341,31 +1344,42 @@ window.teacherShowDay=function(date,uid,name){
 };
 function resumeActiveTimer() {
   if (!currentUser) return;
-  var today = new Date().toISOString().split('T')[0];
+  var today = getPlannerDate();
   getDocs(query(collection(db,'todos'), where('uid','==',currentUser.uid), where('date','==',today), where('timerRunning','==',true))).then(function(snap) {
     if (snap.empty) return;
     var d = snap.docs[0];
     var data = d.data();
     if (!data.timerStartAt) return;
-    // 이미 다른 타이머가 돌고 있으면 스킵
     if (timerTargetId) return;
+
+    // timerStartAt이 Firestore Timestamp면 toMillis()로 변환
+    var startMs = (data.timerStartAt && typeof data.timerStartAt.toMillis === 'function')
+      ? data.timerStartAt.toMillis()
+      : (typeof data.timerStartAt === 'number' ? data.timerStartAt : 0);
+
+    if (!startMs) return;
+
+    var elapsed = (data.timerAccum||0) + Math.floor((Date.now() - startMs) / 1000);
+
+    // 비정상적으로 긴 시간(6시간 이상)이면 오류 데이터로 판단 → 타이머 초기화
+    if (elapsed > 21600) {
+      updateDoc(doc(db,'todos',d.id), {timerStartAt: null, timerAccum: 0, timerRunning: false}).catch(function(){});
+      return;
+    }
+    // 음수이면 스킵
+    if (elapsed < 0) return;
+
     timerTargetId = d.id;
-    timerSeconds = (data.timerAccum||0) + Math.floor((Date.now() - data.timerStartAt) / 1000);
-    timerStartAt = data.timerStartAt;
+    timerSeconds = elapsed;
+    timerStartAt = startMs;
     timerPaused = false;
-    // UI 복원
+
     var subj = document.getElementById('timer-subject-display');
-    if (subj) subj.textContent = (subjectNames[data.subject]||data.subject)+' · '+data.title;
+    if (subj) subj.textContent = (subjectNames[data.subject]||data.subject||'')+' · '+data.title;
     var bp = document.getElementById('btn-pause'); if(bp) {bp.textContent='일시정지'; bp.style.display='inline-block';}
     ['btn-reset','btn-stop'].forEach(function(b){var el=document.getElementById(b);if(el)el.style.display='inline-block';});
     if (!timerInterval) timerInterval = setInterval(_tickDisplay, 500);
     _tickDisplay();
-    // 안내
-    var h=Math.floor(timerSeconds/3600), m=Math.floor((timerSeconds%3600)/60);
-    if (timerSeconds > 10) {
-      var msg = document.getElementById('timer-subject-display');
-      if(msg) msg.textContent += ' (복구됨 '+h+'h '+String(m).padStart(2,'0')+'m~)';
-    }
   }).catch(function(){});
 }
 function buildGradePage(){
@@ -2650,6 +2664,121 @@ document.addEventListener('click', function(e){
   deleteDoc(doc(db,'notices',nid)).then(function(){renderTeacher(5);}).catch(function(err){alert('삭제 실패: '+err.message);});
 });
 
+window.openStudyTimeEditor=function(){
+  var el=document.getElementById('study-time-editor');
+  if(!el) return;
+  if(el.style.display!=='none'){el.style.display='none';return;}
+  el.style.display='block';
+  el.innerHTML='<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:12px;margin-top:4px">'
+    +'<div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:10px">✏️ 학습시간 수정</div>'
+    +'<select class="modal-select" id="ste-student" onchange="steLoadDates(this.value)" style="margin-bottom:8px"><option value="">학생 선택</option></select>'
+    +'<div id="ste-dates" style="display:none"><select class="modal-select" id="ste-date" onchange="steLoadTodos(this.value)" style="margin-bottom:8px"><option value="">날짜 선택</option></select></div>'
+    +'<div id="ste-todos"></div>'
+    +'</div>';
+  // 학생 목록 로드
+  loadStudentList().then(function(students){
+    var sel=document.getElementById('ste-student');
+    if(!sel) return;
+    sel.innerHTML='<option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('');
+  });
+};
+window.steLoadDates=function(uid){
+  if(!uid) return;
+  var datesEl=document.getElementById('ste-dates');
+  var todosEl=document.getElementById('ste-todos');
+  if(datesEl) datesEl.style.display='none';
+  if(todosEl) todosEl.innerHTML='';
+  getDocs(query(collection(db,'todos'),where('uid','==',uid))).then(function(snap){
+    var dateSet={};
+    snap.docs.forEach(function(d){var dt=d.data().date;if(dt)dateSet[dt]=true;});
+    var dates=Object.keys(dateSet).sort().reverse();
+    var sel=document.getElementById('ste-date');
+    if(!sel) return;
+    sel.innerHTML='<option value="">날짜 선택</option>'+dates.map(function(dt){return '<option value="'+dt+'|'+uid+'">'+dt+'</option>';}).join('');
+    if(datesEl) datesEl.style.display='block';
+  });
+};
+window.steLoadTodos=function(val){
+  if(!val) return;
+  var parts=val.split('|');
+  var date=parts[0], uid=parts[1];
+  var el=document.getElementById('ste-todos');
+  if(!el) return;
+  el.innerHTML='<div style="color:var(--gray3);font-size:12px">불러오는 중...</div>';
+  getDocs(query(collection(db,'todos'),where('uid','==',uid),where('date','==',date))).then(function(snap){
+    if(snap.empty){el.innerHTML='<div style="color:var(--gray3);font-size:12px">할일 없음</div>';return;}
+    var todos=snap.docs.map(function(d){return Object.assign({_id:d.id},d.data());}).sort(function(a,b){var at=a.createdAt?a.createdAt.toMillis():0,bt=b.createdAt?b.createdAt.toMillis():0;return at-bt;});
+    el.innerHTML=todos.map(function(t){
+      var currentTime=t.studyTime||'';
+      var subj=subjectNames[t.subject]||t.subject||'';
+      return '<div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px;margin-bottom:8px">'
+        +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+        +'<span class="subject-tag subj-'+(t.subject||'ko')+'" style="font-size:10px">'+subj+'</span>'
+        +'<span style="font-size:13px;flex:1">'+t.title+'</span>'
+        +'<span style="font-size:11px;color:'+(t.studyTime?'var(--gold2)':'var(--gray3)')+'">현재: '+(t.studyTime||'없음')+'</span>'
+        +'</div>'
+        +'<div style="display:flex;gap:6px;align-items:center">'
+        +'<span style="font-size:11px;color:var(--gray3);flex-shrink:0">수정:</span>'
+        +'<input id="ste-h-'+t._id+'" type="number" min="0" max="23" placeholder="시" value="'+(currentTime?currentTime.split(':')[0]:'')+'" style="width:50px;padding:6px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#fff;font-size:13px;text-align:center"/>'
+        +'<span style="color:var(--gray3)">:</span>'
+        +'<input id="ste-m-'+t._id+'" type="number" min="0" max="59" placeholder="분" value="'+(currentTime?currentTime.split(':')[1]:'')+'" style="width:50px;padding:6px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#fff;font-size:13px;text-align:center"/>'
+        +'<span style="color:var(--gray3)">:</span>'
+        +'<input id="ste-s-'+t._id+'" type="number" min="0" max="59" placeholder="초" value="'+(currentTime?currentTime.split(':')[2]||'00':'')+'" style="width:50px;padding:6px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#fff;font-size:13px;text-align:center"/>'
+        +'<button onclick="steUpdate(\''+t._id+'\')" style="padding:6px 12px;background:rgba(61,186,126,0.12);border:1px solid rgba(61,186,126,0.25);border-radius:6px;color:var(--green);font-size:12px;cursor:pointer;flex-shrink:0">저장</button>'
+        +'<button onclick="steClear(\''+t._id+'\')" style="padding:6px 10px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:6px;color:#f87171;font-size:12px;cursor:pointer;flex-shrink:0">삭제</button>'
+        +'</div>'
+        +'</div>';
+    }).join('');
+  });
+};
+window.steUpdate=function(todoId){
+  var h=parseInt(document.getElementById('ste-h-'+todoId).value)||0;
+  var m=parseInt(document.getElementById('ste-m-'+todoId).value)||0;
+  var s=parseInt(document.getElementById('ste-s-'+todoId).value)||0;
+  if(h>23||m>59||s>59){alert('올바른 시간을 입력해주세요.');return;}
+  var timeStr=h+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+  updateDoc(doc(db,'todos',todoId),{studyTime:timeStr,timerStartAt:null,timerAccum:0,timerRunning:false}).then(function(){
+    alert('수정 완료: '+timeStr);
+    // 현재 표시 업데이트
+    var cur=document.querySelector('[id="ste-h-'+todoId+'"]');
+    if(cur && cur.closest('div')) {
+      var badge=cur.closest('div').parentElement.querySelector('span[style*="gold"]');
+      if(badge) badge.textContent='현재: '+timeStr;
+    }
+  }).catch(function(e){alert('실패: '+e.message);});
+};
+window.steClear=function(todoId){
+  if(!confirm('이 할일의 학습시간을 삭제하시겠습니까?')) return;
+  updateDoc(doc(db,'todos',todoId),{studyTime:null,certified:false,timerStartAt:null,timerAccum:0,timerRunning:false}).then(function(){
+    alert('삭제 완료');
+    var sel=document.getElementById('ste-date');
+    if(sel&&sel.value) steLoadTodos(sel.value);
+  }).catch(function(e){alert('실패: '+e.message);});
+};
+window.fixBrokenTimers=function(){
+  if(!confirm('비정상적으로 긴 타이머 기록(6시간 이상)을 초기화합니다.\n계속할까요?')) return;
+  getDocs(collection(db,'todos')).then(function(snap){
+    var tasks=[];
+    snap.docs.forEach(function(d){
+      var t=d.data();
+      // timerRunning이 true인 채로 남아있는 것 정리
+      if(t.timerRunning){
+        tasks.push(updateDoc(doc(db,'todos',d.id),{timerStartAt:null,timerAccum:0,timerRunning:false}));
+      }
+      // studyTime이 비정상(6시간=21600초 이상)인 것 초기화
+      if(t.studyTime){
+        var p=t.studyTime.split(':');
+        var secs=(parseInt(p[0])||0)*3600+(parseInt(p[1])||0)*60+(parseInt(p[2])||0);
+        if(secs>=21600){
+          tasks.push(updateDoc(doc(db,'todos',d.id),{studyTime:null,certified:false,timerStartAt:null,timerAccum:0,timerRunning:false}));
+        }
+      }
+    });
+    return Promise.all(tasks);
+  }).then(function(){
+    alert('정리 완료!');
+  }).catch(function(e){alert('오류: '+e.message);});
+};
 window.resetTodayPlanner=function(){
   if(!confirm('오늘('+getPlannerDate()+') 모든 학생의 플래너 할일과 제출 기록을 초기화합니다.\n이 작업은 되돌릴 수 없습니다. 계속할까요?')) return;
   var today=getPlannerDate();
@@ -2684,7 +2813,10 @@ function buildTAccounts(){
       var masterTools=isMaster
         ?'<div style="background:rgba(232,148,58,0.1);border:2px solid rgba(232,148,58,0.35);border-radius:12px;padding:14px;margin-bottom:16px">'
           +'<div style="font-size:13px;font-weight:700;color:#f0a855;margin-bottom:10px">⚙️ 마스터 도구</div>'
-          +'<button onclick="resetTodayPlanner()" style="width:100%;padding:12px;background:rgba(224,82,82,0.12);border:1px solid rgba(224,82,82,0.3);border-radius:8px;color:#f87171;font-size:13px;font-weight:700;cursor:pointer">🗑 오늘 플래너 즉시 초기화 (제출 포함)</button>'
+          +'<button onclick="resetTodayPlanner()" style="width:100%;padding:12px;background:rgba(224,82,82,0.12);border:1px solid rgba(224,82,82,0.3);border-radius:8px;color:#f87171;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px">🗑 오늘 플래너 즉시 초기화 (제출 포함)</button>'
+          +'<button onclick="fixBrokenTimers()" style="width:100%;padding:12px;background:rgba(74,127,255,0.1);border:1px solid rgba(74,127,255,0.2);border-radius:8px;color:#7aa8ff;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px">🔧 비정상 타이머 기록 정리</button>'
+          +'<button onclick="openStudyTimeEditor()" style="width:100%;padding:12px;background:rgba(61,186,126,0.1);border:1px solid rgba(61,186,126,0.2);border-radius:8px;color:var(--green);font-size:13px;font-weight:700;cursor:pointer">✏️ 학생 학습시간 직접 수정</button>'
+          +'<div id="study-time-editor" style="display:none;margin-top:12px"></div>'
           +'</div>'
         :'';
       var masterBadge=isMaster?'<div style="background:rgba(232,148,58,0.08);border:1px solid rgba(232,148,58,0.2);border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#f0a855">⚠️ 마스터 전용 — 계정 수정 및 삭제 가능</div>':'';
