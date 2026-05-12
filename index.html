@@ -1897,6 +1897,9 @@ window.buildTeacherTabs=function(isMaster){
 };
 window.teacherTab=function(i){document.querySelectorAll('.teacher-nav-item').forEach(function(t,j){t.classList.toggle('active',i===j);});renderTeacher(i);};
 window.renderTeacher=function(i){
+  // 탭 전환 시 채팅 리스너 정리 (없어진 DOM에 접근 방지)
+  if(unsubChat){unsubChat();unsubChat=null;}
+  teacherChatUid=null;
   var isMaster=currentProfile&&currentProfile.role==='master';
   var c=document.getElementById('teacher-content');
   c.innerHTML='<div style="color:var(--gray3);font-size:13px;padding:20px">불러오는 중...</div>';
@@ -2519,7 +2522,6 @@ window.filterMasterMessages=function(q){
 function renderMasterMessages(msgs,highlight){
   var area=document.getElementById('master-chat-area');
   if(!area) return;
-  if(!msgs.length){area.innerHTML='<div style="color:var(--gray3);font-size:13px">'+(highlight?'검색 결과 없음':'대화 내역이 없습니다')+'</div>';return;}
   area.innerHTML=msgs.map(function(m){
     var time=m.createdAt?m.createdAt.toDate().toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
     var isStudent=m._isStudent;
