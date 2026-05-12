@@ -2213,7 +2213,9 @@ window.loadStudentGrades=function(uid){
             diff='<span style="font-size:10px;margin-left:4px;color:'+(cur>prev?'var(--green)':'var(--red)')+'">'+( cur>prev?'▲':'▼')+(Math.abs(cur-prev))+'</span>';
           }
         }
-        return '<div class="score-cell" style="position:relative"><div class="score-cell-subj">'+label+'</div><div class="score-cell-val">'+(s.score||'-')+diff+'</div><div class="score-cell-grade">'+(s.grade?s.grade+'등급':'-')+'</div></div>';
+        var scoreVal = (s.score !== null && s.score !== undefined && s.score !== '') ? s.score : '-';
+        var gradeVal = s.grade ? s.grade+'등급' : '-';
+        return '<div class="score-cell" style="position:relative"><div class="score-cell-subj">'+label+'</div><div class="score-cell-val">'+scoreVal+diff+'</div><div class="score-cell-grade">'+gradeVal+'</div></div>';
       }).join('');
 
       // ── 오답 문항 ──
@@ -2272,11 +2274,12 @@ window.loadStudentGrades=function(uid){
       }
 
       // ── 전체 학생 비교 버튼 ──
+      var examKey = encodeURIComponent(g.examName)+'-'+g.examDate;
       var statsBtn='<div style="margin-top:10px">'
-        +'<button onclick="loadExamStatsForTeacher(\''+encodeURIComponent(g.examName)+'\',\''+uid+'\')" '
+        +'<button onclick="loadExamStatsForTeacher(\''+encodeURIComponent(g.examName)+'\',\''+uid+'\',\''+examKey+'\')" '
         +'style="padding:7px 12px;background:rgba(74,127,255,0.1);border:1px solid rgba(74,127,255,0.2);border-radius:6px;color:#7aa8ff;font-size:11px;cursor:pointer;width:100%">'
         +'📊 같은 시험 응시 학생 비교분석</button>'
-        +'<div id="teacher-exam-stats-'+g._id+'" style="display:none;margin-top:8px"></div>'
+        +'<div id="teacher-exam-stats-'+examKey+'" style="display:none;margin-top:8px"></div>'
         +'</div>';
 
       return '<div class="score-card" style="margin-bottom:12px">'
@@ -2291,15 +2294,14 @@ window.loadStudentGrades=function(uid){
   }).catch(function(e){el.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패: '+e.message+'</div>';});
 };
 
-window.loadExamStatsForTeacher=function(encodedName,targetUid){
+window.loadExamStatsForTeacher=function(encodedName,targetUid,examKey){
   var examName=decodeURIComponent(encodedName);
   var normalize=function(s){return s.replace(/\s+/g,'').toLowerCase();};
   var normTarget=normalize(examName);
-  // 해당 버튼의 stats div 찾기
-  var allDivs=document.querySelectorAll('[id^="teacher-exam-stats-"]');
-  var targetDiv=null;
-  allDivs.forEach(function(d){if(targetDiv) return; if(d.style.display==='none') {d.style.display='block'; targetDiv=d;}});
+  var targetDiv=document.getElementById('teacher-exam-stats-'+examKey);
   if(!targetDiv) return;
+  if(targetDiv.style.display!=='none'){targetDiv.style.display='none';return;}
+  targetDiv.style.display='block';
   targetDiv.innerHTML='<div style="color:var(--gray3);font-size:12px">분석 중...</div>';
   getDocs(collection(db,'grades')).then(function(snap){
     var sameExam=snap.docs.filter(function(d){return normalize(d.data().examName||'')===normTarget;});
