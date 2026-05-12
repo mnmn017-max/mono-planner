@@ -2810,8 +2810,6 @@ function buildTAccounts(){
       // role 비교 - trim/소문자 처리로 오타 대응
       var myRole=(currentProfile&&currentProfile.role||'').trim().toLowerCase();
       var isMaster=(myRole==='master');
-      // 디버그: role 값 표시 (확인 후 제거)
-      var debugRole='<div style="font-size:10px;color:var(--gray3);margin-bottom:8px">현재 role: "'+( currentProfile&&currentProfile.role||'없음')+'" / isMaster: '+isMaster+'</div>';
       var masterTools=isMaster
         ?'<div style="background:rgba(232,148,58,0.1);border:2px solid rgba(232,148,58,0.35);border-radius:12px;padding:14px;margin-bottom:16px">'
           +'<div style="font-size:13px;font-weight:700;color:#f0a855;margin-bottom:10px">⚙️ 마스터 도구</div>'
@@ -2830,7 +2828,7 @@ function buildTAccounts(){
         var btns=isMaster?'<div style="display:flex;gap:5px"><button onclick="openEditAccountModal(\''+s.uid+'\',\''+s.name+'\',\''+s.username+'\')" style="padding:6px 10px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.2);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer">수정</button><button onclick="deleteAccount(\''+s.uid+'\',\''+s.name+'\')" style="padding:6px 10px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:6px;color:#f87171;font-size:11px;cursor:pointer">삭제</button></div>':'';
         return '<div class="student-row"><div class="student-av-t">'+(s.name||'?').slice(0,2)+'</div><div style="flex:1"><div style="font-size:14px;font-weight:600">'+s.name+'</div><div style="font-size:11px;color:var(--gray3);margin-top:2px">'+(s.grade||'')+' · ID: '+(s.username||'')+'</div></div>'+btns+'</div>';
       }).join('');
-      return debugRole+masterTools+'<div class="stat-grid"><div class="stat-card"><div class="stat-val">'+students.length+'</div><div class="stat-lbl">학생 계정</div></div><div class="stat-card"><div class="stat-val" style="color:var(--gold)">'+teachers.length+'</div><div class="stat-lbl">선생님 계정</div></div></div><button class="appeal-btn" onclick="openModal(\'modal-add-account\')">+ 새 계정 추가</button>'+masterBadge+'<div class="section-label">선생님 계정</div>'+teacherRows+'<div class="section-label">학생 계정</div>'+studentRows;
+      return masterTools+'<div class="stat-grid"><div class="stat-card"><div class="stat-val">'+students.length+'</div><div class="stat-lbl">학생 계정</div></div><div class="stat-card"><div class="stat-val" style="color:var(--gold)">'+teachers.length+'</div><div class="stat-lbl">선생님 계정</div></div></div><button class="appeal-btn" onclick="openModal(\'modal-add-account\')">+ 새 계정 추가</button>'+masterBadge+'<div class="section-label">선생님 계정</div>'+teacherRows+'<div class="section-label">학생 계정</div>'+studentRows;
     });
   });
 }
