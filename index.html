@@ -70,7 +70,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .comment-card{background:linear-gradient(135deg,rgba(201,168,76,0.08),rgba(201,168,76,0.03));border:1px solid rgba(201,168,76,0.25);}
 .comment-bubble{display:flex;gap:10px;}
 .teacher-av{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#4a7fff,#7a9fff);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;}
-.comment-text{font-size:14px;line-height:1.8;color:rgba(255,255,255,0.9);}
+.comment-text{font-size:14px;line-height:1.8;color:rgba(255,255,255,0.9);white-space:pre-wrap;word-break:break-word;}
 .comment-meta{font-size:11px;color:var(--gray3);margin-top:5px;}
 .goal-banner{background:linear-gradient(135deg,rgba(74,127,255,0.12),rgba(74,127,255,0.04));border:1px solid rgba(74,127,255,0.25);border-radius:12px;padding:13px 16px;margin-bottom:12px;display:flex;gap:12px;align-items:center;}
 .goal-name{font-size:16px;font-weight:700;color:#7aa8ff;}
@@ -357,13 +357,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <button class="modal-btn cancel" onclick="closeModal('modal-todo')">취소</button>
 </div></div>
 
-<div class="modal-overlay" id="modal-timer-done"><div class="modal">
-  <div style="text-align:center;font-size:44px;margin-bottom:8px">📸</div>
-  <div class="modal-title">학습 인증 사진</div>
-  <p style="font-size:14px;color:var(--gray3);text-align:center;margin-bottom:18px;line-height:1.9">공부한 내용을 사진으로 인증해 주세요.</p>
-  <button class="modal-btn primary" onclick="certifyTimer()">📷 사진 인증하기</button>
-  <button class="modal-btn cancel" onclick="skipCert()">인증 없이 완료</button>
-</div></div>
 
 <div class="modal-overlay" id="modal-reset-confirm"><div class="modal">
   <div style="text-align:center;font-size:44px;margin-bottom:8px">⏱️</div>
@@ -863,9 +856,14 @@ function loadLectureDashboard() {
         +'<div><div style="font-size:13px;font-weight:600">'+lc.lectureName+'</div>'
         +'<div style="font-size:11px;color:var(--gray3)">'+lc.company+' · '+lc.instructor+'</div></div>'
         +'<span style="font-size:12px;font-weight:700;color:#7aa8ff">'+done+'/'+total+'강</span></div>'
-        +'<div style="background:rgba(255,255,255,0.05);border-radius:6px;height:6px;overflow:hidden;margin-bottom:5px">'
+        +'<div style="background:rgba(255,255,255,0.05);border-radius:6px;height:6px;overflow:hidden;margin-bottom:6px">'
         +'<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,#4a7fff,#7aa8ff);border-radius:6px;"></div></div>'
-        +(eta?'<div style="font-size:11px;color:var(--green)">✅ 완료 예상일: '+eta+'</div>':'')
+        +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
+        +(lc.schedule?'<span style="font-size:11px;padding:3px 8px;background:rgba(201,168,76,0.08);border-radius:5px;color:var(--gold)">📅 '+lc.schedule+'</span>':'')
+        +(lc.scheduleCount?'<span style="font-size:11px;padding:3px 8px;background:rgba(201,168,76,0.08);border-radius:5px;color:var(--gold)">주 '+lc.scheduleCount+'강</span>':'')
+        +(eta?'<span style="font-size:11px;padding:3px 8px;background:rgba(61,186,126,0.08);border-radius:5px;color:var(--green)">완료 예상 '+eta+'</span>':'')
+        +(done>=total?'<span style="font-size:11px;padding:3px 8px;background:rgba(61,186,126,0.12);border-radius:5px;color:var(--green)">✅ 완강</span>':'')
+        +'</div>'
         +'</div>';
     });
     html += '</div>';
@@ -879,7 +877,7 @@ function renderTodos(todos) {
   if (!todos.length) { list.innerHTML='<div style="color:var(--gray3);font-size:13px;padding:10px 0">할 일을 추가해주세요</div>'; return; }
   list.innerHTML = todos.map(function(t) {
     var chk = t.status==='done' ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="3.5"><polyline points="20 6 9 17 4 12"/></svg>' : t.status==='progressing' ? '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="3"><polyline points="5 12 12 19 19 12"/></svg>' : '';
-    var timeHtml = t.studyTime ? (t.certified?'🔵 ':'⚪ ')+t.studyTime : '<span style="font-size:12px;color:var(--gray4)">시작 ▶</span>';
+    var timeHtml = t.studyTime ? ('')+t.studyTime : '<span style="font-size:12px;color:var(--gray4)">시작 ▶</span>';
     var safeTitle = t.title.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"');
     var safeSubj = t.subject||'ko';
     return '<div class="todo-item"><div class="status-btn '+(t.status==='progressing'?'progressing':t.status==='done'?'done':'')+'" onclick="cycleTodoStatus(\''+t.id+'\',\''+t.status+'\')">'+chk+'</div>'
@@ -887,7 +885,7 @@ function renderTodos(todos) {
       +'<div class="todo-title '+(t.status==='done'?'done-text':'')+'">'+t.title+'</div>'
       +'<div class="todo-meta"><span class="subject-tag subj-'+t.subject+'">'+(subjectNames[t.subject]||t.subject)+'</span>'
       +(timerTargetId===t.id?'<span style="font-size:10px;color:var(--green)" class="pulse">● 측정중</span>':'')+'</div></div>'
-      +'<div style="font-size:11px;'+(t.certified?'color:#7aa8ff':'color:var(--gray3)')+'">'+timeHtml+'</div>'
+      +'<div style="font-size:11px;'+'color:var(--gray3)'+'">'+timeHtml+'</div>'
       +'<button onclick="openEditTodoModal(\''+t.id+'\',\''+safeTitle+'\',\''+safeSubj+'\')" style="background:none;border:none;padding:4px 6px;cursor:pointer;flex-shrink:0;color:var(--gray3);font-size:15px" title="수정/삭제">✏️</button>'
       +'</div>';
   }).join('');
@@ -1082,11 +1080,17 @@ function _tickDisplay() {
 
 window.startTimerFor = function(id, subject, title) {
   if (timerTargetId === id) { togglePause(); return; }
-  // 기존 타이머 정리
+  // 다른 할일 클릭 시 기존 타이머 진행 중이면 확인
+  if (timerTargetId && !timerPaused) {
+    if (!confirm('현재 측정 중인 타이머가 있습니다.\n기존 타이머를 저장하고 새 항목을 시작할까요?\n\n취소하면 기존 타이머가 계속 진행됩니다.')) return;
+    // 기존 타이머 일시정지 후 저장
+    timerSeconds = _getElapsed();
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    updateDoc(doc(db,'todos',timerTargetId), {timerAccum: timerSeconds, timerRunning: false, timerStartAt: null}).catch(function(){});
+  }
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
   timerTargetId = id; timerSeconds = 0; timerPaused = false;
   timerStartAt = Date.now();
-  // Firebase에 시작 시각 저장 (앱 종료 후 복구용)
   updateDoc(doc(db,'todos',id), {timerStartAt: timerStartAt, timerAccum: 0, timerRunning: true}).catch(function(){});
   ['btn-reset','btn-pause','btn-stop'].forEach(function(b){var el=document.getElementById(b);if(el)el.style.display='inline-block';});
   var subj = document.getElementById('timer-subject-display');
@@ -1118,8 +1122,8 @@ window.stopTimer = function() {
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
   openModal('modal-timer-done');
 };
-window.certifyTimer = function() { finalizeTimer(true); closeModal('modal-timer-done'); };
-window.skipCert    = function() { finalizeTimer(false); closeModal('modal-timer-done'); };
+
+
 
 window.doResetTimer = function() {
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
@@ -1140,7 +1144,7 @@ function finalizeTimer(certified) {
     updateDoc(doc(db,'todos',timerTargetId), {
       status:'done',
       studyTime: h+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0'),
-      certified: certified,
+      certified: false,
       completedAt: serverTimestamp(),
       timerStartAt: null, timerAccum: 0, timerRunning: false
     });
@@ -1256,7 +1260,7 @@ window.histShowDay=function(date,uid){
           +'<span class="subject-tag subj-'+(t.subject||'ko')+'" style="font-size:10px;flex-shrink:0">'+(subjectNames[t.subject]||t.subject||'')+'</span>'
           +'<span style="flex:1;font-size:13px;'+(t.status==='done'?'text-decoration:line-through;color:var(--gray3)':'')+'">'+t.title+'</span>'
           +(t.studyTime?'<span style="font-size:11px;color:var(--gold2)">⏱'+t.studyTime+'</span>':'')
-          +(t.certified?'<span style="font-size:10px;color:#7aa8ff">📸</span>':'')
+          
           +'</div>';
       }).join('');
   }).catch(function(){var el=document.getElementById('hist-day-items');if(el)el.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패</div>';});
@@ -1344,7 +1348,7 @@ window.teacherShowDay=function(date,uid,name){
           +'<span class="subject-tag subj-'+(t.subject||'ko')+'" style="font-size:10px;flex-shrink:0">'+(subjectNames[t.subject]||t.subject||'')+'</span>'
           +'<span style="flex:1;font-size:13px;'+(t.status==='done'?'text-decoration:line-through;color:var(--gray3)':'')+'">'+t.title+'</span>'
           +(t.studyTime?'<span style="font-size:11px;color:var(--gold2)">⏱'+t.studyTime+'</span>':'')
-          +(t.certified?'<span style="font-size:10px;color:#7aa8ff">📸</span>':'')
+          
           +'</div>';
       }).join('');
   }).catch(function(){var el=document.getElementById('tph-items');if(el)el.innerHTML='<div style="color:var(--gray3)">불러오기 실패</div>';});
@@ -1405,7 +1409,12 @@ function loadGrades(type) {
       return (b.examDate||'').localeCompare(a.examDate||'');
     });
     el.innerHTML=grades.map(function(g){
-      var subjHtml=Object.keys(g.scores||{}).map(function(subj){
+      var _sOrder=['ko','en','ma','hi'];
+      var _sKeys=Object.keys(g.scores||{}).sort(function(a,b){
+        var ai=_sOrder.indexOf(a.replace(/\d+$/,''));var bi=_sOrder.indexOf(b.replace(/\d+$/,''));
+        return (ai<0?99:ai)-(bi<0?99:bi);
+      });
+      var subjHtml=_sKeys.map(function(subj){
         var s=g.scores[subj];
         var dispName=s.label||(subjectNames[subj]||subj);
         return '<div class="score-cell"><div class="score-cell-subj">'+dispName+'</div><div class="score-cell-val">'+(s.score||'-')+'</div><div class="score-cell-grade">'+(s.grade?s.grade+'등급':'-')+'</div></div>';
@@ -2242,6 +2251,17 @@ window.loadStudentGrades=function(uid){
     if(snap.empty){el.innerHTML='<div style="color:var(--gray3);font-size:13px">입력된 성적이 없습니다</div>';return;}
     var grades=snap.docs.map(function(d){return Object.assign({_id:d.id},d.data());})
       .sort(function(a,b){return (b.examDate||'').localeCompare(a.examDate||'');});
+    // 과목 순서 정렬 함수
+    var subjOrder=['ko','en','ma','hi','sc','so','sc1','sc2','so1','so2'];
+    function sortScoreKeys(keys){
+      return keys.sort(function(a,b){
+        var ai=subjOrder.indexOf(a.replace(/\d$/,'')+''+a.match(/\d$/)?.[0]||'');
+        var bi=subjOrder.indexOf(b.replace(/\d$/,'')+''+b.match(/\d$/)?.[0]||'');
+        var ai2=subjOrder.findIndex(function(k){return a===k||a.startsWith(k.replace(/\d/,''));});
+        var bi2=subjOrder.findIndex(function(k){return b===k||b.startsWith(k.replace(/\d/,''));});
+        return (ai2<0?99:ai2)-(bi2<0?99:bi2);
+      });
+    }
     // 과목별 추이
     var subjTrend={};
     grades.slice().reverse().forEach(function(g){
@@ -2254,9 +2274,10 @@ window.loadStudentGrades=function(uid){
       var scores=g.scores||{};
       var hasScores=Object.keys(scores).length>0;
       // 과목 점수
+      var scoreKeys=sortScoreKeys(Object.keys(scores));
       var subjHtml=!hasScores
         ?'<div style="color:var(--gray3);font-size:12px;padding:8px 0">입력된 점수 없음</div>'
-        :Object.keys(scores).map(function(k){
+        :scoreKeys.map(function(k){
           var s=scores[k];
           var label=s.label||(subjectNames[k]||k);
           var arr=subjTrend[k]||[];
