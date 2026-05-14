@@ -2597,6 +2597,20 @@ window.loadExamStatsForTeacher=function(encodedName,targetUid,examKey){
         bySubj[k].push({uid:g.uid,score:parseInt(g.scores[k].score)||0,grade:g.scores[k].grade,label:g.scores[k].label||(subjectNames[k]||k)});
       });
     });
+    // 과목별 오답 TOP5 HTML 생성
+    var tagColors={ko:'subj-ko',en:'subj-en',ma:'subj-ma',hi:'subj-hi',sc:'subj-sc',so:'subj-so'};
+    var wrongSection='';
+    if(Object.keys(wrongBySubjCount).length){
+      wrongSection='<div style="font-size:11px;color:var(--gray3);margin-bottom:6px">🔴 과목별 오답 TOP5</div>'
+        +Object.keys(wrongBySubjCount).map(function(subj){
+          var cnt=wrongBySubjCount[subj];
+          var top5k=Object.keys(cnt).sort(function(a,b){return cnt[b]-cnt[a];}).slice(0,5);
+          var cls=tagColors[subj.replace(/\d+$/,'')]||'';
+          var lbl=subjectNames[subj]||subj;
+          return '<div style="margin-bottom:8px"><span class="subject-tag '+cls+'" style="font-size:10px;margin-bottom:4px;display:inline-block">'+lbl+'</span>'
+            +'<div style="display:flex;gap:4px;flex-wrap:wrap">'+top5k.map(function(n){return '<span style="background:rgba(224,82,82,0.15);border:1px solid rgba(224,82,82,0.25);border-radius:5px;padding:3px 8px;font-size:11px;color:#f87171">'+n+'번('+cnt[n]+'명)</span>';}).join('')+'</div></div>';
+        }).join('')+'<div style="margin-bottom:8px"></div>';
+    }
     loadStudentList().then(function(students){
       var nameMap={};students.forEach(function(s){nameMap[s.uid]=s.name;});
       // 현재 학생 순위 찾기
