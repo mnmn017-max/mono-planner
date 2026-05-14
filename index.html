@@ -2602,6 +2602,12 @@ window.loadExamStatsForTeacher=function(encodedName,targetUid,examKey){
         bySubj[k].push({uid:g.uid,score:parseInt(g.scores[k].score)||0,grade:g.scores[k].grade,label:g.scores[k].label||(subjectNames[k]||k)});
       });
     });
+    // 디버그: 집계 결과 확인
+    targetDiv.innerHTML='<pre style="font-size:10px;color:#7aa8ff;white-space:pre-wrap;word-break:break-all">'
+      +'wrongSubjLabel: '+JSON.stringify(wrongSubjLabel)+'\n'
+      +'wrongBySubjCount keys: '+JSON.stringify(Object.keys(wrongBySubjCount))+'\n'
+      +'bySubj keys: '+JSON.stringify(Object.keys(bySubj))+'</pre>';
+
     // 과목별 오답 TOP5 HTML 생성
     var tagColors={ko:'subj-ko',en:'subj-en',ma:'subj-ma',hi:'subj-hi',sc:'subj-sc',so:'subj-so'};
     var wrongSection='';
