@@ -1118,9 +1118,20 @@ window.togglePause = function() {
 };
 
 window.stopTimer = function() {
-  timerSeconds = _getElapsed(); // 최종 경과 시간 확정
+  timerSeconds = _getElapsed();
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-  openModal('modal-timer-done');
+  if (!timerTargetId) return;
+  if (confirm('학습을 완료하시겠습니까?\n\n측정 시간: ' + (function(){
+    var h=Math.floor(timerSeconds/3600),m=Math.floor((timerSeconds%3600)/60),s=timerSeconds%60;
+    return h+'시간 '+String(m).padStart(2,'0')+'분 '+String(s).padStart(2,'0')+'초';
+  })() )) {
+    finalizeTimer(false);
+  } else {
+    // 취소 시 타이머 재개
+    timerStartAt = Date.now();
+    updateDoc(doc(db,'todos',timerTargetId), {timerStartAt: timerStartAt, timerAccum: timerSeconds, timerRunning: true}).catch(function(){});
+    timerInterval = setInterval(_tickDisplay, 500);
+  }
 };
 
 
