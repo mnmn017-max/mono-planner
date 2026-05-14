@@ -2356,63 +2356,72 @@ window.loadStudentGrades=function(uid){
       return;
     }
 
-    // 과목별 추이 (탭 내 시험들)
-    var subjTrend={};
+    // 과목별 추이 - label 기준 집계 (sc1/sc2 순서 달라도 같은 과목끼리 묶임)
+    var subjTrend={};  // key: 실제 과목명(label)
+    var subjTrendBase={}; // label -> base key (ko/en/ma/hi/sc/so)
     grades.slice().reverse().forEach(function(g){
       Object.keys(g.scores||{}).forEach(function(k){
-        if(!subjTrend[k]) subjTrend[k]=[];
-        subjTrend[k].push({date:g.examDate,score:parseInt(g.scores[k].score)||0,grade:g.scores[k].grade,exam:g.examName,label:g.scores[k].label||(subjectNames[k]||k)});
+        var s=g.scores[k];
+        var lbl=s.label||(subjectNames[k]||k);
+        var base=k.replace(/\d+$/,'');
+        if(!subjTrend[lbl]){ subjTrend[lbl]=[]; subjTrendBase[lbl]=base; }
+        subjTrend[lbl].push({date:g.examDate,score:parseInt(s.score)||0,grade:s.grade,exam:g.examName});
       });
     });
 
-    // ── 성적 변화 그래프 (Canvas 기반 SVG 차트) ──
+    // 과목 순서 정렬 (국어/영어/수학/한국사/과탐/사탐)
+    var _baseOrder=['ko','en','ma','hi','sc','so'];
+    function _baseRank(lbl){
+      var b=subjTrendBase[lbl]||'';
+      var i=_baseOrder.indexOf(b);
+      return i>=0?i:99;
+    }
+
+    // ── 성적 변화 그래프 ──
     var chartHtml='';
-    var chartSubjs=Object.keys(subjTrend).filter(function(k){return subjTrend[k].length>=2;});
+    var fixedColors={ko:'#c9a84c',en:'#7aa8ff',ma:'#3dba7e',hi:'#f87171',sc:'#a78bfa',so:'#fb923c'};
+    var dynColorPalette=['#818cf8','#c084fc','#fb923c','#fdba74','#34d399','#22d3ee'];
+    var dynCI=0;
+    var chartSubjs=Object.keys(subjTrend).filter(function(lbl){return subjTrend[lbl].length>=2;})
+      .sort(function(a,b){return _baseRank(a)-_baseRank(b);});
     if(chartSubjs.length){
       var W=320,H=160,PL=36,PR=12,PT=18,PB=30;
       var iW=W-PL-PR,iH=H-PT-PB;
-      var colors={ko:'#c9a84c',en:'#7aa8ff',ma:'#3dba7e',hi:'#f87171',sc:'#a78bfa',so:'#fb923c',default:'#94a3b8'};
-      var svgs=sortScoreKeys(chartSubjs).map(function(k){
-        var pts=subjTrend[k];
+      var svgs=chartSubjs.map(function(lbl){
+        var pts=subjTrend[lbl];
         var scores=pts.map(function(p){return p.score;});
         var minS=Math.max(0,Math.min.apply(null,scores)-10);
         var maxS=Math.min(100,Math.max.apply(null,scores)+10);
         var range=maxS-minS||1;
-        var col=colors[k.replace(/\d+$/,'')]||colors.default;
-        var label=pts[0].label||(subjectNames[k]||k);
-        // x좌표
+        var base=subjTrendBase[lbl]||'';
+        var col=fixedColors[base]||(dynColorPalette[dynCI++%dynColorPalette.length]);
         function xp(i){return PL+Math.round(i*(iW/(pts.length-1||1)));}
         function yp(s){return PT+iH-Math.round((s-minS)/range*iH);}
-        // 꺾은선
         var polyline=pts.map(function(p,i){return xp(i)+','+yp(p.score);}).join(' ');
-        // 격자선
         var gridLines=[0,25,50,75,100].filter(function(v){return v>=minS&&v<=maxS;}).map(function(v){
           var y=yp(v);
           return '<line x1="'+PL+'" y1="'+y+'" x2="'+(W-PR)+'" y2="'+y+'" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>'
             +'<text x="'+(PL-4)+'" y="'+(y+4)+'" text-anchor="end" font-size="9" fill="rgba(255,255,255,0.35)">'+v+'</text>';
         }).join('');
-        // x축 라벨
         var xLabels=pts.map(function(p,i){
-          var short=p.date?p.date.slice(5):'';
-          return '<text x="'+xp(i)+'" y="'+(H-4)+'" text-anchor="middle" font-size="9" fill="rgba(255,255,255,0.4)">'+short+'</text>';
+          return '<text x="'+xp(i)+'" y="'+(H-4)+'" text-anchor="middle" font-size="9" fill="rgba(255,255,255,0.4)">'+p.date.slice(5)+'</text>';
         }).join('');
-        // 점
         var dots=pts.map(function(p,i){
           return '<circle cx="'+xp(i)+'" cy="'+yp(p.score)+'" r="4" fill="'+col+'" stroke="var(--navy)" stroke-width="2"/>'
             +'<text x="'+xp(i)+'" y="'+(yp(p.score)-8)+'" text-anchor="middle" font-size="10" fill="'+col+'" font-weight="600">'+p.score+'</text>';
         }).join('');
         return '<div style="margin-bottom:10px">'
-          +'<div style="font-size:11px;font-weight:600;color:'+col+';margin-bottom:4px">'+label+'</div>'
+          +'<div style="font-size:11px;font-weight:600;color:'+col+';margin-bottom:4px">'+lbl+'</div>'
           +'<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" style="max-width:100%;overflow:visible">'
           +gridLines+xLabels
           +'<polyline points="'+polyline+'" fill="none" stroke="'+col+'" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>'
-          +dots
-          +'</svg></div>';
+          +dots+'</svg></div>';
       }).join('');
       chartHtml='<div style="margin-bottom:14px;padding:12px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);border-radius:12px">'
         +'<div style="font-size:12px;font-weight:700;color:var(--gold2);margin-bottom:12px">📈 과목별 성적 변화 그래프</div>'
         +svgs+'</div>';
     }
+
 
     // ── 성적 카드 목록 ──
     var cardsHtml=grades.map(function(g,idx){
@@ -2426,7 +2435,7 @@ window.loadStudentGrades=function(uid){
         :scoreKeys.map(function(k){
           var s=scores[k];
           var label=s.label||(subjectNames[k]||k);
-          var arr=subjTrend[k]||[];
+          var arr=subjTrend[s.label||(subjectNames[k]||k)]||[];
           var curIdx=arr.findIndex(function(x){return x.date===g.examDate&&x.exam===g.examName;});
           var diff='';
           if(curIdx>0){
