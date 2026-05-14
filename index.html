@@ -1987,14 +1987,22 @@ function autoWeeklyPoints(){
 function autoPlannerPenalty(){
   if(!currentUser||currentProfile.role!=='student') return;
 
-  // 오후 3시(15:00) 이전이면 아직 제출 기회 있으므로 실행 안 함
+  // KST(UTC+9) 기준 시간 계산
   var now=new Date();
-  var hour=now.getHours();
+  var kstOffset=9*60;
+  var kst=new Date(now.getTime()+(kstOffset+now.getTimezoneOffset())*60000);
+  var hour=kst.getHours();
+
+  // 오후 3시(15:00) KST 이전이면 아직 제출 기회 있으므로 실행 안 함
   if(hour < 15) return;
 
-  var today=now.toISOString().split('T')[0];
+  // KST 기준 오늘 날짜
+  var y=kst.getFullYear();
+  var m=String(kst.getMonth()+1).padStart(2,'0');
+  var d=String(kst.getDate()).padStart(2,'0');
+  var today=y+'-'+m+'-'+d;
 
-  // 2026-05-10, 2026-05-11은 예외 처리 (소급 벌점 생성 방지)
+  // 예외 날짜 처리 (소급 벌점 생성 방지)
   var SKIP_DATES=['2026-05-10','2026-05-11'];
   if(SKIP_DATES.indexOf(today)>=0) return;
 
@@ -2128,9 +2136,10 @@ function buildTPlanner(){
           +'<div id="teacher-planner-hist"><div style="color:var(--gray3);font-size:13px">불러오는 중...</div></div>'
           +'</div>'
           +'<div class="section-label" style="margin-top:20px">코멘트 작성</div>'
-          +'<select class="modal-select" id="comment-student-select"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select>'
+          +'<select class="modal-select" id="comment-student-select" onchange="loadCommentHistory(this.value)"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'|'+s.name+'">'+s.name+'</option>';}).join('')+'</select>'
           +'<textarea class="modal-input" id="comment-input" rows="4" placeholder="학생에게 전달할 코멘트..." style="resize:none;margin-bottom:10px"></textarea>'
           +'<button class="modal-btn primary" onclick="saveComment()">코멘트 저장</button>'
+          +'<div id="comment-history" style="margin-top:14px"></div>'
           +'<div style="display:flex;align-items:center;justify-content:space-between;margin-top:20px;margin-bottom:8px"><div class="section-label" style="margin:0">📚 인강 관리 현황</div><button onclick="openAddLectureModal()" style="padding:7px 14px;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.3);border-radius:8px;color:var(--gold);font-size:13px;cursor:pointer;font-weight:600">+ 인강 추가</button></div>'
           +'<select class="modal-select" onchange="filterLecturesByStudent(this.value)" style="margin-bottom:12px">'+filterOptions+'</select>'
           +lectureHtml;
@@ -2140,10 +2149,48 @@ function buildTPlanner(){
 }
 
 window.saveComment=function(){
-  var uid=document.getElementById('comment-student-select').value;
+  var val=document.getElementById('comment-student-select').value;
+  var parts=val.split('|');
+  var uid=parts[0], sName=parts[1]||'';
   var content=document.getElementById('comment-input').value.trim();
-  if(!uid||!content){alert('학생과 코멘트를 입력해주세요.');return;}
-  addDoc(collection(db,'comments'),{studentUid:uid,content:content,teacherUid:currentUser.uid,teacherName:currentProfile.name,createdAt:serverTimestamp()}).then(function(){alert('코멘트가 저장되었습니다!');document.getElementById('comment-input').value='';});
+  if(!uid||!content){alert('학생과 코멘트 내용을 입력해주세요.');return;}
+  addDoc(collection(db,'comments'),{studentUid:uid,studentName:sName,teacherUid:currentUser.uid,teacherName:currentProfile.name,content:content,createdAt:serverTimestamp()}).then(function(){
+    alert('코멘트가 저장되었습니다!');
+    document.getElementById('comment-input').value='';
+    loadCommentHistory(val);
+  });
+};
+window.loadCommentHistory=function(val){
+  if(!val) return;
+  var parts=val.split('|');
+  var uid=parts[0], sName=parts[1]||'학생';
+  var el=document.getElementById('comment-history');
+  if(!el) return;
+  el.innerHTML='<div style="color:var(--gray3);font-size:12px">불러오는 중...</div>';
+  getDocs(query(collection(db,'comments'),where('studentUid','==',uid))).then(function(snap){
+    if(snap.empty){el.innerHTML='<div style="color:var(--gray3);font-size:12px;padding:8px 0">'+sName+'님의 코멘트가 없습니다</div>';return;}
+    var items=snap.docs.map(function(d){return Object.assign({_id:d.id},d.data());})
+      .sort(function(a,b){var at=a.createdAt?a.createdAt.toMillis():0,bt=b.createdAt?b.createdAt.toMillis():0;return bt-at;});
+    el.innerHTML='<div class="section-label" style="margin-bottom:8px">'+sName+' 코멘트 히스토리</div>'
+      +items.map(function(c){
+        var date=c.createdAt?c.createdAt.toDate().toLocaleDateString('ko-KR'):'';
+        return '<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:12px;margin-bottom:8px">'
+          +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
+          +'<div style="display:flex;align-items:center;gap:7px">'
+          +'<div class="teacher-av" style="width:28px;height:28px;font-size:10px">'+(c.teacherName||'T').slice(0,2)+'</div>'
+          +'<span style="font-size:12px;font-weight:600;color:var(--gold2)">'+(c.teacherName||'')+'</span>'
+          +'<span style="font-size:11px;color:var(--gray3)">'+date+'</span>'
+          +'</div>'
+          +'<button onclick="deleteComment(\''+c._id+'\',\''+val+'\')" style="padding:3px 8px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:5px;color:#f87171;font-size:10px;cursor:pointer">삭제</button>'
+          +'</div>'
+          +'<div style="font-size:13px;color:rgba(255,255,255,0.8);line-height:1.8;white-space:pre-wrap">'+c.content+'</div>'
+          +'</div>';
+      }).join('');
+  }).catch(function(e){el.innerHTML='<div style="color:#f87171;font-size:12px">불러오기 실패: '+e.message+'</div>';});
+};
+window.deleteComment=function(id,val){
+  if(!confirm('이 코멘트를 삭제하시겠습니까?')) return;
+  deleteDoc(doc(db,'comments',id)).then(function(){loadCommentHistory(val);}).catch(function(e){alert('삭제 실패: '+e.message);});
 };
 
 window.openAddLectureModal=function(){
