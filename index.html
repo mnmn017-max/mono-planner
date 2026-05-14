@@ -2572,10 +2572,15 @@ window.loadExamStatsForTeacher=function(encodedName,targetUid,examKey){
   getDocs(collection(db,'grades')).then(function(snap){
     var sameExam=snap.docs.filter(function(d){return normalize(d.data().examName||'')===normTarget;});
     if(sameExam.length<1){targetDiv.innerHTML='<div style="color:var(--gray3);font-size:12px">다른 학생 데이터 없음</div>';return;}
-    // 오답 집계 - 과목별로
+    // 오답 집계 - 과목별로 (label 정보 포함)
     var wrongBySubjCount={};
+    var wrongSubjLabel={}; // subj키 → 표시명
     sameExam.forEach(function(d){
       var g=d.data();
+      // scores에서 label 수집
+      Object.keys(g.scores||{}).forEach(function(k){
+        if(!wrongSubjLabel[k]) wrongSubjLabel[k]=(g.scores[k].label)||(subjectNames[k]||k);
+      });
       if(g.wrongBySubj){
         Object.keys(g.wrongBySubj).forEach(function(subj){
           if(!wrongBySubjCount[subj]) wrongBySubjCount[subj]={};
@@ -2601,12 +2606,18 @@ window.loadExamStatsForTeacher=function(encodedName,targetUid,examKey){
     var tagColors={ko:'subj-ko',en:'subj-en',ma:'subj-ma',hi:'subj-hi',sc:'subj-sc',so:'subj-so'};
     var wrongSection='';
     if(Object.keys(wrongBySubjCount).length){
+      var _wo=['ko','en','ma','hi','sc','so'];
+      function _wrank(k){var b=k.replace(/\d+$/,'');var i=_wo.indexOf(b);return i>=0?i:99;}
+      var sortedWrongSubjs=Object.keys(wrongBySubjCount).sort(function(a,b){return _wrank(a)-_wrank(b);});
       wrongSection='<div style="font-size:11px;color:var(--gray3);margin-bottom:6px">🔴 과목별 오답 TOP5</div>'
-        +Object.keys(wrongBySubjCount).map(function(subj){
+        +sortedWrongSubjs.map(function(subj){
           var cnt=wrongBySubjCount[subj];
           var top5k=Object.keys(cnt).sort(function(a,b){return cnt[b]-cnt[a];}).slice(0,5);
-          var cls=tagColors[subj.replace(/\d+$/,'')]||'';
-          var lbl=subjectNames[subj]||subj;
+          // label: scores에서 가져온 실제 과목명 우선
+          var lbl=wrongSubjLabel[subj]||(subjectNames[subj]||subj);
+          // CSS 클래스: 동적 키(sc1, sc2 등)는 base만 사용
+          var base=subj.replace(/\d+$/,'');
+          var cls=tagColors[base]||'';
           return '<div style="margin-bottom:8px"><span class="subject-tag '+cls+'" style="font-size:10px;margin-bottom:4px;display:inline-block">'+lbl+'</span>'
             +'<div style="display:flex;gap:4px;flex-wrap:wrap">'+top5k.map(function(n){return '<span style="background:rgba(224,82,82,0.15);border:1px solid rgba(224,82,82,0.25);border-radius:5px;padding:3px 8px;font-size:11px;color:#f87171">'+n+'번('+cnt[n]+'명)</span>';}).join('')+'</div></div>';
         }).join('')+'<div style="margin-bottom:8px"></div>';
@@ -2614,12 +2625,16 @@ window.loadExamStatsForTeacher=function(encodedName,targetUid,examKey){
     loadStudentList().then(function(students){
       var nameMap={};students.forEach(function(s){nameMap[s.uid]=s.name;});
       // 현재 학생 순위 찾기
-      var rankHtml=Object.keys(bySubj).map(function(k){
+      var _ro=['ko','en','ma','hi','sc','so'];
+      function _rrank(k){var b=k.replace(/\d+$/,'');var i=_ro.indexOf(b);return i>=0?i:99;}
+      var sortedRankSubjs=Object.keys(bySubj).sort(function(a,b){return _rrank(a)-_rrank(b);});
+      var rankHtml=sortedRankSubjs.map(function(k){
         var arr=bySubj[k].sort(function(a,b){return a.grade?a.grade-b.grade:b.score-a.score;});
         var myRank=arr.findIndex(function(r){return r.uid===targetUid;})+1;
         var label=arr[0]&&arr[0].label||(subjectNames[k]||k);
+        var base=k.replace(/\d+$/,'');
         return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">'
-          +'<span class="subject-tag subj-'+(k.replace(/\d/g,''))+'" style="font-size:10px;flex-shrink:0">'+label+'</span>'
+          +'<span class="subject-tag subj-'+base+'" style="font-size:10px;flex-shrink:0">'+label+'</span>'
           +'<div style="flex:1;display:flex;gap:4px;flex-wrap:wrap">'
           +arr.slice(0,3).map(function(r,i){
             var isMe=r.uid===targetUid;
