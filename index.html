@@ -807,14 +807,19 @@ function buildDashboard() {
 
 function listenTodos() {
   if (!currentUser) return;
-  if (unsubTodos) unsubTodos();
-  var today = getPlannerDate();
-  var q = query(collection(db,'todos'), where('uid','==',currentUser.uid), where('date','==',today), orderBy('createdAt','asc'));
-  unsubTodos = onSnapshot(q, function(snap) {
-    var todos = snap.docs.map(function(d) { return Object.assign({id:d.id},d.data()); });
-    renderTodos(todos); renderStudyReport(todos);
-  });
+  if (unsubTodos) { unsubTodos(); unsubTodos = null; }
+  loadTodos();
   loadMentorComment(); renderWeeklyReport(); loadLectureDashboard(); loadStudyRankings('study-rankings-student');
+}
+
+function loadTodos() {
+  if (!currentUser) return;
+  var today = getPlannerDate();
+  getDocs(query(collection(db,'todos'), where('uid','==',currentUser.uid), where('date','==',today))).then(function(snap) {
+    var todos = snap.docs.map(function(d) { return Object.assign({id:d.id},d.data()); })
+      .sort(function(a,b){var at=a.createdAt?a.createdAt.toMillis():0,bt=b.createdAt?b.createdAt.toMillis():0;return at-bt;});
+    renderTodos(todos); renderStudyReport(todos);
+  }).catch(function(){});
 }
 
 function loadMentorComment() {
@@ -934,7 +939,7 @@ function renderWeeklyReport() {
 
 window.cycleTodoStatus = function(id, current) {
   var order=['none','progressing','done'];
-  updateDoc(doc(db,'todos',id), {status:order[(order.indexOf(current)+1)%3]});
+  updateDoc(doc(db,'todos',id), {status:order[(order.indexOf(current)+1)%3]}).then(function(){loadTodos();}).catch(function(){});
 };
 window.openEditTodoModal = function(id, title, subject) {
   document.getElementById('edit-todo-id').value = id;
@@ -948,20 +953,20 @@ window.saveEditTodo = function() {
   var title = document.getElementById('edit-todo-title').value.trim();
   var subject = document.getElementById('edit-todo-subject').value;
   if(!title){alert('학습 내용을 입력해주세요.');return;}
-  updateDoc(doc(db,'todos',id),{title:title,subject:subject}).then(function(){closeModal('modal-edit-todo');});
+  updateDoc(doc(db,'todos',id),{title:title,subject:subject}).then(function(){closeModal('modal-edit-todo');loadTodos();});
 };
 window.confirmDeleteTodo = function() {
   var id = document.getElementById('edit-todo-id').value;
   if(!confirm('이 할 일을 삭제하시겠습니까?')) return;
   // 타이머 실행 중이면 중단
   if(timerTargetId===id){ if(timerInterval){clearInterval(timerInterval);timerInterval=null;} timerTargetId=null; timerSeconds=0; timerPaused=false; timerStartAt=null; }
-  deleteDoc(doc(db,'todos',id)).then(function(){closeModal('modal-edit-todo');});
+  deleteDoc(doc(db,'todos',id)).then(function(){closeModal('modal-edit-todo');loadTodos();});
 };
 window.addTodo = function() {
   var title=document.getElementById('todo-title-input').value.trim();
   if(!title) return;
   var today=getPlannerDate();
-  addDoc(collection(db,'todos'),{uid:currentUser.uid,title:title,subject:document.getElementById('todo-subject').value,status:'none',studyTime:null,certified:false,date:today,createdAt:serverTimestamp()}).then(function(){closeModal('modal-todo');document.getElementById('todo-title-input').value='';});
+  addDoc(collection(db,'todos'),{uid:currentUser.uid,title:title,subject:document.getElementById('todo-subject').value,status:'none',studyTime:null,certified:false,date:today,createdAt:serverTimestamp()}).then(function(){closeModal('modal-todo');document.getElementById('todo-title-input').value='';loadTodos();});
 };
 window.doSubmitPlanner = function() {
   var today=getPlannerDate();
@@ -1059,13 +1064,11 @@ function loadStudyRankings(containerId) {
     if(el2) el2.innerHTML = '<div style="color:var(--gray3);font-size:12px">불러오기 실패: '+e.message+'</div>';
   });
 }
-// timerSeconds = 일시정지 전까지 누적된 초
-// timerStartAt = 현재 구간 시작 Date.now()
-// timerPaused  = 일시정지 여부
+// ── 타이머 (구간 누적 + 30초 자동저장) ──
 var timerStartAt = null;
+var timerAutoSave = null;
 
 function _getElapsed() {
-  // 일시정지 중이면 누적값만, 실행 중이면 누적 + 현재 구간
   if (timerPaused || timerStartAt === null) return timerSeconds;
   return timerSeconds + Math.floor((Date.now() - timerStartAt) / 1000);
 }
@@ -1073,22 +1076,35 @@ function _tickDisplay() {
   var el = document.getElementById('timer-display');
   if (!el || !timerTargetId) return;
   var total = _getElapsed();
-  if (total >= 6000) { stopTimer(); return; }
+  if (total >= 21600) { stopTimer(); return; }
   var h=Math.floor(total/3600), m=Math.floor((total%3600)/60), s=total%60;
   el.textContent = String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+}
+function _startAutoSave() {
+  if (timerAutoSave) clearInterval(timerAutoSave);
+  // 5분마다 저장 (30초는 쓰기 횟수가 너무 많음)
+  timerAutoSave = setInterval(function(){
+    if (timerTargetId && !timerPaused && timerStartAt) {
+      var cur = _getElapsed();
+      updateDoc(doc(db,'todos',timerTargetId), {timerAccum: cur}).catch(function(){});
+    }
+  }, 300000); // 300000ms = 5분
+}
+function _stopAutoSave() {
+  if (timerAutoSave) { clearInterval(timerAutoSave); timerAutoSave = null; }
 }
 
 window.startTimerFor = function(id, subject, title) {
   if (timerTargetId === id) { togglePause(); return; }
-  // 다른 할일 클릭 시 기존 타이머 진행 중이면 확인
   if (timerTargetId && !timerPaused) {
     if (!confirm('현재 측정 중인 타이머가 있습니다.\n기존 타이머를 저장하고 새 항목을 시작할까요?\n\n취소하면 기존 타이머가 계속 진행됩니다.')) return;
-    // 기존 타이머 일시정지 후 저장
-    timerSeconds = _getElapsed();
+    var saved = _getElapsed();
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-    updateDoc(doc(db,'todos',timerTargetId), {timerAccum: timerSeconds, timerRunning: false, timerStartAt: null}).catch(function(){});
+    _stopAutoSave();
+    updateDoc(doc(db,'todos',timerTargetId), {timerAccum: saved, timerRunning: false, timerStartAt: null}).catch(function(){});
   }
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  _stopAutoSave();
   timerTargetId = id; timerSeconds = 0; timerPaused = false;
   timerStartAt = Date.now();
   updateDoc(doc(db,'todos',id), {timerStartAt: timerStartAt, timerAccum: 0, timerRunning: true}).catch(function(){});
@@ -1097,22 +1113,28 @@ window.startTimerFor = function(id, subject, title) {
   if (subj) subj.textContent = (subjectNames[subject]||subject)+' · '+title;
   var bp = document.getElementById('btn-pause'); if(bp) bp.textContent='일시정지';
   timerInterval = setInterval(_tickDisplay, 500);
+  _startAutoSave();
 };
 
 window.togglePause = function() {
   if (!timerTargetId) return;
   if (timerPaused) {
-    // 재개: 새 구간 시작
     timerPaused = false;
     timerStartAt = Date.now();
     updateDoc(doc(db,'todos',timerTargetId), {timerStartAt: timerStartAt, timerAccum: timerSeconds, timerRunning: true}).catch(function(){});
     if (!timerInterval) timerInterval = setInterval(_tickDisplay, 500);
+    _startAutoSave();
   } else {
-    // 일시정지: 누적에 현재 구간 더하고 멈춤
     timerSeconds = _getElapsed();
     timerPaused = true;
     timerStartAt = null;
-    updateDoc(doc(db,'todos',timerTargetId), {timerAccum: timerSeconds, timerRunning: false}).catch(function(){});
+    _stopAutoSave();
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    updateDoc(doc(db,'todos',timerTargetId), {timerAccum: timerSeconds, timerRunning: false, timerStartAt: null}).catch(function(){});
+    var h=Math.floor(timerSeconds/3600),m=Math.floor((timerSeconds%3600)/60),s=timerSeconds%60;
+    var el=document.getElementById('timer-display');
+    if(el) el.textContent=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+    if (!timerInterval) timerInterval = setInterval(_tickDisplay, 500);
   }
   var bp = document.getElementById('btn-pause'); if(bp) bp.textContent = timerPaused?'재개':'일시정지';
 };
@@ -1120,24 +1142,23 @@ window.togglePause = function() {
 window.stopTimer = function() {
   timerSeconds = _getElapsed();
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  _stopAutoSave();
   if (!timerTargetId) return;
-  if (confirm('학습을 완료하시겠습니까?\n\n측정 시간: ' + (function(){
-    var h=Math.floor(timerSeconds/3600),m=Math.floor((timerSeconds%3600)/60),s=timerSeconds%60;
-    return h+'시간 '+String(m).padStart(2,'0')+'분 '+String(s).padStart(2,'0')+'초';
-  })() )) {
+  var h=Math.floor(timerSeconds/3600),m=Math.floor((timerSeconds%3600)/60),s=timerSeconds%60;
+  if (confirm('학습을 완료하시겠습니까?\n\n측정 시간: '+h+'시간 '+String(m).padStart(2,'0')+'분 '+String(s).padStart(2,'0')+'초')) {
     finalizeTimer(false);
   } else {
-    // 취소 시 타이머 재개
+    timerPaused = false;
     timerStartAt = Date.now();
     updateDoc(doc(db,'todos',timerTargetId), {timerStartAt: timerStartAt, timerAccum: timerSeconds, timerRunning: true}).catch(function(){});
     timerInterval = setInterval(_tickDisplay, 500);
+    _startAutoSave();
   }
 };
 
-
-
 window.doResetTimer = function() {
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  _stopAutoSave();
   if (timerTargetId) {
     updateDoc(doc(db,'todos',timerTargetId), {timerStartAt: null, timerAccum: 0, timerRunning: false}).catch(function(){});
   }
@@ -1150,7 +1171,7 @@ window.doResetTimer = function() {
 
 function finalizeTimer(certified) {
   if (timerTargetId) {
-    var total = timerSeconds; // stopTimer에서 이미 확정된 값
+    var total = timerSeconds;
     var h=Math.floor(total/3600), m=Math.floor((total%3600)/60), s=total%60;
     updateDoc(doc(db,'todos',timerTargetId), {
       status:'done',
@@ -1161,32 +1182,12 @@ function finalizeTimer(certified) {
     });
   }
   timerTargetId = null; timerSeconds = 0; timerPaused = false; timerStartAt = null;
+  _stopAutoSave();
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
   var td=document.getElementById('timer-display'), ts=document.getElementById('timer-subject-display');
   if(td) td.textContent='00:00:00'; if(ts) ts.textContent='공부할 항목을 선택해주세요';
   ['btn-reset','btn-pause','btn-stop'].forEach(function(b){var el=document.getElementById(b);if(el)el.style.display='none';});
 }
-
-// ── 앱 복귀 시 타이머 복구 (visibilitychange) ──
-document.addEventListener('visibilitychange', function() {
-  if (document.visibilityState === 'visible' && timerTargetId) {
-    getDoc(doc(db,'todos',timerTargetId)).then(function(d) {
-      if (!d.exists()) return;
-      var data = d.data();
-      if (data.timerRunning && data.timerStartAt) {
-        var sm = (typeof data.timerStartAt.toMillis === 'function')
-          ? data.timerStartAt.toMillis()
-          : (typeof data.timerStartAt === 'number' ? data.timerStartAt : 0);
-        if (!sm) return;
-        var el = (data.timerAccum||0) + Math.floor((Date.now() - sm) / 1000);
-        if (el > 21600 || el < 0) return;
-        timerSeconds = el; timerStartAt = sm; timerPaused = false;
-        if (!timerInterval) timerInterval = setInterval(_tickDisplay, 500);
-        _tickDisplay();
-      }
-    }).catch(function(){});
-  }
-});
 
 // ── 이전 플래너 조회 ──
 // ── 플래너 기록 조회 ──
@@ -1371,36 +1372,48 @@ function resumeActiveTimer() {
     if (snap.empty) return;
     var d = snap.docs[0];
     var data = d.data();
-    if (!data.timerStartAt) return;
-    if (timerTargetId) return;
 
-    // timerStartAt이 Firestore Timestamp면 toMillis()로 변환
-    var startMs = (data.timerStartAt && typeof data.timerStartAt.toMillis === 'function')
-      ? data.timerStartAt.toMillis()
-      : (typeof data.timerStartAt === 'number' ? data.timerStartAt : 0);
-
-    if (!startMs) return;
-
-    var elapsed = (data.timerAccum||0) + Math.floor((Date.now() - startMs) / 1000);
-
-    // 비정상적으로 긴 시간(6시간 이상)이면 오류 데이터로 판단 → 타이머 초기화
-    if (elapsed > 21600) {
-      updateDoc(doc(db,'todos',d.id), {timerStartAt: null, timerAccum: 0, timerRunning: false}).catch(function(){});
+    // 완료된 항목이면 정리만
+    if (data.status === 'done') {
+      updateDoc(doc(db,'todos',d.id), {timerStartAt:null, timerAccum:0, timerRunning:false}).catch(function(){});
       return;
     }
-    // 음수이면 스킵
-    if (elapsed < 0) return;
+
+    if (timerTargetId) return;
+
+    // timerStartAt → 밀리초 변환 (Timestamp 또는 숫자 모두 처리)
+    var startMs = 0;
+    if (data.timerStartAt) {
+      startMs = (typeof data.timerStartAt.toMillis === 'function')
+        ? data.timerStartAt.toMillis()
+        : (typeof data.timerStartAt === 'number' ? data.timerStartAt : 0);
+    }
+
+    var elapsed;
+    if (startMs > 0) {
+      // 시작 시각 기반: 나간 동안의 시간 포함
+      elapsed = (data.timerAccum||0) + Math.floor((Date.now() - startMs) / 1000);
+      // 음수면(시계 오류) timerAccum만 사용
+      if (elapsed < 0) elapsed = data.timerAccum||0;
+    } else {
+      // timerStartAt 없으면 누적값만
+      elapsed = data.timerAccum||0;
+    }
 
     timerTargetId = d.id;
     timerSeconds = elapsed;
-    timerStartAt = startMs;
-    timerPaused = false;
+    timerStartAt = startMs > 0 ? startMs : null;
+    timerPaused = (startMs === 0); // timerStartAt 없으면 일시정지 상태로 복구
 
     var subj = document.getElementById('timer-subject-display');
     if (subj) subj.textContent = (subjectNames[data.subject]||data.subject||'')+' · '+data.title;
-    var bp = document.getElementById('btn-pause'); if(bp) {bp.textContent='일시정지'; bp.style.display='inline-block';}
+    var bp = document.getElementById('btn-pause');
+    if (bp) { bp.textContent = timerPaused?'재개':'일시정지'; bp.style.display='inline-block'; }
     ['btn-reset','btn-stop'].forEach(function(b){var el=document.getElementById(b);if(el)el.style.display='inline-block';});
-    if (!timerInterval) timerInterval = setInterval(_tickDisplay, 500);
+    if (!timerPaused) {
+      if (!timerInterval) timerInterval = setInterval(_tickDisplay, 500);
+      _startAutoSave();
+    }
     _tickDisplay();
   }).catch(function(){});
 }
@@ -1929,15 +1942,14 @@ window.sendChatMsg=function(){
 // ── 공지 ──
 function listenNotices(){
   if(!currentUser) return;
-  var q=query(collection(db,'notices'),where('target','in',['all',currentProfile.name]),orderBy('createdAt','desc'));
-  unsubNotices=onSnapshot(q,function(snap){
-    notifications=snap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
+  if(unsubNotices){unsubNotices();unsubNotices=null;}
+  // onSnapshot 대신 getDocs로 1회 조회 (읽기 절약)
+  getDocs(query(collection(db,'notices'),where('target','in',['all',currentProfile.name]))).then(function(snap){
+    notifications=snap.docs.map(function(d){return Object.assign({id:d.id},d.data());})
+      .sort(function(a,b){var at=a.createdAt?a.createdAt.toMillis():0,bt=b.createdAt?b.createdAt.toMillis():0;return bt-at;});
     var unread=notifications.filter(function(n){return !n.readBy||!n.readBy.includes(currentUser.uid);});
     updateNotifBadge(unread.length);
-    snap.docChanges().forEach(function(change){
-      if(change.type==='added'){var n=change.doc.data();var addedAt=n.createdAt?n.createdAt.toMillis():0;if(Date.now()-addedAt<5000)showNoticePopup(n.title,n.content,n.senderName);}
-    });
-    // 읽음 처리: 3초 후 모든 공지에 내 uid 추가
+    // 읽음 처리
     setTimeout(function(){
       snap.docs.forEach(function(d){
         var n=d.data();
@@ -1947,7 +1959,7 @@ function listenNotices(){
         }
       });
     },3000);
-  });
+  }).catch(function(){});
 }
 window.sendNotice=function(){
   var target=document.getElementById('notice-target').value;
@@ -2995,27 +3007,19 @@ window.steClear=function(todoId){
   }).catch(function(e){alert('실패: '+e.message);});
 };
 window.fixBrokenTimers=function(){
-  if(!confirm('비정상적으로 긴 타이머 기록(6시간 이상)을 초기화합니다.\n계속할까요?')) return;
+  if(!confirm('timerRunning 상태가 비정상으로 남아있는 항목을 정리합니다.\n(저장된 학습시간은 삭제되지 않습니다)\n계속할까요?')) return;
   getDocs(collection(db,'todos')).then(function(snap){
     var tasks=[];
     snap.docs.forEach(function(d){
       var t=d.data();
-      // timerRunning이 true인 채로 남아있는 것 정리
+      // timerRunning이 true인 채로 남아있는 것만 정리 (studyTime은 건드리지 않음)
       if(t.timerRunning){
         tasks.push(updateDoc(doc(db,'todos',d.id),{timerStartAt:null,timerAccum:0,timerRunning:false}));
-      }
-      // studyTime이 비정상(6시간=21600초 이상)인 것 초기화
-      if(t.studyTime){
-        var p=t.studyTime.split(':');
-        var secs=(parseInt(p[0])||0)*3600+(parseInt(p[1])||0)*60+(parseInt(p[2])||0);
-        if(secs>=21600){
-          tasks.push(updateDoc(doc(db,'todos',d.id),{studyTime:null,certified:false,timerStartAt:null,timerAccum:0,timerRunning:false}));
-        }
       }
     });
     return Promise.all(tasks);
   }).then(function(){
-    alert('정리 완료!');
+    alert('정리 완료! (저장된 학습시간은 유지됩니다. 잘못된 시간은 학습시간 직접 수정 기능을 이용하세요)');
   }).catch(function(e){alert('오류: '+e.message);});
 };
 window.resetTodayPlanner=function(){
