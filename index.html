@@ -1004,8 +1004,8 @@ function loadStudyRankings(containerId) {
   var endDate = month + '-' + String(lastDay).padStart(2,'0');
 
   Promise.all([
-    // studyTime 있는 것만 조회 (전체 todos 아님)
-    getDocs(query(collection(db,'todos'), where('date','>=',startDate), where('date','<=',endDate), where('studyTime','!=',''))),
+    // 이번달 todos 전체 조회 (studyTime 필드 JS에서 필터)
+    getDocs(query(collection(db,'todos'), where('date','>=',startDate), where('date','<=',endDate))),
     getDocs(query(collection(db,'users'), where('role','==','student'))),
     getDoc(doc(db,'scholars',month))
   ]).then(function(results) {
