@@ -916,9 +916,12 @@ function renderStudyReport(todos) {
   el.innerHTML='<div style="text-align:center;font-size:40px;font-weight:700;color:var(--gold2);letter-spacing:2px;margin:4px 0">'+h+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')+'</div><div style="text-align:center;font-size:12px;color:var(--gray3);margin-bottom:14px">오늘 총 학습 시간</div>'+bars;
 }
 
+var _weeklyReportCache=null,_weeklyReportDate='';
 function renderWeeklyReport() {
+  var today=getPlannerDate();
   var el = document.getElementById('weekly-report');
   if (!el||!currentUser) return;
+  if(_weeklyReportCache&&_weeklyReportDate===today){el.innerHTML=_weeklyReportCache;return;}
   var weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate()-7);
   getDocs(query(collection(db,'todos'), where('uid','==',currentUser.uid), where('completedAt','>',weekAgo), orderBy('completedAt','desc'))).then(function(snap) {
     var bySubj={};
@@ -929,11 +932,13 @@ function renderWeeklyReport() {
       bySubj[t.subject]=(bySubj[t.subject]||0)+s;
     });
     var sorted=Object.keys(bySubj).sort(function(a,b){return bySubj[b]-bySubj[a];});
-    if (!sorted.length) { el.innerHTML='<div style="color:var(--gray3);font-size:13px">이번 주 학습 기록이 없습니다</div>'; return; }
-    el.innerHTML=sorted.map(function(subj,i) {
+    if (!sorted.length) { var html='<div style="color:var(--gray3);font-size:13px">이번 주 학습 기록이 없습니다</div>'; _weeklyReportCache=html;_weeklyReportDate=today;el.innerHTML=html; return; }
+    var html=sorted.map(function(subj,i) {
       var h=Math.floor(bySubj[subj]/3600),m=Math.floor((bySubj[subj]%3600)/60);
       return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.04)"><span style="font-size:13px;font-weight:700;color:var(--gold);width:18px">'+(i+1)+'</span><span class="subject-tag subj-'+subj+'">'+(subjectNames[subj]||subj)+'</span><span style="flex:1;font-size:13px;color:rgba(255,255,255,0.7)">'+(subjectNames[subj]||subj)+' 집중</span><span style="font-size:13px;font-weight:600;color:var(--gold2)">'+h+'h '+String(m).padStart(2,'0')+'m</span></div>';
     }).join('');
+    _weeklyReportCache=html; _weeklyReportDate=today;
+    el.innerHTML=html;
   }).catch(function() { el.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오기 실패</div>'; });
 }
 
@@ -973,21 +978,34 @@ window.doSubmitPlanner = function() {
   setDoc(doc(db,'planners',currentUser.uid+'_'+today),{uid:currentUser.uid,name:currentProfile.name,date:today,submittedAt:serverTimestamp()}).then(function(){closeModal('modal-submit-planner');alert('플래너가 제출되었습니다!');});
 };
 
-// ── 이달의 우수학생 + 순공시간 TOP5 (매월 1일 자동 초기화) ──
+// ── 이달의 우수학생 + 순공시간 TOP5 캐시 ──
+var _rankingsCache = null;
+var _rankingsCacheTime = 0;
+var _rankingsCacheMonth = '';
+
 function loadStudyRankings(containerId) {
   var el = document.getElementById(containerId);
   if (!el) return;
-  el.innerHTML = '<div style="color:var(--gray3);font-size:12px">불러오는 중...</div>';
 
   var now = new Date();
-  var month = now.toISOString().slice(0,7);
+  var kstNow = new Date(now.getTime() + (9*60 + now.getTimezoneOffset())*60000);
+  var month = kstNow.getFullYear()+'-'+String(kstNow.getMonth()+1).padStart(2,'0');
+
+  // 10분 캐시
+  if (_rankingsCache && _rankingsCacheMonth === month && Date.now() - _rankingsCacheTime < 600000) {
+    el.innerHTML = _rankingsCache;
+    return;
+  }
+
+  el.innerHTML = '<div style="color:var(--gray3);font-size:13px">불러오는 중...</div>';
+
+  var lastDay = new Date(kstNow.getFullYear(), kstNow.getMonth()+1, 0).getDate();
   var startDate = month + '-01';
-  // 말일 계산
-  var lastDay = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
   var endDate = month + '-' + String(lastDay).padStart(2,'0');
 
   Promise.all([
-    getDocs(query(collection(db,'todos'), where('date','>=',startDate), where('date','<=',endDate))),
+    // studyTime 있는 것만 조회 (전체 todos 아님)
+    getDocs(query(collection(db,'todos'), where('date','>=',startDate), where('date','<=',endDate), where('studyTime','!=',''))),
     getDocs(query(collection(db,'users'), where('role','==','student'))),
     getDoc(doc(db,'scholars',month))
   ]).then(function(results) {
@@ -995,11 +1013,9 @@ function loadStudyRankings(containerId) {
     var studentSnap = results[1];
     var scholarDoc = results[2];
 
-    // uid → name 맵
     var nameMap = {};
     studentSnap.docs.forEach(function(d){ nameMap[d.id] = d.data().name; });
 
-    // 학생별 이번달 총 공부 시간(초) 집계
     var timeMap = {};
     todoSnap.docs.forEach(function(d){
       var t = d.data();
@@ -1009,7 +1025,6 @@ function loadStudyRankings(containerId) {
       if (secs > 0) timeMap[t.uid] = (timeMap[t.uid]||0) + secs;
     });
 
-    // TOP5 정렬
     var sorted = Object.keys(timeMap).filter(function(uid){ return nameMap[uid]; })
       .sort(function(a,b){ return timeMap[b]-timeMap[a]; }).slice(0,5);
 
@@ -1018,7 +1033,6 @@ function loadStudyRankings(containerId) {
       return h+'h '+String(m).padStart(2,'0')+'m';
     }
 
-    // 이달의 장학생
     var scholarHtml = '';
     if (scholarDoc.exists()) {
       var sd = scholarDoc.data();
@@ -1032,7 +1046,6 @@ function loadStudyRankings(containerId) {
         +'</div></div>';
     }
 
-    // TOP5 목록
     var medals = ['🥇','🥈','🥉','4️⃣','5️⃣'];
     var top5Html = '';
     if (sorted.length) {
@@ -1056,17 +1069,21 @@ function loadStudyRankings(containerId) {
       top5Html = '<div style="color:var(--gray3);font-size:12px;padding:8px 0">이번달 학습 기록이 없습니다</div>';
     }
 
-    el.innerHTML = scholarHtml
+    var html = scholarHtml
       + '<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:12px 14px">'
       + top5Html + '</div>';
+
+    // 캐시 저장
+    _rankingsCache = html;
+    _rankingsCacheTime = Date.now();
+    _rankingsCacheMonth = month;
+
+    el.innerHTML = html;
   }).catch(function(e){
     var el2 = document.getElementById(containerId);
     if(el2) el2.innerHTML = '<div style="color:var(--gray3);font-size:12px">불러오기 실패: '+e.message+'</div>';
   });
 }
-// ── 타이머 (구간 누적 + 30초 자동저장) ──
-var timerStartAt = null;
-var timerAutoSave = null;
 
 function _getElapsed() {
   if (timerPaused || timerStartAt === null) return timerSeconds;
@@ -2102,7 +2119,20 @@ window.renderTeacher=function(i){
   else if(i===7&&isMaster) buildAllChats().then(function(h){c.innerHTML=h;});
 };
 
-function loadStudentList(){return getDocs(query(collection(db,'users'),where('role','==','student'))).then(function(snap){return snap.docs.map(function(d){return Object.assign({uid:d.id},d.data());});});}
+// ── loadStudentList 캐시 (5분) ──
+var _studentListCache = null;
+var _studentListCacheTime = 0;
+function loadStudentList(){
+  var now = Date.now();
+  if (_studentListCache && now - _studentListCacheTime < 300000) {
+    return Promise.resolve(_studentListCache);
+  }
+  return getDocs(query(collection(db,'users'),where('role','==','student'))).then(function(snap){
+    _studentListCache = snap.docs.map(function(d){return Object.assign({uid:d.id},d.data());});
+    _studentListCacheTime = Date.now();
+    return _studentListCache;
+  });
+}
 
 function buildTDashboard(){
   return loadStudentList().then(function(students){
