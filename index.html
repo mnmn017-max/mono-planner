@@ -1085,6 +1085,9 @@ function loadStudyRankings(containerId) {
   });
 }
 
+var timerStartAt = null;
+var timerAutoSave = null;
+
 function _getElapsed() {
   if (timerPaused || timerStartAt === null) return timerSeconds;
   return timerSeconds + Math.floor((Date.now() - timerStartAt) / 1000);
