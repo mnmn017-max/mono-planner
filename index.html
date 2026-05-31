@@ -485,6 +485,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 
 <div class="modal-overlay" id="modal-add-account"><div class="modal">
   <div class="modal-title">계정 추가</div>
+  <div class="modal-label">지점</div><select class="modal-select" id="acc-branch"><option value="송정점">송정점</option><option value="신설지점">신설지점</option><option value="직접입력">직접입력...</option></select>
+  <input class="modal-input" id="acc-branch-custom" placeholder="지점명 직접 입력" style="display:none" oninput=""/>
   <div class="modal-label">계정 유형</div><select class="modal-select" id="acc-type"><option value="student">학생</option><option value="teacher">선생님</option></select>
   <div class="modal-label">이름</div><input class="modal-input" id="acc-name" placeholder="이름"/>
   <div class="modal-label">아이디</div><input class="modal-input" id="acc-id" placeholder="아이디"/>
@@ -647,6 +649,8 @@ function getPlannerDate() {
 }
 
 var currentUser = null, currentProfile = null;
+var currentBranch = '송정점'; // 로그인 시 profile.branch로 덮어씀
+function getBranch(){ return currentBranch || '송정점'; }
 var unsubTodos = null, unsubNotices = null, unsubChat = null;
 var timerInterval = null, timerSeconds = 0, timerPaused = false, timerTargetId = null;
 var selectedFile = null, teacherSelectedFile = null, teacherChatUid = null;
@@ -668,6 +672,7 @@ function _goToScreen(user) {
     getDoc(doc(db, 'users', user.uid)).then(function(pd) {
       if (pd.exists()) {
         currentProfile = pd.data();
+        currentBranch = currentProfile.branch || '송정점'; // 지점 설정
         if (currentProfile.role === 'student') {
           showScreen('screen-student'); syncStudentUI(); studentTab(0); listenNotices(); listenChatNotifs();
           registerFCMToken(user.uid);
@@ -971,11 +976,11 @@ window.addTodo = function() {
   var title=document.getElementById('todo-title-input').value.trim();
   if(!title) return;
   var today=getPlannerDate();
-  addDoc(collection(db,'todos'),{uid:currentUser.uid,title:title,subject:document.getElementById('todo-subject').value,status:'none',studyTime:null,certified:false,date:today,createdAt:serverTimestamp()}).then(function(){closeModal('modal-todo');document.getElementById('todo-title-input').value='';loadTodos();});
+  addDoc(collection(db,'todos'),{uid:currentUser.uid,title:title,subject:document.getElementById('todo-subject').value,status:'none',studyTime:null,certified:false,date:today,branch:getBranch(),createdAt:serverTimestamp()}).then(function(){closeModal('modal-todo');document.getElementById('todo-title-input').value='';loadTodos();});
 };
 window.doSubmitPlanner = function() {
   var today=getPlannerDate();
-  setDoc(doc(db,'planners',currentUser.uid+'_'+today),{uid:currentUser.uid,name:currentProfile.name,date:today,submittedAt:serverTimestamp()}).then(function(){closeModal('modal-submit-planner');alert('플래너가 제출되었습니다!');});
+  setDoc(doc(db,'planners',currentUser.uid+'_'+today),{uid:currentUser.uid,name:currentProfile.name,date:today,branch:getBranch(),submittedAt:serverTimestamp()}).then(function(){closeModal('modal-submit-planner');alert('플래너가 제출되었습니다!');});
 };
 
 // ── 이달의 우수학생 + 순공시간 TOP5 캐시 ──
@@ -1005,7 +1010,7 @@ function loadStudyRankings(containerId) {
 
   Promise.all([
     // 이번달 todos 전체 조회 (studyTime 필드 JS에서 필터)
-    getDocs(query(collection(db,'todos'), where('date','>=',startDate), where('date','<=',endDate))),
+    getDocs(query(collection(db,'todos'), where('branch','==',getBranch()), where('date','>=',startDate), where('date','<=',endDate))),
     getDocs(query(collection(db,'users'), where('role','==','student'))),
     getDoc(doc(db,'scholars',month))
   ]).then(function(results) {
@@ -1866,7 +1871,7 @@ function loadRewardData(){
     el.innerHTML='<div class="stat-grid" style="margin-bottom:12px"><div class="stat-card"><div class="stat-val" style="color:var(--gold2)">'+plus+'점</div><div class="stat-lbl">누적 상점</div></div><div class="stat-card"><div class="stat-val" style="color:var(--red)">'+minus+'점</div><div class="stat-lbl">누적 벌점</div></div></div><div style="background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.2);border-radius:10px;padding:10px 14px;margin-bottom:12px;text-align:center"><span style="font-size:14px;font-weight:700;color:var(--gold2)">현재 점수: '+(plus-minus)+'점</span></div>';
   }).catch(function(){});
   // 상벌점 규정
-  getDocs(query(collection(db,'rules'),limit(1))).then(function(snap){
+  getDocs(query(collection(db,'rules'),where('branch','==',getBranch()),limit(1))).then(function(snap){
     var el=document.getElementById('rules-area');if(!el)return;
     var content=snap.empty?defaultRules:snap.docs[0].data().content;
     el.innerHTML='<pre style="font-size:12px;color:rgba(255,255,255,0.75);white-space:pre-wrap;line-height:1.9;font-family:inherit">'+content+'</pre>';
@@ -1939,7 +1944,7 @@ function listenChat(){
   chatTargetUid=null;
   var rv=document.getElementById('chat-room-view');if(rv)rv.style.display='none';
   var rl=document.getElementById('chat-room-list');if(rl)rl.style.display='';
-  getDocs(query(collection(db,'users'),where('role','in',['teacher','master']))).then(function(snap){
+  getDocs(query(collection(db,'users'),where('branch','==',getBranch()),where('role','in',['teacher','master']))).then(function(snap){
     var teachers=snap.docs.map(function(d){return Object.assign({uid:d.id},d.data());});
     var listEl=document.getElementById('chat-room-list');if(!listEl)return;
     if(!teachers.length){listEl.innerHTML='<div style="color:var(--gray3);font-size:13px">등록된 선생님이 없습니다</div>';return;}
@@ -1984,7 +1989,7 @@ function listenNotices(){
   if(!currentUser) return;
   if(unsubNotices){unsubNotices();unsubNotices=null;}
   // onSnapshot 대신 getDocs로 1회 조회 (읽기 절약)
-  getDocs(query(collection(db,'notices'),where('target','in',['all',currentProfile.name]))).then(function(snap){
+  getDocs(query(collection(db,'notices'),where('branch','==',getBranch()),where('target','in',['all',currentProfile.name]))).then(function(snap){
     notifications=snap.docs.map(function(d){return Object.assign({id:d.id},d.data());})
       .sort(function(a,b){var at=a.createdAt?a.createdAt.toMillis():0,bt=b.createdAt?b.createdAt.toMillis():0;return bt-at;});
     var unread=notifications.filter(function(n){return !n.readBy||!n.readBy.includes(currentUser.uid);});
@@ -2006,7 +2011,7 @@ window.sendNotice=function(){
   var title=document.getElementById('notice-title-input').value.trim();
   var content=document.getElementById('notice-body-input').value.trim();
   if(!title||!content){alert('제목과 내용을 입력해주세요.');return;}
-  addDoc(collection(db,'notices'),{target:target,title:title,content:content,senderUid:currentUser.uid,senderName:currentProfile.name,readBy:[],createdAt:serverTimestamp()}).then(function(){closeModal('modal-notice');document.getElementById('notice-title-input').value='';document.getElementById('notice-body-input').value='';alert('공지가 전송되었습니다!');renderTeacher(5);});
+  addDoc(collection(db,'notices'),{branch:getBranch(),target:target,title:title,content:content,senderUid:currentUser.uid,senderName:currentProfile.name,readBy:[],createdAt:serverTimestamp()}).then(function(){closeModal('modal-notice');document.getElementById('notice-title-input').value='';document.getElementById('notice-body-input').value='';alert('공지가 전송되었습니다!');renderTeacher(5);});
 };
 window.showNoticePopup=function(title,body,from){document.getElementById('notice-title-text').textContent=title;document.getElementById('notice-body-text').textContent=body;document.getElementById('notice-from-text').textContent=from||'';document.getElementById('notice-overlay').classList.add('open');};
 function updateNotifBadge(count){var b=document.getElementById('notif-badge');if(b){if(count>0){b.style.display='flex';b.textContent=count;}else b.style.display='none';}}
@@ -2042,7 +2047,7 @@ function autoWeeklyPoints(){
   var weekAgo=new Date();weekAgo.setDate(weekAgo.getDate()-7);
   getDocs(query(collection(db,'points'),where('studentUid','==',currentUser.uid),where('type','==','minus'),where('createdAt','>',weekAgo))).then(function(snap){
     var reasons=[];
-    if(snap.empty){addDoc(collection(db,'points'),{studentUid:currentUser.uid,type:'plus',reason:'주 단위 생활관리 벌점 없음 (자동)',points:5,givenBy:'system',givenByName:'자동지급',createdAt:serverTimestamp()});reasons.push('주 단위 벌점 없음 +5점');}
+    if(snap.empty){addDoc(collection(db,'points'),{branch:getBranch(),studentUid:currentUser.uid,type:'plus',reason:'주 단위 생활관리 벌점 없음 (자동)',points:5,givenBy:'system',givenByName:'자동지급',createdAt:serverTimestamp()});reasons.push('주 단위 벌점 없음 +5점');}
     localStorage.setItem(key,'1');
     if(reasons.length>0) alert('🎉 주간 상점 자동 지급!\n'+reasons.join('\n'));
   }).catch(function(){});
@@ -2102,7 +2107,7 @@ function autoPlannerPenalty(){
     // Firestore 조회 실패 시 localStorage로만 fallback
     getDoc(doc(db,'planners',currentUser.uid+'_'+today)).then(function(d){
       if(!d.exists()){
-        addDoc(collection(db,'points'),{studentUid:currentUser.uid,type:'minus',reason:'플래너 미제출 ('+today+') (자동)',points:1,givenBy:'system',givenByName:'자동지급',createdAt:serverTimestamp()});
+        addDoc(collection(db,'points'),{branch:getBranch(),studentUid:currentUser.uid,type:'minus',reason:'플래너 미제출 ('+today+') (자동)',points:1,givenBy:'system',givenByName:'자동지급',createdAt:serverTimestamp()});
         localStorage.setItem(pk,'1');
       }
     }).catch(function(){});
@@ -2150,7 +2155,7 @@ function loadStudentList(){
   if (_studentListCache && now - _studentListCacheTime < 300000) {
     return Promise.resolve(_studentListCache);
   }
-  return getDocs(query(collection(db,'users'),where('role','==','student'))).then(function(snap){
+  return getDocs(query(collection(db,'users'),where('branch','==',getBranch()),where('role','==','student'))).then(function(snap){
     _studentListCache = snap.docs.map(function(d){return Object.assign({uid:d.id},d.data());});
     _studentListCacheTime = Date.now();
     return _studentListCache;
@@ -2160,7 +2165,7 @@ function loadStudentList(){
 function buildTDashboard(){
   return loadStudentList().then(function(students){
     var today=getPlannerDate();
-    return getDocs(query(collection(db,'planners'),where('date','==',today))).then(function(plannerSnap){
+    return getDocs(query(collection(db,'planners'),where('branch','==',getBranch()),where('date','==',today))).then(function(plannerSnap){
       var submittedToday=plannerSnap.docs.map(function(d){return d.data().name;});
       var consultPromises=students.map(function(s){
         return getDocs(query(collection(db,'comments'),where('studentUid','==',s.uid),limit(5))).then(function(snap){
@@ -2193,7 +2198,7 @@ function buildTDashboard(){
 function buildTPlanner(){
   return loadStudentList().then(function(students){
     var today=getPlannerDate();
-    return getDocs(query(collection(db,'planners'),where('date','==',today))).then(function(plannerSnap){
+    return getDocs(query(collection(db,'planners'),where('branch','==',getBranch()),where('date','==',today))).then(function(plannerSnap){
       var todayPlanners=plannerSnap.docs.map(function(d){return d.data();});
       return getDocs(query(collection(db,'lectures'),orderBy('createdAt','desc'))).then(function(lectureSnap){
         var lectures=lectureSnap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
@@ -2235,7 +2240,7 @@ window.saveComment=function(){
   var uid=parts[0], sName=parts[1]||'';
   var content=document.getElementById('comment-input').value.trim();
   if(!uid||!content){alert('학생과 코멘트 내용을 입력해주세요.');return;}
-  addDoc(collection(db,'comments'),{studentUid:uid,studentName:sName,teacherUid:currentUser.uid,teacherName:currentProfile.name,content:content,createdAt:serverTimestamp()}).then(function(){
+  addDoc(collection(db,'comments'),{branch:getBranch(),studentUid:uid,studentName:sName,teacherUid:currentUser.uid,teacherName:currentProfile.name,content:content,createdAt:serverTimestamp()}).then(function(){
     alert('코멘트가 저장되었습니다!');
     document.getElementById('comment-input').value='';
     loadCommentHistory(val);
@@ -2294,7 +2299,7 @@ window.saveLecture=function(){
   var completedInit=parseInt(document.getElementById('lec-completed-init').value)||0;
   if(!uid||!company||!lectureName||!totalLessons){alert('필수 항목을 입력해주세요.');return;}
   var today=new Date().toLocaleDateString('ko-KR');
-  addDoc(collection(db,'lectures'),{studentUid:uid,company:company,subject:subject,instructor:instructor,lectureName:lectureName,totalLessons:totalLessons,completedLessons:completedInit,schedule:schedule,scheduleCount:scheduleCount,lastUpdateDate:completedInit>0?today:'',createdAt:serverTimestamp()}).then(function(){closeModal('modal-add-lecture');alert('인강이 등록되었습니다!');renderTeacher(1);});
+  addDoc(collection(db,'lectures'),{branch:getBranch(),studentUid:uid,company:company,subject:subject,instructor:instructor,lectureName:lectureName,totalLessons:totalLessons,completedLessons:completedInit,schedule:schedule,scheduleCount:scheduleCount,lastUpdateDate:completedInit>0?today:'',createdAt:serverTimestamp()}).then(function(){closeModal('modal-add-lecture');alert('인강이 등록되었습니다!');renderTeacher(1);});
 };
 window.openUpdateLectureModal=function(lectureId,currentCompleted,totalLessons){
   document.getElementById('update-lec-id').value=lectureId;
@@ -2732,7 +2737,7 @@ window.openTeacherGradeModal=function(){var uid=document.getElementById('t-grade
 
 function buildTRewards(){
   return loadStudentList().then(function(students){
-    return Promise.all([getDocs(query(collection(db,'rules'),limit(1))),getDocs(query(collection(db,'points'),orderBy('createdAt','desc'),limit(50)))]).then(function(results){
+    return Promise.all([getDocs(query(collection(db,'rules'),where('branch','==',getBranch()),limit(1))),getDocs(query(collection(db,'points'),orderBy('createdAt','desc'),limit(50)))]).then(function(results){
       var rulesSnap=results[0],pointsSnap=results[1];
       var rules=rulesSnap.docs[0]?rulesSnap.docs[0].data().content:defaultRules;
       var points=pointsSnap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
@@ -2746,7 +2751,7 @@ window.givePoints=function(){
   var reason=document.getElementById('reward-reason-input').value.trim();
   var points=parseInt(document.getElementById('reward-points-input').value);
   if(!uid||!reason||!points){alert('모든 항목을 입력해주세요.');return;}
-  addDoc(collection(db,'points'),{studentUid:uid,type:type,reason:reason,points:points,givenBy:currentUser.uid,givenByName:currentProfile.name,createdAt:serverTimestamp()}).then(function(){alert('상벌점이 부여되었습니다!');renderTeacher(3);});
+  addDoc(collection(db,'points'),{branch:getBranch(),studentUid:uid,type:type,reason:reason,points:points,givenBy:currentUser.uid,givenByName:currentProfile.name,createdAt:serverTimestamp()}).then(function(){alert('상벌점이 부여되었습니다!');renderTeacher(3);});
 };
 
 window.togglePlannerDetail=function(elId,studentUid){
@@ -2802,7 +2807,7 @@ window.deletePoint=function(id){
 };
 window.saveRules=function(){
   var content=document.getElementById('rules-input').value.trim();
-  getDocs(query(collection(db,'rules'),limit(1))).then(function(snap){
+  getDocs(query(collection(db,'rules'),where('branch','==',getBranch()),limit(1))).then(function(snap){
     if(snap.empty) addDoc(collection(db,'rules'),{content:content,updatedAt:serverTimestamp()}).then(function(){alert('규정이 저장되었습니다!');});
     else updateDoc(doc(db,'rules',snap.docs[0].id),{content:content,updatedAt:serverTimestamp()}).then(function(){alert('규정이 저장되었습니다!');});
   });
@@ -2933,7 +2938,7 @@ function buildTNotice(){
   return loadStudentList().then(function(students){
     var sel=document.getElementById('notice-target');
     if(sel) sel.innerHTML='<option value="all">전체 학생</option>'+students.map(function(s){return '<option value="'+s.name+'">'+s.name+'</option>';}).join('');
-    return getDocs(query(collection(db,'notices'),orderBy('createdAt','desc'))).then(function(snap){
+    return getDocs(query(collection(db,'notices'),where('branch','==',getBranch()),orderBy('createdAt','desc'))).then(function(snap){
       var notices=snap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
       // 공지 카드를 DOM으로 직접 생성하여 id 전달 문제 해결
       var html='<button class="appeal-btn" onclick="openModal(\'modal-notice\')">📢 새 공지 보내기</button><div class="section-label">공지 발송 내역</div>';
@@ -3061,6 +3066,41 @@ window.steClear=function(todoId){
     if(sel&&sel.value) steLoadTodos(sel.value);
   }).catch(function(e){alert('실패: '+e.message);});
 };
+// 지점 직접입력 토글
+document.addEventListener('change', function(e){
+  if(e.target && e.target.id==='acc-branch'){
+    var custom=document.getElementById('acc-branch-custom');
+    if(custom) custom.style.display=e.target.value==='직접입력'?'block':'none';
+  }
+});
+
+// 기존 데이터 branch 마이그레이션
+window.migrateBranch=function(){
+  var branch=prompt('기존 데이터에 적용할 지점명을 입력하세요\n(예: 송정점)', '송정점');
+  if(!branch) return;
+  if(!confirm('모든 기존 데이터(todos, planners, points, notices, comments, lectures, users, grades)에\n지점명 "'+branch+'"을 추가합니다.\n계속할까요?')) return;
+  var collections=['todos','planners','points','notices','comments','lectures','grades'];
+  var total=0, done=0;
+  function migrateCollection(name, cb){
+    getDocs(collection(db,name)).then(function(snap){
+      total+=snap.docs.length;
+      var batch=snap.docs.filter(function(d){return !d.data().branch;});
+      Promise.all(batch.map(function(d){return updateDoc(doc(db,name,d.id),{branch:branch});}))
+        .then(function(){done+=batch.length;cb();});
+    }).catch(cb);
+  }
+  // users 마이그레이션 (branch 없는 계정)
+  getDocs(collection(db,'users')).then(function(snap){
+    return Promise.all(snap.docs.filter(function(d){return !d.data().branch;}).map(function(d){return updateDoc(doc(db,'users',d.id),{branch:branch});}));
+  }).then(function(){
+    var idx=0;
+    function next(){
+      if(idx>=collections.length){alert('마이그레이션 완료!\n지점명 "'+branch+'"이 적용되었습니다.');return;}
+      migrateCollection(collections[idx++],next);
+    }
+    next();
+  }).catch(function(e){alert('오류: '+e.message);});
+};
 window.fixBrokenTimers=function(){
   if(!confirm('timerRunning 상태가 비정상으로 남아있는 항목을 정리합니다.\n(저장된 학습시간은 삭제되지 않습니다)\n계속할까요?')) return;
   getDocs(collection(db,'todos')).then(function(snap){
@@ -3085,7 +3125,7 @@ window.resetTodayPlanner=function(){
   getDocs(query(collection(db,'todos'),where('date','==',today))).then(function(snap){
     snap.docs.forEach(function(d){tasks.push(deleteDoc(doc(db,'todos',d.id)));});
     // planners 삭제
-    return getDocs(query(collection(db,'planners'),where('date','==',today)));
+    return getDocs(query(collection(db,'planners'),where('branch','==',getBranch()),where('date','==',today)));
   }).then(function(snap){
     snap.docs.forEach(function(d){
       tasks.push(deleteDoc(doc(db,'planners',d.id)));
@@ -3103,7 +3143,7 @@ window.resetTodayPlanner=function(){
 
 function buildTAccounts(){
   return loadStudentList().then(function(students){
-    return getDocs(query(collection(db,'users'),where('role','in',['teacher','master']))).then(function(teacherSnap){
+    return getDocs(query(collection(db,'users'),where('branch','==',getBranch()),where('role','in',['teacher','master']))).then(function(teacherSnap){
       var teachers=teacherSnap.docs.map(function(d){return Object.assign({uid:d.id},d.data());});
       // role 비교 - trim/소문자 처리로 오타 대응
       var myRole=(currentProfile&&currentProfile.role||'').trim().toLowerCase();
@@ -3113,6 +3153,7 @@ function buildTAccounts(){
           +'<div style="font-size:13px;font-weight:700;color:#f0a855;margin-bottom:10px">⚙️ 마스터 도구</div>'
           +'<button onclick="resetTodayPlanner()" style="width:100%;padding:12px;background:rgba(224,82,82,0.12);border:1px solid rgba(224,82,82,0.3);border-radius:8px;color:#f87171;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px">🗑 오늘 플래너 즉시 초기화 (제출 포함)</button>'
           +'<button onclick="fixBrokenTimers()" style="width:100%;padding:12px;background:rgba(74,127,255,0.1);border:1px solid rgba(74,127,255,0.2);border-radius:8px;color:#7aa8ff;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px">🔧 비정상 타이머 기록 정리</button>'
+          +'<button onclick="migrateBranch()" style="width:100%;padding:12px;background:rgba(61,186,126,0.1);border:1px solid rgba(61,186,126,0.2);border-radius:8px;color:var(--green);font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px">🏢 기존 데이터 지점 설정 (최초 1회)</button>'
           +'<button onclick="openStudyTimeEditor()" style="width:100%;padding:12px;background:rgba(61,186,126,0.1);border:1px solid rgba(61,186,126,0.2);border-radius:8px;color:var(--green);font-size:13px;font-weight:700;cursor:pointer">✏️ 학생 학습시간 직접 수정</button>'
           +'<div id="study-time-editor" style="display:none;margin-top:12px"></div>'
           +'</div>'
@@ -3154,6 +3195,8 @@ window.deleteAccount=function(uid,name){
 };
 
 window.addAccount=function(){
+  var branchSel=document.getElementById('acc-branch').value;
+  var branch=branchSel==='직접입력'?(document.getElementById('acc-branch-custom').value.trim()||getBranch()):branchSel;
   var type=document.getElementById('acc-type').value;
   var name=document.getElementById('acc-name').value.trim();
   var username=document.getElementById('acc-id').value.trim();
@@ -3165,8 +3208,8 @@ window.addAccount=function(){
     var secondApp=initializeApp(firebaseConfig,'second-'+Date.now());
     var secondAuth=m.getAuth(secondApp);
     m.createUserWithEmailAndPassword(secondAuth,email,pw).then(function(cred){
-      setDoc(doc(db,'users',cred.user.uid),{name:name,username:username,email:email,role:type,school:'',grade:'',univ:'',dept:'',createdAt:serverTimestamp()}).then(function(){
-        m.signOut(secondAuth);closeModal('modal-add-account');alert(name+' 계정이 생성되었습니다!\n아이디: '+username+'\n비밀번호: '+pw);renderTeacher(6);
+      setDoc(doc(db,'users',cred.user.uid),{name:name,username:username,email:email,role:type,branch:branch,school:'',grade:'',univ:'',dept:'',createdAt:serverTimestamp()}).then(function(){
+        m.signOut(secondAuth);closeModal('modal-add-account');alert(name+' 계정이 생성되었습니다!\n아이디: '+username+'\n비밀번호: '+pw+'\n지점: '+branch);renderTeacher(6);
       });
     }).catch(function(e){alert('계정 생성 실패: '+e.message);});
   });
@@ -3174,7 +3217,7 @@ window.addAccount=function(){
 
 function buildAllChats(){
   return loadStudentList().then(function(students){
-    return getDocs(query(collection(db,'users'),where('role','in',['teacher','master']))).then(function(tSnap){
+    return getDocs(query(collection(db,'users'),where('branch','==',getBranch()),where('role','in',['teacher','master']))).then(function(tSnap){
       var teachers=tSnap.docs.map(function(d){return Object.assign({uid:d.id},d.data());});
       var allRooms=[];
       students.forEach(function(s){
