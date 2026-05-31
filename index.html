@@ -3112,6 +3112,67 @@ window.steClear=function(todoId){
 // 지점 직접입력은 onchange에서 처리
 
 // 기존 데이터 branch 마이그레이션
+window.deleteBranch=function(){
+  // 현재 존재하는 지점 목록 먼저 조회
+  getDocs(query(collection(db,'users'),where('role','in',['student','teacher','master']))).then(function(snap){
+    var branchSet={};
+    snap.docs.forEach(function(d){var b=d.data().branch;if(b)branchSet[b]=true;});
+    var branches=Object.keys(branchSet).sort();
+    if(!branches.length){alert('등록된 지점이 없습니다.');return;}
+
+    // 선택 모달 생성
+    var overlay=document.createElement('div');
+    overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    overlay.innerHTML='<div style="background:var(--navy2);border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px;width:300px;max-width:90vw">'
+      +'<div style="font-size:16px;font-weight:700;color:#f87171;margin-bottom:16px">🗑 지점 삭제</div>'
+      +'<div style="font-size:13px;color:var(--gray3);margin-bottom:12px">삭제할 지점을 선택하세요<br><span style="color:#f87171;font-size:11px">⚠️ 해당 지점의 모든 데이터가 영구 삭제됩니다</span></div>'
+      +'<select id="delete-branch-select" class="modal-select" style="margin-bottom:16px"><option value="">지점 선택</option>'
+      +branches.map(function(b){return '<option value="'+b+'">'+b+'</option>';}).join('')
+      +'</select>'
+      +'<div style="display:flex;gap:8px">'
+      +'<button onclick="confirmDeleteBranch()" style="flex:1;padding:11px;background:rgba(224,82,82,0.15);border:1px solid rgba(224,82,82,0.3);border-radius:8px;color:#f87171;font-size:13px;font-weight:700;cursor:pointer">삭제</button>'
+      +'<button onclick="this.closest(\'div[style*=fixed]\').remove()" style="flex:1;padding:11px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--gray3);font-size:13px;cursor:pointer">취소</button>'
+      +'</div></div>';
+    document.body.appendChild(overlay);
+  }).catch(function(e){alert('지점 목록 조회 실패: '+e.message);});
+};
+
+window.confirmDeleteBranch=function(){
+  var branch=document.getElementById('delete-branch-select').value;
+  if(!branch){alert('지점을 선택해주세요.');return;}
+  if(!confirm('【 경고 】\n\n"'+branch+'" 지점의 모든 데이터를 삭제합니다.\n\n- 학생/선생님/마스터 계정\n- 할일, 플래너, 성적, 상벌점\n- 공지, 채팅, 코멘트, 인강\n\n이 작업은 되돌릴 수 없습니다.\n정말 삭제하시겠습니까?')) return;
+
+  // 오버레이 닫기
+  var overlay=document.querySelector('div[style*="fixed"][style*="9999"]');
+  if(overlay) overlay.remove();
+
+  var colls=['todos','planners','points','notices','comments','lectures','grades','appeals'];
+  var tasks=[];
+  var done=0;
+  var total=colls.length+1;
+
+  function updateProgress(){
+    done++;
+    if(done>=total){
+      Promise.all(tasks).then(function(){
+        alert('"'+branch+'" 지점 데이터 삭제 완료!');
+        renderTeacher(6);
+      }).catch(function(e){alert('일부 삭제 실패: '+e.message);});
+    }
+  }
+
+  getDocs(query(collection(db,'users'),where('branch','==',branch))).then(function(snap){
+    snap.docs.forEach(function(d){tasks.push(deleteDoc(doc(db,'users',d.id)));});
+    updateProgress();
+  }).catch(updateProgress);
+
+  colls.forEach(function(coll){
+    getDocs(query(collection(db,coll),where('branch','==',branch))).then(function(snap){
+      snap.docs.forEach(function(d){tasks.push(deleteDoc(doc(db,coll,d.id)));});
+      updateProgress();
+    }).catch(updateProgress);
+  });
+};
 window.migrateBranch=function(){
   var branch=prompt('기존 데이터에 적용할 지점명을 입력하세요\n(예: 송정점)', '송정점');
   if(!branch) return;
@@ -3194,6 +3255,7 @@ function buildTAccounts(){
           +'<button onclick="resetTodayPlanner()" style="width:100%;padding:12px;background:rgba(224,82,82,0.12);border:1px solid rgba(224,82,82,0.3);border-radius:8px;color:#f87171;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px">🗑 오늘 플래너 즉시 초기화 (제출 포함)</button>'
           +'<button onclick="fixBrokenTimers()" style="width:100%;padding:12px;background:rgba(74,127,255,0.1);border:1px solid rgba(74,127,255,0.2);border-radius:8px;color:#7aa8ff;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px">🔧 비정상 타이머 기록 정리</button>'
           +'<button onclick="migrateBranch()" style="width:100%;padding:12px;background:rgba(61,186,126,0.1);border:1px solid rgba(61,186,126,0.2);border-radius:8px;color:var(--green);font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px">🏢 기존 데이터 지점 설정 (최초 1회)</button>'
+          +'<button onclick="deleteBranch()" style="width:100%;padding:12px;background:rgba(224,82,82,0.12);border:1px solid rgba(224,82,82,0.3);border-radius:8px;color:#f87171;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px">🗑 지점 삭제 (지점 전체 데이터 삭제)</button>'
           +'<button onclick="openStudyTimeEditor()" style="width:100%;padding:12px;background:rgba(61,186,126,0.1);border:1px solid rgba(61,186,126,0.2);border-radius:8px;color:var(--green);font-size:13px;font-weight:700;cursor:pointer">✏️ 학생 학습시간 직접 수정</button>'
           +'<div id="study-time-editor" style="display:none;margin-top:12px"></div>'
           +'</div>'
