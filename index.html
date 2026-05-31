@@ -1116,18 +1116,38 @@ function _stopAutoSave() {
 
 window.startTimerFor = function(id, subject, title) {
   if (timerTargetId === id) { togglePause(); return; }
-  if (timerTargetId && !timerPaused) {
-    if (!confirm('현재 측정 중인 타이머가 있습니다.\n기존 타이머를 저장하고 새 항목을 시작할까요?\n\n취소하면 기존 타이머가 계속 진행됩니다.')) return;
-    var saved = _getElapsed();
+
+  // 다른 할일 클릭 시
+  if (timerTargetId) {
+    var currentSecs = _getElapsed();
+    var currentTitle = document.getElementById('timer-subject-display');
+    var currentName = currentTitle ? currentTitle.textContent : '진행중인 항목';
+
+    if (!timerPaused) {
+      // 실행 중인 경우 - 확인 팝업
+      if (!confirm('현재 ['+currentName+'] 타이머가 실행 중입니다.\n\n기존 타이머를 일시정지하고 새 항목을 시작할까요?\n(기존 측정 시간은 저장됩니다)\n\n취소하면 기존 타이머가 계속 진행됩니다.')) return;
+    }
+    // 실행 중이든 일시정지든 현재까지 시간 저장
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     _stopAutoSave();
-    updateDoc(doc(db,'todos',timerTargetId), {timerAccum: saved, timerRunning: false, timerStartAt: null}).catch(function(){});
+    updateDoc(doc(db,'todos',timerTargetId), {
+      timerAccum: currentSecs, timerRunning: false, timerStartAt: null
+    }).catch(function(){});
   }
+
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
   _stopAutoSave();
-  timerTargetId = id; timerSeconds = 0; timerPaused = false;
+  timerTargetId = id; timerPaused = false;
   timerStartAt = Date.now();
-  updateDoc(doc(db,'todos',id), {timerStartAt: timerStartAt, timerAccum: 0, timerRunning: true}).catch(function(){});
+  // 기존 누적 시간 확인 후 이어서 시작
+  getDoc(doc(db,'todos',id)).then(function(d){
+    var accum = d.exists() ? (d.data().timerAccum||0) : 0;
+    timerSeconds = accum;
+    updateDoc(doc(db,'todos',id), {timerStartAt: timerStartAt, timerAccum: accum, timerRunning: true}).catch(function(){});
+  }).catch(function(){
+    timerSeconds = 0;
+    updateDoc(doc(db,'todos',id), {timerStartAt: timerStartAt, timerAccum: 0, timerRunning: true}).catch(function(){});
+  });
   ['btn-reset','btn-pause','btn-stop'].forEach(function(b){var el=document.getElementById(b);if(el)el.style.display='inline-block';});
   var subj = document.getElementById('timer-subject-display');
   if (subj) subj.textContent = (subjectNames[subject]||subject)+' · '+title;
