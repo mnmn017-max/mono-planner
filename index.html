@@ -1010,7 +1010,7 @@ function loadStudyRankings(containerId) {
 
   Promise.all([
     // 이번달 todos 전체 조회 (studyTime 필드 JS에서 필터)
-    getDocs(query(collection(db,'todos'), where('branch','==',getBranch()), where('date','>=',startDate), where('date','<=',endDate))),
+    getDocs(query(collection(db,'todos'), where('date','>=',startDate), where('date','<=',endDate))),
     getDocs(query(collection(db,'users'), where('role','==','student'))),
     getDoc(doc(db,'scholars',month))
   ]).then(function(results) {
@@ -1025,6 +1025,8 @@ function loadStudyRankings(containerId) {
     todoSnap.docs.forEach(function(d){
       var t = d.data();
       if (!t.studyTime || !t.uid) return;
+      // branch 필터 - 이 지점 학생만 (nameMap에 없으면 다른 지점)
+      if (!nameMap[t.uid]) return;
       var parts = t.studyTime.split(':');
       var secs = (parseInt(parts[0])||0)*3600 + (parseInt(parts[1]||0))*60 + (parseInt(parts[2]||0));
       if (secs > 0) timeMap[t.uid] = (timeMap[t.uid]||0) + secs;
