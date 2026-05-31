@@ -1033,7 +1033,7 @@ function loadStudyRankings(containerId) {
     var nameMap = {};
     var myBranchR=getBranch();
     studentSnap.docs
-      .filter(function(d){var b=d.data().branch;return !b||b===myBranchR;})
+      .filter(function(d){var b=d.data().branch;var isDefR=(currentBranch==='송정점');return (isDefR?(!b||b===myBranchR):b===myBranchR);})
       .forEach(function(d){ nameMap[d.id] = d.data().name; });
 
     var timeMap = {};
@@ -1978,7 +1978,7 @@ function listenChat(){
   var rl=document.getElementById('chat-room-list');if(rl)rl.style.display='';
   getDocs(query(collection(db,'users'),where('role','in',['teacher','master']))).then(function(snap){
     var myBranch=getBranch();
-    var teachers=snap.docs.filter(function(d){var b=d.data().branch;return !b||b===myBranch;}).map(function(d){return Object.assign({uid:d.id},d.data());});
+    var teachers=snap.docs.filter(function(d){var b=d.data().branch;var isDefault=(currentBranch==='송정점');return (isDefault?(!b||b===myBranch):b===myBranch);}).map(function(d){return Object.assign({uid:d.id},d.data());});
     var listEl=document.getElementById('chat-room-list');if(!listEl)return;
     if(!teachers.length){listEl.innerHTML='<div style="color:var(--gray3);font-size:13px">등록된 선생님이 없습니다</div>';return;}
     listEl.innerHTML='<div class="section-label">대화방</div>'
@@ -2025,7 +2025,7 @@ function listenNotices(){
     // branch 필터 JS에서 처리 (branch 없는 기존 데이터도 표시)
     var myBranch=getBranch();
     notifications=snap.docs
-      .filter(function(d){var b=d.data().branch;return !b||b===myBranch;})
+      .filter(function(d){var b=d.data().branch;var isDefault=(currentBranch==='송정점');return (isDefault?(!b||b===myBranch):b===myBranch);})
       .map(function(d){return Object.assign({id:d.id},d.data());})
       .sort(function(a,b){var at=a.createdAt?a.createdAt.toMillis():0,bt=b.createdAt?b.createdAt.toMillis():0;return bt-at;});
     var unread=notifications.filter(function(n){return !n.readBy||!n.readBy.includes(currentUser.uid);});
@@ -2200,7 +2200,7 @@ function loadStudentList(){
   return getDocs(query(collection(db,'users'),where('role','==','student'))).then(function(snap){
     var myBranch=getBranch();
     _studentListCache = snap.docs
-      .filter(function(d){var b=d.data().branch;return !b||b===myBranch;})
+      .filter(function(d){var b=d.data().branch;var isDefault=(currentBranch==='송정점');return (isDefault?(!b||b===myBranch):b===myBranch);})
       .map(function(d){return Object.assign({uid:d.id},d.data());});
     _studentListCacheTime = Date.now();
     return _studentListCache;
@@ -2247,7 +2247,7 @@ function buildTPlanner(){
       var todayPlanners=plannerSnap.docs.map(function(d){return d.data();});
       return getDocs(query(collection(db,'lectures'),orderBy('createdAt','desc'))).then(function(_lSnap){
       var myBranch=getBranch();
-      var lectureSnap={docs:_lSnap.docs.filter(function(d){var b=d.data().branch;return !b||b===myBranch;})};
+      var lectureSnap={docs:_lSnap.docs.filter(function(d){var b=d.data().branch;var isDefault=(currentBranch==='송정점');return (isDefault?(!b||b===myBranch):b===myBranch);})};
         var lectures=lectureSnap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
         var activeLectures=lectures.filter(function(lc){var done=parseInt(lc.completedLessons)||0,total=parseInt(lc.totalLessons)||0;return done<total;});
         var doneLectures=lectures.filter(function(lc){var done=parseInt(lc.completedLessons)||0,total=parseInt(lc.totalLessons)||0;return done>=total;});
@@ -2786,7 +2786,7 @@ function buildTRewards(){
   return loadStudentList().then(function(students){
     return Promise.all([getDocs(query(collection(db,'rules'),where('branch','==',getBranch()),limit(1))),getDocs(query(collection(db,'points'),orderBy('createdAt','desc'),limit(200)))]).then(function(results){
     var myBranch=getBranch();
-    results[1]={docs:results[1].docs.filter(function(d){var b=d.data().branch;return !b||b===myBranch;})};
+    results[1]={docs:results[1].docs.filter(function(d){var b=d.data().branch;var isDefault=(currentBranch==='송정점');return (isDefault?(!b||b===myBranch):b===myBranch);})};
       var rulesSnap=results[0],pointsSnap=results[1];
       var rules=rulesSnap.docs[0]?rulesSnap.docs[0].data().content:defaultRules;
       var points=pointsSnap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
@@ -2989,7 +2989,7 @@ function buildTNotice(){
     if(sel) sel.innerHTML='<option value="all">전체 학생</option>'+students.map(function(s){return '<option value="'+s.name+'">'+s.name+'</option>';}).join('');
     return getDocs(query(collection(db,'notices'),orderBy('createdAt','desc'))).then(function(snap){
       var myBranch=getBranch();
-      var notices=snap.docs.filter(function(d){var b=d.data().branch;return !b||b===myBranch;}).map(function(d){return Object.assign({id:d.id},d.data());});
+      var notices=snap.docs.filter(function(d){var b=d.data().branch;var isDefault=(currentBranch==='송정점');return (isDefault?(!b||b===myBranch):b===myBranch);}).map(function(d){return Object.assign({id:d.id},d.data());});
       // 공지 카드를 DOM으로 직접 생성하여 id 전달 문제 해결
       var html='<button class="appeal-btn" onclick="openModal(\'modal-notice\')">📢 새 공지 보내기</button><div class="section-label">공지 발송 내역</div>';
       if(!notices.length){
@@ -3251,7 +3251,7 @@ function buildTAccounts(){
     return getDocs(query(collection(db,'users'),where('role','in',['teacher','master']))).then(function(teacherSnap){
       var myBranch=getBranch();
       var teachers=teacherSnap.docs
-        .filter(function(d){var b=d.data().branch;return !b||b===myBranch;})
+        .filter(function(d){var b=d.data().branch;var isDefault=(currentBranch==='송정점');return (isDefault?(!b||b===myBranch):b===myBranch);})
         .map(function(d){return Object.assign({uid:d.id},d.data());});
       // role 비교 - trim/소문자 처리로 오타 대응
       var myRole=(currentProfile&&currentProfile.role||'').trim().toLowerCase();
@@ -3330,7 +3330,7 @@ function buildAllChats(){
     return getDocs(query(collection(db,'users'),where('role','in',['teacher','master']))).then(function(tSnap){
       var myBranch=getBranch();
       var teachers=tSnap.docs
-        .filter(function(d){var b=d.data().branch;return !b||b===myBranch;})
+        .filter(function(d){var b=d.data().branch;var isDefault=(currentBranch==='송정점');return (isDefault?(!b||b===myBranch):b===myBranch);})
         .map(function(d){return Object.assign({uid:d.id},d.data());});
       var allRooms=[];
       students.forEach(function(s){
