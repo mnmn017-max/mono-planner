@@ -1946,8 +1946,9 @@ function listenChat(){
   chatTargetUid=null;
   var rv=document.getElementById('chat-room-view');if(rv)rv.style.display='none';
   var rl=document.getElementById('chat-room-list');if(rl)rl.style.display='';
-  getDocs(query(collection(db,'users'),where('branch','==',getBranch()),where('role','in',['teacher','master']))).then(function(snap){
-    var teachers=snap.docs.map(function(d){return Object.assign({uid:d.id},d.data());});
+  getDocs(query(collection(db,'users'),where('role','in',['teacher','master']))).then(function(snap){
+    var myBranch=getBranch();
+    var teachers=snap.docs.filter(function(d){var b=d.data().branch;return !b||b===myBranch;}).map(function(d){return Object.assign({uid:d.id},d.data());});
     var listEl=document.getElementById('chat-room-list');if(!listEl)return;
     if(!teachers.length){listEl.innerHTML='<div style="color:var(--gray3);font-size:13px">등록된 선생님이 없습니다</div>';return;}
     listEl.innerHTML='<div class="section-label">대화방</div>'
@@ -2008,7 +2009,14 @@ function listenNotices(){
         }
       });
     },3000);
-  }).catch(function(e){console.error('notices error:',e);});
+  }).catch(function(e){
+    console.error('notices error:',e);
+    var badge=document.getElementById('notif-badge');
+    if(badge) badge.style.display='none';
+    // 알림 패널에 오류 표시
+    var list=document.getElementById('notif-list');
+    if(list) list.innerHTML='<div style="color:#f87171;font-size:12px">공지 오류: '+e.message+'</div>';
+  });
 }
 window.sendNotice=function(){
   var target=document.getElementById('notice-target').value;
@@ -2159,8 +2167,11 @@ function loadStudentList(){
   if (_studentListCache && now - _studentListCacheTime < 300000) {
     return Promise.resolve(_studentListCache);
   }
-  return getDocs(query(collection(db,'users'),where('branch','==',getBranch()),where('role','==','student'))).then(function(snap){
-    _studentListCache = snap.docs.map(function(d){return Object.assign({uid:d.id},d.data());});
+  return getDocs(query(collection(db,'users'),where('role','==','student'))).then(function(snap){
+    var myBranch=getBranch();
+    _studentListCache = snap.docs
+      .filter(function(d){var b=d.data().branch;return !b||b===myBranch;})
+      .map(function(d){return Object.assign({uid:d.id},d.data());});
     _studentListCacheTime = Date.now();
     return _studentListCache;
   });
@@ -3148,7 +3159,7 @@ window.resetTodayPlanner=function(){
 
 function buildTAccounts(){
   return loadStudentList().then(function(students){
-    return getDocs(query(collection(db,'users'),where('branch','==',getBranch()),where('role','in',['teacher','master']))).then(function(teacherSnap){
+    return getDocs(query(collection(db,'users'),where('role','in',['teacher','master']))).then(function(teacherSnap){
       var teachers=teacherSnap.docs.map(function(d){return Object.assign({uid:d.id},d.data());});
       // role 비교 - trim/소문자 처리로 오타 대응
       var myRole=(currentProfile&&currentProfile.role||'').trim().toLowerCase();
@@ -3222,7 +3233,7 @@ window.addAccount=function(){
 
 function buildAllChats(){
   return loadStudentList().then(function(students){
-    return getDocs(query(collection(db,'users'),where('branch','==',getBranch()),where('role','in',['teacher','master']))).then(function(tSnap){
+    return getDocs(query(collection(db,'users'),where('role','in',['teacher','master']))).then(function(tSnap){
       var teachers=tSnap.docs.map(function(d){return Object.assign({uid:d.id},d.data());});
       var allRooms=[];
       students.forEach(function(s){
