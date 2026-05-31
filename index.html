@@ -1031,7 +1031,10 @@ function loadStudyRankings(containerId) {
     var scholarDoc = results[2];
 
     var nameMap = {};
-    studentSnap.docs.forEach(function(d){ nameMap[d.id] = d.data().name; });
+    var myBranchR=getBranch();
+    studentSnap.docs
+      .filter(function(d){var b=d.data().branch;return !b||b===myBranchR;})
+      .forEach(function(d){ nameMap[d.id] = d.data().name; });
 
     var timeMap = {};
     todoSnap.docs.forEach(function(d){
@@ -2242,7 +2245,9 @@ function buildTPlanner(){
     var today=getPlannerDate();
     return getDocs(query(collection(db,'planners'),where('branch','==',getBranch()),where('date','==',today))).then(function(plannerSnap){
       var todayPlanners=plannerSnap.docs.map(function(d){return d.data();});
-      return getDocs(query(collection(db,'lectures'),orderBy('createdAt','desc'))).then(function(lectureSnap){
+      return getDocs(query(collection(db,'lectures'),orderBy('createdAt','desc'))).then(function(_lSnap){
+      var myBranch=getBranch();
+      var lectureSnap={docs:_lSnap.docs.filter(function(d){var b=d.data().branch;return !b||b===myBranch;})};
         var lectures=lectureSnap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
         var activeLectures=lectures.filter(function(lc){var done=parseInt(lc.completedLessons)||0,total=parseInt(lc.totalLessons)||0;return done<total;});
         var doneLectures=lectures.filter(function(lc){var done=parseInt(lc.completedLessons)||0,total=parseInt(lc.totalLessons)||0;return done>=total;});
@@ -2779,7 +2784,9 @@ window.openTeacherGradeModal=function(){var uid=document.getElementById('t-grade
 
 function buildTRewards(){
   return loadStudentList().then(function(students){
-    return Promise.all([getDocs(query(collection(db,'rules'),where('branch','==',getBranch()),limit(1))),getDocs(query(collection(db,'points'),orderBy('createdAt','desc'),limit(50)))]).then(function(results){
+    return Promise.all([getDocs(query(collection(db,'rules'),where('branch','==',getBranch()),limit(1))),getDocs(query(collection(db,'points'),orderBy('createdAt','desc'),limit(200)))]).then(function(results){
+    var myBranch=getBranch();
+    results[1]={docs:results[1].docs.filter(function(d){var b=d.data().branch;return !b||b===myBranch;})};
       var rulesSnap=results[0],pointsSnap=results[1];
       var rules=rulesSnap.docs[0]?rulesSnap.docs[0].data().content:defaultRules;
       var points=pointsSnap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
@@ -3321,7 +3328,10 @@ window.addAccount=function(){
 function buildAllChats(){
   return loadStudentList().then(function(students){
     return getDocs(query(collection(db,'users'),where('role','in',['teacher','master']))).then(function(tSnap){
-      var teachers=tSnap.docs.map(function(d){return Object.assign({uid:d.id},d.data());});
+      var myBranch=getBranch();
+      var teachers=tSnap.docs
+        .filter(function(d){var b=d.data().branch;return !b||b===myBranch;})
+        .map(function(d){return Object.assign({uid:d.id},d.data());});
       var allRooms=[];
       students.forEach(function(s){
         teachers.forEach(function(t){
