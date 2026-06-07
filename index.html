@@ -629,7 +629,9 @@ async function registerFCMToken(uid) {
     if (permission !== 'granted') return;
     const token = await getToken(messaging, { vapidKey: FCM_VAPID_KEY });
     if (token) {
-      // users/{uid} 에 fcmToken 저장
+      // 기존 토큰과 동일하면 스킵, 다르면 교체
+      const userDoc = await getDoc(doc(db, 'users', uid));
+      if (userDoc.exists() && userDoc.data().fcmToken === token) return;
       await updateDoc(doc(db, 'users', uid), { fcmToken: token }).catch(function(){
         setDoc(doc(db, 'users', uid), { fcmToken: token }, { merge: true });
       });
@@ -637,10 +639,13 @@ async function registerFCMToken(uid) {
   } catch(e) { /* 알림 권한 거부 등 무시 */ }
 }
 
-// 포그라운드 FCM 수신 (앱이 열려 있을 때)
+// 포그라운드 FCM 수신 (앱이 열려 있을 때) - 채팅창 열려있으면 스킵
 onMessage(messaging, function(payload) {
-  var title = (payload.notification && payload.notification.title) || payload.data && payload.data.title || '새 메시지';
-  var body  = (payload.notification && payload.notification.body)  || payload.data && payload.data.body  || '';
+  var senderUid = payload.data && payload.data.senderUid;
+  // 현재 대화 중인 상대면 알림 스킵 (이미 채팅창에 보임)
+  if (senderUid && (senderUid === chatTargetUid || senderUid === teacherChatUid)) return;
+  var title = (payload.notification && payload.notification.title) || (payload.data && payload.data.title) || '새 메시지';
+  var body  = (payload.notification && payload.notification.body)  || (payload.data && payload.data.body)  || '';
   showChatNotif(title, body);
 });
 
@@ -826,6 +831,17 @@ function listenTodos() {
   if (!currentUser) return;
   if (unsubTodos) { unsubTodos(); unsubTodos = null; }
   loadTodos();
+  // 타이머 실행 중이면 버튼 복원 (탭 전환 시 버튼이 사라지는 문제 방지)
+  if (timerTargetId) {
+    setTimeout(function(){
+      ['btn-reset','btn-pause','btn-stop'].forEach(function(b){
+        var el=document.getElementById(b);
+        if(el) el.style.display='inline-block';
+      });
+      var bp=document.getElementById('btn-pause');
+      if(bp) bp.textContent=timerPaused?'재개':'일시정지';
+    }, 100);
+  }
   loadMentorComment(); renderWeeklyReport(); loadLectureDashboard(); loadStudyRankings('study-rankings-student');
 }
 
@@ -1121,16 +1137,24 @@ function _tickDisplay() {
   if (total >= 21600) { stopTimer(); return; }
   var h=Math.floor(total/3600), m=Math.floor((total%3600)/60), s=total%60;
   el.textContent = String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+  // 버튼이 숨겨져 있으면 복원 (탭 전환 후 버튼 사라짐 방지)
+  var bp = document.getElementById('btn-pause');
+  if (bp && bp.style.display === 'none') {
+    ['btn-reset','btn-pause','btn-stop'].forEach(function(b){
+      var btn=document.getElementById(b); if(btn) btn.style.display='inline-block';
+    });
+    if(bp) bp.textContent = timerPaused?'재개':'일시정지';
+  }
 }
 function _startAutoSave() {
   if (timerAutoSave) clearInterval(timerAutoSave);
-  // 5분마다 저장 (30초는 쓰기 횟수가 너무 많음)
+  // 1분마다 저장 (손실 최소화)
   timerAutoSave = setInterval(function(){
     if (timerTargetId && !timerPaused && timerStartAt) {
       var cur = _getElapsed();
       updateDoc(doc(db,'todos',timerTargetId), {timerAccum: cur}).catch(function(){});
     }
-  }, 300000); // 300000ms = 5분
+  }, 60000); // 60000ms = 1분
 }
 function _stopAutoSave() {
   if (timerAutoSave) { clearInterval(timerAutoSave); timerAutoSave = null; }
@@ -1160,43 +1184,56 @@ window.startTimerFor = function(id, subject, title) {
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
   _stopAutoSave();
   timerTargetId = id; timerPaused = false;
-  timerStartAt = Date.now();
-  // 기존 누적 시간 확인 후 이어서 시작
+
+  // 기존 누적 시간 먼저 읽은 후 타이머 시작 (비동기 순서 보장)
   getDoc(doc(db,'todos',id)).then(function(d){
     var accum = d.exists() ? (d.data().timerAccum||0) : 0;
     timerSeconds = accum;
+    timerStartAt = Date.now();
     updateDoc(doc(db,'todos',id), {timerStartAt: timerStartAt, timerAccum: accum, timerRunning: true}).catch(function(){});
+    ['btn-reset','btn-pause','btn-stop'].forEach(function(b){var el=document.getElementById(b);if(el)el.style.display='inline-block';});
+    var subj = document.getElementById('timer-subject-display');
+    if (subj) subj.textContent = (subjectNames[subject]||subject)+' · '+title;
+    var bp = document.getElementById('btn-pause'); if(bp) bp.textContent='일시정지';
+    if (timerInterval) clearInterval(timerInterval);
+    timerInterval = setInterval(_tickDisplay, 500);
+    _startAutoSave();
   }).catch(function(){
+    // getDoc 실패 시 0부터 시작
     timerSeconds = 0;
+    timerStartAt = Date.now();
     updateDoc(doc(db,'todos',id), {timerStartAt: timerStartAt, timerAccum: 0, timerRunning: true}).catch(function(){});
+    ['btn-reset','btn-pause','btn-stop'].forEach(function(b){var el=document.getElementById(b);if(el)el.style.display='inline-block';});
+    var subj = document.getElementById('timer-subject-display');
+    if (subj) subj.textContent = (subjectNames[subject]||subject)+' · '+title;
+    var bp = document.getElementById('btn-pause'); if(bp) bp.textContent='일시정지';
+    if (timerInterval) clearInterval(timerInterval);
+    timerInterval = setInterval(_tickDisplay, 500);
+    _startAutoSave();
   });
-  ['btn-reset','btn-pause','btn-stop'].forEach(function(b){var el=document.getElementById(b);if(el)el.style.display='inline-block';});
-  var subj = document.getElementById('timer-subject-display');
-  if (subj) subj.textContent = (subjectNames[subject]||subject)+' · '+title;
-  var bp = document.getElementById('btn-pause'); if(bp) bp.textContent='일시정지';
-  timerInterval = setInterval(_tickDisplay, 500);
-  _startAutoSave();
 };
 
 window.togglePause = function() {
   if (!timerTargetId) return;
   if (timerPaused) {
+    // 재개
     timerPaused = false;
     timerStartAt = Date.now();
     updateDoc(doc(db,'todos',timerTargetId), {timerStartAt: timerStartAt, timerAccum: timerSeconds, timerRunning: true}).catch(function(){});
     if (!timerInterval) timerInterval = setInterval(_tickDisplay, 500);
     _startAutoSave();
   } else {
+    // 일시정지 - 현재 경과 시간 확정 저장
     timerSeconds = _getElapsed();
     timerPaused = true;
     timerStartAt = null;
     _stopAutoSave();
-    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; } // 인터벌 완전 정지
     updateDoc(doc(db,'todos',timerTargetId), {timerAccum: timerSeconds, timerRunning: false, timerStartAt: null}).catch(function(){});
+    // 정지된 시간 표시 업데이트
     var h=Math.floor(timerSeconds/3600),m=Math.floor((timerSeconds%3600)/60),s=timerSeconds%60;
     var el=document.getElementById('timer-display');
     if(el) el.textContent=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
-    if (!timerInterval) timerInterval = setInterval(_tickDisplay, 500);
   }
   var bp = document.getElementById('btn-pause'); if(bp) bp.textContent = timerPaused?'재개':'일시정지';
 };
@@ -1465,7 +1502,10 @@ function resumeActiveTimer() {
     timerTargetId = d.id;
     timerSeconds = elapsed;
     timerStartAt = startMs > 0 ? startMs : null;
-    timerPaused = (startMs === 0); // timerStartAt 없으면 일시정지 상태로 복구
+    timerPaused = (startMs === 0);
+
+    // 복구 시점 경과시간 즉시 저장 (다시 앱 꺼져도 최신값 보존)
+    updateDoc(doc(db,'todos',d.id), {timerAccum: elapsed}).catch(function(){});
 
     var subj = document.getElementById('timer-subject-display');
     if (subj) subj.textContent = (subjectNames[data.subject]||data.subject||'')+' · '+data.title;
