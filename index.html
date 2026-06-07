@@ -639,14 +639,17 @@ async function registerFCMToken(uid) {
   } catch(e) { /* 알림 권한 거부 등 무시 */ }
 }
 
-// 포그라운드 FCM 수신 (앱이 열려 있을 때) - 채팅창 열려있으면 스킵
+// 포그라운드 FCM 수신 (앱이 화면에 보일 때) - 서비스 워커 대신 직접 알림 표시
 onMessage(messaging, function(payload) {
   var senderUid = payload.data && payload.data.senderUid;
-  // 현재 대화 중인 상대면 알림 스킵 (이미 채팅창에 보임)
+  // 현재 대화 중인 상대면 스킵
   if (senderUid && (senderUid === chatTargetUid || senderUid === teacherChatUid)) return;
   var title = (payload.notification && payload.notification.title) || (payload.data && payload.data.title) || '새 메시지';
   var body  = (payload.notification && payload.notification.body)  || (payload.data && payload.data.body)  || '';
-  showChatNotif(title, body);
+  // 시스템 알림 표시
+  if (Notification.permission === 'granted') {
+    new Notification(title, { body: body, icon: '/icon-192.png', tag: 'mono-chat-fg-' + Date.now() });
+  }
 });
 
 // 새벽 4시 기준 오늘 날짜 (4시 이전이면 어제로 처리)
@@ -2285,10 +2288,9 @@ function buildTPlanner(){
     var today=getPlannerDate();
     return getDocs(query(collection(db,'planners'),where('branch','==',getBranch()),where('date','==',today))).then(function(plannerSnap){
       var todayPlanners=plannerSnap.docs.map(function(d){return d.data();});
-      return getDocs(query(collection(db,'lectures'),orderBy('createdAt','desc'))).then(function(_lSnap){
+      return getDocs(collection(db,'lectures')).then(function(_lSnap){
       var myBranch=getBranch();
-      var lectureSnap={docs:_lSnap.docs.filter(function(d){var b=d.data().branch;var isDefault=(currentBranch==='송정점');return (isDefault?(!b||b===myBranch):b===myBranch);})};
-        var lectures=lectureSnap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
+      var lectureSnap={docs:_lSnap.docs.filter(function(d){var b=d.data().branch;var isDefault=(currentBranch==='송정점');return (isDefault?(!b||b===myBranch):b===myBranch);})};        var lectures=lectureSnap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
         var activeLectures=lectures.filter(function(lc){var done=parseInt(lc.completedLessons)||0,total=parseInt(lc.totalLessons)||0;return done<total;});
         var doneLectures=lectures.filter(function(lc){var done=parseInt(lc.completedLessons)||0,total=parseInt(lc.totalLessons)||0;return done>=total;});
         var sortedLectures=activeLectures.concat(doneLectures);
