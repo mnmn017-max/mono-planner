@@ -12,19 +12,25 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-// 앱이 백그라운드/종료 상태일 때 수신되는 푸시 알림 처리
+// 백그라운드/종료 상태일 때만 알림 표시
 messaging.onBackgroundMessage(function(payload) {
-  const title = payload.notification?.title || payload.data?.title || '새 메시지';
-  const body  = payload.notification?.body  || payload.data?.body  || '';
-  const icon  = '/icon-192.png';
+  // 포그라운드 클라이언트가 있으면 알림 표시 안 함 (onMessage가 처리)
+  self.clients.matchAll({ type: 'window', includeUncontrolled: false }).then(function(clients) {
+    // 포그라운드 탭/PWA가 있으면 스킵
+    var hasForeground = clients.some(function(c) { return c.visibilityState === 'visible'; });
+    if (hasForeground) return;
 
-  self.registration.showNotification(title, {
-    body: body,
-    icon: icon,
-    badge: icon,
-    tag: 'mono-chat',        // 같은 tag면 기존 알림 덮어쓰기
-    renotify: true,
-    data: payload.data || {}
+    var title = (payload.notification && payload.notification.title) || (payload.data && payload.data.title) || '새 메시지';
+    var body  = (payload.notification && payload.notification.body)  || (payload.data && payload.data.body)  || '';
+
+    self.registration.showNotification(title, {
+      body: body,
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      tag: 'mono-chat-' + Date.now(),
+      renotify: true,
+      data: payload.data || {}
+    });
   });
 });
 
