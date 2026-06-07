@@ -1569,9 +1569,11 @@ function loadGrades(type) {
 }
 // ── 채팅 알림 ──
 var unsubChatNotif = null;
+var _chatNotifVersion = 0; // 중복 등록 방지용 버전
 function listenChatNotifs() {
   if (!currentUser) return;
   if (unsubChatNotif) { unsubChatNotif(); unsubChatNotif = null; }
+  var myVersion = ++_chatNotifVersion; // 현재 버전 기록
 
   var isTeacher = currentProfile && (currentProfile.role==='teacher'||currentProfile.role==='master');
   var listId  = isTeacher ? 'teacher-notif-list' : 'notif-list';
@@ -1614,38 +1616,38 @@ function listenChatNotifs() {
     where('read','==',false),
     orderBy('createdAt','asc')
   )).then(function(snap){
+    if (myVersion !== _chatNotifVersion) return; // 더 새로운 호출이 있으면 중단
     var shownIds = {};
     snap.docs.forEach(function(d){
       shownIds[d.id] = true;
-      _addToPanel(d.data(), true); // 조용히 패널에만
+      _addToPanel(d.data(), true);
       _markRead(d.id);
     });
-
-    // 실시간 감지 - read 필드 없는 새 문서 (방금 생성된 알림)
+    if (myVersion !== _chatNotifVersion) return;
     unsubChatNotif = onSnapshot(
       collection(db,'chatNotifs',currentUser.uid,'items'),
       function(snapshot) {
         snapshot.docChanges().forEach(function(change) {
           if (change.type !== 'added') return;
           var docId = change.doc.id;
-          if (shownIds[docId]) return; // 이미 표시한 것 스킵
+          if (shownIds[docId]) return;
           shownIds[docId] = true;
           var n = change.doc.data();
-          if (n.read) return; // 이미 읽은 것 스킵
-          // 현재 열린 대화 상대면 바로 읽음 처리만
+          if (n.read) return;
           if ((chatTargetUid && chatTargetUid === n.senderUid) ||
               (teacherChatUid && teacherChatUid === n.senderUid)) {
             _markRead(docId);
             return;
           }
-          _addToPanel(n, false); // 토스트 + 패널
+          _addToPanel(n, false);
           _markRead(docId);
         });
       }
     );
   }).catch(function(){
-    // read 필드 인덱스 없을 때 fallback: 전체 로드 후 JS 필터
+    if (myVersion !== _chatNotifVersion) return;
     getDocs(collection(db,'chatNotifs',currentUser.uid,'items')).then(function(snap){
+      if (myVersion !== _chatNotifVersion) return;
       var shownIds = {};
       snap.docs.forEach(function(d){
         var n = d.data();
@@ -1654,6 +1656,7 @@ function listenChatNotifs() {
         _addToPanel(n, true);
         _markRead(d.id);
       });
+      if (myVersion !== _chatNotifVersion) return;
       unsubChatNotif = onSnapshot(
         collection(db,'chatNotifs',currentUser.uid,'items'),
         function(snapshot) {
