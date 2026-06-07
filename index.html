@@ -639,17 +639,9 @@ async function registerFCMToken(uid) {
   } catch(e) { /* 알림 권한 거부 등 무시 */ }
 }
 
-// 포그라운드 FCM 수신 (앱이 화면에 보일 때) - 서비스 워커 대신 직접 알림 표시
+// 포그라운드 FCM 수신 - 서비스 워커에서 처리하므로 여기서는 아무것도 안 함
 onMessage(messaging, function(payload) {
-  var senderUid = payload.data && payload.data.senderUid;
-  // 현재 대화 중인 상대면 스킵
-  if (senderUid && (senderUid === chatTargetUid || senderUid === teacherChatUid)) return;
-  var title = (payload.notification && payload.notification.title) || (payload.data && payload.data.title) || '새 메시지';
-  var body  = (payload.notification && payload.notification.body)  || (payload.data && payload.data.body)  || '';
-  // 시스템 알림 표시
-  if (Notification.permission === 'granted') {
-    new Notification(title, { body: body, icon: '/icon-192.png', tag: 'mono-chat-fg-' + Date.now() });
-  }
+  // 의도적으로 비워둠 - 서비스 워커가 모든 알림 처리
 });
 
 // 새벽 4시 기준 오늘 날짜 (4시 이전이면 어제로 처리)
