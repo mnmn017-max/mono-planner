@@ -1743,38 +1743,13 @@ window.toggleTeacherNotifPanel = function() {
 
 // 채팅 알림 전송 헬퍼
 function _sendChatNotif(receiverUid, senderName, preview) {
-  // 1) Firestore에 알림 저장 (앱 재진입 시 표시용)
+  // chatNotifs에 저장 → Cloud Functions가 자동으로 FCM 푸시 전송
   addDoc(collection(db,'chatNotifs',receiverUid,'items'), {
     senderUid: currentUser.uid,
     senderName: senderName,
     preview: preview,
     read: false,
     createdAt: serverTimestamp()
-  }).catch(function(){});
-
-  // 2) FCM 푸시 전송 (앱 종료 상태 대비)
-  getDoc(doc(db,'users',receiverUid)).then(function(d){
-    if (!d.exists()) return;
-    var token = d.data().fcmToken;
-    if (!token) return;
-    fetch('https://fcm.googleapis.com/fcm/send', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'key=' + _FCM_SERVER_KEY
-      },
-      body: JSON.stringify({
-        to: token,
-        notification: {
-          title: senderName,
-          body: preview,
-          icon: '/icon-192.png',
-          tag: 'mono-chat',
-          renotify: true
-        },
-        data: { senderUid: currentUser.uid }
-      })
-    }).catch(function(){});
   }).catch(function(){});
 }
 
