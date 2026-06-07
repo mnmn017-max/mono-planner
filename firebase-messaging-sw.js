@@ -12,9 +12,10 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+// data 전용 메시지 처리 (notification 필드 없음 → 자동 알림 없음)
 messaging.onBackgroundMessage(function(payload) {
-  var title = (payload.notification && payload.notification.title) || '새 메시지';
-  var body  = (payload.notification && payload.notification.body)  || '';
+  var title = (payload.data && payload.data.title) || '새 메시지';
+  var body  = (payload.data && payload.data.body)  || '';
   self.registration.showNotification(title, {
     body: body,
     icon: '/icon-192.png',
