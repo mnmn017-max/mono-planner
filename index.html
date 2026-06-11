@@ -1557,11 +1557,23 @@ function loadGrades(type) {
       // 과목별 오답
       var wrongHtml='';
       if(g.wrongBySubj&&Object.keys(g.wrongBySubj).length){
+        var wSubjKeys=Object.keys(g.wrongBySubj);
         wrongHtml='<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)"><div style="font-size:11px;color:var(--gray3);margin-bottom:7px">오답 문항 (과목별)</div>'+
-        Object.keys(g.wrongBySubj).map(function(subj){
-          var label=g.scores&&g.scores[subj]&&g.scores[subj].label?g.scores[subj].label:(subjectNames[subj]||subj);
-          var grp=(g.scores&&g.scores[subj]&&g.scores[subj].group)||subj.replace(/\d/g,'');
-          return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px"><span class="subject-tag subj-'+grp+'" style="font-size:10px;flex-shrink:0">'+label+'</span><div style="display:flex;gap:4px;flex-wrap:wrap">'+g.wrongBySubj[subj].split(',').map(function(n){return '<span style="background:rgba(224,82,82,0.15);border:1px solid rgba(224,82,82,0.25);border-radius:4px;padding:2px 7px;font-size:12px;color:#f87171">'+n.trim()+'번</span>';}).join('')+'</div></div>';
+        wSubjKeys.map(function(subj){
+          var sc2=g.scores&&g.scores[subj];
+          if(!sc2&&g.scores){
+            var base3=subj.replace(/\d+$/,'');
+            var baseMatches2=Object.keys(g.scores).filter(function(sk){return sk.replace(/\d+$/,'')=== base3;});
+            if(baseMatches2.length>0){
+              var wKeys2=wSubjKeys.filter(function(wk){return wk.replace(/\d+$/,'')=== base3;});
+              var wIdx2=wKeys2.indexOf(subj);
+              var mk2=baseMatches2[wIdx2]||baseMatches2[0];
+              sc2=g.scores[mk2];
+            }
+          }
+          var label2=sc2&&sc2.label?sc2.label:(subjectNames[subj]||subj);
+          var grp2=(sc2&&sc2.group)||subj.replace(/\d+/g,'');
+          return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px"><span class="subject-tag subj-'+grp2+'" style="font-size:10px;flex-shrink:0">'+label2+'</span><div style="display:flex;gap:4px;flex-wrap:wrap">'+g.wrongBySubj[subj].split(',').map(function(n){return '<span style="background:rgba(224,82,82,0.15);border:1px solid rgba(224,82,82,0.25);border-radius:4px;padding:2px 7px;font-size:12px;color:#f87171">'+n.trim()+'번</span>';}).join('')+'</div></div>';
         }).join('')+'</div>';
       } else if(g.wrongNumbers){
         wrongHtml='<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)"><div style="font-size:11px;color:var(--gray3);margin-bottom:7px">오답 문항</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+g.wrongNumbers.split(',').map(function(n){return '<span style="background:rgba(224,82,82,0.15);border:1px solid rgba(224,82,82,0.25);border-radius:4px;padding:3px 8px;font-size:12px;color:#f87171">'+n.trim()+'번</span>';}).join('')+'</div></div>';
@@ -2535,9 +2547,9 @@ window.loadStudentGrades=function(uid){
     var fixedColors={ko:'#c9a84c',en:'#7aa8ff',ma:'#3dba7e',hi:'#f87171',sc:'#a78bfa',so:'#fb923c'};
     var dynColorPalette=['#818cf8','#c084fc','#fb923c','#fdba74','#34d399','#22d3ee'];
     var dynCI=0;
-    var chartSubjs=Object.keys(subjTrend).filter(function(lbl){return subjTrend[lbl].length>=2;})
+    var chartSubjs=Object.keys(subjTrend).filter(function(lbl){return subjTrend[lbl].length>=1;})
       .sort(function(a,b){return _baseRank(a)-_baseRank(b);});
-    if(chartSubjs.length){
+    if(chartSubjs.length && grades.length>=1){
       // 시험 개수에 따라 너비 동적 계산 (시험당 최소 60px, 최소 320px)
       var maxPts = Math.max.apply(null, chartSubjs.map(function(lbl){return subjTrend[lbl].length;}));
       var W = Math.max(320, maxPts * 70);
@@ -2553,7 +2565,9 @@ window.loadStudentGrades=function(uid){
         var col=fixedColors[base]||(dynColorPalette[dynCI++%dynColorPalette.length]);
         function xp(i){return PL+Math.round(i*(iW/(pts.length-1||1)));}
         function yp(s){return PT+iH-Math.round((s-minS)/range*iH);}
-        var polyline=pts.map(function(p,i){return xp(i)+','+yp(p.score);}).join(' ');
+        var polyline=pts.length>=2?pts.map(function(p,i){return xp(i)+','+yp(p.score);}).join(' '):'';
+        var polylineEl=polyline?'<polyline points="'+polyline+'" fill="none" stroke="'+col+'" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>'
+          :'';
         var gridLines=[0,25,50,75,100].filter(function(v){return v>=minS&&v<=maxS;}).map(function(v){
           var y=yp(v);
           return '<line x1="'+PL+'" y1="'+y+'" x2="'+(W-PR)+'" y2="'+y+'" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>'
@@ -2571,7 +2585,7 @@ window.loadStudentGrades=function(uid){
           +'<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
           +'<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" style="min-width:'+W+'px;overflow:visible">'
           +gridLines+xLabels
-          +'<polyline points="'+polyline+'" fill="none" stroke="'+col+'" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>'
+          +polylineEl
           +dots+'</svg></div></div>';
       }).join('');
       chartHtml='<div style="margin-bottom:14px;padding:12px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);border-radius:12px">'
@@ -2609,8 +2623,22 @@ window.loadStudentGrades=function(uid){
         var wrongKeys=sortScoreKeys(Object.keys(g.wrongBySubj));
         wrongHtml='<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)"><div style="font-size:11px;color:var(--gray3);margin-bottom:7px">오답 문항</div>'
           +wrongKeys.map(function(k){
-            var label=(scores[k]&&scores[k].label)||(subjectNames[k]||k);
-            var grp=(scores[k]&&scores[k].group)||k.replace(/\d/g,'');
+            // scores에서 label 찾기: 직접 매칭 → base 매칭 → 순서 매칭
+            var scoreEntry=scores[k];
+            if(!scoreEntry){
+              var base=k.replace(/\d+$/,'');
+              // base가 완전히 같은 키들 찾기 (sc → sc1, sc3 등)
+              var baseMatches=Object.keys(scores).filter(function(sk){return sk.replace(/\d+$/,'')=== base;});
+              if(baseMatches.length>0){
+                // wrongBySubj 키의 숫자 순서로 매칭 (sc→sc1첫번째, sc2→sc3두번째 등)
+                var wKeys=wrongKeys.filter(function(wk){return wk.replace(/\d+$/,'')=== base;});
+                var wIdx=wKeys.indexOf(k);
+                var matchKey=baseMatches[wIdx]||baseMatches[0];
+                scoreEntry=scores[matchKey];
+              }
+            }
+            var label=(scoreEntry&&scoreEntry.label)||(subjectNames[k]||k);
+            var grp=(scoreEntry&&scoreEntry.group)||k.replace(/\d+/g,'');
             return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">'
               +'<span class="subject-tag subj-'+grp+'" style="font-size:10px;flex-shrink:0">'+label+'</span>'
               +'<div style="display:flex;gap:4px;flex-wrap:wrap">'
@@ -2696,38 +2724,57 @@ window.openEditGradeModal=function(gradeId, studentUid){
     var maOpt=document.getElementById('edit-gs-ma-opt');
     if(koOpt) koOpt.value=(scores.ko&&scores.ko.option)||'';
     if(maOpt) maOpt.value=(scores.ma&&scores.ma.option)||'';
-    // 과탐/사탐 동적 렌더링 (실제 저장된 키 기준)
+    // 과탐/사탐 동적 렌더링 (scores + wrongBySubj 키 모두 포함)
     var dynArea=document.getElementById('edit-dynamic-subjects');
     if(dynArea){
-      var dynKeys=Object.keys(scores).filter(function(k){return k.startsWith('sc')||k.startsWith('so');});
-      var dynOrder=['sc','so'];
-      dynKeys.sort(function(a,b){
-        var ai=dynOrder.indexOf(a.replace(/\d+$/,''));
-        var bi=dynOrder.indexOf(b.replace(/\d+$/,''));
-        if(ai!==bi) return ai-bi;
-        return a.localeCompare(b);
+      var scKeys=Object.keys(scores).filter(function(k){return k.startsWith('sc')||k.startsWith('so');});
+      var wbKeys=Object.keys(wrongBySubj).filter(function(k){return k.startsWith('sc')||k.startsWith('so');});
+      // scores 키 기준으로 wrongBySubj 키 매핑 (순서 기반)
+      var pairMap=[]; // [{sk, wk, base}]
+      var usedWk=[];
+      scKeys.sort().forEach(function(sk){
+        var base=sk.replace(/\d+$/,'');
+        var avail=wbKeys.filter(function(wk){return wk.replace(/\d+$/,'')=== base && usedWk.indexOf(wk)<0;});
+        // scKeys에서 같은 base의 순서
+        var skIdx=scKeys.filter(function(k){return k.replace(/\d+$/,'')=== base;}).indexOf(sk);
+        var wk=avail[skIdx]||avail[0]||null;
+        if(wk) usedWk.push(wk);
+        pairMap.push({sk:sk,wk:wk,base:base});
       });
-      dynArea.innerHTML=dynKeys.map(function(k){
-        var s=scores[k]||{};
-        var base=k.replace(/\d+$/,'');
-        var cls='subj-'+base;
-        var lbl=s.label||k;
-        var wrongVal=wrongBySubj[k]||'';
+      // wrongBySubj에만 있는 키 추가
+      wbKeys.forEach(function(wk){
+        if(usedWk.indexOf(wk)<0){
+          pairMap.push({sk:null,wk:wk,base:wk.replace(/\d+$/,'')});
+        }
+      });
+      // 정렬
+      pairMap.sort(function(a,b){
+        var o=['sc','so'];
+        var ai=o.indexOf(a.base),bi=o.indexOf(b.base);
+        if(ai!==bi) return ai-bi;
+        return (a.sk||a.wk||'').localeCompare(b.sk||b.wk||'');
+      });
+      var dynIds=pairMap.map(function(p,i){return 'dyn_'+i;});
+      dynArea.innerHTML=pairMap.map(function(p,i){
+        var dk='dyn_'+i;
+        var s=p.sk?scores[p.sk]:{};
+        var lbl=(s&&s.label)||(p.wk&&(subjectNames[p.wk]||p.wk))||(p.sk&&(subjectNames[p.sk]||p.sk))||p.base;
+        var wrongVal=p.wk?wrongBySubj[p.wk]:'';
+        var cls='subj-'+p.base;
         return '<div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px;margin-bottom:6px">'
           +'<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">'
-          +'<span class="subject-tag '+cls+'" style="width:52px;text-align:center;font-size:10px">'+lbl+'</span>'
-          +'<input class="modal-input" id="edit-dyn-'+k+'-name" value="'+lbl+'" style="flex:1;margin-bottom:0;font-size:12px"/></div>'
-          +'<div style="display:flex;gap:8px;align-items:center;margin-bottom:5px">'
+          +'<span class="subject-tag '+cls+'" style="width:52px;text-align:center;font-size:10px">'+(p.base==='sc'?'과탐':'사탐')+(i+1)+'</span>'
+          +'<input class="modal-input" id="'+dk+'-name" value="'+lbl+'" style="flex:1;margin-bottom:0;font-size:12px"/></div>'
+          +(p.sk?'<div style="display:flex;gap:8px;align-items:center;margin-bottom:5px">'
           +'<span style="font-size:11px;color:var(--gray3);width:52px">점수/등급</span>'
-          +'<input class="modal-input" type="number" id="edit-dyn-'+k+'-score" value="'+(s.score||'')+'" placeholder="점수" style="flex:1;margin-bottom:0"/>'
-          +'<input class="modal-input" type="number" id="edit-dyn-'+k+'-grade" value="'+(s.grade||'')+'" placeholder="등급" style="width:60px;margin-bottom:0"/></div>'
+          +'<input class="modal-input" type="number" id="'+dk+'-score" value="'+((s&&s.score)||'')+'" placeholder="점수" style="flex:1;margin-bottom:0"/>'
+          +'<input class="modal-input" type="number" id="'+dk+'-grade" value="'+((s&&s.grade)||'')+'" placeholder="등급" style="width:60px;margin-bottom:0"/></div>':'')
           +'<div style="display:flex;gap:8px;align-items:center">'
           +'<span style="font-size:11px;color:var(--gray3);width:52px">오답</span>'
-          +'<input class="modal-input" id="edit-dyn-'+k+'-wrong" value="'+wrongVal+'" placeholder="오답 문항" style="flex:1;margin-bottom:0"/>'
+          +'<input class="modal-input" id="'+dk+'-wrong" value="'+wrongVal+'" placeholder="오답 문항" style="flex:1;margin-bottom:0"/>'
           +'</div></div>';
       }).join('');
-      // 키 목록 hidden 저장
-      dynArea.dataset.keys=dynKeys.join(',');
+      dynArea.dataset.pairmap=JSON.stringify(pairMap);
     }
     document.getElementById('edit-grade-ref-mistake').value=g.refMistake||'';
     document.getElementById('edit-grade-ref-weak').value=g.refWeak||'';
@@ -2760,18 +2807,23 @@ window.saveEditGrade=function(){
   });
   // 과탐/사탐 동적 저장
   var dynArea=document.getElementById('edit-dynamic-subjects');
-  if(dynArea&&dynArea.dataset.keys){
-    var dynKeys=dynArea.dataset.keys.split(',').filter(function(k){return k;});
-    dynKeys.forEach(function(k){
-      var nm=document.getElementById('edit-dyn-'+k+'-name');
-      var sv=document.getElementById('edit-dyn-'+k+'-score');
-      var gv=document.getElementById('edit-dyn-'+k+'-grade');
-      var wv=document.getElementById('edit-dyn-'+k+'-wrong');
-      var base=k.replace(/\d+$/,'');
-      if(sv&&(sv.value||( nm&&nm.value))){
-        scores[k]={score:sv?sv.value:'',grade:gv?gv.value:'',label:nm?nm.value:k,group:base};
+  if(dynArea&&dynArea.dataset.pairmap){
+    var pairMap=JSON.parse(dynArea.dataset.pairmap);
+    pairMap.forEach(function(p,i){
+      var dk='dyn_'+i;
+      var nm=document.getElementById(dk+'-name');
+      var sv=document.getElementById(dk+'-score');
+      var gv=document.getElementById(dk+'-grade');
+      var wv=document.getElementById(dk+'-wrong');
+      var newLabel=nm?nm.value.trim():'';
+      if(p.sk&&sv&&sv.value){
+        scores[p.sk]={score:sv.value,grade:gv?gv.value:'',label:newLabel||p.sk,group:p.base};
       }
-      if(wv&&wv.value.trim()) wrongBySubj[k]=wv.value.trim();
+      if(p.wk&&wv&&wv.value.trim()){
+        wrongBySubj[p.wk]=wv.value.trim();
+      } else if(p.wk&&wv&&!wv.value.trim()){
+        delete wrongBySubj[p.wk];
+      }
     });
   }
   updateDoc(doc(db,'grades',gradeId),{
