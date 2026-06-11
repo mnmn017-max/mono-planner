@@ -2503,7 +2503,10 @@ window.loadStudentGrades=function(uid){
     var chartSubjs=Object.keys(subjTrend).filter(function(lbl){return subjTrend[lbl].length>=2;})
       .sort(function(a,b){return _baseRank(a)-_baseRank(b);});
     if(chartSubjs.length){
-      var W=320,H=160,PL=36,PR=12,PT=18,PB=30;
+      // 시험 개수에 따라 너비 동적 계산 (시험당 최소 60px, 최소 320px)
+      var maxPts = Math.max.apply(null, chartSubjs.map(function(lbl){return subjTrend[lbl].length;}));
+      var W = Math.max(320, maxPts * 70);
+      var H=160,PL=36,PR=12,PT=18,PB=30;
       var iW=W-PL-PR,iH=H-PT-PB;
       var svgs=chartSubjs.map(function(lbl){
         var pts=subjTrend[lbl];
@@ -2530,10 +2533,11 @@ window.loadStudentGrades=function(uid){
         }).join('');
         return '<div style="margin-bottom:10px">'
           +'<div style="font-size:11px;font-weight:600;color:'+col+';margin-bottom:4px">'+lbl+'</div>'
-          +'<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" style="max-width:100%;overflow:visible">'
+          +'<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
+          +'<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" style="min-width:'+W+'px;overflow:visible">'
           +gridLines+xLabels
           +'<polyline points="'+polyline+'" fill="none" stroke="'+col+'" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>'
-          +dots+'</svg></div>';
+          +dots+'</svg></div></div>';
       }).join('');
       chartHtml='<div style="margin-bottom:14px;padding:12px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);border-radius:12px">'
         +'<div style="font-size:12px;font-weight:700;color:var(--gold2);margin-bottom:12px">📈 과목별 성적 변화 그래프</div>'
