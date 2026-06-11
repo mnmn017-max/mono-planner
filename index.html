@@ -353,7 +353,40 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
     <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--gray3);width:52px">오답</span><input class="modal-input" id="edit-wrong-hi" placeholder="오답 문항" style="flex:1;margin-bottom:0"/></div>
   </div>
   <!-- 과탐/사탐 동적 영역 -->
-  <div id="edit-dynamic-subjects"></div>
+  <!-- 탐구 2과목 고정 -->
+  <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px;margin-bottom:6px">
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+      <span style="font-size:11px;color:var(--gray3);width:40px;flex-shrink:0">탐구1</span>
+      <select class="modal-select" id="edit-tan1-type" style="width:70px;flex-shrink:0;margin-bottom:0;font-size:12px"><option value="">선택</option><option value="sc">과탐</option><option value="so">사탐</option></select>
+      <input class="modal-input" id="edit-tan1-name" placeholder="과목명" style="flex:1;margin-bottom:0;font-size:12px"/>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px">
+      <span style="font-size:11px;color:var(--gray3);width:52px">점수/등급</span>
+      <input class="modal-input" type="number" id="edit-tan1-score" placeholder="점수" style="flex:1;margin-bottom:0"/>
+      <input class="modal-input" type="number" id="edit-tan1-grade" placeholder="등급" style="width:60px;margin-bottom:0"/>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span style="font-size:11px;color:var(--gray3);width:52px">오답</span>
+      <input class="modal-input" id="edit-tan1-wrong" placeholder="오답 문항 (예: 3,7,15)" style="flex:1;margin-bottom:0"/>
+    </div>
+  </div>
+  <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px;margin-bottom:10px">
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+      <span style="font-size:11px;color:var(--gray3);width:40px;flex-shrink:0">탐구2</span>
+      <select class="modal-select" id="edit-tan2-type" style="width:70px;flex-shrink:0;margin-bottom:0;font-size:12px"><option value="">선택</option><option value="sc">과탐</option><option value="so">사탐</option></select>
+      <input class="modal-input" id="edit-tan2-name" placeholder="과목명" style="flex:1;margin-bottom:0;font-size:12px"/>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px">
+      <span style="font-size:11px;color:var(--gray3);width:52px">점수/등급</span>
+      <input class="modal-input" type="number" id="edit-tan2-score" placeholder="점수" style="flex:1;margin-bottom:0"/>
+      <input class="modal-input" type="number" id="edit-tan2-grade" placeholder="등급" style="width:60px;margin-bottom:0"/>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span style="font-size:11px;color:var(--gray3);width:52px">오답</span>
+      <input class="modal-input" id="edit-tan2-wrong" placeholder="오답 문항" style="flex:1;margin-bottom:0"/>
+    </div>
+  </div>
+  <div id="edit-dynamic-subjects" style="display:none"></div>
   <div class="modal-label" style="font-size:11px;color:var(--orange)">⚠️ 실수한 부분</div><textarea class="modal-input" id="edit-grade-ref-mistake" rows="2" style="resize:none"></textarea>
   <div class="modal-label" style="font-size:11px;color:#f87171">📉 부족했던 부분</div><textarea class="modal-input" id="edit-grade-ref-weak" rows="2" style="resize:none"></textarea>
   <div class="modal-label" style="font-size:11px;color:var(--green)">✅ 개선방안</div><textarea class="modal-input" id="edit-grade-ref-plan" rows="2" style="resize:none"></textarea>
@@ -2744,58 +2777,30 @@ window.openEditGradeModal=function(gradeId, studentUid){
     var maOpt=document.getElementById('edit-gs-ma-opt');
     if(koOpt) koOpt.value=(scores.ko&&scores.ko.option)||'';
     if(maOpt) maOpt.value=(scores.ma&&scores.ma.option)||'';
-    // 과탐/사탐 동적 렌더링 (scores + wrongBySubj 키 모두 포함)
+    // 탐구 2과목 - scores에서 sc/so 키 순서대로 불러오기
+    var tanKeys=Object.keys(scores).filter(function(k){return k.startsWith('sc')||k.startsWith('so');}).sort();
+    var wbTanKeys=Object.keys(wrongBySubj).filter(function(k){return k.startsWith('sc')||k.startsWith('so');}).sort();
+    // 탐구1
+    var tan1sk=tanKeys[0]||null;
+    var tan1wk=wbTanKeys[0]||null;
+    var tan1=tan1sk?scores[tan1sk]:{};
+    document.getElementById('edit-tan1-type').value=tan1sk?(tan1sk.replace(/\d+$/,'')):( tan1wk?tan1wk.replace(/\d+$/,''):'');
+    document.getElementById('edit-tan1-name').value=tan1.label||'';
+    document.getElementById('edit-tan1-score').value=tan1.score||'';
+    document.getElementById('edit-tan1-grade').value=tan1.grade||'';
+    document.getElementById('edit-tan1-wrong').value=tan1wk?wrongBySubj[tan1wk]:'';
+    // 탐구2
+    var tan2sk=tanKeys[1]||null;
+    var tan2wk=wbTanKeys[1]||null;
+    var tan2=tan2sk?scores[tan2sk]:{};
+    document.getElementById('edit-tan2-type').value=tan2sk?(tan2sk.replace(/\d+$/,'')):( tan2wk?tan2wk.replace(/\d+$/,''):'');
+    document.getElementById('edit-tan2-name').value=tan2.label||'';
+    document.getElementById('edit-tan2-score').value=tan2.score||'';
+    document.getElementById('edit-tan2-grade').value=tan2.grade||'';
+    document.getElementById('edit-tan2-wrong').value=tan2wk?wrongBySubj[tan2wk]:'';
+    // 기존 동적 영역 숨기기
     var dynArea=document.getElementById('edit-dynamic-subjects');
-    if(dynArea){
-      var scKeys=Object.keys(scores).filter(function(k){return k.startsWith('sc')||k.startsWith('so');});
-      var wbKeys=Object.keys(wrongBySubj).filter(function(k){return k.startsWith('sc')||k.startsWith('so');});
-      // scores 키 기준으로 wrongBySubj 키 매핑 (순서 기반)
-      var pairMap=[]; // [{sk, wk, base}]
-      var usedWk=[];
-      scKeys.sort().forEach(function(sk){
-        var base=sk.replace(/\d+$/,'');
-        var avail=wbKeys.filter(function(wk){return wk.replace(/\d+$/,'')=== base && usedWk.indexOf(wk)<0;});
-        // scKeys에서 같은 base의 순서
-        var skIdx=scKeys.filter(function(k){return k.replace(/\d+$/,'')=== base;}).indexOf(sk);
-        var wk=avail[skIdx]||avail[0]||null;
-        if(wk) usedWk.push(wk);
-        pairMap.push({sk:sk,wk:wk,base:base});
-      });
-      // wrongBySubj에만 있는 키 추가
-      wbKeys.forEach(function(wk){
-        if(usedWk.indexOf(wk)<0){
-          pairMap.push({sk:null,wk:wk,base:wk.replace(/\d+$/,'')});
-        }
-      });
-      // 정렬
-      pairMap.sort(function(a,b){
-        var o=['sc','so'];
-        var ai=o.indexOf(a.base),bi=o.indexOf(b.base);
-        if(ai!==bi) return ai-bi;
-        return (a.sk||a.wk||'').localeCompare(b.sk||b.wk||'');
-      });
-      var dynIds=pairMap.map(function(p,i){return 'dyn_'+i;});
-      dynArea.innerHTML=pairMap.map(function(p,i){
-        var dk='dyn_'+i;
-        var s=p.sk?scores[p.sk]:{};
-        var lbl=(s&&s.label)||(p.wk&&(subjectNames[p.wk]||p.wk))||(p.sk&&(subjectNames[p.sk]||p.sk))||p.base;
-        var wrongVal=p.wk?wrongBySubj[p.wk]:'';
-        var cls='subj-'+p.base;
-        return '<div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px;margin-bottom:6px">'
-          +'<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">'
-          +'<span class="subject-tag '+cls+'" style="width:52px;text-align:center;font-size:10px">'+(p.base==='sc'?'과탐':'사탐')+(i+1)+'</span>'
-          +'<input class="modal-input" id="'+dk+'-name" value="'+lbl+'" style="flex:1;margin-bottom:0;font-size:12px"/></div>'
-          +'<div style="display:flex;gap:8px;align-items:center;margin-bottom:5px">'
-          +'<span style="font-size:11px;color:var(--gray3);width:52px">점수/등급</span>'
-          +'<input class="modal-input" type="number" id="'+dk+'-score" value="'+((s&&s.score)||'')+'" placeholder="점수" style="flex:1;margin-bottom:0"/>'
-          +'<input class="modal-input" type="number" id="'+dk+'-grade" value="'+((s&&s.grade)||'')+'" placeholder="등급" style="width:60px;margin-bottom:0"/></div>'
-          +'<div style="display:flex;gap:8px;align-items:center">'
-          +'<span style="font-size:11px;color:var(--gray3);width:52px">오답</span>'
-          +'<input class="modal-input" id="'+dk+'-wrong" value="'+wrongVal+'" placeholder="오답 문항" style="flex:1;margin-bottom:0"/>'
-          +'</div></div>';
-      }).join('');
-      dynArea.dataset.pairmap=JSON.stringify(pairMap);
-    }
+    if(dynArea) dynArea.style.display='none';
     document.getElementById('edit-grade-ref-mistake').value=g.refMistake||'';
     document.getElementById('edit-grade-ref-weak').value=g.refWeak||'';
     document.getElementById('edit-grade-ref-plan').value=g.refPlan||'';
@@ -2825,28 +2830,26 @@ window.saveEditGrade=function(){
     }
     if(wv) wrongBySubj[k]=wv;
   });
-  // 과탐/사탐 동적 저장
-  var dynArea=document.getElementById('edit-dynamic-subjects');
-  if(dynArea&&dynArea.dataset.pairmap){
-    var pairMap=JSON.parse(dynArea.dataset.pairmap);
-    pairMap.forEach(function(p,i){
-      var dk='dyn_'+i;
-      var nm=document.getElementById(dk+'-name');
-      var sv=document.getElementById(dk+'-score');
-      var gv=document.getElementById(dk+'-grade');
-      var wv=document.getElementById(dk+'-wrong');
-      var newLabel=nm?nm.value.trim():'';
-      var scoreKey=p.sk||(p.wk?p.wk.replace(/\d+$/,'')+(pairMap.filter(function(pp){return pp.base===p.base;}).indexOf(p)+1)+'':null);
-      if(scoreKey&&sv&&sv.value){
-        scores[scoreKey]={score:sv.value,grade:gv?gv.value:'',label:newLabel||scoreKey,group:p.base};
-      }
-      if(p.wk&&wv&&wv.value.trim()){
-        wrongBySubj[p.wk]=wv.value.trim();
-      } else if(p.wk&&wv&&!wv.value.trim()){
-        delete wrongBySubj[p.wk];
-      }
-    });
-  }
+  // 탐구 2과목 저장
+  [1,2].forEach(function(n){
+    var type=document.getElementById('edit-tan'+n+'-type').value; // sc or so
+    var name=document.getElementById('edit-tan'+n+'-name').value.trim();
+    var sv=document.getElementById('edit-tan'+n+'-score').value;
+    var gv=document.getElementById('edit-tan'+n+'-grade').value;
+    var wv=document.getElementById('edit-tan'+n+'-wrong').value.trim();
+    if(!type||(!name&&!sv&&!wv)) return; // 빈 항목 스킵
+    // 기존 같은 base 키 찾거나 새 키 생성
+    var base=type;
+    var existKeys=Object.keys(scores).filter(function(k){return k.startsWith(base);}).sort();
+    var existWKeys=Object.keys(wrongBySubj).filter(function(k){return k.startsWith(base);}).sort();
+    var sk=existKeys[n-1]||( base+(n===1?'1':'3')); // sc1/sc3 or so1/so2 패턴 유지
+    var wk=existWKeys[n-1]||(base+(n===1?'':'2'));
+    if(name||sv){
+      scores[sk]={score:sv,grade:gv||'',label:name||base,group:base};
+    }
+    if(wv) wrongBySubj[wk]=wv;
+    else if(existWKeys[n-1]) delete wrongBySubj[existWKeys[n-1]];
+  });
   updateDoc(doc(db,'grades',gradeId),{
     examName:examName, examDate:examDate, type:type, category:category,
     scores:scores, wrongBySubj:wrongBySubj,
