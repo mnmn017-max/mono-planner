@@ -321,24 +321,58 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <input type="hidden" id="edit-grade-student-uid"/>
   <div class="modal-label">시험 종류</div>
   <select class="modal-select" id="edit-grade-type"><option value="mock">모의고사</option><option value="school">내신</option></select>
+  <div class="modal-label">분류</div>
+  <select class="modal-select" id="edit-grade-category">
+    <option value="">분류 없음</option>
+    <option value="연습용">연습용</option>
+    <option value="사설">사설</option>
+    <option value="정규">정규</option>
+    <option value="대성">대성</option>
+  </select>
   <div class="modal-label">시험명</div><input class="modal-input" id="edit-grade-exam-name" placeholder="시험명"/>
   <div class="modal-label">응시일</div><input class="modal-input" type="date" id="edit-grade-exam-date"/>
   <div class="modal-label">과목별 점수 / 등급</div>
   <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px;margin-bottom:6px">
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="subject-tag subj-ko" style="width:52px;text-align:center">국어</span><select class="modal-select" id="edit-gs-ko-opt" style="flex:1;margin-bottom:0;font-size:12px"><option value="">선택과목 없음</option><option value="화법과 작문">화법과 작문</option><option value="언어와 매체">언어와 매체</option></select></div>
-    <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--gray3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-ko-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-ko-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--gray3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-ko-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-ko-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
+    <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--gray3);width:52px">오답</span><input class="modal-input" id="edit-wrong-ko" placeholder="오답 문항 (예: 3,7,15)" style="flex:1;margin-bottom:0"/></div>
   </div>
   <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px;margin-bottom:6px">
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px"><span class="subject-tag subj-en" style="width:52px;text-align:center">영어</span></div>
-    <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--gray3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-en-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-en-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span class="subject-tag subj-en" style="width:52px;text-align:center">영어</span></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--gray3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-en-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-en-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
+    <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--gray3);width:52px">오답</span><input class="modal-input" id="edit-wrong-en" placeholder="오답 문항 (예: 23,30)" style="flex:1;margin-bottom:0"/></div>
   </div>
   <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px;margin-bottom:6px">
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="subject-tag subj-ma" style="width:52px;text-align:center">수학</span><select class="modal-select" id="edit-gs-ma-opt" style="flex:1;margin-bottom:0;font-size:12px"><option value="">선택과목 없음</option><option value="미적분">미적분</option><option value="확률과 통계">확률과 통계</option><option value="기하">기하</option></select></div>
-    <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--gray3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-ma-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-ma-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--gray3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-ma-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-ma-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
+    <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--gray3);width:52px">오답</span><input class="modal-input" id="edit-wrong-ma" placeholder="오답 문항 (예: 21,29,30)" style="flex:1;margin-bottom:0"/></div>
+  </div>
+  <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px;margin-bottom:6px">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span class="subject-tag subj-hi" style="width:52px;text-align:center">한국사</span></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--gray3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-hi-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-hi-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
+    <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--gray3);width:52px">오답</span><input class="modal-input" id="edit-wrong-hi" placeholder="오답 문항" style="flex:1;margin-bottom:0"/></div>
+  </div>
+  <!-- 과탐 -->
+  <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px;margin-bottom:6px">
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="subject-tag subj-sc" style="width:52px;text-align:center">과탐1</span><input class="modal-input" id="edit-gs-sc1-name" placeholder="과목명 (예: 물리학1)" style="flex:1;margin-bottom:0;font-size:12px"/></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--gray3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-sc1-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-sc1-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
+    <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--gray3);width:52px">오답</span><input class="modal-input" id="edit-wrong-sc1" placeholder="오답 문항" style="flex:1;margin-bottom:0"/></div>
+  </div>
+  <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px;margin-bottom:6px">
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="subject-tag subj-sc" style="width:52px;text-align:center">과탐2</span><input class="modal-input" id="edit-gs-sc2-name" placeholder="과목명 (예: 화학1)" style="flex:1;margin-bottom:0;font-size:12px"/></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--gray3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-sc2-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-sc2-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
+    <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--gray3);width:52px">오답</span><input class="modal-input" id="edit-wrong-sc2" placeholder="오답 문항" style="flex:1;margin-bottom:0"/></div>
+  </div>
+  <!-- 사탐 -->
+  <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px;margin-bottom:6px">
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="subject-tag subj-so" style="width:52px;text-align:center">사탐1</span><input class="modal-input" id="edit-gs-so1-name" placeholder="과목명 (예: 생활과윤리)" style="flex:1;margin-bottom:0;font-size:12px"/></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--gray3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-so1-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-so1-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
+    <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--gray3);width:52px">오답</span><input class="modal-input" id="edit-wrong-so1" placeholder="오답 문항" style="flex:1;margin-bottom:0"/></div>
   </div>
   <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px;margin-bottom:10px">
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px"><span class="subject-tag subj-hi" style="width:52px;text-align:center">한국사</span></div>
-    <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--gray3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-hi-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-hi-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="subject-tag subj-so" style="width:52px;text-align:center">사탐2</span><input class="modal-input" id="edit-gs-so2-name" placeholder="과목명 (예: 한국지리)" style="flex:1;margin-bottom:0;font-size:12px"/></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--gray3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-so2-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-so2-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
+    <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--gray3);width:52px">오답</span><input class="modal-input" id="edit-wrong-so2" placeholder="오답 문항" style="flex:1;margin-bottom:0"/></div>
   </div>
   <div class="modal-label" style="font-size:11px;color:var(--orange)">⚠️ 실수한 부분</div><textarea class="modal-input" id="edit-grade-ref-mistake" rows="2" style="resize:none"></textarea>
   <div class="modal-label" style="font-size:11px;color:#f87171">📉 부족했던 부분</div><textarea class="modal-input" id="edit-grade-ref-weak" rows="2" style="resize:none"></textarea>
@@ -2384,9 +2418,14 @@ function buildTGrades(){
   return loadStudentList().then(function(students){
     return '<div class="section-label">학생 성적 조회</div>'
       +'<select class="modal-select" id="t-grade-student" onchange="loadStudentGrades(this.value)" style="margin-bottom:8px"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select>'
-      +'<div style="display:flex;gap:6px;margin-bottom:12px">'
+      +'<div style="display:flex;gap:6px;margin-bottom:8px">'
       +'<button id="tg-tab-mock" onclick="switchGradeTab(\'mock\')" style="flex:1;padding:8px;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.4);border-radius:8px;color:var(--gold2);font-size:13px;font-weight:600;cursor:pointer">모의고사</button>'
       +'<button id="tg-tab-school" onclick="switchGradeTab(\'school\')" style="flex:1;padding:8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:var(--gray3);font-size:13px;cursor:pointer">내신</button>'
+      +'</div>'
+      +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px" id="tg-category-tabs">'
+      +['전체','연습용','사설','정규','대성'].map(function(c,i){
+        return '<button onclick="switchGradeCategory(\''+c+'\')" id="tg-cat-'+c+'" style="padding:6px 10px;background:'+(i===0?'rgba(74,127,255,0.15)':'rgba(255,255,255,0.04)')+';border:1px solid '+(i===0?'rgba(74,127,255,0.3)':'rgba(255,255,255,0.08)')+';border-radius:6px;color:'+(i===0?'#7aa8ff':'var(--gray3)')+';font-size:12px;cursor:pointer">'+c+'</button>';
+      }).join('')
       +'</div>'
       +'<div id="t-grade-list"><div style="color:var(--gray3);font-size:13px">학생을 선택하세요</div></div>'
       +'<div class="section-label" style="margin-top:16px">성적 대행 입력</div>'
@@ -2394,6 +2433,18 @@ function buildTGrades(){
       +'<button class="modal-btn primary" onclick="openTeacherGradeModal()">성적 입력 시작</button>';
   });
 }
+var _currentGradeCategory='전체';
+window.switchGradeCategory=function(cat){
+  _currentGradeCategory=cat;
+  ['전체','연습용','사설','정규','대성'].forEach(function(c){
+    var btn=document.getElementById('tg-cat-'+c);
+    if(!btn) return;
+    if(c===cat){btn.style.background='rgba(74,127,255,0.15)';btn.style.borderColor='rgba(74,127,255,0.3)';btn.style.color='#7aa8ff';}
+    else{btn.style.background='rgba(255,255,255,0.04)';btn.style.borderColor='rgba(255,255,255,0.08)';btn.style.color='var(--gray3)';}
+  });
+  var uid=document.getElementById('t-grade-student').value;
+  if(uid) loadStudentGrades(uid);
+};
 var _currentGradeTab='mock';
 window.switchGradeTab=function(tab){
   _currentGradeTab=tab;
@@ -2450,8 +2501,12 @@ window.loadStudentGrades=function(uid){
     // 전체 grades
     var allGrades=snap.docs.map(function(d){return Object.assign({_id:d.id},d.data());})
       .sort(function(a,b){return (b.examDate||'').localeCompare(a.examDate||'');});
-    // 탭 필터
-    var grades=allGrades.filter(function(g){return (g.type||'mock')===tab;});
+    // 탭 + 분류 필터
+    var grades=allGrades.filter(function(g){
+      if((g.type||'mock')!==tab) return false;
+      if(_currentGradeCategory==='전체') return true;
+      return (g.category||'')=== _currentGradeCategory;
+    });
 
     // 과목 순서 정렬
     var subjOrder=['ko','en','ma','hi'];
@@ -2616,7 +2671,9 @@ window.loadStudentGrades=function(uid){
       return '<div class="score-card" style="margin-bottom:12px">'
         +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'
         +'<div><div style="font-size:15px;font-weight:700">'+g.examName+'</div>'
-        +'<div style="font-size:11px;color:var(--gray3);margin-top:2px">'+g.examDate+'</div></div>'
+        +'<div style="font-size:11px;color:var(--gray3);margin-top:2px;display:flex;gap:6px;align-items:center">'+g.examDate
+        +(g.category?'<span style="padding:2px 7px;background:rgba(74,127,255,0.1);border:1px solid rgba(74,127,255,0.2);border-radius:4px;color:#7aa8ff;font-size:10px">'+g.category+'</span>':'')
+        +'</div></div>'
         +'<div style="display:flex;gap:5px">'
         +'<button onclick="openEditGradeModal(\''+g._id+'\',\''+uid+'\')" style="padding:5px 10px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.2);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer">수정</button>'
         +'<button onclick="deleteGrade(\''+g._id+'\',\''+uid+'\')" style="padding:5px 10px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:6px;color:#f87171;font-size:11px;cursor:pointer">삭제</button>'
@@ -2643,20 +2700,44 @@ window.openEditGradeModal=function(gradeId, studentUid){
     document.getElementById('edit-grade-exam-name').value=g.examName||'';
     document.getElementById('edit-grade-exam-date').value=g.examDate||'';
     document.getElementById('edit-grade-type').value=g.type||'mock';
-    // 과목별 점수 채우기
+    document.getElementById('edit-grade-category').value=g.category||'';
     var scores=g.scores||{};
+    var wrongBySubj=g.wrongBySubj||{};
+    // 기본 4과목
     ['ko','en','ma','hi'].forEach(function(k){
       var ss=document.getElementById('edit-gs-'+k+'-score');
       var sg=document.getElementById('edit-gs-'+k+'-grade');
+      var sw=document.getElementById('edit-wrong-'+k);
       if(ss) ss.value=(scores[k]&&scores[k].score)||'';
       if(sg) sg.value=(scores[k]&&scores[k].grade)||'';
+      if(sw) sw.value=wrongBySubj[k]||'';
     });
-    // 선택과목
     var koOpt=document.getElementById('edit-gs-ko-opt');
     var maOpt=document.getElementById('edit-gs-ma-opt');
     if(koOpt) koOpt.value=(scores.ko&&scores.ko.option)||'';
     if(maOpt) maOpt.value=(scores.ma&&scores.ma.option)||'';
-    // 오답/반성
+    // 과탐
+    ['sc1','sc2'].forEach(function(k){
+      var sn=document.getElementById('edit-gs-'+k+'-name');
+      var ss=document.getElementById('edit-gs-'+k+'-score');
+      var sg=document.getElementById('edit-gs-'+k+'-grade');
+      var sw=document.getElementById('edit-wrong-'+k);
+      if(sn) sn.value=(scores[k]&&scores[k].label)||'';
+      if(ss) ss.value=(scores[k]&&scores[k].score)||'';
+      if(sg) sg.value=(scores[k]&&scores[k].grade)||'';
+      if(sw) sw.value=wrongBySubj[k]||'';
+    });
+    // 사탐
+    ['so1','so2'].forEach(function(k){
+      var sn=document.getElementById('edit-gs-'+k+'-name');
+      var ss=document.getElementById('edit-gs-'+k+'-score');
+      var sg=document.getElementById('edit-gs-'+k+'-grade');
+      var sw=document.getElementById('edit-wrong-'+k);
+      if(sn) sn.value=(scores[k]&&scores[k].label)||'';
+      if(ss) ss.value=(scores[k]&&scores[k].score)||'';
+      if(sg) sg.value=(scores[k]&&scores[k].grade)||'';
+      if(sw) sw.value=wrongBySubj[k]||'';
+    });
     document.getElementById('edit-grade-ref-mistake').value=g.refMistake||'';
     document.getElementById('edit-grade-ref-weak').value=g.refWeak||'';
     document.getElementById('edit-grade-ref-plan').value=g.refPlan||'';
@@ -2669,20 +2750,44 @@ window.saveEditGrade=function(){
   var examName=document.getElementById('edit-grade-exam-name').value.trim();
   var examDate=document.getElementById('edit-grade-exam-date').value;
   var type=document.getElementById('edit-grade-type').value;
+  var category=document.getElementById('edit-grade-category').value;
   if(!examName||!examDate){alert('시험명과 날짜를 입력해주세요.');return;}
   var scores={};
+  var wrongBySubj={};
+  var labels={ko:'국어',en:'영어',ma:'수학',hi:'한국사'};
+  // 기본 4과목
   ['ko','en','ma','hi'].forEach(function(k){
     var sv=document.getElementById('edit-gs-'+k+'-score').value;
     var gv=document.getElementById('edit-gs-'+k+'-grade').value;
+    var wv=document.getElementById('edit-wrong-'+k).value.trim();
     if(sv){
-      var labels={ko:'국어',en:'영어',ma:'수학',hi:'한국사'};
       scores[k]={score:sv,grade:gv||'',label:labels[k],group:k};
       if(k==='ko'){var o=document.getElementById('edit-gs-ko-opt').value;if(o){scores[k].option=o;scores[k].label='국어 ('+o+')';}}
       if(k==='ma'){var o2=document.getElementById('edit-gs-ma-opt').value;if(o2){scores[k].option=o2;scores[k].label='수학 ('+o2+')';}}
     }
+    if(wv) wrongBySubj[k]=wv;
+  });
+  // 과탐
+  ['sc1','sc2'].forEach(function(k){
+    var nm=document.getElementById('edit-gs-'+k+'-name').value.trim();
+    var sv=document.getElementById('edit-gs-'+k+'-score').value;
+    var gv=document.getElementById('edit-gs-'+k+'-grade').value;
+    var wv=document.getElementById('edit-wrong-'+k).value.trim();
+    if(sv||nm){scores[k]={score:sv,grade:gv||'',label:nm||(k==='sc1'?'과탐1':'과탐2'),group:'sc'};}
+    if(wv) wrongBySubj[k]=wv;
+  });
+  // 사탐
+  ['so1','so2'].forEach(function(k){
+    var nm=document.getElementById('edit-gs-'+k+'-name').value.trim();
+    var sv=document.getElementById('edit-gs-'+k+'-score').value;
+    var gv=document.getElementById('edit-gs-'+k+'-grade').value;
+    var wv=document.getElementById('edit-wrong-'+k).value.trim();
+    if(sv||nm){scores[k]={score:sv,grade:gv||'',label:nm||(k==='so1'?'사탐1':'사탐2'),group:'so'};}
+    if(wv) wrongBySubj[k]=wv;
   });
   updateDoc(doc(db,'grades',gradeId),{
-    examName:examName, examDate:examDate, type:type, scores:scores,
+    examName:examName, examDate:examDate, type:type, category:category,
+    scores:scores, wrongBySubj:wrongBySubj,
     refMistake:document.getElementById('edit-grade-ref-mistake').value,
     refWeak:document.getElementById('edit-grade-ref-weak').value,
     refPlan:document.getElementById('edit-grade-ref-plan').value
