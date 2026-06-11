@@ -352,28 +352,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--gray3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-hi-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-hi-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
     <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--gray3);width:52px">오답</span><input class="modal-input" id="edit-wrong-hi" placeholder="오답 문항" style="flex:1;margin-bottom:0"/></div>
   </div>
-  <!-- 과탐 -->
-  <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px;margin-bottom:6px">
-    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="subject-tag subj-sc" style="width:52px;text-align:center">과탐1</span><input class="modal-input" id="edit-gs-sc1-name" placeholder="과목명 (예: 물리학1)" style="flex:1;margin-bottom:0;font-size:12px"/></div>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--gray3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-sc1-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-sc1-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
-    <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--gray3);width:52px">오답</span><input class="modal-input" id="edit-wrong-sc1" placeholder="오답 문항" style="flex:1;margin-bottom:0"/></div>
-  </div>
-  <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px;margin-bottom:6px">
-    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="subject-tag subj-sc" style="width:52px;text-align:center">과탐2</span><input class="modal-input" id="edit-gs-sc2-name" placeholder="과목명 (예: 화학1)" style="flex:1;margin-bottom:0;font-size:12px"/></div>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--gray3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-sc2-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-sc2-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
-    <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--gray3);width:52px">오답</span><input class="modal-input" id="edit-wrong-sc2" placeholder="오답 문항" style="flex:1;margin-bottom:0"/></div>
-  </div>
-  <!-- 사탐 -->
-  <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px;margin-bottom:6px">
-    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="subject-tag subj-so" style="width:52px;text-align:center">사탐1</span><input class="modal-input" id="edit-gs-so1-name" placeholder="과목명 (예: 생활과윤리)" style="flex:1;margin-bottom:0;font-size:12px"/></div>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--gray3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-so1-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-so1-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
-    <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--gray3);width:52px">오답</span><input class="modal-input" id="edit-wrong-so1" placeholder="오답 문항" style="flex:1;margin-bottom:0"/></div>
-  </div>
-  <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px;margin-bottom:10px">
-    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="subject-tag subj-so" style="width:52px;text-align:center">사탐2</span><input class="modal-input" id="edit-gs-so2-name" placeholder="과목명 (예: 한국지리)" style="flex:1;margin-bottom:0;font-size:12px"/></div>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--gray3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-so2-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-so2-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
-    <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--gray3);width:52px">오답</span><input class="modal-input" id="edit-wrong-so2" placeholder="오답 문항" style="flex:1;margin-bottom:0"/></div>
-  </div>
+  <!-- 과탐/사탐 동적 영역 -->
+  <div id="edit-dynamic-subjects"></div>
   <div class="modal-label" style="font-size:11px;color:var(--orange)">⚠️ 실수한 부분</div><textarea class="modal-input" id="edit-grade-ref-mistake" rows="2" style="resize:none"></textarea>
   <div class="modal-label" style="font-size:11px;color:#f87171">📉 부족했던 부분</div><textarea class="modal-input" id="edit-grade-ref-weak" rows="2" style="resize:none"></textarea>
   <div class="modal-label" style="font-size:11px;color:var(--green)">✅ 개선방안</div><textarea class="modal-input" id="edit-grade-ref-plan" rows="2" style="resize:none"></textarea>
@@ -2716,28 +2696,39 @@ window.openEditGradeModal=function(gradeId, studentUid){
     var maOpt=document.getElementById('edit-gs-ma-opt');
     if(koOpt) koOpt.value=(scores.ko&&scores.ko.option)||'';
     if(maOpt) maOpt.value=(scores.ma&&scores.ma.option)||'';
-    // 과탐
-    ['sc1','sc2'].forEach(function(k){
-      var sn=document.getElementById('edit-gs-'+k+'-name');
-      var ss=document.getElementById('edit-gs-'+k+'-score');
-      var sg=document.getElementById('edit-gs-'+k+'-grade');
-      var sw=document.getElementById('edit-wrong-'+k);
-      if(sn) sn.value=(scores[k]&&scores[k].label)||'';
-      if(ss) ss.value=(scores[k]&&scores[k].score)||'';
-      if(sg) sg.value=(scores[k]&&scores[k].grade)||'';
-      if(sw) sw.value=wrongBySubj[k]||'';
-    });
-    // 사탐
-    ['so1','so2'].forEach(function(k){
-      var sn=document.getElementById('edit-gs-'+k+'-name');
-      var ss=document.getElementById('edit-gs-'+k+'-score');
-      var sg=document.getElementById('edit-gs-'+k+'-grade');
-      var sw=document.getElementById('edit-wrong-'+k);
-      if(sn) sn.value=(scores[k]&&scores[k].label)||'';
-      if(ss) ss.value=(scores[k]&&scores[k].score)||'';
-      if(sg) sg.value=(scores[k]&&scores[k].grade)||'';
-      if(sw) sw.value=wrongBySubj[k]||'';
-    });
+    // 과탐/사탐 동적 렌더링 (실제 저장된 키 기준)
+    var dynArea=document.getElementById('edit-dynamic-subjects');
+    if(dynArea){
+      var dynKeys=Object.keys(scores).filter(function(k){return k.startsWith('sc')||k.startsWith('so');});
+      var dynOrder=['sc','so'];
+      dynKeys.sort(function(a,b){
+        var ai=dynOrder.indexOf(a.replace(/\d+$/,''));
+        var bi=dynOrder.indexOf(b.replace(/\d+$/,''));
+        if(ai!==bi) return ai-bi;
+        return a.localeCompare(b);
+      });
+      dynArea.innerHTML=dynKeys.map(function(k){
+        var s=scores[k]||{};
+        var base=k.replace(/\d+$/,'');
+        var cls='subj-'+base;
+        var lbl=s.label||k;
+        var wrongVal=wrongBySubj[k]||'';
+        return '<div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px;margin-bottom:6px">'
+          +'<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">'
+          +'<span class="subject-tag '+cls+'" style="width:52px;text-align:center;font-size:10px">'+lbl+'</span>'
+          +'<input class="modal-input" id="edit-dyn-'+k+'-name" value="'+lbl+'" style="flex:1;margin-bottom:0;font-size:12px"/></div>'
+          +'<div style="display:flex;gap:8px;align-items:center;margin-bottom:5px">'
+          +'<span style="font-size:11px;color:var(--gray3);width:52px">점수/등급</span>'
+          +'<input class="modal-input" type="number" id="edit-dyn-'+k+'-score" value="'+(s.score||'')+'" placeholder="점수" style="flex:1;margin-bottom:0"/>'
+          +'<input class="modal-input" type="number" id="edit-dyn-'+k+'-grade" value="'+(s.grade||'')+'" placeholder="등급" style="width:60px;margin-bottom:0"/></div>'
+          +'<div style="display:flex;gap:8px;align-items:center">'
+          +'<span style="font-size:11px;color:var(--gray3);width:52px">오답</span>'
+          +'<input class="modal-input" id="edit-dyn-'+k+'-wrong" value="'+wrongVal+'" placeholder="오답 문항" style="flex:1;margin-bottom:0"/>'
+          +'</div></div>';
+      }).join('');
+      // 키 목록 hidden 저장
+      dynArea.dataset.keys=dynKeys.join(',');
+    }
     document.getElementById('edit-grade-ref-mistake').value=g.refMistake||'';
     document.getElementById('edit-grade-ref-weak').value=g.refWeak||'';
     document.getElementById('edit-grade-ref-plan').value=g.refPlan||'';
@@ -2767,24 +2758,22 @@ window.saveEditGrade=function(){
     }
     if(wv) wrongBySubj[k]=wv;
   });
-  // 과탐
-  ['sc1','sc2'].forEach(function(k){
-    var nm=document.getElementById('edit-gs-'+k+'-name').value.trim();
-    var sv=document.getElementById('edit-gs-'+k+'-score').value;
-    var gv=document.getElementById('edit-gs-'+k+'-grade').value;
-    var wv=document.getElementById('edit-wrong-'+k).value.trim();
-    if(sv||nm){scores[k]={score:sv,grade:gv||'',label:nm||(k==='sc1'?'과탐1':'과탐2'),group:'sc'};}
-    if(wv) wrongBySubj[k]=wv;
-  });
-  // 사탐
-  ['so1','so2'].forEach(function(k){
-    var nm=document.getElementById('edit-gs-'+k+'-name').value.trim();
-    var sv=document.getElementById('edit-gs-'+k+'-score').value;
-    var gv=document.getElementById('edit-gs-'+k+'-grade').value;
-    var wv=document.getElementById('edit-wrong-'+k).value.trim();
-    if(sv||nm){scores[k]={score:sv,grade:gv||'',label:nm||(k==='so1'?'사탐1':'사탐2'),group:'so'};}
-    if(wv) wrongBySubj[k]=wv;
-  });
+  // 과탐/사탐 동적 저장
+  var dynArea=document.getElementById('edit-dynamic-subjects');
+  if(dynArea&&dynArea.dataset.keys){
+    var dynKeys=dynArea.dataset.keys.split(',').filter(function(k){return k;});
+    dynKeys.forEach(function(k){
+      var nm=document.getElementById('edit-dyn-'+k+'-name');
+      var sv=document.getElementById('edit-dyn-'+k+'-score');
+      var gv=document.getElementById('edit-dyn-'+k+'-grade');
+      var wv=document.getElementById('edit-dyn-'+k+'-wrong');
+      var base=k.replace(/\d+$/,'');
+      if(sv&&(sv.value||( nm&&nm.value))){
+        scores[k]={score:sv?sv.value:'',grade:gv?gv.value:'',label:nm?nm.value:k,group:base};
+      }
+      if(wv&&wv.value.trim()) wrongBySubj[k]=wv.value.trim();
+    });
+  }
   updateDoc(doc(db,'grades',gradeId),{
     examName:examName, examDate:examDate, type:type, category:category,
     scores:scores, wrongBySubj:wrongBySubj,
