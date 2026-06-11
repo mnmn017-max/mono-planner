@@ -2411,6 +2411,10 @@ function buildTGrades(){
   return loadStudentList().then(function(students){
     return '<div class="section-label">학생 성적 조회</div>'
       +'<select class="modal-select" id="t-grade-student" onchange="loadStudentGrades(this.value)" style="margin-bottom:8px"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select>'
+      +'<div style="position:relative;margin-bottom:8px">'
+      +'<input class="modal-input" id="t-grade-search" placeholder="🔍 시험명 검색..." oninput="filterGradeSearch(this.value)" style="margin-bottom:0;padding-right:36px"/>'
+      +'<button onclick="filterGradeSearch(\'\');document.getElementById(\'t-grade-search\').value=\'\'" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--gray3);font-size:14px;cursor:pointer">✕</button>'
+      +'</div>'
       +'<div style="display:flex;gap:6px;margin-bottom:8px">'
       +'<button id="tg-tab-mock" onclick="switchGradeTab(\'mock\')" style="flex:1;padding:8px;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.4);border-radius:8px;color:var(--gold2);font-size:13px;font-weight:600;cursor:pointer">모의고사</button>'
       +'<button id="tg-tab-school" onclick="switchGradeTab(\'school\')" style="flex:1;padding:8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:var(--gray3);font-size:13px;cursor:pointer">내신</button>'
@@ -2427,6 +2431,18 @@ function buildTGrades(){
   });
 }
 var _currentGradeCategory='전체';
+window.filterGradeSearch=function(q){
+  q=(q||'').trim().toLowerCase();
+  var cards=document.querySelectorAll('#t-grade-list .score-card');
+  var chartDiv=document.querySelector('#t-grade-list > div[style*="border-radius:12px"]');
+  cards.forEach(function(card){
+    var examName=card.querySelector('.score-card-title, div[style*="font-weight:700"]');
+    var text=card.textContent.toLowerCase();
+    card.style.display=(!q||text.includes(q))?'':'none';
+  });
+  // 검색 중이면 그래프 숨기기
+  if(chartDiv) chartDiv.style.display=q?'none':'';
+};
 window.switchGradeCategory=function(cat){
   _currentGradeCategory=cat;
   ['전체','연습용','사설','정규','대성'].forEach(function(c){
@@ -2487,6 +2503,9 @@ window.loadExamStats=function(encodedName){
 };
 window.loadStudentGrades=function(uid){
   var el=document.getElementById('t-grade-list');if(!uid||!el) return;
+  // 검색어 초기화
+  var searchEl=document.getElementById('t-grade-search');
+  if(searchEl) searchEl.value='';
   var tab=_currentGradeTab||'mock';
   el.innerHTML='<div style="color:var(--gray3);font-size:13px">불러오는 중...</div>';
   getDocs(query(collection(db,'grades'),where('uid','==',uid))).then(function(snap){
