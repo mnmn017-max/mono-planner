@@ -732,6 +732,7 @@ function _goToScreen(user) {
         currentBranch = currentProfile.branch || '송정점';
         // 지점 변경 시 캐시 초기화
         _studentListCache = null; _studentListCacheTime = 0;
+        _rankingsCache = null; _rankingsCacheTime = 0; _rankingsCacheMonth = '';
         if (currentProfile.role === 'student') {
           showScreen('screen-student'); syncStudentUI(); studentTab(0); listenNotices(); listenChatNotifs();
           registerFCMToken(user.uid);
@@ -1066,8 +1067,9 @@ function loadStudyRankings(containerId) {
   var kstNow = new Date(now.getTime() + (9*60 + now.getTimezoneOffset())*60000);
   var month = kstNow.getFullYear()+'-'+String(kstNow.getMonth()+1).padStart(2,'0');
 
-  // 10분 캐시
-  if (_rankingsCache && _rankingsCacheMonth === month && Date.now() - _rankingsCacheTime < 600000) {
+  // 10분 캐시 (지점별 분리)
+  var cacheKey = month + '_' + getBranch();
+  if (_rankingsCache && _rankingsCacheMonth === cacheKey && Date.now() - _rankingsCacheTime < 600000) {
     el.innerHTML = _rankingsCache;
     return;
   }
@@ -1156,7 +1158,7 @@ function loadStudyRankings(containerId) {
     // 캐시 저장
     _rankingsCache = html;
     _rankingsCacheTime = Date.now();
-    _rankingsCacheMonth = month;
+    _rankingsCacheMonth = cacheKey;
 
     el.innerHTML = html;
   }).catch(function(e){
