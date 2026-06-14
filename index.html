@@ -2285,8 +2285,9 @@ function loadStudentList(){
 function buildTDashboard(){
   return loadStudentList().then(function(students){
     var today=getPlannerDate();
-    return getDocs(query(collection(db,'planners'),where('branch','==',getBranch()),where('date','==',today))).then(function(plannerSnap){
-      var submittedToday=plannerSnap.docs.map(function(d){return d.data().name;});
+    return getDocs(query(collection(db,'planners'),where('date','==',today))).then(function(plannerSnap){
+      var _myBP=getBranch();var _isDP=(currentBranch==='송정점');
+      var submittedToday=plannerSnap.docs.filter(function(d){var b=d.data().branch;return _isDP?(!b||b===_myBP):b===_myBP;}).map(function(d){return d.data().name;});
       var consultPromises=students.map(function(s){
         return getDocs(query(collection(db,'comments'),where('studentUid','==',s.uid),limit(5))).then(function(snap){
           if(snap.empty) return {name:s.name,message:'상담 기록 없음',urgent:true};
@@ -2318,8 +2319,11 @@ function buildTDashboard(){
 function buildTPlanner(){
   return loadStudentList().then(function(students){
     var today=getPlannerDate();
-    return getDocs(query(collection(db,'planners'),where('branch','==',getBranch()),where('date','==',today))).then(function(plannerSnap){
-      var todayPlanners=plannerSnap.docs.map(function(d){return d.data();});
+    return getDocs(query(collection(db,'planners'),where('date','==',today))).then(function(plannerSnap){
+      var myBranchP=getBranch();
+      var todayPlanners=plannerSnap.docs
+        .filter(function(d){var b=d.data().branch;var isDef=(currentBranch==='송정점');return isDef?(!b||b===myBranchP):b===myBranchP;})
+        .map(function(d){return d.data();});
       return getDocs(collection(db,'lectures')).then(function(_lSnap){
       var myBranch=getBranch();
       var lectureSnap={docs:_lSnap.docs.filter(function(d){var b=d.data().branch;var isDefault=(currentBranch==='송정점');return (isDefault?(!b||b===myBranch):b===myBranch);})};        var lectures=lectureSnap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
@@ -3454,9 +3458,10 @@ window.resetTodayPlanner=function(){
   getDocs(query(collection(db,'todos'),where('date','==',today))).then(function(snap){
     snap.docs.forEach(function(d){tasks.push(deleteDoc(doc(db,'todos',d.id)));});
     // planners 삭제
-    return getDocs(query(collection(db,'planners'),where('branch','==',getBranch()),where('date','==',today)));
+    return getDocs(query(collection(db,'planners'),where('date','==',today)));
   }).then(function(snap){
-    snap.docs.forEach(function(d){
+    var _myBR=getBranch();var _isDR=(currentBranch==='송정점');
+    snap.docs.filter(function(d){var b=d.data().branch;return _isDR?(!b||b===_myBR):b===_myBR;}).forEach(function(d){
       tasks.push(deleteDoc(doc(db,'planners',d.id)));
     });
     return Promise.all(tasks);
