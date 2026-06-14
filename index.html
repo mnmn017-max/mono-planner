@@ -2321,12 +2321,15 @@ function buildTPlanner(){
     var today=getPlannerDate();
     return getDocs(query(collection(db,'planners'),where('date','==',today))).then(function(plannerSnap){
       var myBranchP=getBranch();
+      var _isDP=(currentBranch==='송정점');
       var todayPlanners=plannerSnap.docs
-        .filter(function(d){var b=d.data().branch;var isDef=(currentBranch==='송정점');return isDef?(!b||b===myBranchP):b===myBranchP;})
+        .filter(function(d){var b=d.data().branch;return _isDP?(!b||b===myBranchP):b===myBranchP;})
         .map(function(d){return d.data();});
       return getDocs(collection(db,'lectures')).then(function(_lSnap){
-      var myBranch=getBranch();
-      var lectureSnap={docs:_lSnap.docs.filter(function(d){var b=d.data().branch;var isDefault=(currentBranch==='송정점');return (isDefault?(!b||b===myBranch):b===myBranch);})};        var lectures=lectureSnap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
+        var myBranch=getBranch();
+        var isDefault=(currentBranch==='송정점');
+        var lectureSnap={docs:_lSnap.docs.filter(function(d){var b=d.data().branch;return isDefault?(!b||b===myBranch):b===myBranch;})};
+        var lectures=lectureSnap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
         var activeLectures=lectures.filter(function(lc){var done=parseInt(lc.completedLessons)||0,total=parseInt(lc.totalLessons)||0;return done<total;});
         var doneLectures=lectures.filter(function(lc){var done=parseInt(lc.completedLessons)||0,total=parseInt(lc.totalLessons)||0;return done>=total;});
         var sortedLectures=activeLectures.concat(doneLectures);
