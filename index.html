@@ -1093,7 +1093,7 @@ function loadStudyRankings(containerId) {
     var nameMap = {};
     var myBranchR=getBranch();
     studentSnap.docs
-      .filter(function(d){var b=d.data().branch;var isDefR=(currentBranch==='송정점');return (isDefR?(!b||b===myBranchR):b===myBranchR);})
+      .filter(function(d){var b=d.data().branch;return !b||b===myBranchR;})
       .forEach(function(d){ nameMap[d.id] = d.data().name; });
 
     var timeMap = {};
@@ -2053,7 +2053,7 @@ function listenChat(){
   var rl=document.getElementById('chat-room-list');if(rl)rl.style.display='';
   getDocs(query(collection(db,'users'),where('role','in',['teacher','master']))).then(function(snap){
     var myBranch=getBranch();
-    var teachers=snap.docs.filter(function(d){var b=d.data().branch;var isDefault=(currentBranch==='송정점');return (isDefault?(!b||b===myBranch):b===myBranch);}).map(function(d){return Object.assign({uid:d.id},d.data());});
+    var teachers=snap.docs.filter(function(d){var b=d.data().branch;return !b||b===myBranch;}).map(function(d){return Object.assign({uid:d.id},d.data());});
     var listEl=document.getElementById('chat-room-list');if(!listEl)return;
     if(!teachers.length){listEl.innerHTML='<div style="color:var(--gray3);font-size:13px">등록된 선생님이 없습니다</div>';return;}
     listEl.innerHTML='<div class="section-label">대화방</div>'
@@ -2100,7 +2100,7 @@ function listenNotices(){
     // branch 필터 JS에서 처리 (branch 없는 기존 데이터도 표시)
     var myBranch=getBranch();
     notifications=snap.docs
-      .filter(function(d){var b=d.data().branch;var isDefault=(currentBranch==='송정점');return (isDefault?(!b||b===myBranch):b===myBranch);})
+      .filter(function(d){var b=d.data().branch;return !b||b===myBranch;})
       .map(function(d){return Object.assign({id:d.id},d.data());})
       .sort(function(a,b){var at=a.createdAt?a.createdAt.toMillis():0,bt=b.createdAt?b.createdAt.toMillis():0;return bt-at;});
     var unread=notifications.filter(function(n){return !n.readBy||!n.readBy.includes(currentUser.uid);});
@@ -2275,7 +2275,7 @@ function loadStudentList(){
   return getDocs(query(collection(db,'users'),where('role','==','student'))).then(function(snap){
     var myBranch=getBranch();
     _studentListCache = snap.docs
-      .filter(function(d){var b=d.data().branch;var isDefault=(currentBranch==='송정점');return (isDefault?(!b||b===myBranch):b===myBranch);})
+      .filter(function(d){var b=d.data().branch;return !b||b===myBranch;})
       .map(function(d){return Object.assign({uid:d.id},d.data());});
     _studentListCacheTime = Date.now();
     return _studentListCache;
@@ -2286,8 +2286,8 @@ function buildTDashboard(){
   return loadStudentList().then(function(students){
     var today=getPlannerDate();
     return getDocs(query(collection(db,'planners'),where('date','==',today))).then(function(plannerSnap){
-      var _myBP=getBranch();var _isDP=(currentBranch==='송정점');
-      var submittedToday=plannerSnap.docs.filter(function(d){var b=d.data().branch;return _isDP?(!b||b===_myBP):b===_myBP;}).map(function(d){return d.data().name;});
+      var _myBP=getBranch();
+      var submittedToday=plannerSnap.docs.filter(function(d){var b=d.data().branch;return !b||b===_myBP;}).map(function(d){return d.data().name;});
       var consultPromises=students.map(function(s){
         return getDocs(query(collection(db,'comments'),where('studentUid','==',s.uid),limit(5))).then(function(snap){
           if(snap.empty) return {name:s.name,message:'상담 기록 없음',urgent:true};
@@ -2321,13 +2321,12 @@ function buildTPlanner(){
     var today=getPlannerDate();
     return getDocs(query(collection(db,'planners'),where('date','==',today))).then(function(plannerSnap){
       var myBranchP=getBranch();
-      var _isDP=(currentBranch==='송정점');
       var todayPlanners=plannerSnap.docs
-        .filter(function(d){var b=d.data().branch;return _isDP?(!b||b===myBranchP):b===myBranchP;})
+        .filter(function(d){var b=d.data().branch;return !b||b===myBranchP;})
         .map(function(d){return d.data();});
       return getDocs(collection(db,'lectures')).then(function(_lSnap){
         var myBranch=getBranch();
-        var isDefault=(currentBranch==='송정점');
+        var isDefault=true; // branch 없는 기존 데이터 항상 포함
         var lectureSnap={docs:_lSnap.docs.filter(function(d){var b=d.data().branch;return isDefault?(!b||b===myBranch):b===myBranch;})};
         var lectures=lectureSnap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
         var activeLectures=lectures.filter(function(lc){var done=parseInt(lc.completedLessons)||0,total=parseInt(lc.totalLessons)||0;return done<total;});
@@ -2981,7 +2980,7 @@ function buildTRewards(){
   return loadStudentList().then(function(students){
     return Promise.all([getDocs(query(collection(db,'rules'),where('branch','==',getBranch()),limit(1))),getDocs(query(collection(db,'points'),orderBy('createdAt','desc'),limit(200)))]).then(function(results){
     var myBranch=getBranch();
-    results[1]={docs:results[1].docs.filter(function(d){var b=d.data().branch;var isDefault=(currentBranch==='송정점');return (isDefault?(!b||b===myBranch):b===myBranch);})};
+    results[1]={docs:results[1].docs.filter(function(d){var b=d.data().branch;return !b||b===myBranch;})};
       var rulesSnap=results[0],pointsSnap=results[1];
       var rules=rulesSnap.docs[0]?rulesSnap.docs[0].data().content:defaultRules;
       var points=pointsSnap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
@@ -3220,7 +3219,7 @@ function buildTNotice(){
     if(sel) sel.innerHTML='<option value="all">전체 학생</option>'+students.map(function(s){return '<option value="'+s.name+'">'+s.name+'</option>';}).join('');
     return getDocs(query(collection(db,'notices'),orderBy('createdAt','desc'))).then(function(snap){
       var myBranch=getBranch();
-      var notices=snap.docs.filter(function(d){var b=d.data().branch;var isDefault=(currentBranch==='송정점');return (isDefault?(!b||b===myBranch):b===myBranch);}).map(function(d){return Object.assign({id:d.id},d.data());});
+      var notices=snap.docs.filter(function(d){var b=d.data().branch;return !b||b===myBranch;}).map(function(d){return Object.assign({id:d.id},d.data());});
       // 공지 카드를 DOM으로 직접 생성하여 id 전달 문제 해결
       var html='<button class="appeal-btn" onclick="openModal(\'modal-notice\')">📢 새 공지 보내기</button><div class="section-label">공지 발송 내역</div>';
       if(!notices.length){
@@ -3463,8 +3462,8 @@ window.resetTodayPlanner=function(){
     // planners 삭제
     return getDocs(query(collection(db,'planners'),where('date','==',today)));
   }).then(function(snap){
-    var _myBR=getBranch();var _isDR=(currentBranch==='송정점');
-    snap.docs.filter(function(d){var b=d.data().branch;return _isDR?(!b||b===_myBR):b===_myBR;}).forEach(function(d){
+    var _myBR=getBranch();
+    snap.docs.filter(function(d){var b=d.data().branch;return !b||b===_myBR;}).forEach(function(d){
       tasks.push(deleteDoc(doc(db,'planners',d.id)));
     });
     return Promise.all(tasks);
@@ -3483,7 +3482,7 @@ function buildTAccounts(){
     return getDocs(query(collection(db,'users'),where('role','in',['teacher','master']))).then(function(teacherSnap){
       var myBranch=getBranch();
       var teachers=teacherSnap.docs
-        .filter(function(d){var b=d.data().branch;var isDefault=(currentBranch==='송정점');return (isDefault?(!b||b===myBranch):b===myBranch);})
+        .filter(function(d){var b=d.data().branch;return !b||b===myBranch;})
         .map(function(d){return Object.assign({uid:d.id},d.data());});
       // role 비교 - trim/소문자 처리로 오타 대응
       var myRole=(currentProfile&&currentProfile.role||'').trim().toLowerCase();
@@ -3494,7 +3493,7 @@ function buildTAccounts(){
           +'<button onclick="resetTodayPlanner()" style="width:100%;padding:12px;background:rgba(224,82,82,0.12);border:1px solid rgba(224,82,82,0.3);border-radius:8px;color:#f87171;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px">🗑 오늘 플래너 즉시 초기화 (제출 포함)</button>'
           +'<button onclick="fixBrokenTimers()" style="width:100%;padding:12px;background:rgba(74,127,255,0.1);border:1px solid rgba(74,127,255,0.2);border-radius:8px;color:#7aa8ff;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px">🔧 비정상 타이머 기록 정리</button>'
           +'<button onclick="migrateBranch()" style="width:100%;padding:12px;background:rgba(61,186,126,0.1);border:1px solid rgba(61,186,126,0.2);border-radius:8px;color:var(--green);font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px">🏢 기존 데이터 지점 설정 (최초 1회)</button>'
-          +(currentBranch==='송정점'?'<button onclick="deleteBranch()" style="width:100%;padding:12px;background:rgba(224,82,82,0.12);border:1px solid rgba(224,82,82,0.3);border-radius:8px;color:#f87171;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px">🗑 지점 삭제 (지점 전체 데이터 삭제)</button>':'')
+          +'<button onclick="deleteBranch()" style="width:100%;padding:12px;background:rgba(224,82,82,0.12);border:1px solid rgba(224,82,82,0.3);border-radius:8px;color:#f87171;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px">🗑 지점 삭제 (지점 전체 데이터 삭제)</button>'
           +'<button onclick="openStudyTimeEditor()" style="width:100%;padding:12px;background:rgba(61,186,126,0.1);border:1px solid rgba(61,186,126,0.2);border-radius:8px;color:var(--green);font-size:13px;font-weight:700;cursor:pointer">✏️ 학생 학습시간 직접 수정</button>'
           +'<div id="study-time-editor" style="display:none;margin-top:12px"></div>'
           +'</div>'
@@ -3562,7 +3561,7 @@ function buildAllChats(){
     return getDocs(query(collection(db,'users'),where('role','in',['teacher','master']))).then(function(tSnap){
       var myBranch=getBranch();
       var teachers=tSnap.docs
-        .filter(function(d){var b=d.data().branch;var isDefault=(currentBranch==='송정점');return (isDefault?(!b||b===myBranch):b===myBranch);})
+        .filter(function(d){var b=d.data().branch;return !b||b===myBranch;})
         .map(function(d){return Object.assign({uid:d.id},d.data());});
       var allRooms=[];
       students.forEach(function(s){
