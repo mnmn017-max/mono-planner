@@ -732,9 +732,28 @@ function _goToScreen(user) {
       if (pd.exists()) {
         currentProfile = pd.data();
         currentBranch = currentProfile.branch || '송정점';
+        // 이용정지 계정 차단
+        if (currentProfile.suspended === true) {
+          alert('이용이 정지된 계정입니다.\n관리자에게 문의하세요.');
+          import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js").then(function(m){m.getAuth(app).signOut();});
+          showScreen('screen-login');
+          return;
+        }
         // 지점 변경 시 캐시 초기화
         _studentListCache = null; _studentListCacheTime = 0;
         _rankingsCache = null; _rankingsCacheTime = 0; _rankingsCacheMonth = '';
+        // 이용정지 주기적 체크 (5분마다)
+        if (window._suspendCheckInterval) clearInterval(window._suspendCheckInterval);
+        window._suspendCheckInterval = setInterval(function(){
+          if (!currentUser) { clearInterval(window._suspendCheckInterval); return; }
+          getDoc(doc(db,'users',currentUser.uid)).then(function(d){
+            if(d.exists()&&d.data().suspended===true){
+              clearInterval(window._suspendCheckInterval);
+              alert('이용이 정지된 계정입니다.\n관리자에게 문의하세요.');
+              import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js").then(function(m){m.getAuth(app).signOut();});
+            }
+          }).catch(function(){});
+        }, 300000); // 5분
         if (currentProfile.role === 'student') {
           showScreen('screen-student'); syncStudentUI(); studentTab(0); listenNotices(); listenChatNotifs();
           registerFCMToken(user.uid);
@@ -3594,12 +3613,28 @@ function buildTAccounts(){
       var masterBadge=isMaster?'<div style="background:rgba(232,148,58,0.08);border:1px solid rgba(232,148,58,0.2);border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#f0a855">⚠️ 마스터 전용 — 계정 수정 및 삭제 가능</div>':'';
       var teacherRows=teachers.map(function(t){
         var roleLabel=t.role==='master'?'마스터':t.role==='teacher'?'선생님':t.role;
-        var btns=isMaster?'<div style="display:flex;gap:5px"><button onclick="openEditAccountModal(\''+t.uid+'\',\''+t.name+'\',\''+t.username+'\')" style="padding:6px 10px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.2);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer">수정</button><button onclick="deleteAccount(\''+t.uid+'\',\''+t.name+'\')" style="padding:6px 10px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:6px;color:#f87171;font-size:11px;cursor:pointer">삭제</button></div>':'';
-        return '<div class="student-row"><div class="teacher-av" style="width:36px;height:36px;font-size:12px">'+(t.name||'?').slice(0,2)+'</div><div style="flex:1"><div style="font-size:14px;font-weight:600">'+t.name+'</div><div style="font-size:11px;color:var(--gray3);margin-top:2px">'+roleLabel+' · '+(t.branch||'지점미설정')+' · ID: '+(t.username||'')+'</div></div>'+btns+'</div>';
+        var isSuspended=t.suspended===true;
+        var btns=isMaster?'<div style="display:flex;gap:5px;flex-wrap:wrap">'
+          +'<button onclick="openEditAccountModal(\''+t.uid+'\',\''+t.name+'\',\''+t.username+'\')" style="padding:6px 10px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.2);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer">수정</button>'
+          +'<button onclick="toggleSuspendAccount(\''+t.uid+'\',\''+t.name+'\','+isSuspended+')" style="padding:6px 10px;background:'+(isSuspended?'rgba(61,186,126,0.1)':'rgba(255,165,0,0.1)')+';border:1px solid '+(isSuspended?'rgba(61,186,126,0.2)':'rgba(255,165,0,0.2)')+';border-radius:6px;color:'+(isSuspended?'var(--green)':'orange')+';font-size:11px;cursor:pointer">'+(isSuspended?'정지해제':'이용정지')+'</button>'
+          +'<button onclick="deleteAccount(\''+t.uid+'\',\''+t.name+'\')" style="padding:6px 10px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:6px;color:#f87171;font-size:11px;cursor:pointer">삭제</button>'
+          +'</div>':'';
+        return '<div class="student-row" style="'+(isSuspended?'opacity:0.5;':'')+'">'
+          +'<div class="teacher-av" style="width:36px;height:36px;font-size:12px">'+(t.name||'?').slice(0,2)+'</div>'
+          +'<div style="flex:1"><div style="font-size:14px;font-weight:600">'+t.name+(isSuspended?' <span style="font-size:10px;padding:2px 5px;background:rgba(224,82,82,0.15);border-radius:4px;color:#f87171">정지</span>':'')+'</div>'
+          +'<div style="font-size:11px;color:var(--gray3);margin-top:2px">'+roleLabel+' · '+(t.branch||'지점미설정')+' · ID: '+(t.username||'')+'</div></div>'+btns+'</div>';
       }).join('');
       var studentRows=students.map(function(s){
-        var btns=isMaster?'<div style="display:flex;gap:5px"><button onclick="openEditAccountModal(\''+s.uid+'\',\''+s.name+'\',\''+s.username+'\')" style="padding:6px 10px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.2);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer">수정</button><button onclick="deleteAccount(\''+s.uid+'\',\''+s.name+'\')" style="padding:6px 10px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:6px;color:#f87171;font-size:11px;cursor:pointer">삭제</button></div>':'';
-        return '<div class="student-row"><div class="student-av-t">'+(s.name||'?').slice(0,2)+'</div><div style="flex:1"><div style="font-size:14px;font-weight:600">'+s.name+'</div><div style="font-size:11px;color:var(--gray3);margin-top:2px">'+(s.grade||'')+' · ID: '+(s.username||'')+'</div></div>'+btns+'</div>';
+        var isSuspended=s.suspended===true;
+        var btns=isMaster?'<div style="display:flex;gap:5px;flex-wrap:wrap">'
+          +'<button onclick="openEditAccountModal(\''+s.uid+'\',\''+s.name+'\',\''+s.username+'\')" style="padding:6px 10px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.2);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer">수정</button>'
+          +'<button onclick="toggleSuspendAccount(\''+s.uid+'\',\''+s.name+'\','+isSuspended+')" style="padding:6px 10px;background:'+(isSuspended?'rgba(61,186,126,0.1)':'rgba(255,165,0,0.1)')+';border:1px solid '+(isSuspended?'rgba(61,186,126,0.2)':'rgba(255,165,0,0.2)')+';border-radius:6px;color:'+(isSuspended?'var(--green)':'orange')+';font-size:11px;cursor:pointer">'+(isSuspended?'정지해제':'이용정지')+'</button>'
+          +'<button onclick="deleteAccount(\''+s.uid+'\',\''+s.name+'\')" style="padding:6px 10px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:6px;color:#f87171;font-size:11px;cursor:pointer">삭제</button>'
+          +'</div>':'';
+        return '<div class="student-row" style="'+(isSuspended?'opacity:0.5;':'')+'">'
+          +'<div class="student-av-t">'+(s.name||'?').slice(0,2)+'</div>'
+          +'<div style="flex:1"><div style="font-size:14px;font-weight:600">'+s.name+(isSuspended?' <span style="font-size:10px;padding:2px 5px;background:rgba(224,82,82,0.15);border-radius:4px;color:#f87171">정지</span>':'')+'</div>'
+          +'<div style="font-size:11px;color:var(--gray3);margin-top:2px">'+(s.grade||'')+' · ID: '+(s.username||'')+'</div></div>'+btns+'</div>';
       }).join('');
       return masterTools+'<div class="stat-grid"><div class="stat-card"><div class="stat-val">'+students.length+'</div><div class="stat-lbl">학생 계정</div></div><div class="stat-card"><div class="stat-val" style="color:var(--gold)">'+teachers.length+'</div><div class="stat-lbl">선생님 계정</div></div></div><button class="appeal-btn" onclick="openModal(\'modal-add-account\')">+ 새 계정 추가</button>'+masterBadge+'<div class="section-label">선생님 계정</div>'+teacherRows+'<div class="section-label">학생 계정</div>'+studentRows;
     });
@@ -3622,6 +3657,16 @@ window.saveEditAccount=function(){
     if(conflict){alert('이미 사용 중인 아이디입니다.');return;}
     updateDoc(doc(db,'users',uid),{name:name,username:username}).then(function(){alert('계정 정보가 수정되었습니다.');closeModal('modal-edit-account');renderTeacher(6);});
   });
+};
+window.toggleSuspendAccount=function(uid, name, isSuspended){
+  var msg = isSuspended
+    ? name+' 계정의 이용정지를 해제하시겠습니까?'
+    : name+' 계정을 이용정지하시겠습니까?\n(즉시 로그아웃되며 재로그인이 불가합니다)';
+  if(!confirm(msg)) return;
+  updateDoc(doc(db,'users',uid), {suspended: !isSuspended}).then(function(){
+    alert(isSuspended ? '이용정지가 해제되었습니다.' : '이용정지 처리되었습니다.');
+    renderTeacher(6);
+  }).catch(function(e){alert('처리 실패: '+e.message);});
 };
 window.deleteAccount=function(uid,name){
   if(!confirm(name+' 계정을 정말 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) return;
