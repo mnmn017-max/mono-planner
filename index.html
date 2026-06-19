@@ -1134,7 +1134,7 @@ function loadStudyRankings(containerId) {
     var nameMap = {};
     var myBranchR=getBranch();
     studentSnap.docs
-      .filter(function(d){var b=d.data().branch;return !b||b===myBranchR;})
+      .filter(function(d){var data=d.data();var b=data.branch;return (!b||b===myBranchR)&&data.suspended!==true;})
       .forEach(function(d){ nameMap[d.id] = d.data().name; });
 
     var timeMap = {};
@@ -2380,7 +2380,13 @@ function loadStudentList(){
   return getDocs(query(collection(db,'users'),where('role','==','student'))).then(function(snap){
     var myBranch=getBranch();
     _studentListCache = snap.docs
-      .filter(function(d){var b=d.data().branch;return !b||b===myBranch;})
+      .filter(function(d){
+        var data=d.data();
+        var b=data.branch;
+        if(!(!b||b===myBranch)) return false; // 지점 필터
+        if(data.suspended===true) return false; // 정지 계정 제외
+        return true;
+      })
       .map(function(d){return Object.assign({uid:d.id},d.data());});
     _studentListCacheTime = Date.now();
     return _studentListCache;
@@ -3664,6 +3670,9 @@ window.toggleSuspendAccount=function(uid, name, isSuspended){
     : name+' 계정을 이용정지하시겠습니까?\n(즉시 로그아웃되며 재로그인이 불가합니다)';
   if(!confirm(msg)) return;
   updateDoc(doc(db,'users',uid), {suspended: !isSuspended}).then(function(){
+    // 캐시 초기화 - 모든 탭에 즉시 반영
+    _studentListCache = null; _studentListCacheTime = 0;
+    _rankingsCache = null; _rankingsCacheTime = 0;
     alert(isSuspended ? '이용정지가 해제되었습니다.' : '이용정지 처리되었습니다.');
     renderTeacher(6);
   }).catch(function(e){alert('처리 실패: '+e.message);});
