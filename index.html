@@ -7,8 +7,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MONO PLANNER">
-<link rel="manifest" href="/manifest.json">
-<link rel="apple-touch-icon" href="/icon-192.png">
+
+
 <title>MONO PLANNER</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
@@ -49,8 +49,8 @@
   --accent:#7B1D1D;
 }
 html,body{margin:0;padding:0;}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',sans-serif;background:var(--bg);color:var(--tx1);overflow-x:hidden;font-size:14px;-webkit-font-smoothing:antialiased;}
-.screen{display:none;min-height:100vh;flex-direction:column;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',sans-serif;background:var(--bg);color:var(--tx1);overflow:hidden;max-height:100vh;font-size:14px;-webkit-font-smoothing:antialiased;}
+.screen{display:none;height:100vh;max-height:100vh;flex-direction:column;overflow:hidden;}
 .screen.active{display:flex;}
 
 /* ── 로딩 ── */
@@ -5763,11 +5763,14 @@ var _masterAllMessages=[];
             fill.style.width      = '100%';
           }, 80);
         }
-        // 로딩바 완료 후 1.5초 대기 → 강제 화면 전환
+        // 로딩바 완료 후 1.5초 대기 → 강제 화면 전환 (로그인 안된 경우만)
         setTimeout(function(){
           var loading = document.getElementById('screen-loading');
           if (loading && loading.classList.contains('active')) {
-            showScreen('screen-login');
+            if (!currentUser) {
+              showScreen('screen-login');
+            }
+            // 로그인된 경우는 onAuthStateChanged가 처리
           }
         }, 1500);
       }, 400);
