@@ -48,13 +48,13 @@
   --gray4:#3D2B2B;
   --accent:#7B1D1D;
 }
-html,body{margin:0;padding:0;}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',sans-serif;background:var(--bg);color:var(--tx1);overflow:hidden;max-height:100vh;font-size:14px;-webkit-font-smoothing:antialiased;}
-.screen{display:none;height:100vh;max-height:100vh;flex-direction:column;overflow:hidden;}
+html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',sans-serif;background:var(--bg);color:var(--tx1);overflow:hidden;width:100%;height:100%;font-size:14px;-webkit-font-smoothing:antialiased;}
+.screen{display:none;position:fixed;top:0;left:0;right:0;bottom:0;width:100vw;height:100vh;flex-direction:column;overflow:hidden;z-index:1;background:var(--bg);}
 .screen.active{display:flex;}
 
 /* ── 로딩 ── */
-#screen-loading{background:#FAF6F0;align-items:center;justify-content:center;}
+#screen-loading{background:#FAF6F0;align-items:center;justify-content:center;z-index:100;}
 .loading-wrap{display:flex;flex-direction:column;align-items:center;gap:24px;padding:0 24px;text-align:center;}
 .loading-tag{font-size:15px;color:var(--tx3);letter-spacing:.5px;line-height:1.9;font-weight:500;}
 .loading-bar{width:240px;height:3px;background:var(--surface3);border-radius:3px;overflow:hidden;margin-top:8px;}
@@ -70,8 +70,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .loading-bar-fill{width:0;transition:none;}
 
 /* ── 로그인 ── */
-#screen-login{background:#FAF6F0;align-items:center;justify-content:center;padding:24px;}
-.login-box{width:100%;max-width:380px;display:flex;flex-direction:column;align-items:center;min-height:100vh;justify-content:center;padding-bottom:60px;}
+#screen-login{background:#FAF6F0;align-items:center;justify-content:flex-start;padding:0;overflow-y:auto;}
+.login-box{width:100%;max-width:380px;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:center;padding:20px 0 60px;overflow-y:auto;}
 .login-logo{display:flex;flex-direction:column;align-items:center;gap:14px;margin-bottom:32px;}
 .login-tag{font-size:13px;color:var(--tx3);letter-spacing:.3px;}
 .login-err{color:var(--red);font-size:13px;text-align:center;min-height:20px;margin-bottom:6px;}
@@ -307,7 +307,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   body{font-size:14px;overflow:hidden;}
   
   /* 학생 화면 */
-  #screen-student{flex-direction:row !important;height:100vh;overflow:hidden;}
+  #screen-student{flex-direction:row !important;overflow:hidden;}
   #screen-student .topbar{display:none !important;}
   #screen-student .timer-banner,#screen-student .timer-banner-empty{display:flex !important;margin:14px 24px 0;border-radius:12px;}
   #screen-student .bottom-nav{display:none !important;}
@@ -390,7 +390,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   #screen-student.chat-mode .dt-right{display:none !important;}
   
   /* 선생님 화면 */
-  #screen-teacher{flex-direction:row !important;height:100vh;overflow:hidden;}
+  #screen-teacher{flex-direction:row !important;overflow:hidden;}
   #screen-teacher .teacher-topbar{display:none !important;}
   #screen-teacher .teacher-bottom-nav{display:none !important;}
   #screen-teacher .teacher-brand{display:none !important;}
