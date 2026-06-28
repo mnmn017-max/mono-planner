@@ -70,12 +70,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .loading-bar-fill{width:0;transition:none;}
 
 /* ── 로그인 ── */
-#screen-login{background:#FAF6F0;align-items:center;justify-content:flex-start;padding:0;overflow-y:auto;}
-.login-box{width:100%;max-width:380px;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:center;padding:20px 0 60px;overflow-y:auto;}
-.login-logo{display:flex;flex-direction:column;align-items:center;gap:14px;margin-bottom:32px;}
+#screen-login{background:#FAF6F0;align-items:center;justify-content:flex-start;padding:0;overflow-y:auto;overflow-x:hidden;}
+.login-box{width:100%;max-width:420px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:60px 24px 80px;margin:0 auto;}
+.login-logo{display:flex;flex-direction:column;align-items:center;gap:10px;margin-bottom:28px;}
 .login-tag{font-size:13px;color:var(--tx3);letter-spacing:.3px;}
 .login-err{color:var(--red);font-size:13px;text-align:center;min-height:20px;margin-bottom:6px;}
-.login-brand{position:fixed;bottom:28px;left:0;right:0;text-align:center;font-size:12px;color:var(--tx4);letter-spacing:2px;}
+.login-brand{position:absolute;bottom:20px;left:0;right:0;text-align:center;font-size:12px;color:var(--tx4);letter-spacing:2px;}
 
 /* ── 공통 topbar ── */
 .topbar{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;flex-shrink:0;background:var(--surface);border-bottom:1px solid var(--border);}
@@ -604,16 +604,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .logo-svg-el{display:block;width:100%;height:100%;overflow:visible;}
 .dt-sb-logo{display:flex;align-items:center;justify-content:center;}
 .dt-sb-logo .logo-svg-el path{} /* 색상은 svg 인라인으로 */
-.login-svg-wrap{width:240px;height:120px;display:block;margin:0 auto;}
-.login-svg-wrap .logo-svg-el{width:100%;height:100%;}
+
+
 .topbar-logo-mark .logo-svg-el{} /* 흰색 path 인라인 */
 /* 스플래시 */
 .splash-logo-svg{width:340px;height:170px;margin:0 0 10px;}
 .splash-logo-svg svg{width:100%;height:100%;}
 .splash-tag{opacity:0;}.splash-bar{opacity:0;}
 .loading-bar-fill{width:0;transition:none;}
-.login-svg-wrap{width:230px;height:115px;display:block;margin:0 auto 4px;}
-.login-svg-wrap svg,.topbar-logo-mark svg,.dt-sb-logo svg{width:100%;height:100%;display:block;}
+
+
 
 /* 스플래시 */
 .splash-logo-svg{width:340px;height:170px;margin:0 0 8px;}
@@ -622,7 +622,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .splash-bar{opacity:0;}
 .loading-bar-fill{width:0;transition:none;}
 /* 로고 정적 */
-.login-svg-wrap{width:220px;height:110px;display:block;margin:0 auto 4px;}
+.login-svg-wrap{width:260px;height:130px;display:block;margin:0 auto 8px;}
 .login-svg-wrap svg{width:100%;height:100%;}
 .dt-sb-logo svg{width:100%;height:100%;display:block;}
 .topbar-logo-mark svg{width:100%;height:100%;display:block;}
