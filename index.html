@@ -640,6 +640,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 #screen-login{z-index:2;}
 #screen-student{z-index:2;}
 #screen-teacher{z-index:2;}
+
+/* 좁은 데스크탑/태블릿 가로 (1200~1499px) - 우측 패널 숨기고 메인 단일 컬럼 */
+@media(min-width:1200px) and (max-width:1499px){
+  .dt-right{display:none !important;}
+  .dt-main-grid{grid-template-columns:1fr !important;}
+}
 </style>
 <script>
 // 스플래시 화면 자동 종료 (모듈 스크립트와 독립 실행 - Firebase 로딩 실패해도 작동)
