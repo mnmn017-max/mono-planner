@@ -55,11 +55,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 
 /* ── 로딩 ── */
 #screen-loading{background:#FAF6F0;align-items:center;justify-content:center;z-index:100;}
-.loading-wrap{display:flex;flex-direction:column;align-items:center;gap:24px;padding:0 24px;text-align:center;}
+.loading-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;padding:0 24px;text-align:center;flex:1;}
 .loading-tag{font-size:15px;color:var(--tx3);letter-spacing:.5px;line-height:1.9;font-weight:500;}
 .loading-bar{width:240px;height:3px;background:var(--surface3);border-radius:3px;overflow:hidden;margin-top:8px;}
 .loading-bar-fill{height:100%;background:linear-gradient(90deg,var(--burg),#D4A04A);border-radius:3px;}
-.loading-brand{position:fixed;bottom:32px;left:0;right:0;text-align:center;font-size:12px;color:var(--tx4);letter-spacing:2px;}
+.loading-brand{position:absolute;bottom:24px;left:0;right:0;text-align:center;font-size:12px;color:var(--tx4);letter-spacing:2px;}
 
 /* 스플래시 - 진짜 필기 애니메이션 (JS driven) */
 .splash-logo-svg{width:340px;height:170px;margin:0 0 10px;}
@@ -611,7 +611,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .splash-logo-svg{width:340px;height:170px;margin:0 0 10px;}
 .splash-logo-svg svg{width:100%;height:100%;}
 .splash-tag{opacity:0;}.splash-bar{opacity:0;}
-.loading-bar-fill{width:0;transition:none;}
+
 
 
 
@@ -620,7 +620,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .splash-logo-svg svg{width:100%;height:100%;overflow:visible;}
 .splash-tag{opacity:0;}
 .splash-bar{opacity:0;}
-.loading-bar-fill{width:0;transition:none;}
+
 /* 로고 정적 */
 .login-svg-wrap{width:260px;height:130px;display:block;margin:0 auto 8px;}
 .login-svg-wrap svg{width:100%;height:100%;}
@@ -1370,21 +1370,7 @@ function _doGoToScreen(user) {
     showScreen('screen-login');
   }
 }
-// 4초 후 무조건 화면 전환 (스플래시 종료 보장)
-setTimeout(function() {
-  var loading = document.getElementById('screen-loading');
-  if (loading && loading.classList.contains('active')) {
-    if (currentUser && currentProfile) {
-      // 이미 로그인 처리됨 - 해당 화면 유지 (이미 전환됐어야 함)
-    } else if (currentUser) {
-      _authResolved = false;
-      _goToScreen(currentUser);
-    } else {
-      showScreen('screen-login');
-    }
-  }
-}, 4000);
-// onAuthStateChanged: 인증 상태 확인 후 _splashMinDuration 대기 후 전환
+// onAuthStateChanged: 인증 상태 확인 → _splashMinDuration 대기 후 화면 전환
 onAuthStateChanged(auth, function(user) {
   if (_authResolved) return;
   _authResolved = true;
@@ -1392,6 +1378,14 @@ onAuthStateChanged(auth, function(user) {
   var delay = Math.max(0, _splashMinDuration - elapsed);
   setTimeout(function() { _doGoToScreen(user); }, delay);
 });
+// 안전장치: 6초 후에도 로딩 중이면 강제 전환
+setTimeout(function() {
+  var loading = document.getElementById('screen-loading');
+  if (loading && loading.classList.contains('active')) {
+    console.warn('[splash] 6초 타임아웃 - 강제 전환');
+    showScreen('screen-login');
+  }
+}, 6000);
 
 window.doLogin = function() {
   var id = document.getElementById('login-id').value.trim();
@@ -5763,16 +5757,6 @@ var _masterAllMessages=[];
             fill.style.width      = '100%';
           }, 80);
         }
-        // 로딩바 완료 후 1.5초 대기 → 강제 화면 전환 (로그인 안된 경우만)
-        setTimeout(function(){
-          var loading = document.getElementById('screen-loading');
-          if (loading && loading.classList.contains('active')) {
-            if (!currentUser) {
-              showScreen('screen-login');
-            }
-            // 로그인된 경우는 onAuthStateChanged가 처리
-          }
-        }, 1500);
       }, 400);
     }
   }
