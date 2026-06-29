@@ -1494,10 +1494,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 <!-- 전역 유틸 스크립트 (모듈 밖) -->
 <script>
 function showScreen(id) {
+  console.log('[showScreen]', id, 'currentProfile:', (currentProfile?currentProfile.role:'none'));
   var els = document.querySelectorAll('.screen');
   for (var i = 0; i < els.length; i++) els[i].classList.remove('active');
   var el = document.getElementById(id);
-  if (el) el.classList.add('active');
+  if (el) {
+    el.classList.add('active');
+    console.log('[showScreen] OK:', id);
+  } else {
+    console.error('[showScreen] 요소 없음:', id);
+  }
 }
 function openModal(id) {
   // todo 추가/수정 모달이면 과목 select 동기화
@@ -1774,9 +1780,11 @@ function _goToScreen(user) {
   }
 }
 function _doGoToScreen(user) {
+  console.log('[_doGoToScreen] user:', user ? user.uid : 'null');
   if (user) {
     currentUser = user;
     getDoc(doc(db, 'users', user.uid)).then(function(pd) {
+      console.log('[_doGoToScreen] users doc exists:', pd.exists());
       if (pd.exists()) {
         currentProfile = pd.data();
         currentBranch = currentProfile.branch || '송정점';
@@ -1814,7 +1822,7 @@ function _doGoToScreen(user) {
           buildTeacherTabs(currentProfile.role === 'master'); renderTeacher(0);
         } else { signOut(auth); showScreen('screen-login'); }
       } else { signOut(auth); showScreen('screen-login'); }
-    }).catch(function() { showScreen('screen-login'); });
+    }).catch(function(e) { console.error('[_doGoToScreen] getDoc 실패:', e); showScreen('screen-login'); });
   } else {
     showScreen('screen-login');
   }
@@ -1842,16 +1850,15 @@ window.doLogin = function() {
   var err = document.getElementById('login-err');
   err.textContent = '';
   if (!id || !pw) { err.textContent = '아이디와 비밀번호를 입력해주세요.'; return; }
-  showScreen('screen-loading');
   getDocs(query(collection(db, 'users'), where('username', '==', id))).then(function(snap) {
     if (snap.empty) { showScreen('screen-login'); document.getElementById('login-err').textContent = '아이디 또는 비밀번호가 올바르지 않습니다.'; return; }
     var isTeacher = window._loginType === 'teacher';
     var matched = snap.docs.filter(function(d) { var r = d.data().role; return isTeacher ? (r==='teacher'||r==='master') : r==='student'; });
     if (!matched.length) { showScreen('screen-login'); document.getElementById('login-err').textContent = '해당 탭에 맞는 계정이 없습니다.'; return; }
     signInWithEmailAndPassword(auth, matched[0].data().email, pw).then(function(cred) {
-      // _authResolved 리셋 후 직접 처리 (타임아웃으로 이미 resolved된 경우 대비)
-      _authResolved = false;
-      _goToScreen(cred.user);
+      // 로그인 성공 - 스플래시 시간 무시하고 즉시 화면 전환
+      _authResolved = true;
+      _doGoToScreen(cred.user);
     }).catch(function() { showScreen('screen-login'); document.getElementById('login-err').textContent = '아이디 또는 비밀번호가 올바르지 않습니다.'; });
   }).catch(function() { showScreen('screen-login'); document.getElementById('login-err').textContent = '오류가 발생했습니다.'; });
 };
