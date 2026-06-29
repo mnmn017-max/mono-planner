@@ -92,9 +92,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 /* ── 타이머 배너 (모바일 학생) ── */
 .timer-banner{background:linear-gradient(135deg,var(--burg),var(--burg2));padding:10px 14px;display:flex;align-items:center;gap:10px;flex-shrink:0;cursor:default;}
 .timer-banner-info{flex:1;min-width:0;}
-.timer-banner-sub{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--tx1);font-weight:500;margin-bottom:1px;}
+.timer-banner-sub{display:flex;align-items:center;gap:5px;font-size:10px;color:#fff;font-weight:600;margin-bottom:1px;opacity:0.95;}
 .timer-banner-sub-dot{width:5px;height:5px;border-radius:50%;background:#fff;flex-shrink:0;animation:pulse 1.5s infinite;}
-.timer-banner-sub-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.timer-banner-sub-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;}
 .timer-banner-time{font-size:22px;font-weight:700;color:#fff;letter-spacing:2px;line-height:1.1;font-variant-numeric:tabular-nums;}
 .timer-banner-buttons{display:flex;gap:5px;flex-shrink:0;}
 .tbb{border:none;font-size:11px;font-weight:600;padding:7px 12px;border-radius:7px;cursor:pointer;white-space:nowrap;}
@@ -309,11 +309,62 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   /* 학생 화면 */
   #screen-student{flex-direction:row !important;overflow:hidden;}
   #screen-student .topbar{display:none !important;}
-  #screen-student .timer-banner,#screen-student .timer-banner-empty{display:flex !important;margin:14px 24px 0;border-radius:14px;padding:18px 24px;}
-  #screen-student .timer-banner-time{font-size:34px;letter-spacing:2px;}
-  #screen-student .timer-banner-sub{font-size:12px;}
-  #screen-student .timer-banner-sub-text{font-size:13px;}
-  #screen-student .timer-banner-empty-text{font-size:13px;}
+  #screen-student .timer-banner{
+    display:flex !important;
+    flex-direction:column !important;
+    align-items:center !important;
+    justify-content:center !important;
+    gap:14px;
+    margin:14px 24px 0;
+    border-radius:14px;
+    padding:24px 28px;
+    max-width:480px;
+    align-self:center;
+  }
+  #screen-student .timer-banner-empty{
+    display:flex !important;
+    align-items:center;
+    justify-content:center;
+    margin:14px 24px 0;
+    border-radius:14px;
+    padding:18px 24px;
+    max-width:480px;
+    align-self:center;
+  }
+  #screen-student .timer-banner-info{
+    flex:none !important;
+    text-align:center;
+    width:100%;
+  }
+  #screen-student .timer-banner-sub{
+    justify-content:center;
+    font-size:13px !important;
+    color:#fff !important;
+    font-weight:600 !important;
+    margin-bottom:0 !important;
+    opacity:0.95;
+  }
+  #screen-student .timer-banner-sub-text{
+    font-size:14px !important;
+    color:#fff !important;
+    font-weight:600;
+    white-space:normal !important;
+    text-overflow:clip !important;
+    overflow:visible !important;
+  }
+  #screen-student .timer-banner-time{
+    font-size:42px !important;
+    letter-spacing:3px;
+    color:#fff !important;
+    text-align:center;
+    margin-top:8px;
+  }
+  #screen-student .timer-banner-buttons{
+    width:100%;
+    justify-content:center;
+    gap:10px;
+  }
+  #screen-student .timer-banner-empty-text{font-size:13px;color:var(--tx2);}
   #screen-student .bottom-nav{display:none !important;}
   #screen-student .bottom-brand{display:none !important;}
   .mobile-only{display:none !important;}
