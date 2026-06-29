@@ -1053,6 +1053,30 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   </div>
 </div>
 
+<!-- 과목 관리 모달 -->
+<div id="modal-subject-manage" class="modal-overlay">
+  <div class="modal" style="max-width:500px;">
+    <div class="modal-title">📚 과목 관리</div>
+    <div style="font-size:12px;color:var(--tx3);margin-bottom:14px;line-height:1.5;">
+      플래너에서 사용할 과목을 직접 추가/수정/삭제할 수 있어요.<br>
+      과목명을 입력하고 색상을 선택한 뒤 '저장' 버튼을 눌러주세요.
+    </div>
+    
+    <div class="modal-label">현재 과목 목록</div>
+    <div id="subject-manage-list" style="max-height:280px;overflow-y:auto;margin-bottom:14px;"></div>
+    
+    <div class="modal-label">➕ 새 과목 추가</div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+      <input class="modal-input" id="new-subject-name" placeholder="예: 물리, 화학, 영어듣기 등" style="flex:1;margin:0;height:40px;" maxlength="20"/>
+      <button onclick="addSubject()" style="background:var(--burg);color:#fff;border:none;border-radius:8px;padding:0 16px;font-size:13px;font-weight:600;cursor:pointer;height:40px;">추가</button>
+    </div>
+    
+    <button class="modal-btn primary" onclick="saveSubjectManage()">💾 변경 사항 저장</button>
+    <button class="modal-btn cancel" onclick="resetSubjectsToDefault()" style="margin-top:6px;">기본 과목으로 되돌리기</button>
+    <button class="modal-btn cancel" onclick="closeModal('modal-subject-manage')" style="margin-top:6px;">취소</button>
+  </div>
+</div>
+
 <!-- 채팅방 메뉴 모달 -->
 <div id="modal-kchat-room-menu" class="modal-overlay">
   <div class="modal" style="max-width:400px;">
@@ -1346,14 +1370,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 <div class="modal-overlay" id="modal-profile-student"><div class="modal">
   <div class="modal-title">내 정보 수정</div>
   <div style="text-align:center;margin-bottom:14px;">
-    <button onclick="closeModal('modal-profile-student');openAvatarEditModal();" style="background:var(--burg-l);color:var(--burg);border:1px solid var(--burg-l2);padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">📷 프로필 아바타 변경</button>
+    <button onclick="closeModal('modal-profile-student');openAvatarEditModal();" style="background:var(--burg-l);color:var(--burg);border:1px solid var(--burg-l2);padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;margin:0 4px;">📷 아바타</button>
+    <button onclick="openSubjectManageModal()" style="background:var(--burg-l);color:var(--burg);border:1px solid var(--burg-l2);padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;margin:0 4px;">📚 과목 관리</button>
   </div>
   <div class="modal-label">이름</div><input class="modal-input" id="ps-name" placeholder="이름"/>
-  <div class="modal-label">학교</div><input class="modal-input" id="ps-school" placeholder="학교명"/>
+  <div class="modal-label" id="ps-school-label">학교</div><input class="modal-input" id="ps-school" placeholder="학교명"/>
   <div class="modal-label">학년</div>
-  <select class="modal-select" id="ps-grade"><option value="중학교 1학년">중학교 1학년</option><option value="중학교 2학년">중학교 2학년</option><option value="중학교 3학년">중학교 3학년</option><option value="고등학교 1학년">고등학교 1학년</option><option value="고등학교 2학년">고등학교 2학년</option><option value="고등학교 3학년">고등학교 3학년</option></select>
-  <div class="modal-label">목표 대학</div><input class="modal-input" id="ps-univ" placeholder="예: 연세대학교"/>
-  <div class="modal-label">목표 학과</div><input class="modal-input" id="ps-dept" placeholder="예: 경영학과"/>
+  <select class="modal-select" id="ps-grade" onchange="onGradeChange(this.value)"><option value="중학교 1학년">중학교 1학년</option><option value="중학교 2학년">중학교 2학년</option><option value="중학교 3학년">중학교 3학년</option><option value="고등학교 1학년">고등학교 1학년</option><option value="고등학교 2학년">고등학교 2학년</option><option value="고등학교 3학년">고등학교 3학년</option><option value="N수">N수 (재수/N수)</option><option value="성인">성인</option></select>
+  <div class="modal-label" id="ps-univ-label">목표 대학</div><input class="modal-input" id="ps-univ" placeholder="예: 연세대학교"/>
+  <div class="modal-label" id="ps-dept-label">목표 학과</div><input class="modal-input" id="ps-dept" placeholder="예: 경영학과"/>
+  <div class="modal-label" id="ps-goal-label" style="display:none;">목표</div><input class="modal-input" id="ps-goal" placeholder="예: 공무원 합격, 자격증 취득, 이직 등" style="display:none;"/>
   <div class="modal-label">비밀번호 변경 (선택)</div><input class="modal-input" type="password" id="ps-pw" placeholder="새 비밀번호 (6자 이상)"/>
   <button class="modal-btn primary" onclick="saveProfileStudent()">저장하기</button>
   <button class="modal-btn cancel" onclick="closeModal('modal-profile-student')">취소</button>
@@ -1473,7 +1499,153 @@ function showScreen(id) {
   var el = document.getElementById(id);
   if (el) el.classList.add('active');
 }
-function openModal(id) { var el = document.getElementById(id); if (el) el.classList.add('open'); }
+function openModal(id) {
+  // todo 추가/수정 모달이면 과목 select 동기화
+  if (id === 'modal-add-todo' || id === 'modal-edit-todo') {
+    if (window.syncAllSubjectSelects) syncAllSubjectSelects();
+  }
+  var el = document.getElementById(id);
+  if (el) el.classList.add('open');
+}
+
+window.onGradeChange = function(val) {
+  var isAdult = (val === '성인');
+  var isNSu   = (val === 'N수');
+  
+  // 학교명 숨김 - 성인/N수 둘 다
+  var schoolInput = document.getElementById('ps-school');
+  var schoolLabel = document.getElementById('ps-school-label');
+  if (schoolInput && schoolLabel) {
+    var hideSchool = isAdult || isNSu;
+    schoolInput.style.display = hideSchool ? 'none' : '';
+    schoolLabel.style.display = hideSchool ? 'none' : '';
+    if (hideSchool) schoolInput.value = '';
+  }
+  
+  // 성인일 때만 목표 대학/학과 → 목표 (단일 입력)으로 전환
+  var univInput  = document.getElementById('ps-univ');
+  var univLabel  = document.getElementById('ps-univ-label');
+  var deptInput  = document.getElementById('ps-dept');
+  var deptLabel  = document.getElementById('ps-dept-label');
+  var goalInput  = document.getElementById('ps-goal');
+  var goalLabel  = document.getElementById('ps-goal-label');
+  
+  if (univInput && deptInput && goalInput) {
+    if (isAdult) {
+      // 대학/학과 숨김, 목표 표시
+      univInput.style.display = 'none'; univLabel.style.display = 'none';
+      deptInput.style.display = 'none'; deptLabel.style.display = 'none';
+      goalInput.style.display = ''; goalLabel.style.display = '';
+    } else {
+      // 대학/학과 표시, 목표 숨김
+      univInput.style.display = ''; univLabel.style.display = '';
+      deptInput.style.display = ''; deptLabel.style.display = '';
+      goalInput.style.display = 'none'; goalLabel.style.display = 'none';
+    }
+  }
+};
+
+
+// 과목 select에 옵션 채우기
+function fillSubjectSelect(selectId, selectedKey) {
+  var el = document.getElementById(selectId);
+  if (!el) return;
+  var subjs = getUserSubjects();
+  el.innerHTML = subjs.map(function(s){
+    return '<option value="'+s.key+'"'+(s.key===selectedKey?' selected':'')+'>'+s.name+'</option>';
+  }).join('');
+}
+window.fillSubjectSelect = fillSubjectSelect;
+
+// 모든 과목 select 동기화 (과목 변경 후 호출)
+function syncAllSubjectSelects() {
+  refreshSubjectNames();
+  var ids = ['todo-subject', 'edit-todo-subject'];
+  ids.forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) {
+      var cur = el.value;
+      fillSubjectSelect(id, cur);
+    }
+  });
+}
+window.syncAllSubjectSelects = syncAllSubjectSelects;
+
+// ========= 과목 관리 모달 =========
+window.openSubjectManageModal = function() {
+  closeModal('modal-profile-student');
+  renderSubjectManageList();
+  openModal('modal-subject-manage');
+};
+
+window.renderSubjectManageList = function() {
+  var list = document.getElementById('subject-manage-list');
+  if (!list) return;
+  var subjs = getUserSubjects();
+  list.innerHTML = subjs.map(function(s, i){
+    return '<div class="subject-manage-row" style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--surface2);border-radius:8px;margin-bottom:6px;">'
+      + '<input class="modal-input" data-key="'+s.key+'" value="'+s.name+'" style="flex:1;margin:0;height:36px;font-size:13px;" placeholder="과목명"/>'
+      + '<input type="color" data-color="'+s.key+'" value="'+(s.color||'#cccccc')+'" style="width:36px;height:36px;border:1px solid var(--border);border-radius:6px;cursor:pointer;padding:2px;"/>'
+      + '<button onclick="deleteSubject(\''+s.key+'\')" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:6px;width:36px;height:36px;cursor:pointer;font-size:14px;" title="삭제">🗑</button>'
+      + '</div>';
+  }).join('');
+};
+
+window.addSubject = function() {
+  var name = document.getElementById('new-subject-name').value.trim();
+  if (!name) { alert('과목명을 입력해주세요'); return; }
+  var subjs = getUserSubjects().slice();
+  // 새 key 자동 생성
+  var newKey = 'custom_' + Date.now();
+  subjs.push({key:newKey, name:name, color:'#E5E7EB'});
+  currentProfile.subjects = subjs;
+  document.getElementById('new-subject-name').value = '';
+  renderSubjectManageList();
+};
+
+window.deleteSubject = function(key) {
+  if (!confirm('이 과목을 삭제하시겠습니까?\n\n주의: 이 과목으로 등록된 할 일과 학습 기록은 그대로 유지됩니다.')) return;
+  var subjs = getUserSubjects().filter(function(s){ return s.key !== key; });
+  currentProfile.subjects = subjs;
+  renderSubjectManageList();
+};
+
+window.saveSubjectManage = function() {
+  // 모달의 input 값을 모아서 subjects 배열 재구성
+  var rows = document.querySelectorAll('#subject-manage-list .subject-manage-row');
+  var subjs = [];
+  rows.forEach(function(row){
+    var nameInput = row.querySelector('input[data-key]');
+    var colorInput = row.querySelector('input[data-color]');
+    if (nameInput && colorInput) {
+      var key = nameInput.getAttribute('data-key');
+      var name = nameInput.value.trim();
+      var color = colorInput.value;
+      if (name) {
+        subjs.push({key:key, name:name, color:color});
+      }
+    }
+  });
+  if (subjs.length === 0) { alert('최소 1개 이상의 과목이 필요합니다'); return; }
+  // Firestore 저장
+  updateDoc(doc(db, 'users', currentUser.uid), {subjects: subjs}).then(function(){
+    currentProfile.subjects = subjs;
+    syncAllSubjectSelects();
+    closeModal('modal-subject-manage');
+    alert('과목 설정이 저장되었습니다');
+  }).catch(function(e){ alert('저장 실패: ' + e.message); });
+};
+
+window.resetSubjectsToDefault = function() {
+  if (!confirm('기본 과목 (국어, 영어, 수학, 한국사, 과학탐구, 사회탐구)으로 되돌리시겠습니까?')) return;
+  updateDoc(doc(db, 'users', currentUser.uid), {subjects: null}).then(function(){
+    currentProfile.subjects = null;
+    syncAllSubjectSelects();
+    renderSubjectManageList();
+    alert('기본 과목으로 되돌렸습니다');
+  }).catch(function(e){ alert('실패: '+e.message); });
+};
+
 function closeModal(id) { var el = document.getElementById(id); if (el) el.classList.remove('open'); }
 function closeNotice() { document.getElementById('notice-overlay').classList.remove('open'); }
 var modalOverlays = document.querySelectorAll('.modal-overlay');
@@ -1556,7 +1728,32 @@ var selectedFile = null, teacherSelectedFile = null, teacherChatUid = null;
 var notifications = [];
 window._loginType = 'student';
 
+var DEFAULT_SUBJECTS = [
+  {key:'ko', name:'국어', color:'#FEE2E2'},
+  {key:'en', name:'영어', color:'#DBEAFE'},
+  {key:'ma', name:'수학', color:'#DCFCE7'},
+  {key:'hi', name:'한국사', color:'#FEF3C7'},
+  {key:'sc', name:'과학탐구', color:'#E0E7FF'},
+  {key:'so', name:'사회탐구', color:'#FCE7F3'}
+];
+function getUserSubjects() {
+  if (currentProfile && Array.isArray(currentProfile.subjects) && currentProfile.subjects.length > 0) {
+    return currentProfile.subjects;
+  }
+  return DEFAULT_SUBJECTS;
+}
+// 하위 호환: subjectNames 객체로 변환 (subjectNames[key] 형태 사용처용)
+function getSubjectNamesMap() {
+  var m = {};
+  getUserSubjects().forEach(function(s){ m[s.key] = s.name; });
+  return m;
+}
+// 전역 - 기존 코드 호환
 var subjectNames = {ko:'국어',en:'영어',ma:'수학',hi:'한국사',sc:'과학탐구',so:'사회탐구'};
+function refreshSubjectNames() {
+  subjectNames = getSubjectNamesMap();
+  return subjectNames;
+}
 var subjectColors = {ko:'#4a7fff',en:'#3dba7e',ma:'#e8943a',hi:'#c9a84c',sc:'#a855f7',so:'#e05252'};
 
 var defaultRules = '【 상점 】\n• 주 단위 생활관리 벌점 없음 – 상점 5점 (자동)\n• 주 단위 결석 없음 – 상점 5점 (자동)\n• 모의고사·내신시험 성적향상 과목당 – 상점 10점\n• 모의고사·내신시험 1등급 과목당 – 상점 10점\n• 월간 학습 50시간 이상 달성 – 상점 10점\n• 플래너 30일 연속 제출 – 상점 20점\n\n【 벌점 】\n• 무단 결석 – 벌점 20점\n• 무단 지각 – 벌점 10점\n• 무단 외출 – 벌점 5점\n• 교시중 입퇴실 – 벌점 3점\n• 핸드폰 미제출 – 벌점 15점\n• 3회 이상 수면 경고 – 벌점 2점\n• 출입카드 미지참 – 벌점 1점\n• 소음 발생 – 벌점 3점\n• 플래너 미제출 – 벌점 1점 (자동)\n• 학습 시간 중 인터넷 및 SNS 적발 – 벌점 10점\n• 게릴라 알림 하루 3회 이상 미응답 – 벌점 3점';
@@ -1685,13 +1882,17 @@ window.setLoginType = function(t) {
 
 // ── 프로필 ──
 function syncStudentUI() {
+  if (window.refreshSubjectNames) refreshSubjectNames();
   var p = currentProfile || {};
   _applyAvatar(document.getElementById('student-avatar'), p.name, p.avatar);
   _applyAvatar(document.getElementById('dt-student-avatar'), p.name, p.avatar);
-  var fields = {name:'ps-name',school:'ps-school',univ:'ps-univ',dept:'ps-dept'};
+  var fields = {name:'ps-name',school:'ps-school',univ:'ps-univ',dept:'ps-dept',goal:'ps-goal'};
   Object.keys(fields).forEach(function(k) { var el = document.getElementById(fields[k]); if(el) el.value=p[k]||''; });
   var g = document.getElementById('ps-grade');
   if (g && p.grade) { for (var i=0;i<g.options.length;i++) { if(g.options[i].value===p.grade){g.options[i].selected=true;break;} } }
+  if (window.onGradeChange && g) onGradeChange(g.value);
+  // 과목 select 동기화
+  if (window.syncAllSubjectSelects) syncAllSubjectSelects();
 }
 function syncTeacherUI() {
   var p = currentProfile || {};
@@ -1704,7 +1905,7 @@ function syncTeacherUI() {
   var ptn = document.getElementById('pt-name'); if(ptn) ptn.value=p.name||'';
 }
 window.saveProfileStudent = function() {
-  var fields = {name:document.getElementById('ps-name').value,school:document.getElementById('ps-school').value,grade:document.getElementById('ps-grade').value,univ:document.getElementById('ps-univ').value,dept:document.getElementById('ps-dept').value};
+  var fields = {name:document.getElementById('ps-name').value,school:document.getElementById('ps-school').value,grade:document.getElementById('ps-grade').value,univ:document.getElementById('ps-univ').value,dept:document.getElementById('ps-dept').value,goal:document.getElementById('ps-goal').value};
   var newPw = document.getElementById('ps-pw').value;
   setDoc(doc(db,'users',currentUser.uid), fields, {merge:true}).then(function() {
     currentProfile = Object.assign({}, currentProfile, fields);
@@ -1762,11 +1963,13 @@ function updateDesktopRightPanel(tab) {
   var dateStr = kst.getFullYear() + '. ' + (kst.getMonth()+1) + '. ' + kst.getDate() + ' (' + days[kst.getDay()] + ')';
   var today = getPlannerDate();
   var html = '<div style="font-size:11px;color:var(--tx3);font-weight:600;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border2);letter-spacing:.05em;">'+dateStr+'</div>';
-  if (p.univ) {
+  var _goalT = (p.grade === '성인') ? (p.goal||'') : (p.univ||'');
+  var _goalS = (p.grade === '성인') ? '' : (p.dept||'');
+  if (_goalT) {
     html += '<div style="background:var(--burg-l);border-radius:10px;padding:11px 13px;margin-bottom:14px;">'
       +'<div style="font-size:9px;color:var(--burg);font-weight:700;letter-spacing:.06em;margin-bottom:3px;">목표</div>'
-      +'<div style="font-size:14px;font-weight:700;color:var(--burg);">'+(p.univ||'')+'</div>'
-      +(p.dept?'<div style="font-size:11px;color:var(--tx3);margin-top:2px;">'+p.dept+'</div>':'')
+      +'<div style="font-size:14px;font-weight:700;color:var(--burg);">'+_goalT+'</div>'
+      +(_goalS?'<div style="font-size:11px;color:var(--tx3);margin-top:2px;">'+_goalS+'</div>':'')
       +'</div>';
   }
   if (tab === 0) {
@@ -1806,7 +2009,7 @@ function updateDesktopRightPanel(tab) {
 function buildDashboard() {
   var p = currentProfile || {};
   var p_name = p.name||'학생';
-  var dt_header = '<div class="dt-header dt-only"><div><div class="dt-header-title">안녕하세요, '+p_name+' 👋</div><div class="dt-header-sub">'+(p.school||'')+' · '+(p.grade||'')+(p.univ?' · 목표 '+p.univ:'')+'</div></div></div>';
+  var dt_header = '<div class="dt-header dt-only"><div><div class="dt-header-title">안녕하세요, '+p_name+' 👋</div><div class="dt-header-sub">'+(p.school||'')+(p.school?' · ':'')+(p.grade||'')+((p.grade==='성인'&&p.goal)?' · 목표 '+p.goal:(p.univ?' · 목표 '+p.univ:''))+'</div></div></div>';
   var content = ''
     +'<div class="card card-gold mentor-card-host"><div id="mentor-comment-area"><div style="color:var(--tx3);font-size:12px;text-align:center;padding:8px;">멘토 코멘트 로딩 중...</div></div></div>'
     +'<div id="lecture-dashboard"></div>'
