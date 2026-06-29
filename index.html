@@ -1494,13 +1494,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 <!-- 전역 유틸 스크립트 (모듈 밖) -->
 <script>
 function showScreen(id) {
-  console.log('[showScreen]', id, 'currentProfile:', (currentProfile?currentProfile.role:'none'));
+  console.log('[showScreen]', id);
   var els = document.querySelectorAll('.screen');
   for (var i = 0; i < els.length; i++) els[i].classList.remove('active');
   var el = document.getElementById(id);
   if (el) {
     el.classList.add('active');
-    console.log('[showScreen] OK:', id);
   } else {
     console.error('[showScreen] 요소 없음:', id);
   }
