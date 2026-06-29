@@ -942,6 +942,54 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 
 </div>
 
+<!-- 아바타 편집 모달 -->
+<div id="modal-avatar-edit" class="modal-overlay">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-title">프로필 아바타 변경</div>
+    <div style="text-align:center;margin-bottom:18px;">
+      <div id="avatar-preview" style="width:100px;height:100px;border-radius:50%;background:linear-gradient(135deg,var(--burg),var(--burg2,#A52828));margin:0 auto;display:flex;align-items:center;justify-content:center;overflow:hidden;border:3px solid var(--surface);box-shadow:0 4px 16px rgba(123,29,29,0.2);"></div>
+    </div>
+    
+    <div class="modal-label">📷 이미지 업로드</div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+      <input type="file" id="avatar-image-input" accept="image/*" onchange="saveAvatarImage(this)" style="display:none;"/>
+      <button class="modal-btn cancel" onclick="document.getElementById('avatar-image-input').click()" style="margin:0;flex:1;">갤러리에서 선택</button>
+    </div>
+    <div id="avatar-uploading" style="display:none;text-align:center;font-size:12px;color:var(--burg);margin-bottom:10px;">⏳ 업로드 중...</div>
+
+    <div style="display:flex;align-items:center;gap:10px;margin:14px 0;">
+      <div style="flex:1;height:1px;background:var(--border);"></div>
+      <div style="font-size:11px;color:var(--tx4);">또는</div>
+      <div style="flex:1;height:1px;background:var(--border);"></div>
+    </div>
+
+    <div class="modal-label">😀 이모지 선택</div>
+    <div style="display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin-bottom:8px;">
+      <button onclick="pickAvatarEmoji('😀')" style="font-size:22px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;">😀</button>
+      <button onclick="pickAvatarEmoji('😎')" style="font-size:22px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;">😎</button>
+      <button onclick="pickAvatarEmoji('🥰')" style="font-size:22px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;">🥰</button>
+      <button onclick="pickAvatarEmoji('🤓')" style="font-size:22px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;">🤓</button>
+      <button onclick="pickAvatarEmoji('🐱')" style="font-size:22px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;">🐱</button>
+      <button onclick="pickAvatarEmoji('🐶')" style="font-size:22px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;">🐶</button>
+      <button onclick="pickAvatarEmoji('🦊')" style="font-size:22px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;">🦊</button>
+      <button onclick="pickAvatarEmoji('🐻')" style="font-size:22px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;">🐻</button>
+      <button onclick="pickAvatarEmoji('🌸')" style="font-size:22px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;">🌸</button>
+      <button onclick="pickAvatarEmoji('🌟')" style="font-size:22px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;">🌟</button>
+      <button onclick="pickAvatarEmoji('🔥')" style="font-size:22px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;">🔥</button>
+      <button onclick="pickAvatarEmoji('💎')" style="font-size:22px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;">💎</button>
+      <button onclick="pickAvatarEmoji('🚀')" style="font-size:22px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;">🚀</button>
+      <button onclick="pickAvatarEmoji('⚡')" style="font-size:22px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;">⚡</button>
+      <button onclick="pickAvatarEmoji('🎯')" style="font-size:22px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;">🎯</button>
+      <button onclick="pickAvatarEmoji('🏆')" style="font-size:22px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;">🏆</button>
+    </div>
+    <input class="modal-input" id="avatar-emoji-input" placeholder="또는 직접 이모지/한 글자 입력" maxlength="2"/>
+
+    <button class="modal-btn primary" onclick="saveAvatarEmoji()">이모지로 저장</button>
+    <button class="modal-btn cancel" onclick="resetAvatar()" style="margin-top:6px;">기본 이니셜로 되돌리기</button>
+    <button class="modal-btn cancel" onclick="closeModal('modal-avatar-edit')" style="margin-top:6px;">취소</button>
+  </div>
+</div>
+
 <!-- 채팅방 메뉴 모달 -->
 <div id="modal-kchat-room-menu" class="modal-overlay">
   <div class="modal" style="max-width:400px;">
