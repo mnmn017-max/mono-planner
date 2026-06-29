@@ -1555,106 +1555,6 @@ window.onGradeChange = function(val) {
 };
 
 
-// 과목 select에 옵션 채우기
-function fillSubjectSelect(selectId, selectedKey) {
-  var el = document.getElementById(selectId);
-  if (!el) return;
-  var subjs = getUserSubjects();
-  el.innerHTML = subjs.map(function(s){
-    return '<option value="'+s.key+'"'+(s.key===selectedKey?' selected':'')+'>'+s.name+'</option>';
-  }).join('');
-}
-window.fillSubjectSelect = fillSubjectSelect;
-
-// 모든 과목 select 동기화 (과목 변경 후 호출)
-function syncAllSubjectSelects() {
-  refreshSubjectNames();
-  var ids = ['todo-subject', 'edit-todo-subject'];
-  ids.forEach(function(id){
-    var el = document.getElementById(id);
-    if (el) {
-      var cur = el.value;
-      fillSubjectSelect(id, cur);
-    }
-  });
-}
-window.syncAllSubjectSelects = syncAllSubjectSelects;
-
-// ========= 과목 관리 모달 =========
-window.openSubjectManageModal = function() {
-  closeModal('modal-profile-student');
-  renderSubjectManageList();
-  openModal('modal-subject-manage');
-};
-
-window.renderSubjectManageList = function() {
-  var list = document.getElementById('subject-manage-list');
-  if (!list) return;
-  var subjs = getUserSubjects();
-  list.innerHTML = subjs.map(function(s, i){
-    return '<div class="subject-manage-row" style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--surface2);border-radius:8px;margin-bottom:6px;">'
-      + '<input class="modal-input" data-key="'+s.key+'" value="'+s.name+'" style="flex:1;margin:0;height:36px;font-size:13px;" placeholder="과목명"/>'
-      + '<input type="color" data-color="'+s.key+'" value="'+(s.color||'#cccccc')+'" style="width:36px;height:36px;border:1px solid var(--border);border-radius:6px;cursor:pointer;padding:2px;"/>'
-      + '<button onclick="deleteSubject(\''+s.key+'\')" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:6px;width:36px;height:36px;cursor:pointer;font-size:14px;" title="삭제">🗑</button>'
-      + '</div>';
-  }).join('');
-};
-
-window.addSubject = function() {
-  var name = document.getElementById('new-subject-name').value.trim();
-  if (!name) { alert('과목명을 입력해주세요'); return; }
-  var subjs = getUserSubjects().slice();
-  // 새 key 자동 생성
-  var newKey = 'custom_' + Date.now();
-  subjs.push({key:newKey, name:name, color:'#E5E7EB'});
-  currentProfile.subjects = subjs;
-  document.getElementById('new-subject-name').value = '';
-  renderSubjectManageList();
-};
-
-window.deleteSubject = function(key) {
-  if (!confirm('이 과목을 삭제하시겠습니까?\n\n주의: 이 과목으로 등록된 할 일과 학습 기록은 그대로 유지됩니다.')) return;
-  var subjs = getUserSubjects().filter(function(s){ return s.key !== key; });
-  currentProfile.subjects = subjs;
-  renderSubjectManageList();
-};
-
-window.saveSubjectManage = function() {
-  // 모달의 input 값을 모아서 subjects 배열 재구성
-  var rows = document.querySelectorAll('#subject-manage-list .subject-manage-row');
-  var subjs = [];
-  rows.forEach(function(row){
-    var nameInput = row.querySelector('input[data-key]');
-    var colorInput = row.querySelector('input[data-color]');
-    if (nameInput && colorInput) {
-      var key = nameInput.getAttribute('data-key');
-      var name = nameInput.value.trim();
-      var color = colorInput.value;
-      if (name) {
-        subjs.push({key:key, name:name, color:color});
-      }
-    }
-  });
-  if (subjs.length === 0) { alert('최소 1개 이상의 과목이 필요합니다'); return; }
-  // Firestore 저장
-  updateDoc(doc(db, 'users', currentUser.uid), {subjects: subjs}).then(function(){
-    currentProfile.subjects = subjs;
-    syncAllSubjectSelects();
-    closeModal('modal-subject-manage');
-    alert('과목 설정이 저장되었습니다');
-  }).catch(function(e){ alert('저장 실패: ' + e.message); });
-};
-
-window.resetSubjectsToDefault = function() {
-  if (!confirm('기본 과목 (국어, 영어, 수학, 한국사, 과학탐구, 사회탐구)으로 되돌리시겠습니까?')) return;
-  updateDoc(doc(db, 'users', currentUser.uid), {subjects: null}).then(function(){
-    currentProfile.subjects = null;
-    syncAllSubjectSelects();
-    renderSubjectManageList();
-    alert('기본 과목으로 되돌렸습니다');
-  }).catch(function(e){ alert('실패: '+e.message); });
-};
-
 function closeModal(id) { var el = document.getElementById(id); if (el) el.classList.remove('open'); }
 function closeNotice() { document.getElementById('notice-overlay').classList.remove('open'); }
 var modalOverlays = document.querySelectorAll('.modal-overlay');
@@ -1763,6 +1663,106 @@ function refreshSubjectNames() {
   subjectNames = getSubjectNamesMap();
   return subjectNames;
 }
+// 과목 select에 옵션 채우기
+function fillSubjectSelect(selectId, selectedKey) {
+  var el = document.getElementById(selectId);
+  if (!el) return;
+  var subjs = getUserSubjects();
+  el.innerHTML = subjs.map(function(s){
+    return '<option value="'+s.key+'"'+(s.key===selectedKey?' selected':'')+'>'+s.name+'</option>';
+  }).join('');
+}
+window.fillSubjectSelect = fillSubjectSelect;
+
+// 모든 과목 select 동기화 (과목 변경 후 호출)
+function syncAllSubjectSelects() {
+  refreshSubjectNames();
+  var ids = ['todo-subject', 'edit-todo-subject'];
+  ids.forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) {
+      var cur = el.value;
+      fillSubjectSelect(id, cur);
+    }
+  });
+}
+window.syncAllSubjectSelects = syncAllSubjectSelects;
+
+// ========= 과목 관리 모달 =========
+window.openSubjectManageModal = function() {
+  closeModal('modal-profile-student');
+  renderSubjectManageList();
+  openModal('modal-subject-manage');
+};
+
+window.renderSubjectManageList = function() {
+  var list = document.getElementById('subject-manage-list');
+  if (!list) return;
+  var subjs = getUserSubjects();
+  list.innerHTML = subjs.map(function(s, i){
+    return '<div class="subject-manage-row" style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--surface2);border-radius:8px;margin-bottom:6px;">'
+      + '<input class="modal-input" data-key="'+s.key+'" value="'+s.name+'" style="flex:1;margin:0;height:36px;font-size:13px;" placeholder="과목명"/>'
+      + '<input type="color" data-color="'+s.key+'" value="'+(s.color||'#cccccc')+'" style="width:36px;height:36px;border:1px solid var(--border);border-radius:6px;cursor:pointer;padding:2px;"/>'
+      + '<button onclick="deleteSubject(\''+s.key+'\')" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:6px;width:36px;height:36px;cursor:pointer;font-size:14px;" title="삭제">🗑</button>'
+      + '</div>';
+  }).join('');
+};
+
+window.addSubject = function() {
+  var name = document.getElementById('new-subject-name').value.trim();
+  if (!name) { alert('과목명을 입력해주세요'); return; }
+  var subjs = getUserSubjects().slice();
+  // 새 key 자동 생성
+  var newKey = 'custom_' + Date.now();
+  subjs.push({key:newKey, name:name, color:'#E5E7EB'});
+  currentProfile.subjects = subjs;
+  document.getElementById('new-subject-name').value = '';
+  renderSubjectManageList();
+};
+
+window.deleteSubject = function(key) {
+  if (!confirm('이 과목을 삭제하시겠습니까?\n\n주의: 이 과목으로 등록된 할 일과 학습 기록은 그대로 유지됩니다.')) return;
+  var subjs = getUserSubjects().filter(function(s){ return s.key !== key; });
+  currentProfile.subjects = subjs;
+  renderSubjectManageList();
+};
+
+window.saveSubjectManage = function() {
+  // 모달의 input 값을 모아서 subjects 배열 재구성
+  var rows = document.querySelectorAll('#subject-manage-list .subject-manage-row');
+  var subjs = [];
+  rows.forEach(function(row){
+    var nameInput = row.querySelector('input[data-key]');
+    var colorInput = row.querySelector('input[data-color]');
+    if (nameInput && colorInput) {
+      var key = nameInput.getAttribute('data-key');
+      var name = nameInput.value.trim();
+      var color = colorInput.value;
+      if (name) {
+        subjs.push({key:key, name:name, color:color});
+      }
+    }
+  });
+  if (subjs.length === 0) { alert('최소 1개 이상의 과목이 필요합니다'); return; }
+  // Firestore 저장
+  updateDoc(doc(db, 'users', currentUser.uid), {subjects: subjs}).then(function(){
+    currentProfile.subjects = subjs;
+    syncAllSubjectSelects();
+    closeModal('modal-subject-manage');
+    alert('과목 설정이 저장되었습니다');
+  }).catch(function(e){ alert('저장 실패: ' + e.message); });
+};
+
+window.resetSubjectsToDefault = function() {
+  if (!confirm('기본 과목 (국어, 영어, 수학, 한국사, 과학탐구, 사회탐구)으로 되돌리시겠습니까?')) return;
+  updateDoc(doc(db, 'users', currentUser.uid), {subjects: null}).then(function(){
+    currentProfile.subjects = null;
+    syncAllSubjectSelects();
+    renderSubjectManageList();
+    alert('기본 과목으로 되돌렸습니다');
+  }).catch(function(e){ alert('실패: '+e.message); });
+};
+
 var subjectColors = {ko:'#4a7fff',en:'#3dba7e',ma:'#e8943a',hi:'#c9a84c',sc:'#a855f7',so:'#e05252'};
 
 var defaultRules = '【 상점 】\n• 주 단위 생활관리 벌점 없음 – 상점 5점 (자동)\n• 주 단위 결석 없음 – 상점 5점 (자동)\n• 모의고사·내신시험 성적향상 과목당 – 상점 10점\n• 모의고사·내신시험 1등급 과목당 – 상점 10점\n• 월간 학습 50시간 이상 달성 – 상점 10점\n• 플래너 30일 연속 제출 – 상점 20점\n\n【 벌점 】\n• 무단 결석 – 벌점 20점\n• 무단 지각 – 벌점 10점\n• 무단 외출 – 벌점 5점\n• 교시중 입퇴실 – 벌점 3점\n• 핸드폰 미제출 – 벌점 15점\n• 3회 이상 수면 경고 – 벌점 2점\n• 출입카드 미지참 – 벌점 1점\n• 소음 발생 – 벌점 3점\n• 플래너 미제출 – 벌점 1점 (자동)\n• 학습 시간 중 인터넷 및 SNS 적발 – 벌점 10점\n• 게릴라 알림 하루 3회 이상 미응답 – 벌점 3점';
