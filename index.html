@@ -159,7 +159,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .mentor-body{flex:1;min-width:0;}
 .mentor-meta{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--burg);font-weight:700;margin-bottom:2px;}
 .mentor-meta-date{color:var(--tx4);font-weight:400;}
-.mentor-text{font-size:12px;color:var(--tx2);line-height:1.5;}
+.mentor-text{font-size:12px;color:var(--tx2);line-height:1.5;white-space:pre-wrap;word-break:break-word;}
 
 /* ── 학습 요약 ── */
 .study-summary{text-align:center;}
@@ -275,7 +275,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .notice-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:600;display:none;align-items:center;justify-content:center;padding:24px;}
 .notice-overlay.open{display:flex;}
 .notice-box{background:var(--surface);border:2px solid var(--burg);border-radius:16px;padding:22px 20px 20px;width:100%;max-width:380px;}
-.notice-body{font-size:14px;line-height:1.7;color:var(--tx2);margin-bottom:14px;}
+.notice-body{font-size:14px;line-height:1.7;color:var(--tx2);margin-bottom:14px;white-space:pre-wrap;word-break:break-word;}
 .notice-from{font-size:12px;color:var(--tx3);margin-bottom:14px;}
 .notice-close-btn{width:100%;padding:12px;background:var(--burg);border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;}
 
@@ -1931,7 +1931,7 @@ function loadStudyRankings(containerId) {
         +'<div style="font-size:26px">🏆</div>'
         +'<div style="flex:1"><div style="font-size:10px;color:var(--burg);font-weight:700;letter-spacing:1px;margin-bottom:2px">이달의 장학생</div>'
         +'<div style="font-size:16px;font-weight:700;color:var(--burg)">'+sName+'</div>'
-        +(sd.reason?'<div style="font-size:11px;color:var(--tx3);margin-top:2px">'+sd.reason+'</div>':'')
+        +(sd.reason?'<div style="font-size:11px;color:var(--tx3);margin-top:2px;white-space:pre-wrap;word-break:break-word;">'+sd.reason+'</div>':'')
         +(sd.prize?'<div style="font-size:11px;color:var(--burg);margin-top:2px">🎁 '+sd.prize+'</div>':'')
         +'</div></div>';
     }
@@ -3181,7 +3181,7 @@ function loadRewardData(){
   var month=new Date().toISOString().slice(0,7);
   getDoc(doc(db,'scholars',month)).then(function(d){
     var b=document.getElementById('scholar-banner');if(!b)return;
-    if(d.exists()&&d.data().studentUid===currentUser.uid){b.innerHTML='<div style="background:linear-gradient(135deg,rgba(201,168,76,0.2),rgba(201,168,76,0.06));border:1px solid rgba(201,168,76,0.5);border-radius:12px;padding:14px 16px;margin-bottom:12px;text-align:center"><div style="font-size:20px;margin-bottom:4px">🏆</div><div style="font-size:15px;font-weight:700;color:var(--burg)">이달의 장학생</div><div style="font-size:13px;color:var(--tx2);margin-top:4px">'+d.data().reason+'</div><div style="font-size:12px;color:var(--burg);margin-top:6px">상품: '+d.data().prize+'</div></div>';}
+    if(d.exists()&&d.data().studentUid===currentUser.uid){b.innerHTML='<div style="background:linear-gradient(135deg,rgba(201,168,76,0.2),rgba(201,168,76,0.06));border:1px solid rgba(201,168,76,0.5);border-radius:12px;padding:14px 16px;margin-bottom:12px;text-align:center"><div style="font-size:20px;margin-bottom:4px">🏆</div><div style="font-size:15px;font-weight:700;color:var(--burg)">이달의 장학생</div><div style="font-size:13px;color:var(--tx2);margin-top:4px;white-space:pre-wrap;word-break:break-word;">'+d.data().reason+'</div><div style="font-size:12px;color:var(--burg);margin-top:6px">상품: '+d.data().prize+'</div></div>';}
     else b.innerHTML='';
   }).catch(function(){});
   // 점수 합산
@@ -3203,7 +3203,7 @@ function loadRewardData(){
     if(snap.empty){el.innerHTML='<div style="color:var(--tx3);font-size:13px">내역이 없습니다</div>';return;}
     var items=snap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
     items.sort(function(a,b){var at=a.createdAt?a.createdAt.toMillis():0;var bt=b.createdAt?b.createdAt.toMillis():0;return bt-at;});
-    el.innerHTML=items.map(function(p){var date=p.createdAt?p.createdAt.toDate().toLocaleDateString('ko-KR'):'';return '<div class="history-item"><div class="history-dot '+p.type+'"></div><div style="flex:1;font-size:13px">'+p.reason+'</div><div style="font-size:13px;font-weight:600;'+(p.type==='plus'?'color:var(--burg)':'color:var(--red)')+'">'+(p.type==='plus'?'+':'-')+p.points+'점</div><div style="font-size:11px;color:var(--tx3);margin-left:6px">'+date+'</div></div>';}).join('');
+    el.innerHTML=items.map(function(p){var date=p.createdAt?p.createdAt.toDate().toLocaleDateString('ko-KR'):'';return '<div class="history-item"><div class="history-dot '+p.type+'"></div><div style="flex:1;font-size:13px;white-space:pre-wrap;word-break:break-word;">'+p.reason+'</div><div style="font-size:13px;font-weight:600;'+(p.type==='plus'?'color:var(--burg)':'color:var(--red)')+'">'+(p.type==='plus'?'+':'-')+p.points+'점</div><div style="font-size:11px;color:var(--tx3);margin-left:6px">'+date+'</div></div>';}).join('');
   }).catch(function(){var el=document.getElementById('points-history');if(el)el.innerHTML='<div style="color:var(--tx3);font-size:13px">불러오기 실패</div>';});
 }
 window.sendAppeal=function(){
@@ -3315,7 +3315,7 @@ window.toggleNotifPanel=function(){
     // 공지 항목만 재렌더 (💬로 시작하지 않는 기존 공지 교체)
     var noticeHtml = notifications.length===0
       ? '<div style="font-size:13px;color:var(--tx3);text-align:center;margin-top:40px" data-empty="1">새 알림이 없습니다</div>'
-      : notifications.map(function(n){return '<div style="background:var(--surface2);border-radius:10px;padding:12px;margin-bottom:8px"><div style="font-size:13px;font-weight:600;margin-bottom:4px">'+n.title+'</div><div style="font-size:12px;color:var(--tx3);line-height:1.7">'+n.content+'</div></div>';}).join('');
+      : notifications.map(function(n){return '<div style="background:var(--surface2);border-radius:10px;padding:12px;margin-bottom:8px"><div style="font-size:13px;font-weight:600;margin-bottom:4px">'+n.title+'</div><div style="font-size:12px;color:var(--tx3);line-height:1.7;white-space:pre-wrap;word-break:break-word;">'+n.content+'</div></div>';}).join('');
     // 기존 채팅 알림 항목 보존 후 공지 뒤에 붙이기
     var chatItems = Array.from(list.querySelectorAll('[data-chat-item]'));
     list.innerHTML = noticeHtml;
