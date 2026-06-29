@@ -100,7 +100,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .tbb{border:none;font-size:11px;font-weight:600;padding:7px 12px;border-radius:7px;cursor:pointer;white-space:nowrap;}
 .tbb-pause{background:rgba(255,255,255,0.2);color:#fff;}
 .tbb-stop{background:#fff;color:var(--burg);}
-.tbb-reset{background:rgba(255,255,255,0.12);color:var(--tx1);}
+.tbb-reset{background:rgba(255,255,255,0.18);color:#fff;}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 
 .timer-banner-empty{background:var(--surface);padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
@@ -362,8 +362,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   #screen-student .timer-banner-buttons{
     width:100%;
     justify-content:center;
-    gap:10px;
+    gap:12px;
   }
+  #screen-student .timer-banner-buttons .tbb{
+    padding:12px 22px !important;
+    font-size:14px !important;
+    font-weight:700;
+    border-radius:10px;
+    min-width:64px;
+  }
+  #screen-student .tbb-reset{color:#fff !important;background:rgba(255,255,255,0.18) !important;}
   #screen-student .timer-banner-empty-text{font-size:13px;color:var(--tx2);}
   #screen-student .bottom-nav{display:none !important;}
   #screen-student .bottom-brand{display:none !important;}
