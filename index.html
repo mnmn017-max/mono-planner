@@ -1120,7 +1120,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <div class="modal" style="max-width:400px;">
     <div class="modal-title" id="kchat-room-menu-name">대화방</div>
     <div id="kchat-room-menu-members" style="font-size:12px;color:var(--tx3);margin-bottom:18px;line-height:1.6;text-align:center;padding:8px 12px;background:var(--surface2);border-radius:8px;"></div>
-    <button id="kchat-room-menu-rename" class="modal-btn primary" onclick="openRenameGroupModal()" style="margin-bottom:6px;">✏️ 대화방 이름 변경</button>
+    <button id="kchat-room-menu-profile" class="modal-btn cancel" onclick="openMyProfileFromChat()" style="margin-bottom:6px;">👤 내 프로필 수정</button>
+    <button id="kchat-room-menu-rename" class="modal-btn cancel" onclick="openRenameGroupModal()" style="margin-bottom:6px;">✏️ 대화방 이름 변경</button>
+    <button id="kchat-room-menu-leave" class="modal-btn cancel" onclick="leaveKChatRoomFromMenu()" style="margin-bottom:6px;color:#dc2626;">🚪 대화방 나가기</button>
     <button id="kchat-room-menu-delete" class="modal-btn danger" onclick="deleteKChatRoomFromMenu()" style="margin-bottom:6px;">🗑 대화방 삭제 (마스터)</button>
     <button class="modal-btn cancel" onclick="closeModal('modal-kchat-room-menu')">닫기</button>
   </div>
@@ -4914,7 +4916,10 @@ function buildKakaoChatPage() {
     +'<div id="kchat-list-view" class="kchat-list-view">'
     +'<div class="kchat-list-header">'
     +'<div class="kchat-list-title">대화방</div>'
+    +'<div style="display:flex;gap:6px;">'
+    +'<button class="kchat-new-btn" onclick="openMyProfileFromChat()" title="내 프로필 수정" style="background:var(--surface2);color:var(--tx2);"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></button>'
     +'<button class="kchat-new-btn" onclick="openNewChatModal()" title="새 대화"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>'
+    +'</div>'
     +'</div>'
     +'<div class="kchat-search-wrap"><svg class="kchat-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input class="kchat-search" id="kchat-rooms-search" placeholder="대화방 검색" oninput="filterKChatRooms(this.value)"/></div>'
     +'<div id="kchat-rooms-list" class="kchat-rooms-list"><div style="text-align:center;color:var(--tx3);font-size:13px;padding:40px;">대화방 불러오는 중...</div></div>'
@@ -4971,7 +4976,11 @@ function listenKChatRooms() {
   _unsubChatRooms = onSnapshot(
     query(collection(db, 'chatRooms'), where('participants', 'array-contains', currentUser.uid)),
     function(snap) {
-      _chatRoomCache = snap.docs.map(function(d){return Object.assign({id:d.id}, d.data());});
+      _chatRoomCache = snap.docs.map(function(d){return Object.assign({id:d.id}, d.data());})
+        .filter(function(r){
+          // 1:1 채팅에서 본인이 숨긴 대화방 제외 (그룹은 나가면 목록에서 아예 제거되므로 해당 없음)
+          return !(r.hiddenFor && r.hiddenFor.indexOf(currentUser.uid) !== -1);
+        });
       // 최근 메시지 순으로 정렬
       _chatRoomCache.sort(function(a,b){
         var at = a.lastMessage && a.lastMessage.createdAt ? a.lastMessage.createdAt.toMillis() : (a.createdAt ? a.createdAt.toMillis() : 0);
@@ -5140,20 +5149,90 @@ window.toggleKChatSearch = function() {
 
 window.toggleKChatRoomMenu = function() {
   if (!_curChatRoomMeta) return;
-  document.getElementById('kchat-room-menu-modal-name').textContent = _curChatRoomMeta.isGroup ? (_curChatRoomMeta.groupName||'단톡방') : '1:1 채팅';
-  // 참여자 목록
+  document.getElementById('kchat-room-menu-name').textContent = _curChatRoomMeta.isGroup ? (_curChatRoomMeta.groupName||'단톡방') : '1:1 채팅';
+  // 참여자 목록 (전체 표시, 본인은 "(나)" 표기)
   var memberNames = (_curChatRoomMeta.participants||[]).map(function(uid){
-    return (_curChatRoomMeta.participantNames && _curChatRoomMeta.participantNames[uid]) || '';
-  }).filter(Boolean);
+    var nm = (_curChatRoomMeta.participantNames && _curChatRoomMeta.participantNames[uid]) || '?';
+    return uid === currentUser.uid ? nm + '(나)' : nm;
+  });
   document.getElementById('kchat-room-menu-members').textContent = '참여자 ('+memberNames.length+'명): ' + memberNames.join(', ');
   // 단톡일 때만 이름 변경 가능
   var renameBtn = document.getElementById('kchat-room-menu-rename');
   if (renameBtn) renameBtn.style.display = _curChatRoomMeta.isGroup ? 'block' : 'none';
+  // 내 프로필 수정 버튼 (항상 표시)
+  var profileBtn = document.getElementById('kchat-room-menu-profile');
+  if (profileBtn) profileBtn.style.display = 'block';
+  // 나가기/숨기기 버튼 (항상 표시, 텍스트는 그룹 여부에 따라)
+  var leaveBtn = document.getElementById('kchat-room-menu-leave');
+  if (leaveBtn) leaveBtn.textContent = _curChatRoomMeta.isGroup ? '🚪 대화방 나가기' : '🙈 대화 목록에서 숨기기';
   // 마스터일 때만 삭제 가능
   var isMaster = currentProfile && currentProfile.role === 'master';
   var deleteBtn = document.getElementById('kchat-room-menu-delete');
   if (deleteBtn) deleteBtn.style.display = isMaster ? 'block' : 'none';
   openModal('modal-kchat-room-menu');
+};
+
+window.openMyProfileFromChat = function() {
+  closeModal('modal-kchat-room-menu');
+  var role = currentProfile && currentProfile.role;
+  if (role === 'student') {
+    openModal('modal-profile-student');
+  } else {
+    openModal('modal-profile-teacher');
+  }
+};
+
+window.leaveKChatRoomFromMenu = function() {
+  if (!_curChatRoomId || !_curChatRoomMeta) return;
+  var isGroup = _curChatRoomMeta.isGroup;
+  var confirmMsg = isGroup
+    ? '이 대화방을 나가시겠습니까?\n\n나간 후에는 대화 내용을 다시 볼 수 없습니다.'
+    : '이 대화를 목록에서 숨기시겠습니까?\n\n상대방이 메시지를 보내면 다시 목록에 나타납니다.';
+  if (!confirm(confirmMsg)) return;
+
+  var roomRef = doc(db, 'chatRooms', _curChatRoomId);
+
+  if (isGroup) {
+    var newParticipants = (_curChatRoomMeta.participants||[]).filter(function(u){return u !== currentUser.uid;});
+    if (newParticipants.length === 0) {
+      // 마지막 인원이면 방 자체 삭제
+      getDocs(collection(db, 'chatRooms', _curChatRoomId, 'messages')).then(function(snap){
+        var ps = snap.docs.map(function(d){return deleteDoc(doc(db, 'chatRooms', _curChatRoomId, 'messages', d.id));});
+        return Promise.all(ps);
+      }).then(function(){
+        return deleteDoc(roomRef);
+      }).then(function(){
+        closeModal('modal-kchat-room-menu');
+        closeKChatRoom();
+        alert('대화방에서 나갔습니다');
+      }).catch(function(e){alert('나가기 실패: '+e.message);});
+    } else {
+      var newNames = Object.assign({}, _curChatRoomMeta.participantNames);
+      delete newNames[currentUser.uid];
+      var newRoles = Object.assign({}, _curChatRoomMeta.participantRoles);
+      delete newRoles[currentUser.uid];
+      var newUnread = Object.assign({}, _curChatRoomMeta.unread);
+      delete newUnread[currentUser.uid];
+      updateDoc(roomRef, {
+        participants: newParticipants,
+        participantNames: newNames,
+        participantRoles: newRoles,
+        unread: newUnread
+      }).then(function(){
+        closeModal('modal-kchat-room-menu');
+        closeKChatRoom();
+        alert('대화방에서 나갔습니다');
+      }).catch(function(e){alert('나가기 실패: '+e.message);});
+    }
+  } else {
+    // 1:1은 본인 화면에서만 숨김
+    updateDoc(roomRef, {
+      hiddenFor: arrayUnion(currentUser.uid)
+    }).then(function(){
+      closeModal('modal-kchat-room-menu');
+      closeKChatRoom();
+    }).catch(function(e){alert('숨기기 실패: '+e.message);});
+  }
 };
 
 window.openRenameGroupModal = function() {
@@ -5232,9 +5311,12 @@ window.sendKChatMsg = function() {
       senderUid: currentUser.uid,
       createdAt: serverTimestamp()
     };
+    // 상대방이 이 대화를 숨겨뒀었다면, 메시지가 오면 다시 목록에 보이도록 해제
+    var clearedHiddenFor = (_curChatRoomMeta.hiddenFor || []).filter(function(uid){ return others.indexOf(uid) === -1; });
     updateDoc(doc(db, 'chatRooms', _curChatRoomId), {
       lastMessage: lastMsg,
-      unread: unread
+      unread: unread,
+      hiddenFor: clearedHiddenFor
     }).catch(function(e){console.error('update lastMessage failed', e);});
     // 알림 전송
     others.forEach(function(uid){
