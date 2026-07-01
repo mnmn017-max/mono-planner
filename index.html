@@ -65,8 +65,27 @@
 }
 html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',sans-serif;background:var(--bg);color:var(--tx1);overflow:hidden;width:100%;height:100%;font-size:14px;-webkit-font-smoothing:antialiased;}
-.screen{display:flex;position:fixed;top:0;left:0;right:0;bottom:0;width:100vw;height:100vh;flex-direction:column;overflow:hidden;z-index:1;background:var(--bg);opacity:0;pointer-events:none;transition:opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1);}
-.screen.active{opacity:1;pointer-events:auto;}
+.screen{
+  display:flex;
+  position:fixed;
+  top:0;left:0;right:0;bottom:0;
+  width:100vw;height:100vh;
+  flex-direction:column;
+  overflow:hidden;
+  z-index:1;
+  background:var(--bg);
+  opacity:0;
+  visibility:hidden;
+  pointer-events:none;
+  transition:opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), visibility 0s linear 0.3s;
+}
+.screen.active{
+  opacity:1;
+  visibility:visible;
+  pointer-events:auto;
+  z-index:10;
+  transition:opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), visibility 0s linear 0s;
+}
 
 /* ── 로딩 ── */
 #screen-loading{background:#FAF6F0;align-items:center;justify-content:center;z-index:100;}
@@ -715,9 +734,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   100%{opacity:0;transform:scale(1.05);pointer-events:none;z-index:-1;}
 }
 
-#screen-login{z-index:2;}
-#screen-student{z-index:2;}
-#screen-teacher{z-index:2;}
+
+
+
 
 /* 좁은 데스크탑/태블릿 가로 (1200~1499px) - 우측 패널 숨기고 메인 단일 컬럼 */
 @media(min-width:1200px) and (max-width:1499px){
@@ -807,6 +826,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .score-subjects{
   display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;
 }
+
+/* 모바일 보이는 요소 표시 우선순위 보장 */
+.bottom-nav.mobile-only{display:flex !important;}
+.topbar.mobile-only{display:flex !important;}
 </style>
 <script>
 // 스플래시 화면 자동 종료 (모듈 스크립트와 독립 실행 - Firebase 로딩 실패해도 작동)
@@ -3309,6 +3332,34 @@ async function _autoMigrateLegacyChats() {
     throw e;
   }
 }
+
+
+// ═══════════════════════════════════════
+// 채팅 첨부파일 자동 정리 (Cloud Functions 연동)
+// ═══════════════════════════════════════
+window.runChatFileCleanupNow = function() {
+  if (!confirm('30일이 지난 채팅 첨부파일을 지금 바로 정리하시겠습니까?\n\n(매일 새벽 3시에도 자동으로 실행됩니다)')) return;
+  var statusEl = document.getElementById('cleanup-status');
+  if (statusEl) statusEl.textContent = '⏳ 정리 중... (최대 몇 분 소요될 수 있어요)';
+
+  currentUser.getIdToken().then(function(idToken) {
+    return fetch('/api/cleanup', {
+      method: 'GET',
+      headers: { 'Authorization': 'Bearer ' + idToken }
+    });
+  }).then(function(r) {
+    if (!r.ok) return r.json().then(function(e){ throw new Error(e.error || ('HTTP ' + r.status)); });
+    return r.json();
+  }).then(function(d) {
+    var msg = '완료!\n\n스캔: ' + d.scanned + '개\n삭제: ' + d.deleted + '개\n실패: ' + d.errors + '개';
+    if (statusEl) statusEl.textContent = '✓ ' + d.scanned + '개 스캔, ' + d.deleted + '개 삭제 완료';
+    alert(msg);
+  }).catch(function(e) {
+    console.error(e);
+    if (statusEl) statusEl.textContent = '✗ 오류: ' + e.message;
+    alert('정리 작업 실패: ' + e.message + '\n\n(Vercel에 /api/cleanup 함수와 환경변수가 설정되어 있는지 확인해주세요)');
+  });
+};
 
 window.migrateLegacyChats = async function() {
   if (!confirm('옛 대화 기록을 새 시스템으로 복구합니다.\n\n시간이 걸릴 수 있습니다 (계속?)')) return;
@@ -5928,6 +5979,9 @@ function buildTAccounts(){
         +'<div style="display:flex;flex-direction:column;gap:8px;">'
         +'<button onclick="migrateLegacyChats()" class="modal-btn primary" style="margin:0;text-align:left;background:var(--burg);">💬 옛 대화 기록 복구 (chats → chatRooms)</button>'
         +'<div id="migrate-status" style="font-size:11px;color:var(--tx3);padding:4px 0;"></div>'
+        +'<button onclick="runChatFileCleanupNow()" class="modal-btn cancel" style="margin:0;text-align:left;">🗑 채팅 첨부파일 지금 바로 정리 (30일 경과분)</button>'
+        +'<div id="cleanup-status" style="font-size:11px;color:var(--tx3);padding:4px 0;"></div>'
+        +'<div style="font-size:10px;color:var(--tx4);padding:2px 0 6px;">※ 매일 새벽 3시 자동 정리도 함께 실행됩니다</div>'
         +'<button onclick="resetTodayPlanner()" class="modal-btn danger" style="margin:0;text-align:left;">🗑 오늘 플래너 즉시 초기화 (제출 포함)</button>'
         +'<button onclick="fixBrokenTimers()" class="modal-btn cancel" style="margin:0;text-align:left;">🔧 비정상 타이머 기록 정리</button>'
         +'<button onclick="migrateBranch()" class="modal-btn cancel" style="margin:0;text-align:left;">🏢 기존 데이터 지점 설정 (최초 1회)</button>'
