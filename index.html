@@ -321,7 +321,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 /* ════════════════════════════════════════
    태블릿 768~1199px
 ════════════════════════════════════════ */
-@media(min-width:768px) and (max-width:1199px){
+@media(min-width:768px) and (max-width:1023px){
   body{font-size:14px;}
   .content-area{padding:16px 20px;}
   .kpi-grid{grid-template-columns:repeat(4,1fr);}
@@ -337,7 +337,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 /* ════════════════════════════════════════
    데스크탑 ≥1200px
 ════════════════════════════════════════ */
-@media(min-width:1200px){
+@media(min-width:768px){
   body{font-size:14px;overflow:hidden;}
   
   /* 학생 화면 */
@@ -524,7 +524,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   .content-area{padding:10px;}
 }
 
-@media(max-width:1199px){
+@media(max-width:767px){
   .dt-main-grid{display:flex !important;flex-direction:column;padding:0 !important;gap:10px;}
   .dt-main-grid > div{grid-column:auto !important;}
   .dt-only{display:none !important;}
@@ -608,10 +608,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .kchat-send:hover{background:var(--burg2);}
 
 /* 데스크탑/태블릿 - 채팅 너비 제한 */
-@media(min-width:1200px){
+@media(min-width:768px){
   .kchat-bubble-wrap{max-width:60%;}
 }
-@media(min-width:768px) and (max-width:1199px){
+@media(min-width:768px) and (max-width:1023px){
   .kchat-bubble-wrap{max-width:70%;}
 }
 
@@ -675,7 +675,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .newchat-row.selected .newchat-checkbox::after{content:'✓';color:#fff;font-size:13px;font-weight:700;}
 
 /* 데스크탑 카톡 레이아웃 */
-@media(min-width:1200px){
+@media(min-width:768px){
   .kchat-wrap{flex-direction:row;}
   .kchat-list-view{width:320px;border-right:1px solid var(--border);background:var(--surface);flex:0 0 auto;}
   .kchat-room-view{flex:1;}
@@ -739,7 +739,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 
 
 /* 좁은 데스크탑/태블릿 가로 (1200~1499px) - 우측 패널 숨기고 메인 단일 컬럼 */
-@media(min-width:1200px) and (max-width:1499px){
+@media(min-width:768px) and (max-width:1499px){
   .dt-right{display:none !important;}
   .dt-main-grid{grid-template-columns:1fr !important;}
 }
@@ -1411,7 +1411,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <div class="modal-title">내 정보 수정</div>
   <div style="text-align:center;margin-bottom:14px;">
     <button onclick="closeModal('modal-profile-student');openAvatarEditModal();" style="background:var(--burg-l);color:var(--burg);border:1px solid var(--burg-l2);padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;margin:0 4px;">📷 아바타</button>
-    <button onclick="openSubjectManageModal()" style="background:var(--burg-l);color:var(--burg);border:1px solid var(--burg-l2);padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;margin:0 4px;">📚 과목 관리</button>
+    <button id="ps-subject-manage-btn" onclick="openSubjectManageModal()" style="background:var(--burg-l);color:var(--burg);border:1px solid var(--burg-l2);padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;margin:0 4px;display:none;">📚 과목 관리</button>
   </div>
   <div class="modal-label">이름</div><input class="modal-input" id="ps-name" placeholder="이름"/>
   <div class="modal-label" id="ps-school-label">학교</div><input class="modal-input" id="ps-school" placeholder="학교명"/>
@@ -1588,6 +1588,10 @@ window.onGradeChange = function(val) {
       goalInput.style.display = 'none'; goalLabel.style.display = 'none';
     }
   }
+
+  // 과목 관리는 성인만 가능 (중/고등학생, N수는 기본 과목 고정)
+  var subjectBtn = document.getElementById('ps-subject-manage-btn');
+  if (subjectBtn) subjectBtn.style.display = isAdult ? '' : 'none';
 };
 
 
@@ -1752,6 +1756,10 @@ window.syncAllSubjectSelects = syncAllSubjectSelects;
 
 // ========= 과목 관리 모달 =========
 window.openSubjectManageModal = function() {
+  if (!currentProfile || currentProfile.grade !== '성인') {
+    alert('과목 관리는 성인 회원만 이용할 수 있습니다.');
+    return;
+  }
   closeModal('modal-profile-student');
   renderSubjectManageList();
   openModal('modal-subject-manage');
@@ -3979,6 +3987,15 @@ function loadStudentList(){
       })
       .map(function(d){return Object.assign({uid:d.id},d.data());});
     _studentListCacheTime = Date.now();
+    // 선생님/마스터 화면에서 학생별 커스텀 과목명이 깨져 보이는 문제 방지:
+    // 모든 학생의 subjects를 전역 subjectNames 맵에 병합해둔다
+    _studentListCache.forEach(function(s){
+      if (Array.isArray(s.subjects)) {
+        s.subjects.forEach(function(sub){
+          if (sub && sub.key) subjectNames[sub.key] = sub.name;
+        });
+      }
+    });
     return _studentListCache;
   });
 }
@@ -4991,7 +5008,7 @@ function listenKChatRooms() {
     });
   }
   // 데스크탑이면 초기 placeholder 표시
-  var isDesktop = window.matchMedia('(min-width:1200px)').matches;
+  var isDesktop = window.matchMedia('(min-width:1024px)').matches;
   if (isDesktop && !_curChatRoomId) {
     setTimeout(function(){
       var area = document.getElementById('kchat-area');
@@ -5095,7 +5112,7 @@ window.openKChatRoom = function(roomId) {
   if (_unsubChatMessages) { _unsubChatMessages(); _unsubChatMessages = null; }
   _curChatRoomId = roomId;
   _selectedFileForChat = null;
-  var isDesktop = window.matchMedia('(min-width:1200px)').matches;
+  var isDesktop = window.matchMedia('(min-width:1024px)').matches;
   if (!isDesktop) document.getElementById('kchat-list-view').style.display = 'none';
   var view = document.getElementById('kchat-room-view');
   if (view) view.style.display = 'flex';
@@ -5154,7 +5171,7 @@ window.closeKChatRoom = function() {
   if (_unsubChatMessages) { _unsubChatMessages(); _unsubChatMessages = null; }
   _curChatRoomId = null;
   _curChatRoomMeta = null;
-  var isDesktop = window.matchMedia('(min-width:1200px)').matches;
+  var isDesktop = window.matchMedia('(min-width:1024px)').matches;
   if (isDesktop) {
     // 데스크탑: 채팅창 placeholder로
     var area = document.getElementById('kchat-area');
