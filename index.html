@@ -2217,7 +2217,7 @@ function renderTodos(todos) {
     var safeTitle = t.title.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"');
     var safeSubj = t.subject||'ko';
     var statusClass = t.status==='progressing'?'progressing':t.status==='done'?'done':'';
-    var subjShort = {ko:'국',en:'영',ma:'수',hi:'한',sc:'과',so:'사'}[t.subject]||t.subject;
+    var subjShort = (subjectNames[t.subject]||t.subject||'').slice(0,1) || {ko:'국',en:'영',ma:'수',hi:'한',sc:'과',so:'사'}[t.subject]||t.subject;
     var measuring = timerTargetId===t.id;
     var timeHtml = '';
     if (t.studyTime) {
@@ -2285,14 +2285,14 @@ function renderWeeklyReport() {
     if (!sorted.length) { var h='<div style="color:var(--tx3);font-size:12px;padding:6px 0;text-align:center;">이번 주 학습 기록이 없습니다</div>'; _weeklyReportCache=h;_weeklyReportDate=today;el.innerHTML=h; return; }
     var maxSec = bySubj[sorted[0]] || 1;
     var subjColorMap = {ko:'var(--blue)', en:'var(--green)', ma:'var(--orange)', hi:'var(--gold)', sc:'var(--purple)', so:'var(--red)'};
-    var subjShort = {ko:'국',en:'영',ma:'수',hi:'한',sc:'과',so:'사'};
+    var subjShortFallback = {ko:'국',en:'영',ma:'수',hi:'한',sc:'과',so:'사'};
     var html='<div style="display:flex;flex-direction:column;gap:7px;">'+sorted.map(function(subj,i) {
       var h=Math.floor(bySubj[subj]/3600),m=Math.floor((bySubj[subj]%3600)/60);
       var pct = (bySubj[subj]/maxSec*100);
       var color = subjColorMap[subj]||'var(--burg)';
       return '<div class="rank-item">'
         +'<div class="rank-num" style="color:'+color+'">'+(i+1)+'</div>'
-        +'<span class="todo-subj subj-'+subj+'">'+(subjShort[subj]||subj)+'</span>'
+        +'<span class="todo-subj subj-'+subj+'">'+((subjectNames[subj]||subj||'').slice(0,1)||subjShortFallback[subj]||subj)+'</span>'
         +'<div class="rank-bar-wrap">'
         +'<div class="rank-bar-top"><span style="color:var(--tx1);font-weight:600;">'+(subjectNames[subj]||subj)+'</span><span style="color:'+color+';font-weight:600;font-size:10px;">'+h+'h '+String(m).padStart(2,'0')+'m</span></div>'
         +'<div class="rank-bar"><div class="rank-bar-fill" style="width:'+pct+'%;background:'+color+';"></div></div>'
