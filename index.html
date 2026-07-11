@@ -63,7 +63,9 @@
   --gray4:#3D2B2B;
   --accent:#7B1D1D;
 }
-html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;}
+html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
+*{touch-action:manipulation;}
+button,.todo-check-hit,.todo-item,.s-card,.nav-item,.dt-sb-item,.kchat-room-item,a,[onclick]{touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',sans-serif;background:var(--bg);color:var(--tx1);overflow:hidden;width:100%;height:100%;font-size:14px;-webkit-font-smoothing:antialiased;}
 .screen{
   display:flex;
