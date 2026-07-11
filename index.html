@@ -165,7 +165,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .todo-item:hover{background:var(--surface3);}
 .todo-item.done{background:var(--green-l);}
 .todo-item.progressing{background:var(--burg-l);border:1px solid var(--burg-l2);}
-.todo-check{width:18px;height:18px;border-radius:50%;border:1.5px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--surface);}
+.todo-check{width:18px;height:18px;border-radius:50%;border:1.5px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--surface);pointer-events:none;}
+.todo-check-hit{display:flex;align-items:center;justify-content:center;width:40px;height:40px;margin:-11px;flex-shrink:0;cursor:pointer;}
 .todo-item.done .todo-check{background:var(--green);border-color:var(--green);}
 .todo-item.done .todo-check::after{content:'✓';color:#fff;font-size:10px;font-weight:700;}
 .todo-item.progressing .todo-check{background:var(--burg);border-color:var(--burg);}
@@ -2225,8 +2226,8 @@ function renderTodos(todos) {
     } else if (measuring) {
       timeHtml = '<span class="todo-time" style="color:var(--burg);">⏱</span>';
     }
-    return '<div class="todo-item '+statusClass+'">'
-      +'<div class="todo-check" onclick="cycleTodoStatus(\''+t.id+'\',\''+t.status+'\')"></div>'
+    return '<div class="todo-item '+statusClass+'" data-todo-id="'+t.id+'">'
+      +'<div class="todo-check-hit" onclick="cycleTodoStatus(\''+t.id+'\',\''+t.status+'\')"><div class="todo-check"></div></div>'
       +'<div class="todo-title" onclick="startTimerFor(\''+t.id+'\',\''+t.subject+'\',\''+safeTitle+'\')">'+t.title+'</div>'
       +'<span class="todo-subj subj-'+t.subject+'">'+subjShort+'</span>'
       +timeHtml
@@ -2305,7 +2306,34 @@ function renderWeeklyReport() {
 
 window.cycleTodoStatus = function(id, current) {
   var order=['none','progressing','done'];
-  updateDoc(doc(db,'todos',id), {status:order[(order.indexOf(current)+1)%3]}).then(function(){loadTodos();}).catch(function(){});
+  var next = order[(order.indexOf(current)+1)%3];
+
+  // 즉시 화면에 반영 (서버 응답 기다리지 않음 - 태블릿 등에서 체감 딜레이 제거)
+  var itemEl = document.querySelector('.todo-item[data-todo-id="'+id+'"]');
+  if (itemEl) {
+    itemEl.classList.remove('none','progressing','done');
+    itemEl.classList.add(next);
+    var hitEl = itemEl.querySelector('.todo-check-hit');
+    if (hitEl) hitEl.setAttribute('onclick', "cycleTodoStatus('"+id+"','"+next+"')");
+
+    // 진행률 표시(X/N · %)도 즉시 재계산
+    var list = document.getElementById('todo-list');
+    if (list) {
+      var allItems = list.querySelectorAll('.todo-item');
+      var doneCount = list.querySelectorAll('.todo-item.done').length;
+      var total = allItems.length;
+      var pct = total ? Math.round(doneCount/total*100) : 0;
+      var fill = document.getElementById('planner-progress-fill');
+      var txt = document.getElementById('planner-progress-text');
+      if (fill) fill.style.width = pct+'%';
+      if (txt) txt.textContent = doneCount+'/'+total+' · '+pct+'%';
+    }
+  }
+
+  updateDoc(doc(db,'todos',id), {status:next}).catch(function(){
+    // 저장 실패 시에만 서버 상태로 되돌려 재동기화
+    loadTodos();
+  });
 };
 window.openEditTodoModal = function(id, title, subject) {
   document.getElementById('edit-todo-id').value = id;
