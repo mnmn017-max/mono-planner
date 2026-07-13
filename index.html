@@ -324,7 +324,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 /* ════════════════════════════════════════
    태블릿 768~1199px
 ════════════════════════════════════════ */
-@media(min-width:768px) and (max-width:1023px){
+@media(min-width:600px) and (max-width:1023px) and (orientation:landscape){
   body{font-size:14px;}
   .content-area{padding:16px 20px;}
   .kpi-grid{grid-template-columns:repeat(4,1fr);}
@@ -340,7 +340,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 /* ════════════════════════════════════════
    데스크탑 ≥1200px
 ════════════════════════════════════════ */
-@media(min-width:768px){
+@media(min-width:600px) and (orientation:landscape){
   body{font-size:14px;overflow:hidden;}
   
   /* 학생 화면 */
@@ -527,7 +527,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   .content-area{padding:10px;}
 }
 
-@media(max-width:767px){
+@media(max-width:599px), (orientation:portrait){
   .dt-main-grid{display:flex !important;flex-direction:column;padding:0 !important;gap:10px;}
   .dt-main-grid > div{grid-column:auto !important;}
   .dt-only{display:none !important;}
@@ -611,10 +611,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .kchat-send:hover{background:var(--burg2);}
 
 /* 데스크탑/태블릿 - 채팅 너비 제한 */
-@media(min-width:768px){
+@media(min-width:600px) and (orientation:landscape){
   .kchat-bubble-wrap{max-width:60%;}
 }
-@media(min-width:768px) and (max-width:1023px){
+@media(min-width:600px) and (max-width:1023px) and (orientation:landscape){
   .kchat-bubble-wrap{max-width:70%;}
 }
 
@@ -678,7 +678,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .newchat-row.selected .newchat-checkbox::after{content:'✓';color:#fff;font-size:13px;font-weight:700;}
 
 /* 데스크탑 카톡 레이아웃 */
-@media(min-width:768px){
+@media(min-width:600px) and (orientation:landscape){
   .kchat-wrap{flex-direction:row;}
   .kchat-list-view{width:320px;border-right:1px solid var(--border);background:var(--surface);flex:0 0 auto;}
   .kchat-room-view{flex:1;}
@@ -742,7 +742,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 
 
 /* 좁은 데스크탑/태블릿 가로 (1200~1499px) - 우측 패널 숨기고 메인 단일 컬럼 */
-@media(min-width:768px) and (max-width:1499px){
+@media(min-width:600px) and (max-width:1499px) and (orientation:landscape){
   .dt-right{display:none !important;}
   .dt-main-grid{grid-template-columns:1fr !important;}
 }
