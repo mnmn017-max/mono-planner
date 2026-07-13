@@ -7,7 +7,7 @@
   "display": "standalone",
   "background_color": "#FAF6F0",
   "theme_color": "#7B1D1D",
-  "orientation": "portrait",
+  "orientation": "any",
   "lang": "ko",
   "id": "/",
   "icons": [
