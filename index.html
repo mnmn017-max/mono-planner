@@ -2528,13 +2528,28 @@ function _tickDisplay() {
 
 function _startAutoSave() {
   if (timerAutoSave) clearInterval(timerAutoSave);
-  timerAutoSave = setInterval(function(){
-    if (timerTargetId && !timerPaused && timerStartAt) {
-      var cur = _getElapsed();
-      // localStorage 항상 업데이트 (오프라인 대응)
-      _lsSave(timerTargetId, cur, timerStartAt);
-      // Firestore 업데이트 (실패해도 무시)
-      updateDoc(doc(db,'todos',timerTargetId), {timerAccum: cur}).catch(function(){});
+
+  timerAutoSave = setInterval(async function () {
+    if (!timerTargetId || timerPaused || timerStartAt === null) return;
+
+    var activeId = timerTargetId;
+    var cur = _getElapsed();
+    var newStartAt = Date.now();
+
+    // 저장 시점까지의 경과 시간을 누적값으로 확정
+    timerSeconds = cur;
+    timerStartAt = newStartAt;
+
+    _lsSave(activeId, timerSeconds, timerStartAt);
+
+    try {
+      await updateDoc(doc(db, 'todos', activeId), {
+        timerAccum: timerSeconds,
+        timerStartAt: timerStartAt,
+        timerRunning: true
+      });
+    } catch (error) {
+      console.error('타이머 자동 저장 실패:', error);
     }
   }, 60000);
 }
@@ -2558,19 +2573,48 @@ function _startTimerUI(id, subject, title, accum, startAt) {
   _tickDisplay();
 }
 
-window.startTimerFor = function(id, subject, title) {
-  if (timerTargetId === id) { togglePause(); return; }
+window.startTimerFor = async function(id, subject, title) {
+  if (timerTargetId === id) {
+    togglePause();
+    return;
+  }
 
   if (timerTargetId) {
+    var previousId = timerTargetId;
     var currentSecs = _getElapsed();
-    var currentName = (window._timerCurSubj?subjectNames[window._timerCurSubj]+' · ':'')+(window._timerCurTitle||'진행중인 항목');
+    var currentName =
+      (window._timerCurSubj
+        ? subjectNames[window._timerCurSubj] + ' · '
+        : '') +
+      (window._timerCurTitle || '진행중인 항목');
+
     if (!timerPaused) {
-      if (!confirm('현재 ['+currentName+'] 타이머가 실행 중입니다.\n\n기존 타이머를 일시정지하고 새 항목을 시작할까요?\n(기존 측정 시간은 저장됩니다)\n\n취소하면 기존 타이머가 계속 진행됩니다.')) return;
+      var changeConfirmed = confirm(
+        '현재 [' + currentName + '] 타이머가 실행 중입니다.\n\n' +
+        '기존 타이머를 일시정지하고 새 항목을 시작할까요?\n' +
+        '(기존 측정 시간은 저장됩니다)\n\n' +
+        '취소하면 기존 타이머가 계속 진행됩니다.'
+      );
+      if (!changeConfirmed) return;
     }
-    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
     _stopAutoSave();
-    _lsSave(timerTargetId, currentSecs, null);
-    updateDoc(doc(db,'todos',timerTargetId), {timerAccum: currentSecs, timerRunning: false, timerStartAt: null}).catch(function(){});
+
+    _lsSave(previousId, currentSecs, null);
+
+    try {
+      await updateDoc(doc(db, 'todos', previousId), {
+        timerAccum: currentSecs,
+        timerRunning: false,
+        timerStartAt: null
+      });
+    } catch (error) {
+      console.error('기존 타이머 일시정지 저장 실패:', error);
+    }
   }
 
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
@@ -2927,21 +2971,30 @@ function resumeActiveTimer() {
     var lsElapsed = cached ? (cached.accum + (cached.startAt ? Math.floor((Date.now() - cached.startAt) / 1000) : 0)) : 0;
     var elapsed = Math.max(fsElapsed, lsElapsed);
 
+    var resumedAt = Date.now();
+
     timerTargetId = d.id;
     timerSeconds = elapsed;
-    timerStartAt = startMs > 0 ? startMs : Date.now();
-    timerPaused = (startMs === 0 && !cached);
+    timerStartAt = resumedAt;
+    timerPaused = false;
 
-    _lsSave(d.id, elapsed, timerStartAt);
-    updateDoc(doc(db,'todos',d.id), {timerAccum: elapsed}).catch(function(){});
+    _lsSave(d.id, timerSeconds, timerStartAt);
+
+    updateDoc(doc(db, 'todos', d.id), {
+      timerAccum: timerSeconds,
+      timerStartAt: timerStartAt,
+      timerRunning: true
+    }).catch(function (error) {
+      console.error('복원된 타이머 저장 실패:', error);
+    });
 
     window._timerCurSubj = data.subject;
     window._timerCurTitle = data.title;
     _renderTimerBanner(true);
-    if (!timerPaused) {
-      if (!timerInterval) timerInterval = setInterval(_tickDisplay, 500);
-      _startAutoSave();
-    }
+
+    if (timerInterval) clearInterval(timerInterval);
+    timerInterval = setInterval(_tickDisplay, 500);
+    _startAutoSave();
     _tickDisplay();
   }).catch(function(){});
 }
@@ -6319,7 +6372,7 @@ function buildAllChats(){
       }).join('');
     }
 
-    return warn + '<div id="master-rooms-section">' + filterBar + '<div id="master-rooms-list">' + roomsHtml + '</div></div>'
+    return warn + '<div id="master-rooms-section" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;">' + filterBar + '<div id="master-rooms-list" style="flex:1;overflow-y:auto;min-height:0;">' + roomsHtml + '</div></div>'
       +'<div id="master-chat-view" style="display:none;">'
       +'<button class="modal-btn cancel" onclick="closeMasterRoomView()" style="margin-bottom:10px;width:auto;padding:7px 14px;">← 목록으로</button>'
       +'<div class="card" style="padding:0;overflow:hidden;">'
