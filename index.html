@@ -488,6 +488,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   }
   /* 채팅 탭일 때 우측 패널 숨김 */
   #screen-student.chat-mode .dt-right{display:none !important;}
+  /* 채팅 탭일 때 타이머 배너도 숨겨서 채팅창에 폭을 양보 */
+  #screen-student.chat-mode #timer-banner-host{display:none !important;}
+  #screen-student.chat-mode #student-content{
+    flex:1 1 auto !important;
+    width:auto !important;
+    min-width:0 !important;
+  }
+  #screen-student.chat-mode .kchat-wrap{
+    width:100% !important;
+    flex:1 1 auto !important;
+    min-width:0 !important;
+  }
   
   /* 선생님 화면 */
   #screen-teacher{flex-direction:row !important;overflow:hidden;}
@@ -833,6 +845,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 /* 모바일 보이는 요소 표시 우선순위 보장 */
 .bottom-nav.mobile-only{display:flex !important;}
 .topbar.mobile-only{display:flex !important;}
+
+/* 작은 태블릿(가로)에서 채팅 목록 너비를 화면 폭에 비례해 축소 - 메시지창 공간 확보 */
+@media(min-width:600px) and (max-width:1199px) and (orientation:landscape){
+  #screen-student.chat-mode .kchat-list-view{
+    width:clamp(220px, 34vw, 280px) !important;
+    flex:0 0 clamp(220px, 34vw, 280px) !important;
+  }
+  #screen-student.chat-mode .kchat-room-view,
+  #screen-student.chat-mode #kchat-room-view{
+    flex:1 1 auto !important;
+    min-width:0 !important;
+  }
+}
 </style>
 <script>
 // 스플래시 화면 자동 종료 (모듈 스크립트와 독립 실행 - Firebase 로딩 실패해도 작동)
