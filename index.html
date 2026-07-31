@@ -164,7 +164,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .planner-progress-fill{height:100%;background:var(--burg);border-radius:2px;}
 .planner-list{display:flex;flex-direction:column;gap:5px;}
 .todo-item{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:8px;background:var(--surface2);cursor:pointer;transition:background .15s;}
-.todo-item:hover{background:var(--surface3);}
+
 .todo-item.done{background:var(--green-l);}
 .todo-item.progressing{background:var(--burg-l);border:1px solid var(--burg-l2);}
 .todo-check{width:18px;height:18px;border-radius:50%;border:1.5px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--surface);pointer-events:none;}
@@ -265,7 +265,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 
 /* ── 학생 카드 (선생님 학생현황) ── */
 .s-card{background:var(--surface);border:1px solid var(--border2);border-left:4px solid transparent;border-radius:10px;padding:14px;cursor:pointer;transition:transform .15s,box-shadow .15s;}
-.s-card:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(123,29,29,0.1);}
+
 .s-card-urgent{border-left-color:var(--red);}
 .s-card-warning{border-left-color:#D4A04A;}
 .s-card-normal{border-left-color:var(--border-c);}
@@ -430,7 +430,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   .dt-sb-logo{width:176px;height:94px;border-radius:14px;background:var(--burg);display:flex;align-items:center;justify-content:center;margin-bottom:18px;overflow:visible;flex-shrink:0;box-shadow:0 4px 14px rgba(123,29,29,0.3);padding:10px 14px;}
   .dt-sb-item{width:170px;min-height:64px;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;position:relative;transition:all .15s;color:var(--tx3);flex-shrink:0;padding:10px 6px;}
   .dt-sb-item-label{font-size:11px;font-weight:600;letter-spacing:0;color:inherit;line-height:1.15;text-align:center;}
-  .dt-sb-item:hover{background:var(--burg-l);color:var(--burg);}
+  
   .dt-sb-item.active{background:var(--burg-l);color:var(--burg);}
   .dt-sb-item.active::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:24px;background:var(--burg);border-radius:0 2px 2px 0;}
   .dt-sb-spacer{flex:1;}
@@ -556,7 +556,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .kchat-search::placeholder{color:var(--tx4);}
 
 .kchat-room-item{display:flex;align-items:center;gap:12px;padding:11px 12px;background:var(--surface);border-radius:10px;margin-bottom:6px;cursor:pointer;transition:background .15s;}
-.kchat-room-item:hover{background:var(--surface2);}
+
 .kchat-avatar{width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,var(--burg),var(--burg2));display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:700;flex-shrink:0;}
 .kchat-room-info{flex:1;min-width:0;}
 .kchat-room-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;}
@@ -569,7 +569,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .kchat-view{flex:1;display:flex;flex-direction:column;min-height:0;background:#B4C5D6;overflow:hidden;}
 .kchat-header{display:flex;align-items:center;gap:10px;padding:11px 14px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;}
 .kchat-back{background:none;border:none;color:var(--tx2);cursor:pointer;padding:4px;display:flex;align-items:center;justify-content:center;border-radius:50%;}
-.kchat-back:hover{background:var(--surface2);}
+
 .kchat-header-info{flex:1;min-width:0;}
 .kchat-header-name{font-size:15px;font-weight:700;color:var(--tx1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .kchat-header-sub{font-size:11px;color:var(--tx3);margin-top:1px;}
@@ -615,12 +615,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 
 .kchat-input-area{display:flex;gap:6px;align-items:center;padding:9px 10px;background:var(--surface);border-top:1px solid var(--border);flex-shrink:0;}
 .kchat-attach{background:none;border:none;color:var(--tx3);cursor:pointer;padding:6px;display:flex;align-items:center;justify-content:center;border-radius:50%;flex-shrink:0;}
-.kchat-attach:hover{background:var(--surface2);color:var(--burg);}
+
 .kchat-input{flex:1;padding:10px 14px;background:var(--surface2);border:none;border-radius:20px;color:var(--tx1);font-size:14px;outline:none;}
 .kchat-input::placeholder{color:var(--tx4);}
 .kchat-input:focus{background:var(--surface);box-shadow:0 0 0 1px var(--burg);}
 .kchat-send{width:36px;height:36px;border-radius:50%;background:var(--burg);border:none;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
-.kchat-send:hover{background:var(--burg2);}
+
 
 /* 데스크탑/태블릿 - 채팅 너비 제한 */
 @media(min-width:600px) and (orientation:landscape){
@@ -636,7 +636,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .kchat-list-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 8px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;}
 .kchat-list-title{font-size:18px;font-weight:700;color:var(--tx1);}
 .kchat-new-btn{width:36px;height:36px;border-radius:50%;background:var(--burg);color:#fff;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;}
-.kchat-new-btn:hover{background:var(--burg2);}
+
 .kchat-rooms-list{flex:1;overflow-y:auto;padding:6px 8px 12px;}
 .kchat-empty{padding:60px 20px;text-align:center;}
 .kchat-empty-btn{margin-top:18px;background:var(--burg);color:#fff;border:none;padding:11px 20px;font-size:13px;font-weight:600;border-radius:8px;cursor:pointer;}
@@ -683,7 +683,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 
 /* 새 채팅 모달 */
 .newchat-row{display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface);border-radius:10px;cursor:pointer;transition:background .15s;border:2px solid transparent;}
-.newchat-row:hover{background:var(--surface2);}
+
 .newchat-row.selected{background:var(--burg-l);border-color:var(--burg);}
 .newchat-checkbox{width:20px;height:20px;border-radius:50%;border:2px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--surface);}
 .newchat-row.selected .newchat-checkbox{background:var(--burg);border-color:var(--burg);}
@@ -770,7 +770,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   box-shadow:0 3px 10px rgba(123,29,29,0.2);
   transition:all .15s;
 }
-.appeal-btn:hover{background:var(--burg-d, #6a1818);transform:translateY(-1px);box-shadow:0 4px 14px rgba(123,29,29,0.3);}
+
 .appeal-btn:active{transform:translateY(0);}
 
 /* 성적 탭 (모의고사 / 내신) */
@@ -857,6 +857,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
     flex:1 1 auto !important;
     min-width:0 !important;
   }
+}
+
+/* 마우스/트랙패드 등 실제 포인터 기기에서만 hover 효과 적용 (터치 탭 시 "먼저 눌러도 반응 없다가 두번째에 반응" 문제 방지) */
+@media (hover: hover) and (pointer: fine) {
+  .todo-item:hover{background:var(--surface3);}
+  .s-card:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(123,29,29,0.1);}
+  .dt-sb-item:hover{background:var(--burg-l);color:var(--burg);}
+  .kchat-room-item:hover{background:var(--surface2);}
+  .kchat-back:hover{background:var(--surface2);}
+  .kchat-attach:hover{background:var(--surface2);color:var(--burg);}
+  .kchat-send:hover{background:var(--burg2);}
+  .kchat-new-btn:hover{background:var(--burg2);}
+  .newchat-row:hover{background:var(--surface2);}
+  .appeal-btn:hover{background:var(--burg-d, #6a1818);transform:translateY(-1px);box-shadow:0 4px 14px rgba(123,29,29,0.3);}
 }
 </style>
 <script>
@@ -1492,10 +1506,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <div class="modal-label">이름</div><input class="modal-input" id="edit-acc-name" placeholder="이름"/>
   <div class="modal-label">아이디 변경</div><input class="modal-input" id="edit-acc-id" placeholder="새 아이디"/>
   <div style="background:rgba(232,148,58,0.1);border:1px solid rgba(232,148,58,0.2);border-radius:8px;padding:10px 13px;font-size:12px;color:#f0a855;margin-bottom:12px">
-    ⚠️ 비밀번호 변경은 해당 학생이 앱 내 내 정보 수정에서 직접 변경해야 합니다.
+    ⚠️ 비밀번호는 계정 목록의 "🔑 비밀번호" 버튼으로 마스터가 직접 재설정할 수 있습니다.
   </div>
   <button class="modal-btn primary" onclick="saveEditAccount()">저장하기</button>
   <button class="modal-btn cancel" onclick="closeModal('modal-edit-account')">취소</button>
+</div></div>
+
+<!-- 비밀번호 재설정 모달 (마스터 전용) -->
+<div class="modal-overlay" id="modal-reset-password"><div class="modal">
+  <div class="modal-title">🔑 비밀번호 변경</div>
+  <input type="hidden" id="reset-pw-uid"/>
+  <div style="font-size:13px;color:var(--tx2);margin-bottom:14px;">
+    <strong id="reset-pw-name"></strong>님의 비밀번호를 새로 설정합니다.
+  </div>
+  <div style="background:rgba(220,38,38,0.06);border:1px solid rgba(220,38,38,0.15);border-radius:8px;padding:10px 13px;font-size:12px;color:#b91c1c;margin-bottom:12px;line-height:1.5;">
+    ⚠️ 보안상 기존 비밀번호는 확인할 수 없고, 새 비밀번호로 재설정만 가능합니다.<br/>
+    변경 후 새 비밀번호를 본인에게 직접 안내해주세요.
+  </div>
+  <div class="modal-label">새 비밀번호 (6자 이상)</div>
+  <input class="modal-input" type="text" id="reset-pw-input" placeholder="새 비밀번호"/>
+  <div id="reset-pw-status" style="font-size:12px;color:var(--tx3);margin-bottom:8px;"></div>
+  <button class="modal-btn primary" onclick="saveResetPassword()">변경하기</button>
+  <button class="modal-btn cancel" onclick="closeModal('modal-reset-password')">취소</button>
 </div></div>
 
 <div class="modal-overlay" id="modal-notice"><div class="modal">
@@ -1709,6 +1741,15 @@ onMessage(messaging, function(payload) {
 });
 
 // 새벽 4시 기준 오늘 날짜 (4시 이전이면 어제로 처리)
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 function getPlannerDate() {
   // 한국 시간(UTC+9) 기준으로 날짜 계산
   var now = new Date();
@@ -1736,6 +1777,7 @@ var TimerEngine = {
   status: 'idle', // idle | running | paused
   accumMs: 0,
   startedAtMs: null,
+  sessionId: null,
   operationVersion: 0
 };
 var selectedFile = null, teacherSelectedFile = null, teacherChatUid = null;
@@ -2174,10 +2216,10 @@ function loadMentorComment() {
     var d=docs[0];
     var date = d.createdAt ? d.createdAt.toDate().toLocaleDateString('ko-KR') : '';
     area.innerHTML = '<div class="mentor-card">'
-      +'<div class="mentor-av">'+(d.teacherName||'T').slice(0,2)+'</div>'
+      +'<div class="mentor-av">'+escapeHtml((d.teacherName||'T').slice(0,2))+'</div>'
       +'<div class="mentor-body">'
-      +'<div class="mentor-meta">멘토 코멘트 <span class="mentor-meta-date">· '+(d.teacherName||'')+' · '+date+'</span></div>'
-      +'<div class="mentor-text">'+d.content+'</div>'
+      +'<div class="mentor-meta">멘토 코멘트 <span class="mentor-meta-date">· '+escapeHtml(d.teacherName||'')+' · '+date+'</span></div>'
+      +'<div class="mentor-text">'+escapeHtml(d.content)+'</div>'
       +'</div></div>';
   }).catch(function(e) { area.innerHTML='<div style="color:var(--tx3);font-size:12px;">코멘트 로딩 실패</div>'; });
 }
@@ -2269,7 +2311,7 @@ function renderTodos(todos) {
     }
     return '<div class="todo-item '+statusClass+'" data-todo-id="'+t.id+'">'
       +'<div class="todo-check-hit" onclick="cycleTodoStatus(\''+t.id+'\',\''+t.status+'\')"><div class="todo-check"></div></div>'
-      +'<div class="todo-title" onclick="startTimerFor(\''+t.id+'\',\''+t.subject+'\',\''+safeTitle+'\')">'+t.title+'</div>'
+      +'<div class="todo-title" onclick="startTimerFor(\''+t.id+'\',\''+t.subject+'\',\''+safeTitle+'\')">'+escapeHtml(t.title)+'</div>'
       +'<span class="todo-subj subj-'+t.subject+'">'+subjShort+'</span>'
       +timeHtml
       +'<button class="todo-edit" onclick="openEditTodoModal(\''+t.id+'\',\''+safeTitle+'\',\''+safeSubj+'\')" title="수정">✏</button>'
@@ -2397,8 +2439,10 @@ window.confirmDeleteTodo = function() {
   if(TimerEngine.todoId===id){
     if(timerInterval){clearInterval(timerInterval);timerInterval=null;}
     if(timerAutoSave){clearInterval(timerAutoSave);timerAutoSave=null;}
+    clearTimerLocal(id);
+    clearActiveTimerIndex();
     TimerEngine.operationVersion += 1;
-    TimerEngine.todoId=null; TimerEngine.accumMs=0; TimerEngine.status='idle'; TimerEngine.startedAtMs=null;
+    TimerEngine.todoId=null; TimerEngine.accumMs=0; TimerEngine.status='idle'; TimerEngine.startedAtMs=null; TimerEngine.sessionId=null;
     window._timerCurSubj=null; window._timerCurTitle=null;
   }
   deleteDoc(doc(db,'todos',id)).then(function(){closeModal('modal-edit-todo');loadTodos();});
@@ -2565,6 +2609,51 @@ function saveTimerLocal() {
   } catch (error) { console.error('타이머 localStorage 저장 실패:', error); }
 }
 
+// ── 활성 타이머 인덱스 (앱 완전 종료 후에도 로컬만으로 복구하기 위한 단일 키) ──
+function activeTimerIndexKey() {
+  var uid = currentUser ? currentUser.uid : '';
+  return 'active_timer_v3_' + uid;
+}
+
+function saveActiveTimerIndex() {
+  if (!currentUser) return;
+  try {
+    if (!TimerEngine.todoId || TimerEngine.status === 'idle') {
+      localStorage.removeItem(activeTimerIndexKey());
+      return;
+    }
+    localStorage.setItem(activeTimerIndexKey(), JSON.stringify({
+      schemaVersion: 3,
+      todoId: TimerEngine.todoId,
+      status: TimerEngine.status,
+      accumMs: TimerEngine.accumMs,
+      startedAtMs: TimerEngine.startedAtMs,
+      subject: TimerEngine.subject,
+      title: TimerEngine.title,
+      date: getPlannerDate(),
+      sessionId: TimerEngine.sessionId || null,
+      savedAtMs: Date.now()
+    }));
+  } catch (error) { console.error('활성 타이머 인덱스 저장 실패:', error); }
+}
+
+function loadActiveTimerIndex() {
+  try {
+    var raw = localStorage.getItem(activeTimerIndexKey());
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) { return null; }
+}
+
+function clearActiveTimerIndex() {
+  try { localStorage.removeItem(activeTimerIndexKey()); } catch (error) {}
+}
+
+// saveTimerLocal + saveActiveTimerIndex를 함께 (상태 변경 시마다 호출)
+function saveAllTimerLocalState() {
+  saveTimerLocal();
+  saveActiveTimerIndex();
+}
+
 function loadTimerLocal(id) {
   try {
     var raw = localStorage.getItem(timerStorageKey(id));
@@ -2616,6 +2705,8 @@ function _stopAutoSave() {
 // Firestore 저장 체크포인트 (ms 필드 + 구 필드 정리 동시 기록)
 async function persistTimerCheckpoint() {
   if (!TimerEngine.todoId) return;
+  var activeId = TimerEngine.todoId; // 함수 시작 시점 ID를 고정 - 저장 중 다른 항목으로 전환돼도 엉뚱한 문서에 쓰지 않도록
+  var myVersion = TimerEngine.operationVersion;
   var now = Date.now();
 
   if (TimerEngine.status === 'running') {
@@ -2623,23 +2714,32 @@ async function persistTimerCheckpoint() {
     TimerEngine.startedAtMs = now;
   }
 
-  saveTimerLocal();
+  if (!TimerEngine.sessionId) {
+    TimerEngine.sessionId = (currentUser ? currentUser.uid : '') + '-' + now;
+  }
+
+  saveAllTimerLocalState();
 
   var payload = {
     timerSchemaVersion: TIMER_SCHEMA_VERSION,
     timerAccumMs: TimerEngine.accumMs,
     timerStartedAtMs: TimerEngine.startedAtMs,
     timerRunning: TimerEngine.status === 'running',
+    timerSessionId: TimerEngine.sessionId,
+    timerUpdatedAt: serverTimestamp(),
     // 구버전 코드가 남아있어도 과대 계산하지 않도록 정리
     timerAccum: Math.floor(TimerEngine.accumMs / 1000),
     timerStartAt: null
   };
 
   try {
-    await updateDoc(doc(db, 'todos', TimerEngine.todoId), payload);
+    await updateDoc(doc(db, 'todos', activeId), payload);
   } catch (error) {
     console.error('타이머 서버 저장 실패:', error);
   }
+
+  // 저장 완료 후 이미 다른 타이머로 전환됐다면(경쟁 상태) 이후 처리를 건너뜀
+  if (myVersion !== TimerEngine.operationVersion) return;
 }
 
 function resetTimerMemory() {
@@ -2652,6 +2752,7 @@ function resetTimerMemory() {
   TimerEngine.status = 'idle';
   TimerEngine.accumMs = 0;
   TimerEngine.startedAtMs = null;
+  TimerEngine.sessionId = null;
   window._timerCurSubj = null;
   window._timerCurTitle = null;
 }
@@ -2686,7 +2787,7 @@ window.startTimerFor = async function(id, subject, title) {
     TimerEngine.startedAtMs = null;
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     _stopAutoSave();
-    saveTimerLocal();
+    saveAllTimerLocalState();
 
     // 기존 항목 저장 완료를 기다린 뒤 새 항목 시작 (경쟁 상태 방지)
     await persistTimerCheckpoint();
@@ -2737,11 +2838,12 @@ window.startTimerFor = async function(id, subject, title) {
   TimerEngine.status = 'running';
   TimerEngine.accumMs = Math.max(localMs, serverMs);
   TimerEngine.startedAtMs = Date.now();
+  TimerEngine.sessionId = currentUser.uid + '-' + Date.now();
 
   window._timerCurSubj = TimerEngine.subject;
   window._timerCurTitle = TimerEngine.title;
 
-  saveTimerLocal();
+  saveAllTimerLocalState();
   _renderTimerBanner(true);
   if (timerInterval) clearInterval(timerInterval);
   timerInterval = setInterval(_tickDisplay, 500);
@@ -2757,7 +2859,7 @@ window.togglePause = async function() {
   if (TimerEngine.status === 'paused') {
     TimerEngine.status = 'running';
     TimerEngine.startedAtMs = Date.now();
-    saveTimerLocal();
+    saveAllTimerLocalState();
     if (!timerInterval) timerInterval = setInterval(_tickDisplay, 500);
     _startAutoSave();
     await persistTimerCheckpoint();
@@ -2768,7 +2870,7 @@ window.togglePause = async function() {
     TimerEngine.status = 'paused';
     _stopAutoSave();
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-    saveTimerLocal();
+    saveAllTimerLocalState();
     await persistTimerCheckpoint();
   }
   _renderTimerBanner(true);
@@ -2780,20 +2882,28 @@ window.stopTimer = async function() {
   var now = Date.now();
   var totalMs = getElapsedMs(now);
   var timeText = formatElapsedMs(totalMs);
+  var wasRunning = TimerEngine.status === 'running'; // 완료 버튼 누르기 전 원래 상태 기억
 
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
   _stopAutoSave();
 
   var ok = confirm('학습을 완료하시겠습니까?\n\n측정 시간: ' + timeText);
   if (!ok) {
-    // 취소 시 기존 상태 그대로 계속 실행
+    // 취소 시 원래 상태(실행 중이었으면 실행, 일시정지였으면 일시정지)로 복원
     TimerEngine.accumMs = totalMs;
-    TimerEngine.status = 'running';
-    TimerEngine.startedAtMs = Date.now();
+    if (wasRunning) {
+      TimerEngine.status = 'running';
+      TimerEngine.startedAtMs = Date.now();
+      timerInterval = setInterval(_tickDisplay, 500);
+      _startAutoSave();
+    } else {
+      TimerEngine.status = 'paused';
+      TimerEngine.startedAtMs = null;
+    }
     saveTimerLocal();
-    timerInterval = setInterval(_tickDisplay, 500);
-    _startAutoSave();
+    saveActiveTimerIndex();
     _renderTimerBanner(true);
+    _tickDisplay();
     await persistTimerCheckpoint();
     return;
   }
@@ -2805,6 +2915,7 @@ window.doResetTimer = async function() {
   if (!TimerEngine.todoId) { closeModal('modal-reset-confirm'); return; }
   var resetId = TimerEngine.todoId;
   clearTimerLocal(resetId);
+  clearActiveTimerIndex();
   try {
     await updateDoc(doc(db,'todos',resetId), {
       timerSchemaVersion: TIMER_SCHEMA_VERSION,
@@ -2825,6 +2936,7 @@ async function finalizeTimer(certified, totalMsOverride, timeTextOverride) {
     var timeText = timeTextOverride || formatElapsedMs(totalMs);
     var finishedId = TimerEngine.todoId;
     clearTimerLocal(finishedId);
+    clearActiveTimerIndex();
     try {
       await updateDoc(doc(db,'todos',finishedId), {
         status:'done',
@@ -3051,84 +3163,113 @@ function _renderTimerBanner(running) {
 
 async function resumeActiveTimer() {
   if (!currentUser || TimerEngine.todoId) return;
-  var today = getPlannerDate();
-  var snap;
-  try {
-    snap = await getDocs(query(collection(db,'todos'), where('uid','==',currentUser.uid), where('date','==',today), where('timerRunning','==',true)));
-  } catch (error) {
-    console.error('실행 중 타이머 조회 실패:', error);
-    return;
-  }
-  if (snap.empty) return;
-
-  // 여러 개가 남아있으면 가장 최근 시작 항목만 복원하고 나머지는 정리
-  var docs = snap.docs.slice().sort(function(a, b){
-    var ad = a.data(), bd = b.data();
-    var at = typeof ad.timerStartedAtMs === 'number' ? ad.timerStartedAtMs : 0;
-    var bt = typeof bd.timerStartedAtMs === 'number' ? bd.timerStartedAtMs : 0;
-    return bt - at;
-  });
-
-  var selected = docs[0];
-  var data = selected.data();
-  var id = selected.id;
-
-  if (data.status === 'done') {
-    updateDoc(doc(db,'todos',id), {timerAccumMs:0, timerStartedAtMs:null, timerRunning:false, timerAccum:0, timerStartAt:null}).catch(function(){});
-    clearTimerLocal(id);
-    return;
-  }
-
-  var local = loadTimerLocal(id);
   var now = Date.now();
+  var localActive = loadActiveTimerIndex();
+  var candidates = [];
 
-  var serverMs;
-  if (typeof data.timerAccumMs === 'number') {
-    serverMs = data.timerAccumMs;
-    if (data.timerRunning && typeof data.timerStartedAtMs === 'number') {
-      serverMs += Math.max(0, now - data.timerStartedAtMs);
-    }
-  } else {
-    // 구 데이터(초 단위) 마이그레이션
-    serverMs = Number(data.timerAccum || 0) * 1000;
-    var oldStart = data.timerStartAt;
-    var oldStartMs = oldStart ? ((typeof oldStart.toMillis === 'function') ? oldStart.toMillis() : Number(oldStart)) : 0;
-    if (data.timerRunning && oldStartMs > 0) {
-      serverMs += Math.max(0, now - oldStartMs);
-    }
+  // 1) 로컬에 남아있는 실행 중 타이머를 후보에 추가 (서버 조회 실패해도 이걸로 복구 가능)
+  if (localActive && localActive.todoId && localActive.status === 'running' && localActive.startedAtMs) {
+    candidates.push({
+      source: 'local',
+      todoId: localActive.todoId,
+      subject: localActive.subject || '',
+      title: localActive.title || '',
+      elapsedMs: Number(localActive.accumMs || 0) + Math.max(0, now - Number(localActive.startedAtMs)),
+      startedAtMs: Number(localActive.startedAtMs),
+      sessionId: localActive.sessionId || null
+    });
   }
 
-  var localMs = 0;
-  if (local) {
-    localMs = Number(local.accumMs || 0);
-    if (local.status === 'running' && local.startedAtMs) {
-      localMs += Math.max(0, now - local.startedAtMs);
-    }
+  // 2) 서버 실행 타이머 조회 - 날짜 제한 없이 (자정/새벽4시 경계에도 안전)
+  var serverSnap = null;
+  try {
+    serverSnap = await getDocs(query(collection(db, 'todos'), where('uid', '==', currentUser.uid), where('timerRunning', '==', true)));
+  } catch (error) {
+    console.error('서버 실행 타이머 조회 실패:', error);
   }
 
-  TimerEngine.todoId = id;
-  TimerEngine.subject = data.subject || '';
-  TimerEngine.title = data.title || '';
-  TimerEngine.status = 'running';
-  TimerEngine.accumMs = Math.max(serverMs, localMs);
-  TimerEngine.startedAtMs = now;
+  if (serverSnap) {
+    serverSnap.docs.forEach(function(d) {
+      var data = d.data();
+      if (data.status === 'done') {
+        updateDoc(doc(db,'todos',d.id), {timerAccumMs:0, timerStartedAtMs:null, timerRunning:false, timerAccum:0, timerStartAt:null}).catch(function(){});
+        clearTimerLocal(d.id);
+        return;
+      }
+      var accumMs, startMs;
+      if (typeof data.timerAccumMs === 'number') {
+        accumMs = data.timerAccumMs;
+        startMs = typeof data.timerStartedAtMs === 'number' ? data.timerStartedAtMs : 0;
+      } else {
+        // 구 데이터(초 단위) 마이그레이션
+        accumMs = Number(data.timerAccum || 0) * 1000;
+        var oldStart = data.timerStartAt;
+        startMs = oldStart ? ((typeof oldStart.toMillis === 'function') ? oldStart.toMillis() : Number(oldStart)) : 0;
+      }
+      var elapsedMs = accumMs;
+      if (startMs > 0) elapsedMs += Math.max(0, now - startMs);
+
+      candidates.push({
+        source: 'server',
+        todoId: d.id,
+        subject: data.subject || '',
+        title: data.title || '',
+        elapsedMs: elapsedMs,
+        startedAtMs: startMs,
+        sessionId: data.timerSessionId || null
+      });
+    });
+  }
+
+  if (!candidates.length) return;
+
+  // 3) 동일 todo는 더 큰 경과시간으로 병합, 가장 최근 시작한 항목 선택
+  var merged = {};
+  candidates.forEach(function(c) {
+    var prev = merged[c.todoId];
+    if (!prev || c.elapsedMs > prev.elapsedMs) merged[c.todoId] = c;
+  });
+  var list = Object.keys(merged).map(function(k){ return merged[k]; });
+  list.sort(function(a, b){ return Number(b.startedAtMs||0) - Number(a.startedAtMs||0); });
+
+  var selected = list[0];
+  var cappedMs = Math.min(selected.elapsedMs, TIMER_MAX_MS);
+  var wasCapped = selected.elapsedMs >= TIMER_MAX_MS;
+
+  TimerEngine.todoId = selected.todoId;
+  TimerEngine.subject = selected.subject;
+  TimerEngine.title = selected.title;
+  TimerEngine.status = wasCapped ? 'paused' : 'running';
+  TimerEngine.accumMs = cappedMs;
+  TimerEngine.startedAtMs = TimerEngine.status === 'running' ? now : null;
+  TimerEngine.sessionId = selected.sessionId || (currentUser.uid + '-' + now);
 
   window._timerCurSubj = TimerEngine.subject;
   window._timerCurTitle = TimerEngine.title;
 
-  saveTimerLocal();
+  saveAllTimerLocalState();
   _renderTimerBanner(true);
-  if (timerInterval) clearInterval(timerInterval);
-  timerInterval = setInterval(_tickDisplay, 500);
-  _startAutoSave();
   _tickDisplay();
+
+  if (TimerEngine.status === 'running') {
+    if (timerInterval) clearInterval(timerInterval);
+    timerInterval = setInterval(_tickDisplay, 500);
+    _startAutoSave();
+  }
+
   await persistTimerCheckpoint();
 
-  // 서버에 남아있는 나머지 중복 실행 항목 정리
-  for (var i = 1; i < docs.length; i++) {
-    updateDoc(doc(db, 'todos', docs[i].id), {
-      timerRunning: false, timerStartedAtMs: null, timerStartAt: null
-    }).catch(function(){});
+  if (wasCapped) {
+    alert('종료되어 있던 동안의 시간을 포함해 6시간에 도달하여 자동으로 일시정지되었습니다.\n\n이어서 측정하려면 다시 시작해주세요.');
+  }
+
+  // 선택되지 않은 나머지 서버 실행 항목 정리
+  for (var i = 1; i < list.length; i++) {
+    if (list[i].source === 'server') {
+      updateDoc(doc(db, 'todos', list[i].todoId), {
+        timerRunning: false, timerStartedAtMs: null, timerStartAt: null
+      }).catch(function(){});
+    }
   }
 }
 
@@ -3136,7 +3277,8 @@ async function resumeActiveTimer() {
 document.addEventListener('visibilitychange', function () {
   if (!TimerEngine.todoId) return;
   if (document.visibilityState === 'hidden') {
-    saveTimerLocal();
+    // 종료 직전 네트워크 저장은 보장되지 않으므로 로컬(개별+인덱스)을 최우선 저장
+    saveAllTimerLocalState();
   } else {
     _tickDisplay();
     if (TimerEngine.status === 'running' && !timerInterval) {
@@ -3148,7 +3290,15 @@ window.addEventListener('pageshow', function () {
   if (TimerEngine.todoId) _tickDisplay();
 });
 window.addEventListener('pagehide', function () {
-  saveTimerLocal();
+  saveAllTimerLocalState();
+});
+// 오프라인 상태에서 타이머를 조작한 뒤 온라인으로 복귀하면 서버에 재동기화
+window.addEventListener('online', function () {
+  if (TimerEngine.todoId) {
+    persistTimerCheckpoint().catch(function (error) {
+      console.error('온라인 복귀 동기화 실패:', error);
+    });
+  }
 });
 function buildGradePage(){
   var __dt_h = '<div class="dt-header dt-only"><div><div class="dt-header-title">성적관리</div></div></div>';
@@ -4390,22 +4540,22 @@ window.loadCommentHistory=function(val){
   if(!el) return;
   el.innerHTML='<div style="color:var(--tx3);font-size:12px">불러오는 중...</div>';
   getDocs(query(collection(db,'comments'),where('studentUid','==',uid))).then(function(snap){
-    if(snap.empty){el.innerHTML='<div style="color:var(--tx3);font-size:12px;padding:8px 0">'+sName+'님의 코멘트가 없습니다</div>';return;}
+    if(snap.empty){el.innerHTML='<div style="color:var(--tx3);font-size:12px;padding:8px 0">'+escapeHtml(sName)+'님의 코멘트가 없습니다</div>';return;}
     var items=snap.docs.map(function(d){return Object.assign({_id:d.id},d.data());})
       .sort(function(a,b){var at=a.createdAt?a.createdAt.toMillis():0,bt=b.createdAt?b.createdAt.toMillis():0;return bt-at;});
-    el.innerHTML='<div class="section-label" style="margin-bottom:8px">'+sName+' 코멘트 히스토리</div>'
+    el.innerHTML='<div class="section-label" style="margin-bottom:8px">'+escapeHtml(sName)+' 코멘트 히스토리</div>'
       +items.map(function(c){
         var date=c.createdAt?c.createdAt.toDate().toLocaleDateString('ko-KR'):'';
         return '<div style="background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:12px;margin-bottom:8px">'
           +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
           +'<div style="display:flex;align-items:center;gap:7px">'
-          +'<div class="teacher-av" style="width:28px;height:28px;font-size:10px">'+(c.teacherName||'T').slice(0,2)+'</div>'
-          +'<span style="font-size:12px;font-weight:600;color:var(--burg)">'+(c.teacherName||'')+'</span>'
+          +'<div class="teacher-av" style="width:28px;height:28px;font-size:10px">'+escapeHtml((c.teacherName||'T').slice(0,2))+'</div>'
+          +'<span style="font-size:12px;font-weight:600;color:var(--burg)">'+escapeHtml(c.teacherName||'')+'</span>'
           +'<span style="font-size:11px;color:var(--tx3)">'+date+'</span>'
           +'</div>'
           +'<button onclick="deleteComment(\''+c._id+'\',\''+val+'\')" style="padding:3px 8px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:5px;color:var(--red);font-size:10px;cursor:pointer">삭제</button>'
           +'</div>'
-          +'<div style="font-size:13px;color:var(--tx2);line-height:1.8;white-space:pre-wrap">'+c.content+'</div>'
+          +'<div style="font-size:13px;color:var(--tx2);line-height:1.8;white-space:pre-wrap">'+escapeHtml(c.content)+'</div>'
           +'</div>';
       }).join('');
   }).catch(function(e){el.innerHTML='<div style="color:var(--red);font-size:12px">불러오기 실패: '+e.message+'</div>';});
@@ -5265,7 +5415,7 @@ function listenKChatRooms() {
         var bt = b.lastMessage && b.lastMessage.createdAt ? b.lastMessage.createdAt.toMillis() : (b.createdAt ? b.createdAt.toMillis() : 0);
         return bt - at;
       });
-      renderKChatRooms(_chatRoomCache);
+      _debouncedRenderKChatRooms(_chatRoomCache);
     },
     function(err) {
       console.error('chatRooms listen error', err);
@@ -5273,6 +5423,19 @@ function listenKChatRooms() {
       if (el) el.innerHTML = '<div style="text-align:center;color:var(--tx3);font-size:13px;padding:40px;">대화방을 불러올 수 없습니다</div>';
     }
   );
+}
+
+// 실시간 리스너가 짧은 시간 안에 여러 번 발생해도 화면 재생성을 한 번으로 묶음
+// (재생성 도중 탭한 버튼이 사라지며 클릭이 씹히는 문제 방지 - 태블릿 등에서 특히 체감됨)
+var _kChatRoomsRenderPending = null;
+var _kChatRoomsRenderTimer = null;
+function _debouncedRenderKChatRooms(rooms) {
+  _kChatRoomsRenderPending = rooms;
+  if (_kChatRoomsRenderTimer) return;
+  _kChatRoomsRenderTimer = setTimeout(function(){
+    _kChatRoomsRenderTimer = null;
+    renderKChatRooms(_kChatRoomsRenderPending);
+  }, 250);
 }
 
 function renderKChatRooms(rooms) {
@@ -5666,12 +5829,12 @@ function renderKChatMessages(msgs) {
         avatarStyle = 'font-size:18px;background:transparent;';
       }
     }
-    var nameLine = (isMe || continued) ? '' : '<div class="kchat-name">'+(m.senderName||'')+'</div>';
+    var nameLine = (isMe || continued) ? '' : '<div class="kchat-name">'+escapeHtml(m.senderName||'')+'</div>';
     var bubble;
     if (m.fileUrl) {
-      bubble = '<a href="'+m.fileUrl+'" target="_blank" class="kchat-file">📎 '+(m.fileName||'파일')+'</a>';
+      bubble = '<a href="'+m.fileUrl+'" target="_blank" class="kchat-file">📎 '+escapeHtml(m.fileName||'파일')+'</a>';
     } else {
-      var safeText = (m.text||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      var safeText = escapeHtml(m.text||'');
       bubble = '<div class="kchat-bubble">'+safeText+'</div>';
     }
     // 읽음 처리: readBy 길이가 전체 인원수보다 적으면 안읽은 사람 수 표시
@@ -6360,8 +6523,9 @@ function buildTAccounts(){
           : roleLabel + (u.school?' · '+u.school:'');
         var initial = (u.name||'?').slice(0,1);
         var avatarBg = isTeacher ? 'background:linear-gradient(135deg,var(--burg),var(--burg2));' : 'background:linear-gradient(135deg,#D4A04A,#B8841A);';
-        var btns = isMaster ? '<div style="display:flex;gap:4px;flex-shrink:0;">'
+        var btns = isMaster ? '<div style="display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">'
           +'<button onclick="openEditAccountModal(\''+u.uid+'\',\''+u.name+'\',\''+u.username+'\')" style="padding:6px 10px;background:var(--burg-l);border:1px solid var(--burg-l2);border-radius:6px;color:var(--burg);font-size:11px;cursor:pointer;font-weight:600;">수정</button>'
+          +'<button onclick="openResetPasswordModal(\''+u.uid+'\',\''+escapeHtml(u.name)+'\')" style="padding:6px 10px;background:#eef2ff;border:1px solid rgba(79,70,229,0.2);border-radius:6px;color:#4338ca;font-size:11px;cursor:pointer;font-weight:600;">🔑 비밀번호</button>'
           +'<button onclick="toggleSuspendAccount(\''+u.uid+'\',\''+u.name+'\','+isSuspended+')" style="padding:6px 10px;background:'+(isSuspended?'var(--green-l)':'#fef3c7')+';border:1px solid '+(isSuspended?'rgba(27,107,58,0.25)':'rgba(217,119,6,0.25)')+';border-radius:6px;color:'+(isSuspended?'var(--green)':'#92400e')+';font-size:11px;cursor:pointer;font-weight:600;">'+(isSuspended?'해제':'정지')+'</button>'
           +'<button onclick="deleteAccount(\''+u.uid+'\',\''+u.name+'\')" style="padding:6px 10px;background:var(--red-l);border:1px solid rgba(185,28,28,0.2);border-radius:6px;color:var(--red);font-size:11px;cursor:pointer;font-weight:600;">삭제</button>'
           +'</div>' : '';
@@ -6403,6 +6567,41 @@ function buildTAccounts(){
   });
 }
 
+
+window.openResetPasswordModal=function(uid,name){
+  document.getElementById('reset-pw-uid').value=uid;
+  document.getElementById('reset-pw-name').textContent=name;
+  document.getElementById('reset-pw-input').value='';
+  document.getElementById('reset-pw-status').textContent='';
+  openModal('modal-reset-password');
+};
+window.saveResetPassword=function(){
+  var uid=document.getElementById('reset-pw-uid').value;
+  var newPw=document.getElementById('reset-pw-input').value;
+  var statusEl=document.getElementById('reset-pw-status');
+  if(!newPw||newPw.length<6){ alert('새 비밀번호는 6자 이상이어야 합니다.'); return; }
+  if(!confirm('비밀번호를 변경하시겠습니까?\\n\\n변경 후에는 되돌릴 수 없으며, 해당 학생/선생님에게 새 비밀번호를 직접 전달해야 합니다.')) return;
+
+  statusEl.textContent='⏳ 변경 중...';
+  currentUser.getIdToken().then(function(idToken){
+    return fetch('/api/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+      body: JSON.stringify({ targetUid: uid, newPassword: newPw })
+    });
+  }).then(function(r){
+    if(!r.ok) return r.json().then(function(e){ throw new Error(e.error || ('HTTP '+r.status)); });
+    return r.json();
+  }).then(function(){
+    statusEl.textContent='✓ 변경 완료';
+    alert('비밀번호가 변경되었습니다.\\n\\n새 비밀번호를 해당 계정 사용자에게 직접 전달해주세요.');
+    closeModal('modal-reset-password');
+  }).catch(function(e){
+    console.error(e);
+    statusEl.textContent='✗ 오류: '+e.message;
+    alert('비밀번호 변경 실패: '+e.message+'\\n\\n(/api/reset-password 배포 및 환경변수 설정을 확인해주세요)');
+  });
+};
 
 window.openEditAccountModal=function(uid,name,username){
   document.getElementById('edit-acc-uid').value=uid;
@@ -6653,18 +6852,7 @@ window.deleteMasterRoom = function(roomId, name) {
   }).catch(function(e){alert('삭제 실패: '+e.message);});
 };
 
-window.deleteMasterRoom = function(roomId, name) {
-  if (!confirm('"'+name+'" 대화방을 완전히 삭제하시겠습니까?\n\n모든 메시지와 첨부파일이 삭제되며 복구할 수 없습니다.')) return;
-  getDocs(collection(db, 'chatRooms', roomId, 'messages')).then(function(snap){
-    var ps = snap.docs.map(function(d){return deleteDoc(doc(db, 'chatRooms', roomId, 'messages', d.id));});
-    return Promise.all(ps);
-  }).then(function(){
-    return deleteDoc(doc(db, 'chatRooms', roomId));
-  }).then(function(){
-    alert('대화방이 삭제되었습니다');
-    renderTeacher(7);
-  }).catch(function(e){alert('삭제 실패: '+e.message);});
-};
+
 
 
 
