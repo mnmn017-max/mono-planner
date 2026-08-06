@@ -1781,7 +1781,8 @@ window.setStudentSortMode = function(mode) {
 
 window.openChatPartnerProfile = function(uid) {
   if (!uid) return;
-  var canView = currentProfile && (currentProfile.role === 'teacher' || currentProfile.role === 'master');
+  var roleNorm = ((currentProfile && currentProfile.role) || '').trim().toLowerCase();
+  var canView = (roleNorm === 'teacher' || roleNorm === 'master');
   if (!canView) return;
 
   var body = document.getElementById('chat-partner-profile-body');
@@ -5710,12 +5711,14 @@ window.openKChatRoom = function(roomId) {
       hSub.textContent = or==='master' ? '마스터' : or==='teacher' ? '선생님' : '학생';
       window._curChatOtherUid = otherUid;
       // 선생님/마스터만 상대방 프로필 조회 가능 (동명이인 구분용)
-      var canViewProfile = currentProfile && (currentProfile.role === 'teacher' || currentProfile.role === 'master');
+      var myRoleNorm = ((currentProfile && currentProfile.role) || '').trim().toLowerCase();
+      var canViewProfile = (myRoleNorm === 'teacher' || myRoleNorm === 'master');
       var infoEl = document.getElementById('kchat-header-info');
+      console.log('[chat-profile] otherUid=', otherUid, 'myRole=', myRoleNorm, 'canView=', canViewProfile, 'infoEl found=', !!infoEl);
       if (infoEl) {
         if (canViewProfile) {
           infoEl.style.cursor = 'pointer';
-          infoEl.onclick = function(){ openChatPartnerProfile(otherUid); };
+          infoEl.onclick = function(){ console.log('[chat-profile] clicked, otherUid=', otherUid); openChatPartnerProfile(otherUid); };
         } else {
           infoEl.style.cursor = '';
           infoEl.onclick = null;
