@@ -1717,6 +1717,75 @@ window.goToStudentComment = function(uid, encodedName) {
 };
 
 
+function closeModal(id) { var el = document.getElementById(id); if (el) el.classList.remove('open'); }
+function closeNotice() { document.getElementById('notice-overlay').classList.remove('open'); }
+var modalOverlays = document.querySelectorAll('.modal-overlay');
+for (var mi = 0; mi < modalOverlays.length; mi++) {
+  modalOverlays[mi].addEventListener('click', (function(m) {
+    return function(e) { if (e.target === m) m.classList.remove('open'); };
+  })(modalOverlays[mi]));
+}
+showScreen('screen-loading');
+</script>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, collection, query, where, orderBy, onSnapshot, serverTimestamp, getDocs, limit, arrayUnion } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDnAr8er9NTegYGfIeVErrC96zvO9JlvgQ",
+  authDomain: "mono-planner-75a60.firebaseapp.com",
+  projectId: "mono-planner-75a60",
+  storageBucket: "mono-planner-75a60.firebasestorage.app",
+  messagingSenderId: "948778604548",
+  appId: "1:948778604548:web:99470273105c125d41fd51"
+};
+const CLOUDINARY_CLOUD = 'dhoxxsyh4';
+const CLOUDINARY_PRESET = 'Preset';
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const messaging = getMessaging(app);
+
+const FCM_VAPID_KEY = 'BKnAS5VGPO1l5T4jLtIHGmIsx3WnrCQEyeWvyKcouMKzfPZ4vAtCoSgzg-PHydj2uvuFERpry6g4V7uctslDTe4';
+// Firebase 콘솔 → 프로젝트 설정 → 클라우드 메시징 → 서버 키
+var _FCM_SERVER_KEY = 'YOUR_SERVER_KEY_HERE';
+
+// FCM 토큰 등록 및 Firestore 저장
+async function registerFCMToken(uid) {
+  try {
+    if (!('Notification' in window)) return;
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') return;
+    const token = await getToken(messaging, { vapidKey: FCM_VAPID_KEY });
+    if (token) {
+      // 기존 토큰과 동일하면 스킵, 다르면 교체
+      const userDoc = await getDoc(doc(db, 'users', uid));
+      if (userDoc.exists() && userDoc.data().fcmToken === token) return;
+      await updateDoc(doc(db, 'users', uid), { fcmToken: token }).catch(function(){
+        setDoc(doc(db, 'users', uid), { fcmToken: token }, { merge: true });
+      });
+    }
+  } catch(e) { /* 알림 권한 거부 등 무시 */ }
+}
+
+// 포그라운드 FCM 수신 - 서비스 워커에서 처리하므로 여기서는 아무것도 안 함
+onMessage(messaging, function(payload) {
+  // 의도적으로 비워둠 - 서비스 워커가 모든 알림 처리
+});
+
+// 새벽 4시 기준 오늘 날짜 (4시 이전이면 어제로 처리)
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 // ── 코멘트 작성 - 학생 검색 콤보박스 ──
 window.showCommentStudentList = function() {
   filterCommentStudentList(document.getElementById('comment-student-search').value);
@@ -1835,74 +1904,6 @@ window.setAccountSortMode = function(mode) {
   renderTeacher(6);
 };
 
-function closeModal(id) { var el = document.getElementById(id); if (el) el.classList.remove('open'); }
-function closeNotice() { document.getElementById('notice-overlay').classList.remove('open'); }
-var modalOverlays = document.querySelectorAll('.modal-overlay');
-for (var mi = 0; mi < modalOverlays.length; mi++) {
-  modalOverlays[mi].addEventListener('click', (function(m) {
-    return function(e) { if (e.target === m) m.classList.remove('open'); };
-  })(modalOverlays[mi]));
-}
-showScreen('screen-loading');
-</script>
-
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, collection, query, where, orderBy, onSnapshot, serverTimestamp, getDocs, limit, arrayUnion } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
-
-const firebaseConfig = {
-  apiKey: "AIzaSyDnAr8er9NTegYGfIeVErrC96zvO9JlvgQ",
-  authDomain: "mono-planner-75a60.firebaseapp.com",
-  projectId: "mono-planner-75a60",
-  storageBucket: "mono-planner-75a60.firebasestorage.app",
-  messagingSenderId: "948778604548",
-  appId: "1:948778604548:web:99470273105c125d41fd51"
-};
-const CLOUDINARY_CLOUD = 'dhoxxsyh4';
-const CLOUDINARY_PRESET = 'Preset';
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const messaging = getMessaging(app);
-
-const FCM_VAPID_KEY = 'BKnAS5VGPO1l5T4jLtIHGmIsx3WnrCQEyeWvyKcouMKzfPZ4vAtCoSgzg-PHydj2uvuFERpry6g4V7uctslDTe4';
-// Firebase 콘솔 → 프로젝트 설정 → 클라우드 메시징 → 서버 키
-var _FCM_SERVER_KEY = 'YOUR_SERVER_KEY_HERE';
-
-// FCM 토큰 등록 및 Firestore 저장
-async function registerFCMToken(uid) {
-  try {
-    if (!('Notification' in window)) return;
-    const permission = await Notification.requestPermission();
-    if (permission !== 'granted') return;
-    const token = await getToken(messaging, { vapidKey: FCM_VAPID_KEY });
-    if (token) {
-      // 기존 토큰과 동일하면 스킵, 다르면 교체
-      const userDoc = await getDoc(doc(db, 'users', uid));
-      if (userDoc.exists() && userDoc.data().fcmToken === token) return;
-      await updateDoc(doc(db, 'users', uid), { fcmToken: token }).catch(function(){
-        setDoc(doc(db, 'users', uid), { fcmToken: token }, { merge: true });
-      });
-    }
-  } catch(e) { /* 알림 권한 거부 등 무시 */ }
-}
-
-// 포그라운드 FCM 수신 - 서비스 워커에서 처리하므로 여기서는 아무것도 안 함
-onMessage(messaging, function(payload) {
-  // 의도적으로 비워둠 - 서비스 워커가 모든 알림 처리
-});
-
-// 새벽 4시 기준 오늘 날짜 (4시 이전이면 어제로 처리)
-function escapeHtml(value) {
-  return String(value == null ? '' : value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
 
 function getPlannerDate() {
   // 한국 시간(UTC+9) 기준으로 날짜 계산
