@@ -1757,9 +1757,11 @@ var _FCM_SERVER_KEY = 'YOUR_SERVER_KEY_HERE';
 async function registerFCMToken(uid) {
   try {
     if (!('Notification' in window)) return;
+    if (!('serviceWorker' in navigator)) return;
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') return;
-    const token = await getToken(messaging, { vapidKey: FCM_VAPID_KEY });
+    const swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+    const token = await getToken(messaging, { vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: swRegistration });
     if (token) {
       // 기존 토큰과 동일하면 스킵, 다르면 교체
       const userDoc = await getDoc(doc(db, 'users', uid));
@@ -4066,7 +4068,7 @@ window.migrateLegacyChats = async function() {
 };
 
 function _sendChatNotif(receiverUid, senderName, preview) {
-  // chatNotifs에 저장 → Cloud Functions가 자동으로 FCM 푸시 전송
+  // chatNotifs에 저장 - 앱 내 알림 기록/배지용
   addDoc(collection(db,'chatNotifs',receiverUid,'items'), {
     senderUid: currentUser.uid,
     senderName: senderName,
@@ -4074,6 +4076,18 @@ function _sendChatNotif(receiverUid, senderName, preview) {
     read: false,
     createdAt: serverTimestamp()
   }).catch(function(){});
+}
+
+// 실제 OS 푸시 알림 발송 (백그라운드/앱 종료 상태에서도 수신되도록)
+function _sendPushNotification(targetUids, title, body, data) {
+  if (!targetUids || !targetUids.length || !currentUser) return;
+  currentUser.getIdToken().then(function(idToken){
+    return fetch('/api/send-push', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', 'Authorization':'Bearer '+idToken},
+      body: JSON.stringify({targetUids: targetUids, title: title, body: body, data: data || {}})
+    });
+  }).catch(function(e){ console.error('푸시 알림 전송 실패:', e); });
 }
 
 // ── 뒤로가기 히스토리 관리 ──
@@ -5954,10 +5968,12 @@ window.sendKChatMsg = function() {
       unread: unread,
       hiddenFor: clearedHiddenFor
     }).catch(function(e){console.error('update lastMessage failed', e);});
-    // 알림 전송
+    // 알림 전송 (인앱 기록 + 실제 푸시 - 백그라운드/종료 상태에서도 수신)
+    var notifPreview = messageData.text || ('📎 '+(messageData.fileName||'파일'));
     others.forEach(function(uid){
-      _sendChatNotif(uid, currentProfile.name, messageData.text || ('📎 '+(messageData.fileName||'파일')));
+      _sendChatNotif(uid, currentProfile.name, notifPreview);
     });
+    _sendPushNotification(others, currentProfile.name, notifPreview, {roomId: _curChatRoomId});
   }
 
   if (_selectedFileForChat) {
