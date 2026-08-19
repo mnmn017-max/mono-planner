@@ -5555,7 +5555,7 @@ function buildKakaoChatPage() {
     +'</div>'
     +'<div id="kchat-msg-search-wrap" class="kchat-msg-search-wrap"><input class="kchat-search" id="kchat-msg-search" placeholder="메시지 내용 검색" oninput="filterKChatMessages(this.value)"/></div>'
     +'<div id="kchat-area" class="kchat-area"></div>'
-    +'<div id="kchat-file-prev" class="kchat-file-prev" style="display:none;"><span id="kchat-file-name" style="font-size:13px;color:var(--burg);flex:1;"></span><button onclick="cancelKChatFile()" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:18px;">✕</button></div>'
+    +'<div id="kchat-file-prev" class="kchat-file-prev" style="display:none;flex-direction:column;align-items:stretch;gap:6px;"><div style="display:flex;align-items:center;gap:8px;"><span id="kchat-file-name" style="font-size:13px;color:var(--burg);flex:1;"></span><span id="kchat-file-percent" style="font-size:12px;color:var(--tx3);display:none;"></span><button id="kchat-file-cancel-btn" onclick="cancelKChatFile()" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:18px;">✕</button></div><div id="kchat-file-progress-track" style="display:none;height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;"><div id="kchat-file-progress-fill" style="height:100%;width:0%;background:var(--burg);transition:width .15s;"></div></div></div>'
     +'<div class="kchat-input-area">'
     +'<input type="file" id="kchat-file-input" style="display:none;" onchange="handleKChatFile(this)"/>'
     +'<button class="kchat-attach" onclick="document.getElementById(\'kchat-file-input\').click()"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>'
@@ -5937,7 +5937,23 @@ window.cancelKChatFile = function() {
   _selectedFileForChat = null;
   var p = document.getElementById('kchat-file-prev'); if (p) p.style.display = 'none';
   var fi = document.getElementById('kchat-file-input'); if (fi) fi.value = '';
+  var percentEl = document.getElementById('kchat-file-percent'); if (percentEl) percentEl.style.display = 'none';
+  var trackEl = document.getElementById('kchat-file-progress-track'); if (trackEl) trackEl.style.display = 'none';
+  var fillEl = document.getElementById('kchat-file-progress-fill'); if (fillEl) fillEl.style.width = '0%';
+  var cancelBtn = document.getElementById('kchat-file-cancel-btn');
+  if (cancelBtn) { cancelBtn.disabled = false; cancelBtn.style.opacity = ''; cancelBtn.style.cursor = 'pointer'; }
 };
+
+// 업로드 실패 시 파일은 유지한 채 진행률 UI만 원상복구 (재전송 가능하도록)
+function resetKChatFileUploadUI() {
+  var nameEl = document.getElementById('kchat-file-name');
+  if (nameEl && _selectedFileForChat) nameEl.textContent = _selectedFileForChat.name + ' (' + (_selectedFileForChat.size/1024/1024).toFixed(1) + 'MB)';
+  var percentEl = document.getElementById('kchat-file-percent'); if (percentEl) percentEl.style.display = 'none';
+  var trackEl = document.getElementById('kchat-file-progress-track'); if (trackEl) trackEl.style.display = 'none';
+  var fillEl = document.getElementById('kchat-file-progress-fill'); if (fillEl) fillEl.style.width = '0%';
+  var cancelBtn = document.getElementById('kchat-file-cancel-btn');
+  if (cancelBtn) { cancelBtn.disabled = false; cancelBtn.style.opacity = ''; cancelBtn.style.cursor = 'pointer'; }
+}
 
 // 메시지 전송
 window.sendKChatMsg = function() {
@@ -5979,14 +5995,47 @@ window.sendKChatMsg = function() {
   if (_selectedFileForChat) {
     var fd = new FormData(); fd.append('file', _selectedFileForChat); fd.append('upload_preset', CLOUDINARY_PRESET); fd.append('resource_type','auto');
     var fname = _selectedFileForChat.name;
-    fetch('https://api.cloudinary.com/v1_1/'+CLOUDINARY_CLOUD+'/auto/upload', {method:'POST', body:fd})
-      .then(function(r){return r.json();})
-      .then(function(data){
+
+    // 업로드 진행 상태 UI 표시 (진행률 바 + 퍼센트 + 취소버튼 비활성)
+    var percentEl = document.getElementById('kchat-file-percent');
+    var trackEl = document.getElementById('kchat-file-progress-track');
+    var fillEl = document.getElementById('kchat-file-progress-fill');
+    var cancelBtn = document.getElementById('kchat-file-cancel-btn');
+    var nameEl = document.getElementById('kchat-file-name');
+    if (nameEl) nameEl.textContent = '⬆ 업로드 중... ' + fname;
+    if (percentEl) { percentEl.style.display = 'inline'; percentEl.textContent = '0%'; }
+    if (trackEl) trackEl.style.display = 'block';
+    if (fillEl) fillEl.style.width = '0%';
+    if (cancelBtn) { cancelBtn.disabled = true; cancelBtn.style.opacity = '0.4'; cancelBtn.style.cursor = 'not-allowed'; }
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', 'https://api.cloudinary.com/v1_1/'+CLOUDINARY_CLOUD+'/auto/upload');
+
+    xhr.upload.onprogress = function(e) {
+      if (!e.lengthComputable) return;
+      var pct = Math.round((e.loaded / e.total) * 100);
+      if (fillEl) fillEl.style.width = pct + '%';
+      if (percentEl) percentEl.textContent = pct + '%';
+    };
+
+    xhr.onload = function() {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        var data = JSON.parse(xhr.responseText);
         var msg = {fileUrl:data.secure_url, fileName:fname, senderUid:currentUser.uid, senderName:currentProfile.name, senderAvatar:currentProfile.avatar||null, readBy:[currentUser.uid], createdAt:serverTimestamp()};
         addDoc(collection(db, 'chatRooms', _curChatRoomId, 'messages'), msg).then(function(){ _afterSend(msg); });
-      })
-      .catch(function(e){alert('파일 업로드 실패: '+e.message);});
-    cancelKChatFile();
+        cancelKChatFile();
+      } else {
+        alert('파일 업로드 실패: 서버 오류 (' + xhr.status + ')');
+        resetKChatFileUploadUI();
+      }
+    };
+
+    xhr.onerror = function() {
+      alert('파일 업로드 실패: 네트워크 오류');
+      resetKChatFileUploadUI();
+    };
+
+    xhr.send(fd);
   }
 
   var input = document.getElementById('kchat-input');
