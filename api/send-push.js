@@ -1,12 +1,14 @@
 /**
- * MONO PLANNER - 채팅 푸시 알림 발송 (Vercel Serverless Function)
+ * MONO PLANNER - 채팅 푸시 알림 발송 (Vercel Serverless Function) v2
  * ============================================================
- * 메시지를 보낸 클라이언트가 이 API를 호출하면, 상대방(들)의 기기로
- * FCM 푸시 알림을 발송합니다. (앱이 백그라운드/종료 상태여도 수신)
+ * v1 대비 개선사항:
+ *   - 수신자가 여러 명일 때 순차 처리 → 병렬 처리로 변경 (지연 감소)
+ *   - webpush Urgency: high 헤더 추가 (전달 우선순위 상승)
+ *   - TTL(유효시간) 명시 - 오래 지연된 알림이 뒤늦게 우르르 오는 것 방지
+ *   - 상세 결과 로그 (어떤 대상이 실패했는지 응답에 포함)
  *
  * 필요한 환경변수 (cleanup.js, reset-password.js와 동일하게 재사용):
- *   - FIREBASE_SERVICE_ACCOUNT : Firebase 서비스 계정 키 JSON을 base64로 인코딩한 문자열
- *     (이미 설정되어 있다면 추가 설정 없이 그대로 작동합니다)
+ *   - FIREBASE_SERVICE_ACCOUNT
  */
 
 const admin = require("firebase-admin");
@@ -34,7 +36,6 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  // 1) 호출자 인증 확인 (로그인한 사용자만 알림을 트리거할 수 있음)
   const authHeader = req.headers["authorization"] || "";
   if (!authHeader.startsWith("Bearer ")) {
     res.status(401).json({ error: "인증되지 않은 요청입니다." });
@@ -61,33 +62,63 @@ module.exports = async function handler(req, res) {
   }
 
   const db = admin.firestore();
-  const results = { sent: 0, skipped: 0, failed: 0 };
+  const uniqueTargets = Array.from(new Set(targetUids)).filter(function (uid) { return uid !== callerUid; });
 
-  for (const uid of targetUids) {
-    if (uid === callerUid) { results.skipped++; continue; } // 본인에게는 보내지 않음
-    try {
-      const userDoc = await db.collection("users").doc(uid).get();
-      const token = userDoc.exists ? userDoc.data().fcmToken : null;
-      if (!token) { results.skipped++; continue; }
+  if (uniqueTargets.length === 0) {
+    res.status(200).json({ sent: 0, skipped: 0, failed: 0, details: [] });
+    return;
+  }
 
-      await admin.messaging().send({
+  // 대상 uid들의 fcmToken을 병렬로 조회
+  const userDocs = await Promise.all(
+    uniqueTargets.map(function (uid) {
+      return db.collection("users").doc(uid).get().catch(function () { return null; });
+    })
+  );
+
+  const sendJobs = [];
+  const details = [];
+
+  uniqueTargets.forEach(function (uid, i) {
+    const userDoc = userDocs[i];
+    const token = userDoc && userDoc.exists ? userDoc.data().fcmToken : null;
+    if (!token) {
+      details.push({ uid: uid, status: "skipped", reason: "no-token" });
+      return;
+    }
+    sendJobs.push(
+      admin.messaging().send({
         token: token,
         notification: { title: String(title).slice(0, 80), body: String(body).slice(0, 200) },
         data: Object.assign({}, data || {}, { click_action: "FLUTTER_NOTIFICATION_CLICK" }),
+        android: { priority: "high" },
+        apns: {
+          headers: { "apns-priority": "10" },
+          payload: { aps: { sound: "default" } }
+        },
         webpush: {
+          headers: { Urgency: "high", TTL: "300" }, // 5분 안에 전달 못하면 폐기 (오래된 알림 뒤늦게 몰아오는 것 방지)
           fcmOptions: { link: "/" },
           notification: { icon: "/icon-192.png" }
         }
-      });
-      results.sent++;
-    } catch (e) {
-      results.failed++;
-      // 토큰이 만료/무효화된 경우 Firestore에서 정리
-      if (e && (e.code === "messaging/registration-token-not-registered" || e.code === "messaging/invalid-registration-token")) {
-        db.collection("users").doc(uid).update({ fcmToken: admin.firestore.FieldValue.delete() }).catch(function () {});
-      }
-    }
-  }
+      })
+        .then(function () {
+          details.push({ uid: uid, status: "sent" });
+        })
+        .catch(function (e) {
+          details.push({ uid: uid, status: "failed", reason: e.code || e.message });
+          if (e && (e.code === "messaging/registration-token-not-registered" || e.code === "messaging/invalid-registration-token")) {
+            db.collection("users").doc(uid).update({ fcmToken: admin.firestore.FieldValue.delete() }).catch(function () {});
+          }
+        })
+    );
+  });
 
-  res.status(200).json(results);
+  await Promise.all(sendJobs);
+
+  const sent = details.filter(function (d) { return d.status === "sent"; }).length;
+  const skipped = details.filter(function (d) { return d.status === "skipped"; }).length;
+  const failed = details.filter(function (d) { return d.status === "failed"; }).length;
+
+  res.status(200).json({ sent: sent, skipped: skipped, failed: failed, details: details });
 };
