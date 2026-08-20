@@ -1831,7 +1831,7 @@ function _updateNotifBanner(state) {
       banner.innerHTML = '<span>🔔 채팅 알림을 받으려면 눌러서 허용해주세요</span><button onclick="enableNotificationsNow()" style="background:#fff;color:var(--burg);border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">알림 켜기</button>';
     } else if (state === 'denied') {
       banner.style.display = 'flex';
-      banner.innerHTML = '<span>🔕 알림이 차단되어 있습니다. 기기 설정에서 이 앱의 알림을 허용해주세요.</span><button onclick="this.parentElement.style.display=\\'none\\'" style="background:none;border:none;color:#fff;font-size:16px;cursor:pointer;">✕</button>';
+      banner.innerHTML = '<span>🔕 알림이 차단되어 있습니다. 기기 설정에서 이 앱의 알림을 허용해주세요.</span><button onclick="this.parentElement.style.display=\'none\'" style="background:none;border:none;color:#fff;font-size:16px;cursor:pointer;">✕</button>';
     } else {
       banner.style.display = 'none';
     }
