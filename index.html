@@ -878,6 +878,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 
 /* 오늘 제출된 플래너 - 카드형 그리드 */
 .planner-thumb-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;}
+.planner-stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+.planner-stat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;}
+.planner-stat-name{font-size:13px;font-weight:700;color:var(--tx1);margin-bottom:6px;}
+.planner-stat-row{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--tx3);padding:2px 0;}
+.planner-stat-icon{flex-shrink:0;width:14px;text-align:center;}
+.planner-stat-val{font-weight:600;}
+@media(max-width:700px){
+  .planner-stat-grid{grid-template-columns:repeat(2,1fr);}
+}
+@media(max-width:420px){
+  .planner-stat-grid{grid-template-columns:1fr;}
+}
 .planner-thumb{
   background:var(--surface);
   border:1px solid var(--border);
@@ -7378,11 +7390,11 @@ function buildTPlanner(){
           var h = histByUid[s.uid] || {total:0, late:0};
           var streak = s.plannerStreak || 0;
           var pct = Math.round(h.total/30*100);
-          return '<div style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--border2);font-size:12px;">'
-            +'<span style="flex:1;font-weight:600;color:var(--tx1);">'+escapeHtml(s.name)+'</span>'
-            +'<span style="color:var(--burg);font-weight:700;">🔥'+streak+'일 연속</span>'
-            +'<span style="color:var(--tx3);width:90px;text-align:right;">최근30일 '+h.total+'/30 ('+pct+'%)</span>'
-            +(h.late>0 ? '<span style="color:var(--gold);font-weight:700;width:60px;text-align:right;">지각 '+h.late+'회</span>' : '<span style="width:60px;"></span>')
+          return '<div class="planner-stat-card">'
+            +'<div class="planner-stat-name">'+escapeHtml(s.name)+'</div>'
+            +'<div class="planner-stat-row"><span class="planner-stat-icon">🔥</span><span class="planner-stat-val" style="color:var(--burg);">'+streak+'일 연속</span></div>'
+            +'<div class="planner-stat-row"><span class="planner-stat-icon">📅</span><span class="planner-stat-val">최근30일 '+h.total+'/30 ('+pct+'%)</span></div>'
+            +'<div class="planner-stat-row"><span class="planner-stat-icon">⏰</span><span class="planner-stat-val" style="color:'+(h.late>0?'var(--gold)':'var(--tx4)')+';">'+(h.late>0?('지각 '+h.late+'회'):'지각 없음')+'</span></div>'
             +'</div>';
         }).join('');
 
@@ -7391,7 +7403,7 @@ function buildTPlanner(){
           +'<div class="section-label" style="margin-top:22px;color:var(--red);">🚫 오늘 미제출자 ('+absentStudents.length+'명)</div>'
           +absentHtml
           +'<div class="section-label" style="margin-top:22px;">📊 학생별 제출 현황 (연속일수 · 최근 30일 · 지각)</div>'
-          +'<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:6px 10px;">'+(statRows||'<div style="color:var(--tx3);font-size:12px;padding:10px 0;">학생이 없습니다</div>')+'</div>'
+          +'<div class="planner-stat-grid">'+(statRows||'<div style="color:var(--tx3);font-size:12px;padding:10px 0;">학생이 없습니다</div>')+'</div>'
           +(isMasterOrTeacher ? (
             '<div style="margin-top:16px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.25);border-radius:12px;padding:14px;">'
             +'<div class="section-label" style="margin:0 0 8px;">🔔 미제출자 알림 발송</div>'
