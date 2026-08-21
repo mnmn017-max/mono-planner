@@ -5129,7 +5129,7 @@ window.doSubmitPlanner = function() {
       return;
     }
 
-    // KST 기준 오후 2시(14:00) 이후 제출이면 "지각 제출"로 기록
+    // KST 기준 오후 2시(14:00) 이후 제출이면 "제출 지연"으로 기록 (출입 지각과는 무관 - 순수 제출 시각 기준)
     var now=new Date();
     var kst=new Date(now.getTime()+(9*60+now.getTimezoneOffset())*60000);
     var isLate = kst.getHours() >= 14;
@@ -5139,7 +5139,7 @@ window.doSubmitPlanner = function() {
       submittedAt:serverTimestamp(), late:isLate
     }).then(function(){
       closeModal('modal-submit-planner');
-      alert('플래너가 제출되었습니다!' + (isLate ? '\n(오후 2시 이후 제출 - 지각 처리되어 연속제출 기록에는 반영되지 않습니다)' : ''));
+      alert('플래너가 제출되었습니다!' + (isLate ? '\n(오후 2시 이후 제출 - 제출 지연으로 처리되어 연속제출 기록에는 반영되지 않습니다)' : ''));
       _updatePlannerStreakAfterSubmit(today, isLate);
       _awardPlannerGoalBonus(today);
     });
@@ -5171,7 +5171,7 @@ function _updatePlannerStreakAfterSubmit(today, isLate){
     var lastDate = data.plannerStreakLastDate || null;
 
     if (isLate) {
-      // 지각 제출은 "제출은 했으나" 연속 기록에는 반영하지 않음 (스트릭 끊김 처리)
+      // 제출 지연은 "제출은 했으나" 연속 기록에는 반영하지 않음 (스트릭 끊김 처리)
       updateDoc(doc(db,'users',currentUser.uid), {plannerStreak: 0, plannerStreakLastDate: today}).catch(function(){});
       return;
     }
@@ -7343,7 +7343,7 @@ function buildTPlanner(){
       todayPlanners.forEach(function(p){ submittedUids[p.uid]=true; });
       var absentStudents = students.filter(function(s){ return !submittedUids[s.uid]; });
 
-      // 최근 30일 제출 기록 (제출률/지각횟수 계산용) - date 문자열 범위 쿼리 1회로 조회 후 지점 필터
+      // 최근 30일 제출 기록 (제출률/제출지연 횟수 계산용) - date 문자열 범위 쿼리 1회로 조회 후 지점 필터
       var d30 = new Date(); d30.setDate(d30.getDate()-29);
       var d30Str = d30.getFullYear()+'-'+String(d30.getMonth()+1).padStart(2,'0')+'-'+String(d30.getDate()).padStart(2,'0');
       var histPromise = getDocs(query(collection(db,'planners'), where('date','>=',d30Str))).then(function(snap){
@@ -7394,15 +7394,15 @@ function buildTPlanner(){
             +'<div class="planner-stat-name">'+escapeHtml(s.name)+'</div>'
             +'<div class="planner-stat-row"><span class="planner-stat-icon">🔥</span><span class="planner-stat-val" style="color:var(--burg);">'+streak+'일 연속</span></div>'
             +'<div class="planner-stat-row"><span class="planner-stat-icon">📅</span><span class="planner-stat-val">최근30일 '+h.total+'/30 ('+pct+'%)</span></div>'
-            +'<div class="planner-stat-row"><span class="planner-stat-icon">⏰</span><span class="planner-stat-val" style="color:'+(h.late>0?'var(--gold)':'var(--tx4)')+';">'+(h.late>0?('지각 '+h.late+'회'):'지각 없음')+'</span></div>'
+            +'<div class="planner-stat-row"><span class="planner-stat-icon">⏰</span><span class="planner-stat-val" style="color:'+(h.late>0?'var(--gold)':'var(--tx4)')+';">'+(h.late>0?('제출지연 '+h.late+'회'):'제출지연 없음')+'</span></div>'
             +'</div>';
         }).join('');
 
         return '<div class="section-label">오늘 제출된 플래너 ('+todayPlanners.length+'명)</div>'
-          +(!todayPlanners.length?'<div style="color:var(--tx3);font-size:13px;padding:10px 0">아직 제출된 플래너가 없습니다</div>':'<div class="planner-thumb-grid">'+todayPlanners.map(function(p){return '<div class="planner-thumb" onclick="togglePlannerDetail(\'pd_'+p.uid+'\',\''+p.uid+'\')"><div style="display:flex;align-items:center;justify-content:space-between"><div><div class="planner-thumb-name">'+p.name+'</div><div class="planner-thumb-status">✅ 제출 완료'+(p.late?' · <span style="color:var(--gold);">지각</span>':'')+' · 탭하여 상세 보기</div></div><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div><div id="pd_'+p.uid+'" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)"><div style="color:var(--tx3);font-size:12px">불러오는 중...</div></div></div>';}).join('')+'</div>')
+          +(!todayPlanners.length?'<div style="color:var(--tx3);font-size:13px;padding:10px 0">아직 제출된 플래너가 없습니다</div>':'<div class="planner-thumb-grid">'+todayPlanners.map(function(p){return '<div class="planner-thumb" onclick="togglePlannerDetail(\'pd_'+p.uid+'\',\''+p.uid+'\')"><div style="display:flex;align-items:center;justify-content:space-between"><div><div class="planner-thumb-name">'+p.name+'</div><div class="planner-thumb-status">✅ 제출 완료'+(p.late?' · <span style="color:var(--gold);">제출지연</span>':'')+' · 탭하여 상세 보기</div></div><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div><div id="pd_'+p.uid+'" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)"><div style="color:var(--tx3);font-size:12px">불러오는 중...</div></div></div>';}).join('')+'</div>')
           +'<div class="section-label" style="margin-top:22px;color:var(--red);">🚫 오늘 미제출자 ('+absentStudents.length+'명)</div>'
           +absentHtml
-          +'<div class="section-label" style="margin-top:22px;">📊 학생별 제출 현황 (연속일수 · 최근 30일 · 지각)</div>'
+          +'<div class="section-label" style="margin-top:22px;">📊 학생별 제출 현황 (연속일수 · 최근 30일 · 제출지연)</div>'
           +'<div class="planner-stat-grid">'+(statRows||'<div style="color:var(--tx3);font-size:12px;padding:10px 0;">학생이 없습니다</div>')+'</div>'
           +(isMasterOrTeacher ? (
             '<div style="margin-top:16px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.25);border-radius:12px;padding:14px;">'
