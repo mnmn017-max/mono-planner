@@ -1352,6 +1352,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .exam-bulk-field{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--tx3);}
 .exam-bulk-input{width:44px;height:28px;text-align:center;border:1px solid var(--border);border-radius:6px;font-size:12px;padding:0 2px;}
 .exam-bulk-select{height:28px;border:1px solid var(--border);border-radius:6px;font-size:11px;padding:0 4px;}
+
+/* 정답 빠른 순차 입력 */
+.exam-quick-answer-box{background:var(--gold-l);border:1px solid rgba(184,132,26,0.25);border-radius:10px;padding:12px 14px;margin-bottom:10px;}
+.quick-ans-title{font-size:12px;font-weight:800;color:var(--gold);margin-bottom:10px;}
+.quick-ans-grid{display:flex;flex-wrap:wrap;gap:8px;}
+.quick-ans-cell{display:flex;flex-direction:column;align-items:center;gap:3px;}
+.quick-ans-no{font-size:10px;font-weight:700;color:var(--tx3);}
+.quick-ans-input{
+  width:34px;height:34px;text-align:center;font-size:15px;font-weight:800;
+  border:1.5px solid var(--border);border-radius:8px;background:#fff;color:var(--tx1);
+  transition:border-color .15s,box-shadow .15s;
+}
+.quick-ans-input:focus{outline:none;border-color:var(--burg);box-shadow:0 0 0 3px var(--burg-l2);}
+.quick-ans-invalid{border-color:var(--red)!important;box-shadow:0 0 0 3px rgba(224,82,82,0.15)!important;}
+
 .exam-bulk-add-btn{
   margin-left:auto;background:var(--burg);color:#fff;border:none;
   padding:6px 12px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;
@@ -3252,9 +3267,10 @@ window.renderExamSubjectBlocks = function(){
       +   '<div class="exam-bulk-field" style="margin-left:auto;"><span>배점</span><input type="number" min="0" value="3" id="exam-bulk-point-'+idx+'" class="exam-bulk-input"/><span>점</span></div>'
       +   '<button type="button" onclick="applyBulkPoint('+idx+')" class="exam-bulk-add-btn">전체 배점 적용</button>'
       + '</div>'
-      + '<div class="exam-bulk-add-row" style="background:var(--gold-l);">'
-      +   '<span class="exam-bulk-label">📷 빠른 정답 입력</span>'
-      +   '<span style="font-size:11px;color:var(--tx3);">정답표 사진을 올리면 자동으로 읽어봅니다 (인식 후 꼭 확인/수정하세요)</span>'
+      + '<div class="exam-quick-answer-box" id="exam-quick-answer-box-'+idx+'"></div>'
+      + '<div class="exam-bulk-add-row" style="background:var(--surface2);">'
+      +   '<span class="exam-bulk-label" style="color:var(--tx4);">📷 이미지 자동인식 (참고용)</span>'
+      +   '<span style="font-size:11px;color:var(--tx4);">원문자 인식 정확도가 낮을 수 있어요 - 위 "빠른 순차 입력"을 권장합니다</span>'
       +   '<button type="button" onclick="openAnswerKeyOcrModal('+idx+')" class="exam-bulk-add-btn" style="margin-left:auto;">이미지로 정답 채우기</button>'
       + '</div>'
       + '<div class="exam-q-hint">문항을 드래그하거나 ▲▼ 버튼으로 순서를 바꿀 수 있어요</div>'
@@ -3263,7 +3279,7 @@ window.renderExamSubjectBlocks = function(){
       + '</div>';
   }).join('');
 
-  _examSubjectBlocks.forEach(function(_, idx){ renderExamQuestionBuilder(idx); renderGradeCutoffRows(idx); });
+  _examSubjectBlocks.forEach(function(_, idx){ renderExamQuestionBuilder(idx); renderGradeCutoffRows(idx); renderQuickAnswerBox(idx); });
 };
 
 window.addExamQuestion = function(blockIdx, type){
@@ -3308,7 +3324,7 @@ window.renderExamQuestionBuilder = function(blockIdx){
         rowExtra = '<select class="exam-q-select" onchange="updateExamQuestionField('+blockIdx+','+idx+',\'choices\',this.value)">'
           + [4,5].map(function(c){return '<option value="'+c+'"'+(q.choices===c?' selected':'')+'>'+c+'지선다</option>';}).join('')
           + '</select>'
-          + '<select class="exam-q-select" onchange="updateExamQuestionField('+blockIdx+','+idx+',\'answer\',this.value)">'
+          + '<select class="exam-q-select" id="exam-q-answer-select-'+blockIdx+'-'+idx+'" onchange="updateExamQuestionField('+blockIdx+','+idx+',\'answer\',this.value)">'
           + Array.from({length:q.choices||5},function(_,i){return i+1;}).map(function(n){return '<option value="'+n+'"'+(q.answer===n?' selected':'')+'>정답 '+n+'번</option>';}).join('')
           + '</select>';
       } else {
@@ -3337,6 +3353,7 @@ window.renderExamQuestionBuilder = function(blockIdx){
     }).join('');
   }
   updateExamScoreCheck(blockIdx);
+  renderQuickAnswerBox(blockIdx);
 };
 
 // ── 일괄 생성 ──
@@ -3386,6 +3403,85 @@ window.applyBulkPoint = function(blockIdx){
   if (!block.questions.length) { alert('적용할 문항이 없습니다'); return; }
   block.questions.forEach(function(q){ q.point = point; });
   renderExamQuestionBuilder(blockIdx);
+};
+
+// ═══════════════════════════════════════
+// 정답 빠른 순차 입력 (숫자 1자리 입력 → 자동으로 다음 문항 칸으로 이동)
+// OCR보다 훨씬 정확하고 빠름 - 종이 정답표를 보면서 숫자만 쭉 입력하면 됨
+// ═══════════════════════════════════════
+window.renderQuickAnswerBox = function(blockIdx){
+  var block = _examSubjectBlocks[blockIdx];
+  var area = document.getElementById('exam-quick-answer-box-'+blockIdx);
+  if (!area || !block) return;
+  var mcQuestions = block.questions.filter(function(q){ return q.type === 'mc'; });
+  if (!mcQuestions.length) {
+    area.innerHTML = '';
+    return;
+  }
+  var cells = mcQuestions.map(function(q, i){
+    return '<div class="quick-ans-cell">'
+      + '<div class="quick-ans-no">'+q.no+'</div>'
+      + '<input type="text" inputmode="numeric" maxlength="1" class="quick-ans-input" '
+      + 'id="quick-ans-'+blockIdx+'-'+i+'" data-qno="'+q.no+'" data-idx="'+i+'" '
+      + 'value="'+(q.answer||'')+'" '
+      + 'oninput="handleQuickAnswerInput(this,'+blockIdx+')" '
+      + 'onfocus="this.select()" '
+      + 'onkeydown="handleQuickAnswerKeydown(event,this,'+blockIdx+')"/>'
+      + '</div>';
+  }).join('');
+  area.innerHTML = '<div class="quick-ans-title">⚡ 정답 빠른 순차 입력 <span class="exam-optional-tag">숫자 입력 시 자동으로 다음 칸으로 이동</span></div>'
+    + '<div class="quick-ans-grid">' + cells + '</div>';
+};
+
+window.handleQuickAnswerInput = function(inputEl, blockIdx){
+  var block = _examSubjectBlocks[blockIdx];
+  if (!block) return;
+  // 앞뒤 공백이나 숫자 아닌 문자가 섞여 들어와도(예: 실수로 스페이스바 먼저 누른 경우)
+  // 항상 마지막에 입력된 숫자 하나만 남기고 나머지는 무시
+  var digitsOnly = inputEl.value.replace(/\D/g,'');
+  var lastDigit = digitsOnly.slice(-1);
+  inputEl.value = lastDigit;
+  if (!lastDigit) return;
+
+  var idx = parseInt(inputEl.dataset.idx,10);
+  var qno = parseInt(inputEl.dataset.qno,10);
+  var q = block.questions.find(function(qq){ return qq.no === qno; });
+  if (!q) return;
+
+  var maxChoice = q.choices || 5;
+  var val = parseInt(lastDigit,10);
+  if (val < 1 || val > maxChoice) {
+    inputEl.classList.add('quick-ans-invalid');
+    inputEl.select(); // 잘못된 값이 칸에 남아있어도 곧바로 다시 타이핑해서 덮어쓸 수 있도록 선택 상태로 둠
+    return; // 범위를 벗어나면 저장하지 않고 빨간 테두리로만 표시 (다음 칸으로 넘어가지 않음)
+  }
+  inputEl.classList.remove('quick-ans-invalid');
+  q.answer = val;
+
+  // 문항 목록(아래 상세 편집 영역) 전체를 다시 그리면 이 입력창의 포커스가 끊겨서
+  // 자동 다음칸 이동이 깨지므로, 해당 문항의 정답 select 하나만 콕 집어서 값만 갱신
+  var qIdxInBlock = block.questions.indexOf(q);
+  var detailSelect = document.getElementById('exam-q-answer-select-'+blockIdx+'-'+qIdxInBlock);
+  if (detailSelect) detailSelect.value = String(val);
+  // renderExamQuestionBuilder가 이 빠른입력 박스를 다시 그리지는 않으므로 포커스는 유지된 채로,
+  // 다음 칸으로 자동 이동
+  var next = document.getElementById('quick-ans-'+blockIdx+'-'+(idx+1));
+  if (next) { next.focus(); next.select(); }
+};
+
+window.handleQuickAnswerKeydown = function(event, inputEl, blockIdx){
+  var idx = parseInt(inputEl.dataset.idx,10);
+  // 빈 칸에서 백스페이스 누르면 이전 칸으로 이동 (실수로 건너뛴 경우 되돌아가기 편하게)
+  if (event.key === 'Backspace' && !inputEl.value) {
+    var prev = document.getElementById('quick-ans-'+blockIdx+'-'+(idx-1));
+    if (prev) { event.preventDefault(); prev.focus(); prev.select(); }
+  } else if (event.key === 'ArrowRight') {
+    var nextR = document.getElementById('quick-ans-'+blockIdx+'-'+(idx+1));
+    if (nextR) { event.preventDefault(); nextR.focus(); nextR.select(); }
+  } else if (event.key === 'ArrowLeft') {
+    var prevL = document.getElementById('quick-ans-'+blockIdx+'-'+(idx-1));
+    if (prevL) { event.preventDefault(); prevL.focus(); prevL.select(); }
+  }
 };
 
 // ═══════════════════════════════════════
