@@ -141,8 +141,10 @@ module.exports = async function handler(req, res) {
       try {
         await messaging.send({
           token: t.token,
-          notification: { title, body },
-          data: { type: 'planner_reminder', date: today, slot },
+          // notification 필드를 빼고 data로만 보낸다 - 브라우저의 "자동 알림 표시" 기능을
+          // 완전히 끄고, 알림을 실제로 띄우는 코드 경로를 앱(포그라운드 핸들러 / 서비스워커
+          // 백그라운드 핸들러) 쪽 하나로 통일해서 안드로이드에서 중복으로 뜨는 문제를 막는다.
+          data: { type: 'planner_reminder', date: today, slot, title, body },
         });
         sent++;
       } catch (e) {
