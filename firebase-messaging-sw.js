@@ -50,29 +50,65 @@ const messaging = firebase.messaging();
 
 // FCM은 "최소 1번 이상 전달"을 보장하는 시스템이라, 네트워크 상황에 따라 같은 메시지가
 // 실제로 2~3번 중복 전달되는 경우가 드물게 있다 (구글 공식 문서에도 명시된 특성).
-// 안드로이드는 리소스 관리를 위해 서비스워커를 수시로 껐다 켜는데, 그때마다 자바스크립트
-// 메모리(변수)는 전부 초기화된다. 그래서 "메모리에 잠깐 기억"하는 방식(변수 배열)으로는,
-// 안드로이드가 같은 푸시를 서비스워커를 매번 새로 깨워서 전달할 경우 방지가 안 먹힌다.
-// Cache Storage API는 서비스워커가 꺼졌다 켜져도 내용이 그대로 남아있는 저장소라서,
-// 이걸로 "최근에 처리한 messageId"를 기록해야 확실하게 걸러진다.
-var _DEDUP_CACHE_NAME = 'mono-planner-notif-dedup-v1';
-var _DEDUP_KEEP_LIMIT = 40; // 너무 많이 쌓이지 않도록 최근 40건만 유지
+// 게다가 안드로이드는 리소스 관리를 위해 서비스워커를 수시로 껐다 켜서, 3개가 "거의 동시에"
+// 도착하면 서비스워커가 병렬로 여러 번 깨어나 실행될 수 있다.
+// Cache Storage의 "읽어서 확인 → 없으면 쓰기" 방식은, 이 병렬 실행들이 서로 "확인"하는
+// 순간이 겹치면(둘 다 아직 안 써진 상태를 동시에 보고) 여전히 둘 다 통과해버리는 경쟁
+// 상태가 남는다. IndexedDB는 "이 id로 무조건 새로 추가 시도 → 이미 있으면 실패"라는
+// 방식이 저장소 엔진 차원에서 원자적으로 보장되기 때문에(둘이 동시에 시도해도 반드시
+// 하나만 성공), 이 방식으로 바꿔야 완전히 확실하게 걸러진다.
+var _DEDUP_DB_NAME = 'mono-planner-dedup';
+var _DEDUP_STORE = 'seenMessages';
+var _DEDUP_KEEP_LIMIT = 50;
+
+function _openDedupDb(){
+  return new Promise(function(resolve, reject){
+    var req = indexedDB.open(_DEDUP_DB_NAME, 1);
+    req.onupgradeneeded = function(){
+      var store = req.result.createObjectStore(_DEDUP_STORE, { keyPath: 'id' });
+      store.createIndex('ts', 'ts');
+    };
+    req.onsuccess = function(){ resolve(req.result); };
+    req.onerror = function(){ reject(req.error); };
+  });
+}
 
 async function _isDuplicateMessage(id){
   if (!id) return false; // messageId가 없는 경우(구버전 등)는 기존 tag 방식에 맡김
   try {
-    var cache = await caches.open(_DEDUP_CACHE_NAME);
-    var key = new Request('https://dedup.local/msg/' + encodeURIComponent(id));
-    var existing = await cache.match(key);
-    if (existing) return true;
-    await cache.put(key, new Response('1'));
-    // 오래된 기록 정리 (Cache Storage는 자동 만료가 없어서 수동으로 개수 제한)
-    var keys = await cache.keys();
-    if (keys.length > _DEDUP_KEEP_LIMIT) {
-      var toDelete = keys.slice(0, keys.length - _DEDUP_KEEP_LIMIT);
-      await Promise.all(toDelete.map(function(k){ return cache.delete(k); }));
+    var db = await _openDedupDb();
+    var isDup = await new Promise(function(resolve){
+      var tx = db.transaction(_DEDUP_STORE, 'readwrite');
+      var store = tx.objectStore(_DEDUP_STORE);
+      var addReq = store.add({ id: id, ts: Date.now() });
+      // add()는 같은 키(id)가 이미 있으면 반드시 실패한다 - 이 성공/실패 자체가
+      // "내가 최초로 이 id를 기록한 쪽인지"를 원자적으로 알려주는 판정 기준이 된다.
+      addReq.onsuccess = function(){ resolve(false); }; // 처음 보는 메시지
+      addReq.onerror = function(e){ e.preventDefault(); resolve(true); }; // 이미 있음 = 중복
+    });
+
+    // 오래된 기록 정리 (매번 하지 않고 가끔만 - id 뒷자리로 대충 1/10 확률 정도만 정리)
+    if (Math.random() < 0.1) {
+      var tx2 = db.transaction(_DEDUP_STORE, 'readwrite');
+      var idx = tx2.objectStore(_DEDUP_STORE).index('ts');
+      var cursorReq = idx.openCursor();
+      var all = [];
+      await new Promise(function(res){
+        cursorReq.onsuccess = function(e){
+          var cursor = e.target.result;
+          if (cursor) { all.push(cursor.primaryKey); cursor.continue(); }
+          else res();
+        };
+        cursorReq.onerror = function(){ res(); };
+      });
+      if (all.length > _DEDUP_KEEP_LIMIT) {
+        var toDelete = all.slice(0, all.length - _DEDUP_KEEP_LIMIT);
+        var store2 = tx2.objectStore(_DEDUP_STORE);
+        toDelete.forEach(function(key){ store2.delete(key); });
+      }
     }
-    return false;
+
+    return isDup;
   } catch (e) {
     console.warn('[FCM] 중복 체크 저장소 오류(무시하고 계속 진행):', e);
     return false;
