@@ -1873,6 +1873,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 <!-- 시험 모니터링 모달 -->
 <!-- 시험 회고/전략 열람 모달 (선생님/마스터) -->
 <!-- 앱 설치(홈 화면에 추가) 안내 모달 -->
+<!-- 정답표 이미지 자동 인식 모달 -->
+<div class="modal-overlay" id="modal-answer-key-ocr"><div class="modal" style="max-width:520px;max-height:88vh;overflow-y:auto;">
+  <div class="modal-title">📷 이미지로 정답 채우기</div>
+  <div style="font-size:12px;color:var(--tx3);margin-bottom:14px;line-height:1.6;">
+    정답표 사진을 올리면 자동으로 읽어봅니다. <b>인식이 완전하지 않을 수 있으니, 적용 전 아래에서 꼭 하나씩 확인해주세요.</b>
+  </div>
+  <input type="file" accept="image/*" id="answer-key-ocr-file" onchange="handleAnswerKeyOcrFile(this)" class="modal-input" style="padding:8px;"/>
+  <img id="answer-key-ocr-preview" style="display:none;max-width:100%;max-height:200px;border-radius:8px;margin-top:10px;border:1px solid var(--border);"/>
+  <button type="button" id="answer-key-ocr-run-btn" onclick="runAnswerKeyOcr()" class="modal-btn primary" style="display:none;margin-top:12px;">인식하기</button>
+  <div id="answer-key-ocr-status" style="font-size:12px;color:var(--tx3);margin-top:8px;"></div>
+  <div id="answer-key-ocr-review" style="margin-top:14px;"></div>
+  <button type="button" id="answer-key-ocr-apply-btn" onclick="applyAnswerKeyOcrResults()" class="modal-btn primary" style="display:none;margin-top:10px;">확인한 정답 적용하기</button>
+  <button class="modal-btn cancel" onclick="closeModal('modal-answer-key-ocr')" style="margin-top:8px;">닫기</button>
+</div></div>
+
 <div class="modal-overlay" id="modal-install-guide"><div class="modal" style="max-width:420px;">
   <div class="modal-title">📲 앱처럼 설치하기</div>
   <div id="install-guide-body"></div>
@@ -3237,6 +3252,11 @@ window.renderExamSubjectBlocks = function(){
       +   '<div class="exam-bulk-field" style="margin-left:auto;"><span>배점</span><input type="number" min="0" value="3" id="exam-bulk-point-'+idx+'" class="exam-bulk-input"/><span>점</span></div>'
       +   '<button type="button" onclick="applyBulkPoint('+idx+')" class="exam-bulk-add-btn">전체 배점 적용</button>'
       + '</div>'
+      + '<div class="exam-bulk-add-row" style="background:var(--gold-l);">'
+      +   '<span class="exam-bulk-label">📷 빠른 정답 입력</span>'
+      +   '<span style="font-size:11px;color:var(--tx3);">정답표 사진을 올리면 자동으로 읽어봅니다 (인식 후 꼭 확인/수정하세요)</span>'
+      +   '<button type="button" onclick="openAnswerKeyOcrModal('+idx+')" class="exam-bulk-add-btn" style="margin-left:auto;">이미지로 정답 채우기</button>'
+      + '</div>'
       + '<div class="exam-q-hint">문항을 드래그하거나 ▲▼ 버튼으로 순서를 바꿀 수 있어요</div>'
       + '<div class="exam-question-list" id="exam-question-builder-'+idx+'"></div>'
       + '<div class="exam-score-check" id="exam-score-check-'+idx+'"></div>'
@@ -3269,6 +3289,7 @@ window.updateExamQuestionField = function(blockIdx, idx, field, value){
   var q = block.questions[idx];
   if (!q) return;
   if (field === 'point' || field === 'choices') q[field] = parseInt(value,10)||0;
+  else if (field === 'answer' && q.type === 'mc') q[field] = parseInt(value,10)||1; // select의 value는 항상 문자열이라 숫자로 변환 필요 (안 하면 화면 표시/채점 둘 다 어긋남)
   else q[field] = value;
   if (field === 'point') updateExamScoreCheck(blockIdx);
 };
@@ -3365,6 +3386,152 @@ window.applyBulkPoint = function(blockIdx){
   if (!block.questions.length) { alert('적용할 문항이 없습니다'); return; }
   block.questions.forEach(function(q){ q.point = point; });
   renderExamQuestionBuilder(blockIdx);
+};
+
+// ═══════════════════════════════════════
+// 정답표 이미지 자동 인식 (OCR, 브라우저 안에서 무료로 동작 - 서버/API 키 불필요)
+// 정확도가 100%는 아니므로, 인식 후 반드시 검토 화면을 거쳐 사람이 확인/수정한 뒤에만 적용됨.
+// ═══════════════════════════════════════
+var _ocrTargetBlockIdx = null;
+var _ocrParsedResults = null; // {no: answer(1~9 숫자문자열)} 형태
+
+// 원문자(circled digit) → 숫자 변환 맵 (정답표에 ①②③④⑤ 형태로 많이 쓰이기 때문)
+var _CIRCLED_DIGIT_MAP = {'①':'1','②':'2','③':'3','④':'4','⑤':'5','⑥':'6','⑦':'7','⑧':'8','⑨':'9','⑩':'10'};
+
+window.openAnswerKeyOcrModal = function(blockIdx){
+  _ocrTargetBlockIdx = blockIdx;
+  _ocrParsedResults = null;
+  document.getElementById('answer-key-ocr-file').value = '';
+  document.getElementById('answer-key-ocr-preview').style.display = 'none';
+  document.getElementById('answer-key-ocr-run-btn').style.display = 'none';
+  document.getElementById('answer-key-ocr-status').textContent = '';
+  document.getElementById('answer-key-ocr-review').innerHTML = '';
+  document.getElementById('answer-key-ocr-apply-btn').style.display = 'none';
+  openModal('modal-answer-key-ocr');
+};
+
+window.handleAnswerKeyOcrFile = function(input){
+  if (!input.files || !input.files[0]) return;
+  var file = input.files[0];
+  var preview = document.getElementById('answer-key-ocr-preview');
+  preview.src = URL.createObjectURL(file);
+  preview.style.display = 'block';
+  document.getElementById('answer-key-ocr-run-btn').style.display = 'block';
+  document.getElementById('answer-key-ocr-review').innerHTML = '';
+  document.getElementById('answer-key-ocr-apply-btn').style.display = 'none';
+};
+
+var _tesseractLoadPromise = null;
+function _ensureTesseractLoaded(){
+  if (window.Tesseract) return Promise.resolve();
+  if (_tesseractLoadPromise) return _tesseractLoadPromise;
+  _tesseractLoadPromise = new Promise(function(resolve, reject){
+    var script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    script.onload = function(){ resolve(); };
+    script.onerror = function(){ reject(new Error('OCR 라이브러리를 불러오지 못했습니다 (인터넷 연결을 확인해주세요)')); };
+    document.head.appendChild(script);
+  });
+  return _tesseractLoadPromise;
+}
+
+window.runAnswerKeyOcr = function(){
+  var fileInput = document.getElementById('answer-key-ocr-file');
+  if (!fileInput.files || !fileInput.files[0]) { alert('이미지를 먼저 선택해주세요'); return; }
+  var statusEl = document.getElementById('answer-key-ocr-status');
+  statusEl.textContent = '⏳ 인식 라이브러리 불러오는 중...';
+
+  _ensureTesseractLoaded().then(function(){
+    statusEl.textContent = '⏳ 이미지 분석 중... (문항 수에 따라 몇 초~몇십 초 걸릴 수 있어요)';
+    return Tesseract.recognize(fileInput.files[0], 'kor+eng', {
+      logger: function(m){
+        if (m.status === 'recognizing text') {
+          statusEl.textContent = '⏳ 인식 중... ' + Math.round((m.progress||0)*100) + '%';
+        }
+      }
+    });
+  }).then(function(result){
+    var rawText = result.data.text || '';
+    statusEl.textContent = '✓ 인식 완료 - 아래에서 결과를 확인해주세요';
+    _ocrParsedResults = _parseAnswerKeyText(rawText);
+    _renderAnswerKeyOcrReview();
+  }).catch(function(e){
+    statusEl.textContent = '✗ 인식 실패: ' + e.message;
+  });
+};
+
+// OCR로 뽑아낸 원문 텍스트에서 "문항번호 - 정답" 쌍을 최대한 찾아내는 파싱
+function _parseAnswerKeyText(rawText){
+  // 원문자(①②③...)를 숫자로 먼저 치환
+  var text = rawText;
+  Object.keys(_CIRCLED_DIGIT_MAP).forEach(function(ch){
+    text = text.split(ch).join(_CIRCLED_DIGIT_MAP[ch]);
+  });
+
+  var results = {};
+  // 패턴 1: "1. 3" / "1) 3" / "1-3" / "1:3" / "01 3" 같은 "번호 + 구분기호? + 정답" 형태를 줄 단위로 탐색
+  var lines = text.split(/\n+/);
+  lines.forEach(function(line){
+    var m = line.match(/^\s*(\d{1,3})\s*[.\-):\uff0e]?\s*(\d{1,2})\s*$/);
+    if (m) {
+      var no = parseInt(m[1],10), ans = parseInt(m[2],10);
+      if (no>=1 && no<=200 && ans>=1 && ans<=20) results[no] = String(ans);
+    }
+  });
+  // 패턴 1로 거의 못 찾았으면, 같은 줄에 여러 쌍이 나열된 경우도 시도 (예: "1.3  2.1  3.5")
+  if (Object.keys(results).length < 2) {
+    var pairRe = /(\d{1,3})\s*[.\-):\uff0e]\s*(\d{1,2})/g;
+    var m2;
+    while ((m2 = pairRe.exec(text)) !== null) {
+      var no2 = parseInt(m2[1],10), ans2 = parseInt(m2[2],10);
+      if (no2>=1 && no2<=200 && ans2>=1 && ans2<=20) results[no2] = String(ans2);
+    }
+  }
+  return results;
+}
+
+function _renderAnswerKeyOcrReview(){
+  var block = _examSubjectBlocks[_ocrTargetBlockIdx];
+  var area = document.getElementById('answer-key-ocr-review');
+  if (!block || !area) return;
+  var mcQuestions = block.questions.filter(function(q){ return q.type === 'mc'; });
+  if (!mcQuestions.length) {
+    area.innerHTML = '<div style="color:var(--tx3);font-size:12px;">이 과목에는 객관식 문항이 없어 자동으로 채울 항목이 없습니다 (주관식은 직접 입력해주세요)</div>';
+    document.getElementById('answer-key-ocr-apply-btn').style.display = 'none';
+    return;
+  }
+  var matched = 0;
+  var rows = mcQuestions.map(function(q){
+    var guessed = _ocrParsedResults[q.no];
+    if (guessed != null) matched++;
+    var maxChoice = q.choices || 5;
+    var options = Array.from({length:maxChoice}, function(_,i){ return i+1; }).map(function(n){
+      var sel = guessed != null ? (parseInt(guessed,10) === n) : (n === 1 && guessed == null ? false : false);
+      return '<option value="'+n+'"'+(sel?' selected':'')+'>'+n+'번</option>';
+    }).join('');
+    return '<div style="display:flex;align-items:center;gap:10px;padding:6px 4px;border-bottom:1px solid var(--border2);font-size:12px;">'
+      + '<span style="width:50px;font-weight:700;color:var(--burg);">'+q.no+'번</span>'
+      + '<span style="color:'+(guessed!=null?'var(--green)':'var(--tx4)')+';width:70px;">'+(guessed!=null?'인식됨':'인식 안됨')+'</span>'
+      + '<select id="ocr-review-'+q.no+'" class="exam-q-select" style="flex:1;">'+options+'</select>'
+      + '</div>';
+  }).join('');
+
+  area.innerHTML = '<div style="font-size:12px;font-weight:700;color:var(--tx1);margin-bottom:8px;">객관식 '+mcQuestions.length+'개 중 '+matched+'개 인식됨 - 아래에서 하나씩 확인해주세요</div>' + rows;
+  document.getElementById('answer-key-ocr-apply-btn').style.display = 'block';
+}
+
+window.applyAnswerKeyOcrResults = function(){
+  var block = _examSubjectBlocks[_ocrTargetBlockIdx];
+  if (!block) return;
+  var applied = 0;
+  block.questions.forEach(function(q){
+    if (q.type !== 'mc') return;
+    var sel = document.getElementById('ocr-review-'+q.no);
+    if (sel) { q.answer = parseInt(sel.value,10); applied++; }
+  });
+  closeModal('modal-answer-key-ocr');
+  renderExamQuestionBuilder(_ocrTargetBlockIdx);
+  alert('정답 '+applied+'개 문항에 적용했습니다. 채점 정확도를 위해 문항 목록에서 한 번 더 확인해주세요.');
 };
 
 // ── 순서 변경: ▲▼ 버튼 ──
@@ -4769,7 +4936,8 @@ function gradeExamAnswers(subj, answers){
     if (q.type === 'mc') {
       mcTotal++;
       studentAnswerDisplay = studentRaw != null ? String(studentRaw) : null;
-      isCorrect = studentAnswerDisplay != null && parseInt(studentAnswerDisplay,10) === q.answer;
+      // q.answer가 (예전 버그로) 문자열로 저장된 기존 시험 데이터가 있을 수 있어 양쪽 다 숫자로 맞춰서 비교
+      isCorrect = studentAnswerDisplay != null && parseInt(studentAnswerDisplay,10) === parseInt(q.answer,10);
       if (isCorrect) mcCorrect++;
     } else if (q.shortMode === 'digit') {
       shortTotal++;
