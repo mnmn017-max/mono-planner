@@ -18,18 +18,36 @@
 
 const admin = require('firebase-admin');
 
+function buildCredential() {
+  // 1순위: FIREBASE_SERVICE_ACCOUNT (JSON 통짜로 저장된 서비스 계정) - 이미 설정되어 있으면 이걸 그대로 사용
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    var raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+    var parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      throw new Error('FIREBASE_SERVICE_ACCOUNT 환경변수가 올바른 JSON 형식이 아닙니다: ' + e.message);
+    }
+    return admin.credential.cert({
+      projectId: parsed.project_id,
+      clientEmail: parsed.client_email,
+      privateKey: (parsed.private_key || '').replace(/\\n/g, '\n'),
+    });
+  }
+  // 2순위: 세 개로 나뉜 개별 환경변수
+  if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+    return admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    });
+  }
+  throw new Error('Firebase Admin 환경변수를 찾을 수 없습니다. FIREBASE_SERVICE_ACCOUNT 또는 (FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY) 중 하나가 Vercel에 설정되어 있어야 합니다.');
+}
+
 function getAdminServices() {
   if (!admin.apps.length) {
-    if (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_CLIENT_EMAIL || !process.env.FIREBASE_PRIVATE_KEY) {
-      throw new Error('Firebase Admin 환경변수(FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY)가 Vercel에 설정되어 있지 않습니다. 프로젝트 Settings → Environment Variables에서 확인해주세요.');
-    }
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-      }),
-    });
+    admin.initializeApp({ credential: buildCredential() });
   }
   return { db: admin.firestore(), messaging: admin.messaging() };
 }
