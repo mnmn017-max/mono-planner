@@ -3427,9 +3427,13 @@ function _ensureTesseractLoaded(){
   if (_tesseractLoadPromise) return _tesseractLoadPromise;
   _tesseractLoadPromise = new Promise(function(resolve, reject){
     var script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
-    script.onload = function(){ resolve(); };
-    script.onerror = function(){ reject(new Error('OCR 라이브러리를 불러오지 못했습니다 (인터넷 연결을 확인해주세요)')); };
+    script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.0.5/dist/tesseract.min.js';
+    script.onload = function(){
+      // 스크립트 로드 후에도 전역 Tesseract 객체가 실제로 잡히는지 재확인 (CDN 캐시/버전 이슈 대비)
+      if (window.Tesseract) resolve();
+      else reject(new Error('OCR 라이브러리는 받아왔지만 초기화에 실패했습니다'));
+    };
+    script.onerror = function(){ reject(new Error('OCR 라이브러리를 불러오지 못했습니다 (인터넷 연결 또는 방화벽을 확인해주세요)')); };
     document.head.appendChild(script);
   });
   return _tesseractLoadPromise;
@@ -3439,24 +3443,58 @@ window.runAnswerKeyOcr = function(){
   var fileInput = document.getElementById('answer-key-ocr-file');
   if (!fileInput.files || !fileInput.files[0]) { alert('이미지를 먼저 선택해주세요'); return; }
   var statusEl = document.getElementById('answer-key-ocr-status');
+  var reviewEl = document.getElementById('answer-key-ocr-review');
+  reviewEl.innerHTML = '';
   statusEl.textContent = '⏳ 인식 라이브러리 불러오는 중...';
 
+  var worker = null;
+  // 90초 안에 안 끝나면 멈춰있는 것처럼 보이지 않도록 명확히 실패 처리
+  var timedOut = false;
+  var timeoutId = setTimeout(function(){
+    timedOut = true;
+    statusEl.textContent = '✗ 인식 시간 초과 (90초) - 이미지 용량을 줄이거나 더 선명한 사진으로 다시 시도해주세요';
+    if (worker) worker.terminate().catch(function(){});
+  }, 90000);
+
   _ensureTesseractLoaded().then(function(){
-    statusEl.textContent = '⏳ 이미지 분석 중... (문항 수에 따라 몇 초~몇십 초 걸릴 수 있어요)';
-    return Tesseract.recognize(fileInput.files[0], 'kor+eng', {
+    if (timedOut) return Promise.reject(new Error('timeout'));
+    statusEl.textContent = '⏳ 인식 엔진 준비 중... (처음 한 번은 시간이 좀 걸려요)';
+    // 정답표는 대부분 숫자 위주라 영어(숫자/기호) 인식기만으로도 충분하고, 한국어 언어팩까지
+    // 같이 불러오면 실패 확률이 높아지고 훨씬 느려지므로 기본은 영어만 사용
+    return Tesseract.createWorker('eng', 1, {
       logger: function(m){
+        if (timedOut) return;
         if (m.status === 'recognizing text') {
           statusEl.textContent = '⏳ 인식 중... ' + Math.round((m.progress||0)*100) + '%';
+        } else if (m.status) {
+          statusEl.textContent = '⏳ ' + m.status + '...';
         }
       }
     });
+  }).then(function(w){
+    if (timedOut) return Promise.reject(new Error('timeout'));
+    worker = w;
+    return worker.recognize(fileInput.files[0]);
   }).then(function(result){
-    var rawText = result.data.text || '';
-    statusEl.textContent = '✓ 인식 완료 - 아래에서 결과를 확인해주세요';
+    clearTimeout(timeoutId);
+    if (timedOut) return;
+    if (worker) worker.terminate().catch(function(){});
+    var rawText = (result && result.data && result.data.text) ? result.data.text : '';
+    console.log('[OCR 인식 원문]', rawText);
     _ocrParsedResults = _parseAnswerKeyText(rawText);
-    _renderAnswerKeyOcrReview();
+    var matchCount = Object.keys(_ocrParsedResults).length;
+    if (matchCount === 0) {
+      statusEl.textContent = '⚠️ 문항 번호를 자동으로 찾지 못했습니다 - 아래 "인식된 원문"을 보고 형식을 확인해주세요';
+    } else {
+      statusEl.textContent = '✓ 인식 완료 (' + matchCount + '개 찾음) - 아래에서 하나씩 확인해주세요';
+    }
+    _renderAnswerKeyOcrReview(rawText);
   }).catch(function(e){
-    statusEl.textContent = '✗ 인식 실패: ' + e.message;
+    clearTimeout(timeoutId);
+    if (worker) worker.terminate().catch(function(){});
+    if (e && e.message === 'timeout') return; // 이미 타임아웃 메시지 표시됨
+    statusEl.textContent = '✗ 인식 실패: ' + (e && e.message ? e.message : '알 수 없는 오류');
+    console.error('[OCR 실패]', e);
   });
 };
 
@@ -3490,13 +3528,21 @@ function _parseAnswerKeyText(rawText){
   return results;
 }
 
-function _renderAnswerKeyOcrReview(){
+function _renderAnswerKeyOcrReview(rawText){
   var block = _examSubjectBlocks[_ocrTargetBlockIdx];
   var area = document.getElementById('answer-key-ocr-review');
   if (!block || !area) return;
+
+  var rawTextBox = rawText ? (
+    '<details style="margin-bottom:12px;">'
+    + '<summary style="cursor:pointer;font-size:11px;color:var(--tx3);">🔍 인식된 원문 보기 (자동으로 못 찾았을 때 여기서 형식을 확인해보세요)</summary>'
+    + '<pre style="white-space:pre-wrap;font-size:11px;color:var(--tx2);background:var(--surface2);border-radius:6px;padding:10px;margin-top:6px;max-height:150px;overflow-y:auto;">'+escapeHtml(rawText)+'</pre>'
+    + '</details>'
+  ) : '';
+
   var mcQuestions = block.questions.filter(function(q){ return q.type === 'mc'; });
   if (!mcQuestions.length) {
-    area.innerHTML = '<div style="color:var(--tx3);font-size:12px;">이 과목에는 객관식 문항이 없어 자동으로 채울 항목이 없습니다 (주관식은 직접 입력해주세요)</div>';
+    area.innerHTML = rawTextBox + '<div style="color:var(--tx3);font-size:12px;">이 과목에는 객관식 문항이 없어 자동으로 채울 항목이 없습니다 (주관식은 직접 입력해주세요)</div>';
     document.getElementById('answer-key-ocr-apply-btn').style.display = 'none';
     return;
   }
@@ -3516,9 +3562,10 @@ function _renderAnswerKeyOcrReview(){
       + '</div>';
   }).join('');
 
-  area.innerHTML = '<div style="font-size:12px;font-weight:700;color:var(--tx1);margin-bottom:8px;">객관식 '+mcQuestions.length+'개 중 '+matched+'개 인식됨 - 아래에서 하나씩 확인해주세요</div>' + rows;
+  area.innerHTML = rawTextBox + '<div style="font-size:12px;font-weight:700;color:var(--tx1);margin-bottom:8px;">객관식 '+mcQuestions.length+'개 중 '+matched+'개 인식됨 - 아래에서 하나씩 확인해주세요</div>' + rows;
   document.getElementById('answer-key-ocr-apply-btn').style.display = 'block';
 }
+
 
 window.applyAnswerKeyOcrResults = function(){
   var block = _examSubjectBlocks[_ocrTargetBlockIdx];
@@ -3600,7 +3647,16 @@ window.handleExamListeningFile = function(blockIdx, input){
   if (!input.files || !input.files[0]) return;
   var file = input.files[0];
   var statusEl = document.getElementById('exam-listening-status-'+blockIdx);
-  statusEl.textContent = '⏳ 업로드 중...';
+
+  // 용량이 너무 크면 Cloudinary 무료/서명없는 업로드 프리셋에서 대부분 거절되므로 미리 안내
+  var sizeMB = file.size / (1024*1024);
+  if (sizeMB > 100) {
+    statusEl.textContent = '✗ 파일이 너무 큽니다 ('+sizeMB.toFixed(1)+'MB) - 100MB 이하로 압축해서 다시 시도해주세요';
+    statusEl.style.color = 'var(--red)';
+    return;
+  }
+
+  statusEl.textContent = '⏳ 업로드 중... 0%';
   statusEl.style.color = 'var(--tx3)';
 
   // 재생시간 미리 확인 (업로드와 별개로 로컬에서 즉시 계산)
@@ -3613,7 +3669,7 @@ window.handleExamListeningFile = function(blockIdx, input){
       durationLabel = ' (재생시간 ' + mm + ':' + String(ss).padStart(2,'0') + ')';
       _examSubjectBlocks[blockIdx].listeningDurationSec = sec;
       var curEl = document.getElementById('exam-listening-status-'+blockIdx);
-      if (curEl && curEl.textContent.indexOf('재생시간') === -1) {
+      if (curEl && curEl.textContent.indexOf('재생시간') === -1 && curEl.textContent.indexOf('✓') === 0) {
         curEl.textContent = curEl.textContent + durationLabel;
       }
     });
@@ -3623,15 +3679,50 @@ window.handleExamListeningFile = function(blockIdx, input){
   fd.append('file', file);
   fd.append('upload_preset', CLOUDINARY_PRESET);
   fd.append('resource_type', 'auto');
-  fetch('https://api.cloudinary.com/v1_1/'+CLOUDINARY_CLOUD+'/auto/upload', {method:'POST', body:fd})
-    .then(function(r){return r.json();})
-    .then(function(data){
+
+  // fetch 대신 XMLHttpRequest 사용 - 실제 업로드 진행률(%)을 보여줄 수 있어서,
+  // 시간이 걸리는 큰 오디오 파일을 올릴 때 "멈춘 것처럼" 보이지 않게 함.
+  // 90초 넘게 응답이 없으면 타임아웃으로 명확히 실패 처리 (무한 대기 방지).
+  var xhr = new XMLHttpRequest();
+  xhr.timeout = 90000;
+  xhr.open('POST', 'https://api.cloudinary.com/v1_1/'+CLOUDINARY_CLOUD+'/auto/upload');
+
+  xhr.upload.onprogress = function(e){
+    if (e.lengthComputable) {
+      var pct = Math.round((e.loaded / e.total) * 100);
+      statusEl.textContent = '⏳ 업로드 중... ' + pct + '%';
+    }
+  };
+
+  xhr.onload = function(){
+    var data = null;
+    try { data = JSON.parse(xhr.responseText); } catch(e){}
+
+    if (xhr.status >= 200 && xhr.status < 300 && data && data.secure_url) {
       _examSubjectBlocks[blockIdx].listeningUrl = data.secure_url;
       statusEl.textContent = '✓ ' + file.name + durationLabel;
       statusEl.style.color = 'var(--green)';
       statusEl.style.fontWeight = '700';
-    })
-    .catch(function(e){ statusEl.textContent = '✗ 업로드 실패'; statusEl.style.color = 'var(--red)'; });
+    } else {
+      // Cloudinary가 에러 응답을 줬는데도 이전 코드는 이걸 그냥 "성공"으로 처리하던 버그가 있었음 - 수정됨
+      var reason = (data && data.error && data.error.message) ? data.error.message : ('HTTP ' + xhr.status);
+      statusEl.textContent = '✗ 업로드 실패: ' + reason;
+      statusEl.style.color = 'var(--red)';
+      console.error('[듣기평가 업로드 실패]', xhr.status, xhr.responseText);
+    }
+  };
+
+  xhr.onerror = function(){
+    statusEl.textContent = '✗ 업로드 실패: 네트워크 오류 (인터넷 연결을 확인해주세요)';
+    statusEl.style.color = 'var(--red)';
+  };
+
+  xhr.ontimeout = function(){
+    statusEl.textContent = '✗ 업로드 시간 초과 (90초) - 파일이 너무 크거나 네트워크가 느립니다';
+    statusEl.style.color = 'var(--red)';
+  };
+
+  xhr.send(fd);
 };
 
 window.renderExamWarnChips = function(){
