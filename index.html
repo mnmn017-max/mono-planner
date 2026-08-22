@@ -3500,31 +3500,43 @@ window.runAnswerKeyOcr = function(){
 
 // OCR로 뽑아낸 원문 텍스트에서 "문항번호 - 정답" 쌍을 최대한 찾아내는 파싱
 function _parseAnswerKeyText(rawText){
-  // 원문자(①②③...)를 숫자로 먼저 치환
+  // 원문자(①②③...)를 숫자로 치환하면서 앞뒤에 공백을 넣어준다 - 안 그러면 "01②"처럼 붙어있던
+  // 경우 "012"로 합쳐져버려서(숫자끼리 붙음) 잘못 인식되는 문제가 생김
   var text = rawText;
   Object.keys(_CIRCLED_DIGIT_MAP).forEach(function(ch){
-    text = text.split(ch).join(_CIRCLED_DIGIT_MAP[ch]);
+    text = text.split(ch).join(' ' + _CIRCLED_DIGIT_MAP[ch] + ' ');
   });
 
   var results = {};
-  // 패턴 1: "1. 3" / "1) 3" / "1-3" / "1:3" / "01 3" 같은 "번호 + 구분기호? + 정답" 형태를 줄 단위로 탐색
-  var lines = text.split(/\n+/);
-  lines.forEach(function(line){
-    var m = line.match(/^\s*(\d{1,3})\s*[.\-):\uff0e]?\s*(\d{1,2})\s*$/);
-    if (m) {
-      var no = parseInt(m[1],10), ans = parseInt(m[2],10);
-      if (no>=1 && no<=200 && ans>=1 && ans<=20) results[no] = String(ans);
-    }
-  });
-  // 패턴 1로 거의 못 찾았으면, 같은 줄에 여러 쌍이 나열된 경우도 시도 (예: "1.3  2.1  3.5")
-  if (Object.keys(results).length < 2) {
-    var pairRe = /(\d{1,3})\s*[.\-):\uff0e]\s*(\d{1,2})/g;
-    var m2;
-    while ((m2 = pairRe.exec(text)) !== null) {
-      var no2 = parseInt(m2[1],10), ans2 = parseInt(m2[2],10);
-      if (no2>=1 && no2<=200 && ans2>=1 && ans2<=20) results[no2] = String(ans2);
+  // 실제 정답표는 "01 ② 02 ⑤ 03 ② 04 ④ 05 ①"처럼 한 줄에 여러 쌍이 가로로 나열된
+  // 격자(그리드) 형태가 많고, 번호와 정답 사이에 마침표/콜론 같은 구분기호 없이
+  // 그냥 띄어쓰기만 있는 경우도 흔하다. 그래서 줄 단위가 아니라 전체 텍스트에서
+  // "번호 + (구분기호 있어도 되고 없어도 됨) + 정답" 패턴을 전역으로 계속 찾는다.
+  // 번호는 어차피 텍스트 안에 그대로 찍혀 있으므로, 줄바꿈/컬럼 순서가 뒤섞여도
+  // 각 쌍이 어느 문항인지는 항상 정확하게 유지된다.
+  var pairRe = /(\d{1,3})\s*[.\-):：．]?\s+?(\d{1,2})(?=\D|$)/g;
+  var m;
+  while ((m = pairRe.exec(text)) !== null) {
+    var no = parseInt(m[1],10), ans = parseInt(m[2],10);
+    if (no>=1 && no<=200 && ans>=1 && ans<=20 && results[no]===undefined) {
+      results[no] = String(ans);
     }
   }
+
+  // 위 방식으로 거의 못 찾았으면(예: 번호-정답 사이에 공백조차 없는 경우), 구분기호 없이도
+  // 붙어있는 형태까지 좀 더 느슨하게 한 번 더 시도 (오탐 줄이려고 이 경우엔 원래 결과가
+  // 부족할 때만 보조로 사용)
+  if (Object.keys(results).length < 3) {
+    var looseRe = /(\d{1,3})\D{0,2}(\d{1})(?!\d)/g;
+    var m2;
+    while ((m2 = looseRe.exec(text)) !== null) {
+      var no2 = parseInt(m2[1],10), ans2 = parseInt(m2[2],10);
+      if (no2>=1 && no2<=200 && ans2>=1 && ans2<=9 && results[no2]===undefined) {
+        results[no2] = String(ans2);
+      }
+    }
+  }
+
   return results;
 }
 
