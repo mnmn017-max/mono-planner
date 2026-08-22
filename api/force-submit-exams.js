@@ -67,7 +67,7 @@ function gradeExamAnswers(subj, answers) {
     if (q.type === 'mc') {
       mcTotal++;
       studentAnswerDisplay = studentRaw != null ? String(studentRaw) : null;
-      isCorrect = studentAnswerDisplay != null && parseInt(studentAnswerDisplay, 10) === q.answer;
+      isCorrect = studentAnswerDisplay != null && parseInt(studentAnswerDisplay, 10) === parseInt(q.answer, 10);
       if (isCorrect) mcCorrect++;
     } else if (q.shortMode === 'digit') {
       shortTotal++;
