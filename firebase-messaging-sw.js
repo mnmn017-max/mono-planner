@@ -50,24 +50,38 @@ const messaging = firebase.messaging();
 
 // FCM은 "최소 1번 이상 전달"을 보장하는 시스템이라, 네트워크 상황에 따라 같은 메시지가
 // 실제로 2~3번 중복 전달되는 경우가 드물게 있다 (구글 공식 문서에도 명시된 특성).
-// tag로 겹쳐 보이지 않게 하는 것만으로는, 안드로이드에서 아주 짧은 간격으로 연달아
-// 도착하면 "같은 tag가 이미 떠있는지 확인하는 순간"에 경쟁 상태가 생겨 못 걸러질 수 있다.
-// 그래서 여기서 아예 "최근에 처리한 messageId 목록"을 기억해뒀다가, 같은 ID가 다시
-// 오면 애초에 showNotification() 자체를 호출하지 않도록 한다 (훨씬 확실한 이중 방어).
-var _recentMessageIds = [];
-var _RECENT_ID_LIMIT = 30; // 최근 30건만 기억 (메모리 낭비 방지)
+// 안드로이드는 리소스 관리를 위해 서비스워커를 수시로 껐다 켜는데, 그때마다 자바스크립트
+// 메모리(변수)는 전부 초기화된다. 그래서 "메모리에 잠깐 기억"하는 방식(변수 배열)으로는,
+// 안드로이드가 같은 푸시를 서비스워커를 매번 새로 깨워서 전달할 경우 방지가 안 먹힌다.
+// Cache Storage API는 서비스워커가 꺼졌다 켜져도 내용이 그대로 남아있는 저장소라서,
+// 이걸로 "최근에 처리한 messageId"를 기록해야 확실하게 걸러진다.
+var _DEDUP_CACHE_NAME = 'mono-planner-notif-dedup-v1';
+var _DEDUP_KEEP_LIMIT = 40; // 너무 많이 쌓이지 않도록 최근 40건만 유지
 
-function _isDuplicateMessage(id){
+async function _isDuplicateMessage(id){
   if (!id) return false; // messageId가 없는 경우(구버전 등)는 기존 tag 방식에 맡김
-  if (_recentMessageIds.indexOf(id) !== -1) return true;
-  _recentMessageIds.push(id);
-  if (_recentMessageIds.length > _RECENT_ID_LIMIT) _recentMessageIds.shift();
-  return false;
+  try {
+    var cache = await caches.open(_DEDUP_CACHE_NAME);
+    var key = new Request('https://dedup.local/msg/' + encodeURIComponent(id));
+    var existing = await cache.match(key);
+    if (existing) return true;
+    await cache.put(key, new Response('1'));
+    // 오래된 기록 정리 (Cache Storage는 자동 만료가 없어서 수동으로 개수 제한)
+    var keys = await cache.keys();
+    if (keys.length > _DEDUP_KEEP_LIMIT) {
+      var toDelete = keys.slice(0, keys.length - _DEDUP_KEEP_LIMIT);
+      await Promise.all(toDelete.map(function(k){ return cache.delete(k); }));
+    }
+    return false;
+  } catch (e) {
+    console.warn('[FCM] 중복 체크 저장소 오류(무시하고 계속 진행):', e);
+    return false;
+  }
 }
 
 // 백그라운드(또는 앱 종료 상태)에서 푸시 수신 시 OS 알림 표시
-messaging.onBackgroundMessage(function (payload) {
-  if (_isDuplicateMessage(payload.messageId)) {
+messaging.onBackgroundMessage(async function (payload) {
+  if (await _isDuplicateMessage(payload.messageId)) {
     console.log('[FCM] 중복 메시지 감지 - 알림 표시 건너뜀:', payload.messageId);
     return;
   }
