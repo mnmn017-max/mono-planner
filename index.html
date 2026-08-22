@@ -1218,18 +1218,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .exam-wait-strategy-box{width:100%;max-width:520px;margin:22px auto 0;text-align:left;background:#fff;border:1px solid var(--border2);border-radius:14px;padding:20px;box-shadow:0 6px 20px rgba(50,30,10,0.08);}
 
 /* 시험 전략 노트 / 시험 회고 화면 */
-.refl-wrap{height:100%;overflow-y:auto;display:flex;justify-content:center;padding:36px 16px;background:radial-gradient(ellipse at 50% 0%,#F3E9D2,var(--bg) 60%);}
+.refl-wrap{flex:1;min-height:0;overflow-y:auto;display:flex;align-items:flex-start;justify-content:center;padding:36px 16px;background:radial-gradient(ellipse at 50% 0%,#F3E9D2,var(--bg) 60%);}
 .refl-card{width:100%;max-width:640px;background:#fff;border-radius:20px;padding:34px 34px 30px;box-shadow:0 16px 44px rgba(50,30,10,0.16);border:1px solid var(--border2);}
 .refl-brand{display:flex;justify-content:center;margin-bottom:14px;}
-.refl-brand-logo{height:44px;width:auto;object-fit:contain;}
+.refl-brand-logo{height:72px;width:auto;object-fit:contain;}
 .refl-back-btn{
   background:none;border:none;color:var(--tx4);font-size:12px;font-weight:600;cursor:pointer;
   padding:0;margin-bottom:14px;display:inline-flex;align-items:center;
 }
 .refl-back-btn:hover{color:var(--tx2);}
 .refl-catchphrase{
-  font-family:'Nanum Pen Script',cursive;font-size:19px;color:var(--gold);font-weight:400;
-  text-align:center;margin-bottom:14px;letter-spacing:.2px;
+  font-family:'Nanum Pen Script',cursive;font-size:26px;color:var(--gold);font-weight:400;
+  text-align:center;margin:8px 0 18px;letter-spacing:.2px;
 }
 .refl-kicker{font-size:10.5px;font-weight:800;letter-spacing:4px;color:var(--gold);text-align:center;margin-bottom:6px;}
 .refl-title{font-family:Georgia,'Nanum Myeongjo',serif;font-size:24px;font-weight:700;color:var(--burg);text-align:center;margin-bottom:6px;}
@@ -1286,11 +1286,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .refl-nav-btn.secondary:hover{background:var(--surface3);}
 
 .refl-footer-brand{
-  display:flex;align-items:center;justify-content:center;gap:7px;margin-top:28px;padding-top:16px;
+  display:flex;align-items:center;justify-content:center;gap:10px;margin-top:28px;padding-top:20px;
   border-top:1px solid var(--border2);
 }
-.refl-footer-icon{width:18px;height:18px;opacity:.85;}
-.refl-footer-brand span{font-size:11px;font-weight:600;color:var(--tx4);letter-spacing:.6px;}
+.refl-footer-icon{width:32px;height:32px;opacity:.9;}
+.refl-footer-brand span{font-size:14px;font-weight:700;color:var(--tx3);letter-spacing:.6px;}
 
 @media(max-width:520px){
   .refl-card{padding:26px 20px 24px;border-radius:16px;}
@@ -4341,8 +4341,8 @@ function _enterReflectionScreen(sessionId, exam, results, totalScore, proceedFn,
     +   '</div>'
     +   '<div class="refl-catchphrase">&ldquo;너의 꾸준함과 우리의 치열함이 기적을 이루길&rdquo;</div>'
     +   '<div class="refl-kicker">NEXT STEP</div>'
-    +   '<div class="refl-title">'+escapeHtml(exam.title)+' 다음 걸음을 위하여</div>'
-    +   '<div class="refl-sub">총점 '+totalScore+'점 · 과목별로 아래 세 가지를 구체적으로 적어주세요</div>'
+    +   '<div class="refl-title">다음 걸음을 위하여</div>'
+    +   '<div class="refl-sub">'+escapeHtml(exam.title)+' · 총점 '+totalScore+'점 · 과목별로 아래 세 가지를 구체적으로 적어주세요</div>'
     +   '<div class="refl-steps">'+dots+'</div>'
     +   panels
     +   '<div class="refl-footer-brand">'
