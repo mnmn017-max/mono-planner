@@ -2552,7 +2552,7 @@ function buildTExamManage(){
     var safetyCard = isMaster ? (
       '<div class="card">'
       +'<div class="card-h"><div class="card-title">🛡 시험 강제제출 안전장치</div></div>'
-      +'<div style="font-size:12px;color:var(--tx3);margin-bottom:10px;line-height:1.6;">마감시각이 지났는데도 학생이 앱을 안 열어서 응시중 상태로 남아있는 시험을 서버가 대신 채점·제출 처리합니다. (Vercel Cron으로 자동 실행되며, 필요시 여기서 즉시 실행할 수 있습니다)</div>'
+      +'<div style="font-size:12px;color:var(--tx3);margin-bottom:10px;line-height:1.6;">마감시각이 지났는데도 학생이 앱을 안 열어서 응시중 상태로 남아있는 시험을 처리합니다. 이 버튼은 <b>브라우저에서 직접 처리</b>되어 별도 서버 설정 없이 바로 사용할 수 있어요. (개발자용 Vercel Cron 자동화도 별도로 지원됩니다)</div>'
       +'<div id="exam-safety-status" style="font-size:12px;color:var(--tx3);margin-bottom:10px;"></div>'
       +'<button class="modal-btn cancel" style="margin:0;" onclick="runExamForceSubmitNow()">지금 바로 강제제출 처리</button>'
       +'</div>'
@@ -2569,24 +2569,108 @@ function buildTExamManage(){
 
 window.runExamForceSubmitNow = function(){
   var statusEl = document.getElementById('exam-safety-status');
-  if (statusEl) statusEl.textContent = '⏳ 처리 중...';
-  currentUser.getIdToken().then(function(idToken){
-    return fetch('/api/force-submit-exams', {
-      method: 'GET',
-      headers: { 'Authorization': 'Bearer ' + idToken }
+  if (statusEl) statusEl.textContent = '⏳ 처리 중... (서버 없이 브라우저에서 직접 처리합니다)';
+
+  var now = Date.now();
+  var scanned = 0, waitingStarted = 0, forceSubmittedSubjects = 0, movedToBreak = 0, fullyCompleted = 0, errors = 0;
+  var examCache = {};
+
+  function getExam(examId){
+    if (examCache[examId]) return examCache[examId];
+    examCache[examId] = getDoc(doc(db,'exams',examId)).then(function(d){ return d.exists() ? Object.assign({id:examId}, d.data()) : null; });
+    return examCache[examId];
+  }
+
+  getDocs(query(collection(db,'examSessions'), where('status','in',['waiting','in_progress','break']))).then(function(snap){
+    var sessions = snap.docs.map(function(d){ return {id:d.id, data:d.data()}; });
+    var chain = Promise.resolve();
+
+    sessions.forEach(function(s){
+      chain = chain.then(function(){
+        scanned++;
+        var sess = s.data;
+        return getExam(sess.examId).then(function(exam){
+          if (!exam) return;
+
+          // 1) 대기중(waiting) - 일괄 시작 시각이 이미 지났으면 강제로 시작 처리
+          if (sess.status === 'waiting') {
+            if (!exam.startAtMs || exam.startAtMs > now) return;
+            var wSubjIdx = sess.currentSubjectIndex || 0;
+            var wSubj = exam.subjects[wSubjIdx];
+            if (!wSubj) return;
+            return updateDoc(doc(db,'examSessions',s.id), {
+              status: 'in_progress',
+              startedAtMs: exam.startAtMs,
+              deadlineMs: exam.startAtMs + wSubj.durationMin*60000,
+              currentAnswers: {},
+              listeningPlayed: false
+            }).then(function(){ waitingStarted++; }).catch(function(){ errors++; });
+          }
+
+          // 2) 응시중(in_progress) - 마감시각이 지났으면 저장된 답안으로 강제 채점
+          if (sess.status === 'in_progress') {
+            if (!sess.deadlineMs || sess.deadlineMs > now) return;
+            var subjIdx = sess.currentSubjectIndex || 0;
+            var subj = exam.subjects[subjIdx];
+            if (!subj) return;
+
+            var graded = gradeExamAnswers(subj, sess.currentAnswers || {});
+            var subjectResult = {
+              subject: subj.subject, subjectIndex: subjIdx,
+              startedAtMs: sess.deadlineMs - subj.durationMin*60000,
+              submittedAtMs: now, autoSubmitted: true, forcedByServer: true,
+              score: graded.score, totalScore: graded.totalScore, correctCount: graded.correctCount,
+              wrongNumbers: graded.wrongNumbers, mcAccuracy: graded.mcAccuracy, shortAccuracy: graded.shortAccuracy,
+              answers: graded.details
+            };
+            var results = (sess.subjectResults || []).slice();
+            results[subjIdx] = subjectResult;
+            var isLastSubject = (subjIdx >= exam.subjects.length - 1);
+
+            if (isLastSubject) {
+              return updateDoc(doc(db,'examSessions',s.id), {status:'graded', subjectResults:results, currentAnswers:{}})
+                .then(function(){ return _getPrevSubjectScores(sess.studentUid, exam.gradeType); })
+                .then(function(prevScores){
+                  return _writeExamResultToGrades(sess.studentUid, s.id, exam, results).then(function(){
+                    _awardExamRewards(sess.studentUid, exam, results, prevScores);
+                  });
+                })
+                .then(function(){ fullyCompleted++; forceSubmittedSubjects++; })
+                .catch(function(e){ console.error(e); errors++; });
+            } else {
+              var breakMin = subj.breakAfterMin || 0;
+              return updateDoc(doc(db,'examSessions',s.id), {
+                status:'break', subjectResults:results, currentAnswers:{},
+                currentSubjectIndex: subjIdx+1, breakDeadlineMs: now + breakMin*60000
+              }).then(function(){ movedToBreak++; forceSubmittedSubjects++; }).catch(function(){ errors++; });
+            }
+          }
+
+          // 3) 쉬는시간(break) - 쉬는시간이 끝났으면 다음 과목 시작
+          if (sess.status === 'break') {
+            if (!sess.breakDeadlineMs || sess.breakDeadlineMs > now) return;
+            var nextIdx = sess.currentSubjectIndex || 0;
+            var nextSubj = exam.subjects[nextIdx];
+            if (!nextSubj) return;
+            return updateDoc(doc(db,'examSessions',s.id), {
+              status:'in_progress', startedAtMs: now, deadlineMs: now + nextSubj.durationMin*60000,
+              currentAnswers: {}, listeningPlayed: false
+            }).catch(function(){ errors++; });
+          }
+        }).catch(function(e){ console.error(e); errors++; });
+      });
     });
-  }).then(function(r){
-    if (!r.ok) return r.json().then(function(e){ throw new Error(e.error || ('HTTP ' + r.status)); });
-    return r.json();
-  }).then(function(d){
-    var msg = '완료!\n\n스캔: ' + d.scanned + '개\n대기실→시작 전환: ' + (d.waitingStarted||0) + '개\n강제 제출된 과목: ' + d.forceSubmittedSubjects + '개\n쉬는시간 전환: ' + d.movedToBreak + '개\n완전 종료: ' + d.fullyCompleted + '개\n실패: ' + d.errors + '개';
-    if (statusEl) statusEl.textContent = '✓ 스캔 ' + d.scanned + '개, 강제제출 ' + d.forceSubmittedSubjects + '개 처리 완료';
+
+    return chain;
+  }).then(function(){
+    var msg = '완료! (브라우저에서 직접 처리됨)\n\n스캔: ' + scanned + '개\n대기실→시작 전환: ' + waitingStarted + '개\n강제 제출된 과목: ' + forceSubmittedSubjects + '개\n쉬는시간 전환: ' + movedToBreak + '개\n완전 종료: ' + fullyCompleted + '개\n실패: ' + errors + '개';
+    if (statusEl) statusEl.textContent = '✓ 스캔 ' + scanned + '개, 강제제출 ' + forceSubmittedSubjects + '개 처리 완료';
     alert(msg);
     renderTeacher(7);
   }).catch(function(e){
     console.error(e);
     if (statusEl) statusEl.textContent = '✗ 오류: ' + e.message;
-    alert('강제제출 처리 실패: ' + e.message + '\n\n(Vercel에 /api/force-submit-exams 함수와 Firebase Admin 환경변수가 설정되어 있는지 확인해주세요)');
+    alert('강제제출 처리 실패: ' + e.message);
   });
 };
 
@@ -7966,28 +8050,66 @@ function buildTPlanner(){
 
 window.runMonthlyTop5RewardNow = function(){
   var statusEl = document.getElementById('top5-cron-status');
-  if (statusEl) statusEl.textContent = '\u23f3 \uc2e4\ud589 \uc911...';
-  currentUser.getIdToken().then(function(idToken){
-    return fetch('/api/monthly-top5-reward?force=1', {
-      method: 'GET',
-      headers: { 'Authorization': 'Bearer ' + idToken }
+  if (statusEl) statusEl.textContent = '⏳ 실행 중... (서버 없이 브라우저에서 직접 처리합니다)';
+
+  var now = new Date();
+  var kst = new Date(now.getTime() + (9*60 + now.getTimezoneOffset())*60000);
+  var monthStr = kst.getFullYear()+'-'+String(kst.getMonth()+1).padStart(2,'0');
+  var lastDay = new Date(kst.getFullYear(), kst.getMonth()+1, 0).getDate();
+  var startDate = monthStr+'-01', endDate = monthStr+'-'+String(lastDay).padStart(2,'0');
+  var awarded = 0, alreadyAwarded = 0;
+
+  Promise.all([
+    getDocs(query(collection(db,'todos'), where('date','>=',startDate), where('date','<=',endDate))),
+    getDocs(query(collection(db,'users'), where('role','==','student')))
+  ]).then(function(results){
+    var studentByUid = {};
+    studentSnap.docs.forEach(function(d){
+      var u = d.data();
+      if (u.suspended===true) return;
+      studentByUid[d.id] = {branch: u.branch || '(미지정)', name: u.name||''};
     });
-  }).then(function(r){
-    if (!r.ok) return r.json().then(function(e){ throw new Error(e.error || ('HTTP ' + r.status)); });
-    return r.json();
-  }).then(function(d){
-    if (d.skipped) {
-      if (statusEl) statusEl.textContent = d.reason;
-      alert(d.reason);
-      return;
-    }
-    var msg = '\uc2e4\ud589 \uc644\ub8cc!\n\n' + d.month + ' \uae30\uc900\n\uc9c0\uae09 ' + d.awarded + '\uba85\n\uc774\ubbf8 \uc9c0\uae09\ub428(\uc911\ubcf5\uc2a4\ud0b5) ' + d.alreadyAwarded + '\uba85';
-    if (statusEl) statusEl.textContent = '\u2713 ' + d.awarded + '\uba85\uc5d0\uac8c \uc9c0\uae09 \uc644\ub8cc';
+
+    var timeByBranchUid = {};
+    todoSnap.docs.forEach(function(d){
+      var t = d.data();
+      if (!t.studyTime || !t.uid || !studentByUid[t.uid]) return;
+      var parts = String(t.studyTime).split(':');
+      var secs = (parseInt(parts[0])||0)*3600 + (parseInt(parts[1])||0)*60 + (parseInt(parts[2])||0);
+      if (secs<=0) return;
+      var branch = studentByUid[t.uid].branch;
+      if (!timeByBranchUid[branch]) timeByBranchUid[branch] = {};
+      timeByBranchUid[branch][t.uid] = (timeByBranchUid[branch][t.uid]||0) + secs;
+    });
+
+    var chain = Promise.resolve();
+
+    Object.keys(timeByBranchUid).forEach(function(branch){
+      var map = timeByBranchUid[branch];
+      var top5 = Object.keys(map).sort(function(a,b){return map[b]-map[a];}).slice(0,5);
+      top5.forEach(function(uid){
+        chain = chain.then(function(){
+          var reason = monthStr+' 순공시간 TOP5 월간 시상 (자동)';
+          return getDocs(query(collection(db,'points'), where('studentUid','==',uid), where('reason','==',reason))).then(function(dup){
+            if (!dup.empty) { alreadyAwarded++; return; }
+            return addDoc(collection(db,'points'), {
+              branch: branch, studentUid: uid, type:'plus', reason: reason, points: 30,
+              givenBy:'system', givenByName:'자동지급', createdAt: serverTimestamp()
+            }).then(function(){ awarded++; });
+          });
+        });
+      });
+    });
+
+    return chain;
+  }).then(function(){
+    var msg = '실행 완료! (브라우저에서 직접 처리됨)\n\n'+monthStr+' 기준\n지급 '+awarded+'명\n이미 지급됨(중복스킵) '+alreadyAwarded+'명';
+    if (statusEl) statusEl.textContent = '✓ '+awarded+'명에게 지급 완료';
     alert(msg);
   }).catch(function(e){
     console.error(e);
-    if (statusEl) statusEl.textContent = '\u2717 \uc624\ub958: ' + e.message;
-    alert('\uc2e4\ud589 \uc2e4\ud328: ' + e.message + '\n\n(Vercel\uc5d0 /api/monthly-top5-reward \ud568\uc218\uc640 Firebase Admin \ud658\uacbd\ubcc0\uc218\uac00 \uc124\uc815\ub418\uc5b4 \uc788\ub294\uc9c0 \ud655\uc778\ud574\uc8fc\uc138\uc694)');
+    if (statusEl) statusEl.textContent = '✗ 오류: ' + e.message;
+    alert('실행 실패: ' + e.message);
   });
 };
 
@@ -8706,7 +8828,7 @@ function buildTRewards(){
       var top5CronCard = isMasterR ? (
         '<div class="card">'
         +'<div class="card-h"><div class="card-title">🏆 월간 순공시간 TOP5 시상</div></div>'
-        +'<div style="font-size:12px;color:var(--tx3);margin-bottom:10px;line-height:1.6;">매월 마지막날 그 달 순공시간 TOP5 학생에게 자동으로 상점 30점씩 지급합니다. (Vercel Cron 또는 여기서 수동 실행)</div>'
+        +'<div style="font-size:12px;color:var(--tx3);margin-bottom:10px;line-height:1.6;">매월 마지막날 그 달 순공시간 TOP5 학생에게 상점 30점씩 지급합니다. 이 버튼은 <b>브라우저에서 직접 처리</b>되어 별도 서버 설정 없이 바로 사용할 수 있어요.</div>'
         +'<div id="top5-cron-status" style="font-size:12px;color:var(--tx3);margin-bottom:8px;"></div>'
         +'<button class="modal-btn cancel" style="margin:0;" onclick="runMonthlyTop5RewardNow()">지금 바로 실행 (이번 달 마지막날이 아니어도 강제 실행)</button>'
         +'</div>'
