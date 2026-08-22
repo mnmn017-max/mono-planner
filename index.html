@@ -2476,6 +2476,10 @@ const db = getFirestore(app);
 const messaging = getMessaging(app);
 
 const FCM_VAPID_KEY = 'BKnAS5VGPO1l5T4jLtIHGmIsx3WnrCQEyeWvyKcouMKzfPZ4vAtCoSgzg-PHydj2uvuFERpry6g4V7uctslDTe4';
+// 서비스워커(firebase-messaging-sw.js) 파일을 고쳐서 새로 올릴 때마다 이 숫자를 1씩 올려주세요.
+// 이러면 vercel.json에 캐시 헤더를 따로 설정하지 않아도, 브라우저가 주소가 바뀐 걸 보고
+// "새 파일"로 인식해서 캐시 없이 무조건 새로 받아옵니다 (가장 간단한 방법).
+const SW_VERSION = 2;
 // Firebase 콘솔 → 프로젝트 설정 → 클라우드 메시징 → 서버 키
 var _FCM_SERVER_KEY = 'YOUR_SERVER_KEY_HERE';
 
@@ -2509,8 +2513,12 @@ async function registerFCMToken(uid, isUserGesture) {
     }
 
     // 서비스워커 등록 + "활성화"까지 확실히 대기 (등록만 되고 미활성 상태에서 토큰 요청하면 실패하는 기기가 있음)
-    var swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+    // updateViaCache:'none' - 브라우저가 이 파일을 캐싱하지 않고 매번 최신 버전을 확인하도록 강제
+    // (안 그러면 서버 파일을 고쳐도 오래된 버전이 계속 남아있는 기기가 생김)
+    var swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js?v=' + SW_VERSION, { updateViaCache: 'none' });
     console.log('[FCM] 서비스워커 등록 완료, 활성화 대기 중...');
+    // 새 버전이 있는지 매번 명시적으로 한 번 더 확인 (skipWaiting/clients.claim과 짝을 이룸)
+    swRegistration.update().catch(function(){});
     await navigator.serviceWorker.ready;
     console.log('[FCM] 서비스워커 활성화 완료');
 

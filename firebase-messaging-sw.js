@@ -26,6 +26,17 @@
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js');
 
+// 새 버전의 서비스워커가 배포되면, 사용자가 앱을 완전히 껐다 켜지 않아도
+// "즉시" 이전 버전을 밀어내고 활성화되도록 함. (안 이러면 오래된 서비스워커가
+// 계속 남아서 새 버전이랑 동시에 알림을 처리하는 바람에 - 중복 알림, 클릭해도
+// 채팅으로 안 들어가지는 등 - 어떤 게 뜨는지 뒤죽박죽이 되는 문제가 생김)
+self.addEventListener('install', function(event){
+  self.skipWaiting();
+});
+self.addEventListener('activate', function(event){
+  event.waitUntil(self.clients.claim());
+});
+
 firebase.initializeApp({
   apiKey: "AIzaSyDnAr8er9NTegYGfIeVErrC96zvO9JlvgQ",
   authDomain: "mono-planner-75a60.firebaseapp.com",
