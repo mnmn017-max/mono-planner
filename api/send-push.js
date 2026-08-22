@@ -24,12 +24,6 @@ function ensureFirebaseAdmin() {
 }
 
 module.exports = async function handler(req, res) {
-  // ── 진단용 임시 코드: 이 함수가 실제로 몇 번 호출되는지, 매 호출마다 FCM이
-  // 실제로 어떤 messageId를 돌려주는지 응답에 그대로 담아서 눈으로 확인한다.
-  // (원인 다 찾고 나면 이 로그 관련 부분은 다시 정리해서 없애면 됩니다)
-  const requestId = Math.random().toString(36).slice(2, 8) + '-' + Date.now();
-  console.log('[send-push] 함수 호출 시작 requestId=' + requestId);
-
   if (req.method !== "POST") {
     res.status(405).json({ error: "POST 요청만 허용됩니다." });
     return;
@@ -115,13 +109,11 @@ module.exports = async function handler(req, res) {
           fcmOptions: { link: "/" }
         }
       })
-        .then(function (fcmMessageId) {
-          // 진단용: FCM이 실제로 몇 번, 어떤 messageId로 응답했는지 그대로 기록
-          console.log('[send-push] requestId=' + requestId + ' uid=' + uid + ' → FCM messageId=' + fcmMessageId);
-          details.push({ uid: uid, status: "sent", requestId: requestId, fcmMessageId: fcmMessageId });
+        .then(function () {
+          details.push({ uid: uid, status: "sent" });
         })
         .catch(function (e) {
-          details.push({ uid: uid, status: "failed", reason: e.code || e.message, requestId: requestId });
+          details.push({ uid: uid, status: "failed", reason: e.code || e.message });
           if (e && (e.code === "messaging/registration-token-not-registered" || e.code === "messaging/invalid-registration-token")) {
             db.collection("users").doc(uid).update({ fcmToken: admin.firestore.FieldValue.delete() }).catch(function () {});
           }
@@ -135,5 +127,5 @@ module.exports = async function handler(req, res) {
   const skipped = details.filter(function (d) { return d.status === "skipped"; }).length;
   const failed = details.filter(function (d) { return d.status === "failed"; }).length;
 
-  res.status(200).json({ requestId: requestId, sent: sent, skipped: skipped, failed: failed, details: details });
+  res.status(200).json({ sent: sent, skipped: skipped, failed: failed, details: details });
 };
