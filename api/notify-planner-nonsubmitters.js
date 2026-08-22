@@ -87,6 +87,7 @@ module.exports = async function handler(req, res) {
     const authHeader = req.headers['authorization'] || '';
     const cronSecret = process.env.CRON_SECRET;
     const isCron = cronSecret && authHeader === 'Bearer ' + cronSecret;
+    let myBranch = null;
 
     if (!isCron) {
       const idToken = authHeader.replace(/^Bearer\s+/i, '');
@@ -94,20 +95,25 @@ module.exports = async function handler(req, res) {
       try {
         const decoded = await admin.auth().verifyIdToken(idToken);
         const userDoc = await db.collection('users').doc(decoded.uid).get();
-        const role = userDoc.exists ? userDoc.data().role : null;
+        const userData = userDoc.exists ? userDoc.data() : null;
+        const role = userData ? userData.role : null;
         if (role !== 'master' && role !== 'teacher') {
           return res.status(403).json({ error: '선생님/마스터 계정만 실행할 수 있습니다' });
         }
+        myBranch = userData.branch || null;
       } catch (e) {
         return res.status(401).json({ error: '인증 실패: ' + e.message });
       }
+    } else {
+      // Cron으로 실행 시에는 지점 지정 없이 전체 실행 (분점이 여러 곳이면 slot과 함께 branch 파라미터를 넘기도록 확장 가능)
+      myBranch = (req.query && req.query.branch) || null;
     }
 
     const slot = (req.query && req.query.slot) || (req.body && req.body.slot) || 'manual';
     const now = new Date();
     const { dateStr: today } = getKstDateStr(now);
 
-    let scanned = 0, alreadySubmitted = 0, noToken = 0, sent = 0, failed = 0;
+    let scanned = 0, alreadySubmitted = 0, noToken = 0, sent = 0, failed = 0, otherBranch = 0;
 
     const plannerSnap = await db.collection('planners').where('date', '==', today).get();
     const submittedUids = new Set(plannerSnap.docs.map((d) => d.data().uid));
@@ -118,6 +124,8 @@ module.exports = async function handler(req, res) {
     studentSnap.docs.forEach((d) => {
       const u = d.data();
       scanned++;
+      // 지점 필터: 요청한 선생님/마스터와 같은 지점 학생만 대상 (branch 값이 없는 옛날 계정은 포함 - 기존 대시보드 집계 방식과 동일)
+      if (myBranch && u.branch && u.branch !== myBranch) { otherBranch++; return; }
       if (u.suspended === true) return;
       if (submittedUids.has(d.id)) { alreadySubmitted++; return; }
       if (!u.fcmToken) { noToken++; return; }
@@ -146,7 +154,7 @@ module.exports = async function handler(req, res) {
     }
 
     return res.status(200).json({
-      date: today, slot, scanned, alreadySubmitted, noToken,
+      date: today, slot, scanned, otherBranch, alreadySubmitted, noToken,
       targeted: targets.length, sent, failed,
     });
   } catch (e) {
