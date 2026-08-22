@@ -7,13 +7,25 @@
 
 const admin = require('firebase-admin');
 
+function parseServiceAccountJson(raw) {
+  // FIREBASE_SERVICE_ACCOUNT는 base64로 인코딩되어 저장된 경우가 많다 (줄바꿈/따옴표 이스케이프 문제 회피용).
+  // 1) base64로 우선 디코딩 시도 -> JSON.parse
+  try {
+    var decoded = Buffer.from(raw, 'base64').toString('utf8');
+    return JSON.parse(decoded);
+  } catch (e) {
+    // 2) base64가 아니라 순수 JSON 텍스트로 저장된 경우 그대로 파싱
+    return JSON.parse(raw);
+  }
+}
+
 function buildCredential() {
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
     var parsed;
     try {
-      parsed = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+      parsed = parseServiceAccountJson(process.env.FIREBASE_SERVICE_ACCOUNT);
     } catch (e) {
-      throw new Error('FIREBASE_SERVICE_ACCOUNT 환경변수가 올바른 JSON 형식이 아닙니다: ' + e.message);
+      throw new Error('FIREBASE_SERVICE_ACCOUNT 환경변수가 올바른 JSON 형식이 아닙니다 (base64 디코딩도 시도했지만 실패): ' + e.message);
     }
     return admin.credential.cert({
       projectId: parsed.project_id,
