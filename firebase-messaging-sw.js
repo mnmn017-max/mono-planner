@@ -48,8 +48,30 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+// FCM은 "최소 1번 이상 전달"을 보장하는 시스템이라, 네트워크 상황에 따라 같은 메시지가
+// 실제로 2~3번 중복 전달되는 경우가 드물게 있다 (구글 공식 문서에도 명시된 특성).
+// tag로 겹쳐 보이지 않게 하는 것만으로는, 안드로이드에서 아주 짧은 간격으로 연달아
+// 도착하면 "같은 tag가 이미 떠있는지 확인하는 순간"에 경쟁 상태가 생겨 못 걸러질 수 있다.
+// 그래서 여기서 아예 "최근에 처리한 messageId 목록"을 기억해뒀다가, 같은 ID가 다시
+// 오면 애초에 showNotification() 자체를 호출하지 않도록 한다 (훨씬 확실한 이중 방어).
+var _recentMessageIds = [];
+var _RECENT_ID_LIMIT = 30; // 최근 30건만 기억 (메모리 낭비 방지)
+
+function _isDuplicateMessage(id){
+  if (!id) return false; // messageId가 없는 경우(구버전 등)는 기존 tag 방식에 맡김
+  if (_recentMessageIds.indexOf(id) !== -1) return true;
+  _recentMessageIds.push(id);
+  if (_recentMessageIds.length > _RECENT_ID_LIMIT) _recentMessageIds.shift();
+  return false;
+}
+
 // 백그라운드(또는 앱 종료 상태)에서 푸시 수신 시 OS 알림 표시
 messaging.onBackgroundMessage(function (payload) {
+  if (_isDuplicateMessage(payload.messageId)) {
+    console.log('[FCM] 중복 메시지 감지 - 알림 표시 건너뜀:', payload.messageId);
+    return;
+  }
+
   var title = (payload.data && payload.data.title) || (payload.notification && payload.notification.title) || 'MONO PLANNER';
   var body = (payload.data && payload.data.body) || (payload.notification && payload.notification.body) || '';
 
