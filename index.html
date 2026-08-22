@@ -1222,6 +1222,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .refl-card{width:100%;max-width:640px;background:#fff;border-radius:20px;padding:34px 34px 30px;box-shadow:0 16px 44px rgba(50,30,10,0.16);border:1px solid var(--border2);}
 .refl-brand{display:flex;justify-content:center;margin-bottom:14px;}
 .refl-brand-logo{height:44px;width:auto;object-fit:contain;}
+.refl-back-btn{
+  background:none;border:none;color:var(--tx4);font-size:12px;font-weight:600;cursor:pointer;
+  padding:0;margin-bottom:14px;display:inline-flex;align-items:center;
+}
+.refl-back-btn:hover{color:var(--tx2);}
 .refl-catchphrase{
   font-family:'Nanum Pen Script',cursive;font-size:19px;color:var(--gold);font-weight:400;
   text-align:center;margin-bottom:14px;letter-spacing:.2px;
@@ -3549,7 +3554,7 @@ function loadExamList(){
           + '</div></div>'
           + '<div style="text-align:right;">'
           + '<div style="font-size:11px;color:'+statusInfo.color+';font-weight:700;margin-bottom:6px;">'+statusInfo.label+'</div>'
-          + (statusInfo.btn ? '<button onclick="startExam(\''+sess.id+'\')" class="modal-btn primary" style="margin:0;width:auto;padding:8px 18px;font-size:12px;">'+statusInfo.btn+'</button>' : (score!=null?'<button onclick="viewExamResult(\''+sess.id+'\')" style="font-size:11px;padding:6px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;">결과보기</button>':''))
+          + (statusInfo.btn ? '<button onclick="startExam(\''+sess.id+'\')" class="modal-btn primary" style="margin:0;width:auto;padding:8px 18px;font-size:12px;">'+statusInfo.btn+'</button>' : (score!=null?'<div style="display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;"><button onclick="viewExamResult(\''+sess.id+'\')" style="font-size:11px;padding:6px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;">결과보기</button><button onclick="openReflectionForPastExam(\''+sess.id+'\')" style="font-size:11px;padding:6px 12px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);cursor:pointer;">✍️ 다음 걸음을 위하여</button></div>':''))
           + '</div></div>';
       }).join('');
       document.getElementById('exam-list-student').innerHTML = rows;
@@ -4292,10 +4297,11 @@ window._submitStrategyAndProceed = function(){
 };
 
 // 시험(모든 과목) 종료 직후 - 과목별 회고 3문항 작성
-function _enterReflectionScreen(sessionId, exam, results, totalScore, proceedFn){
+function _enterReflectionScreen(sessionId, exam, results, totalScore, proceedFn, existingReflections, backFn){
   showScreen('screen-exam');
   var el = document.getElementById('screen-exam');
   var subjectsWithResults = exam.subjects.map(function(subj, idx){ return {subj:subj, idx:idx, result:results[idx]}; }).filter(function(x){ return x.result; });
+  existingReflections = existingReflections || {};
 
   var dots = subjectsWithResults.map(function(x, si){
     var subjName = subjectNames[x.subj.subject] || x.subj.subject;
@@ -4307,13 +4313,15 @@ function _enterReflectionScreen(sessionId, exam, results, totalScore, proceedFn)
   var panels = subjectsWithResults.map(function(x, si){
     var subjName = subjectNames[x.subj.subject] || x.subj.subject;
     var isLast = si === subjectsWithResults.length - 1;
+    var existing = existingReflections[x.subj.subject] || {};
     return '<div class="refl-panel" id="refl-panel-'+si+'" style="display:'+(si===0?'block':'none')+';">'
       + '<div class="refl-subject-heading">'+escapeHtml(subjName)+' <span class="refl-subject-score">'+x.result.score+'점</span></div>'
       + REFLECTION_PROMPTS.map(function(p,i){
+          var prefill = existing[p.key] ? escapeHtml(existing[p.key]) : '';
           return '<div class="refl-field">'
             + '<div class="refl-q"><span class="refl-q-num">'+(i+1)+'</span>'+escapeHtml(p.label)+'</div>'
             + '<div class="refl-hint">'+escapeHtml(p.hint)+'</div>'
-            + '<textarea id="refl-input-'+si+'-'+p.key+'" class="refl-textarea" placeholder="구체적으로 적을수록 다음 시험 전략에 큰 도움이 됩니다" oninput="_reflAutoGrow(this)" rows="1"></textarea>'
+            + '<textarea id="refl-input-'+si+'-'+p.key+'" class="refl-textarea" placeholder="구체적으로 적을수록 다음 시험 전략에 큰 도움이 됩니다" oninput="_reflAutoGrow(this)" rows="1">'+prefill+'</textarea>'
             + '</div>';
         }).join('')
       + '<div class="refl-panel-nav">'
@@ -4327,6 +4335,7 @@ function _enterReflectionScreen(sessionId, exam, results, totalScore, proceedFn)
 
   el.innerHTML = '<div class="refl-wrap">'
     + '<div class="refl-card">'
+    +   (backFn ? '<button type="button" class="refl-back-btn" onclick="_reflGoBack()">← 나가기</button>' : '')
     +   '<div class="refl-brand">'
     +     '<img src="'+MONO_LOGO_DATAURI+'" alt="Mono Planner" class="refl-brand-logo"/>'
     +   '</div>'
@@ -4343,6 +4352,7 @@ function _enterReflectionScreen(sessionId, exam, results, totalScore, proceedFn)
     + '</div>'
     + '</div>';
 
+  window._reflGoBackFn = backFn || null;
   window._reflectionProceedCtx = {sessionId:sessionId, exam:exam, subjectsWithResults:subjectsWithResults, proceedFn:proceedFn, currentStep:0};
 };
 
@@ -4368,6 +4378,46 @@ window._reflGoToStep = function(idx){
 window._reflAutoGrow = function(el){
   el.style.height = 'auto';
   el.style.height = Math.max(el.scrollHeight, 90) + 'px';
+};
+
+window._reflGoBack = function(){
+  var fn = window._reflGoBackFn;
+  if (fn) fn();
+};
+
+// 이미 끝난 시험을 나중에 학생이 직접 열어서 회고를 쓰거나 수정할 수 있게 함
+window.openReflectionForPastExam = function(sessionId){
+  Promise.all([
+    getDoc(doc(db,'examSessions',sessionId)),
+    getDocs(query(collection(db,'examReflections'), where('sessionId','==',sessionId)))
+  ]).then(function(res){
+    var sessDoc = res[0], reflSnap = res[1];
+    if (!sessDoc.exists()) { alert('시험 세션을 찾을 수 없습니다'); return; }
+    var sess = sessDoc.data();
+    if (!sess.subjectResults || !sess.subjectResults.length) { alert('아직 채점되지 않은 시험입니다'); return; }
+
+    var existingBySubject = {};
+    reflSnap.docs.forEach(function(d){
+      var data = d.data();
+      existingBySubject[data.subject] = data;
+    });
+
+    getDoc(doc(db,'exams',sess.examId)).then(function(examDoc){
+      if (!examDoc.exists()) { alert('시험 정보를 찾을 수 없습니다'); return; }
+      var exam = Object.assign({id:sess.examId}, examDoc.data());
+      var totalScore = sess.subjectResults.reduce(function(s,r){return s+(r?r.score:0);}, 0);
+      _enterReflectionScreen(sessionId, exam, sess.subjectResults, totalScore, function(){
+        alert('저장되었습니다!');
+        showScreen('screen-student');
+        studentTab(4);
+      }, existingBySubject, function(){
+        showScreen('screen-student');
+        studentTab(4);
+      });
+    });
+  }).catch(function(e){
+    alert('불러오기 실패: ' + e.message);
+  });
 };
 
 window._submitReflectionAndProceed = function(){
