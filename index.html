@@ -7511,6 +7511,12 @@ function _sendChatNotif(receiverUid, senderName, preview) {
 // 실제 OS 푸시 알림 발송 (백그라운드/앱 종료 상태에서도 수신되도록)
 function _sendPushNotification(targetUids, title, body, data) {
   if (!targetUids || !targetUids.length || !currentUser) return;
+  // ── 진단용 임시 코드: 이 함수 자체가 클라이언트에서 몇 번 호출되는지,
+  // 그리고 서버가 실제로 몇 번 발송했다고 응답하는지 눈으로 바로 확인 ──
+  window._pushDiagCallCount = (window._pushDiagCallCount || 0) + 1;
+  var myCallNum = window._pushDiagCallCount;
+  console.log('[진단] _sendPushNotification 호출 #'+myCallNum, 'targets:', targetUids);
+
   currentUser.getIdToken().then(function(idToken){
     return fetch('/api/send-push', {
       method: 'POST',
@@ -7522,7 +7528,10 @@ function _sendPushNotification(targetUids, title, body, data) {
     return r.json();
   }).then(function(result){
     console.log('[푸시알림] 발송 결과:', result);
-  }).catch(function(e){ console.error('[푸시알림] 전송 실패:', e); });
+    // 진단용 alert - 원인 찾고 나면 이 alert는 지우면 됩니다
+    var msgIds = (result.details||[]).map(function(d){ return d.fcmMessageId || (d.status+':'+d.reason); }).join('\n');
+    alert('🔍 진단 정보\n\n클라이언트 호출 번호: #'+myCallNum+'\n서버 requestId: '+result.requestId+'\n대상: '+targetUids.length+'명\n발송: '+result.sent+'건\n\nFCM messageId 목록:\n'+msgIds);
+  }).catch(function(e){ console.error('[푸시알림] 전송 실패:', e); alert('푸시알림 전송 실패: '+e.message); });
 }
 
 // ── 뒤로가기 히스토리 관리 ──
