@@ -55,16 +55,24 @@ messaging.onBackgroundMessage(function (payload) {
   self.registration.showNotification(title, options);
 });
 
-// 알림 클릭 시 앱으로 포커스 이동 (열려있으면 포커스, 없으면 새로 열기)
+// 알림 클릭 시 앱으로 포커스 이동 (열려있으면 포커스, 없으면 새로 열기) - roomId가 있으면 그 채팅방으로 바로 이동
 self.addEventListener('notificationclick', function (event) {
   event.notification.close();
+  var roomId = event.notification.data && event.notification.data.roomId;
+  var targetUrl = roomId ? ('/?openChat=' + encodeURIComponent(roomId)) : '/';
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clientList) {
       for (var i = 0; i < clientList.length; i++) {
         var client = clientList[i];
-        if ('focus' in client) return client.focus();
+        if ('focus' in client) {
+          client.focus();
+          if (roomId && 'postMessage' in client) {
+            client.postMessage({ type: 'open-chat-room', roomId: roomId });
+          }
+          return;
+        }
       }
-      if (clients.openWindow) return clients.openWindow('/');
+      if (clients.openWindow) return clients.openWindow(targetUrl);
     })
   );
 });

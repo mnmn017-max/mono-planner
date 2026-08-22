@@ -2450,7 +2450,7 @@ showScreen('screen-loading');
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, collection, query, where, orderBy, onSnapshot, serverTimestamp, getDocs, limit, arrayUnion } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, collection, query, where, orderBy, onSnapshot, serverTimestamp, getDocs, limit, arrayUnion, increment } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
 
 const firebaseConfig = {
@@ -2624,6 +2624,43 @@ window.dismissInstallNudge = function(){
   var el = document.getElementById('install-nudge-banner');
   if (el) el.style.display = 'none';
 };
+
+// ═══════════════════════════════════════
+// 알림 클릭 시 해당 채팅방으로 자동 이동
+// ═══════════════════════════════════════
+
+// 1) 앱이 꺼져있어서 알림 클릭으로 새로 열린 경우 - URL의 ?openChat= 파라미터를 확인
+function _maybeOpenChatFromUrl(){
+  try {
+    var params = new URLSearchParams(window.location.search);
+    var roomId = params.get('openChat');
+    if (!roomId) return;
+    // URL을 깔끔하게 정리 (뒤로가기 눌렀을 때 다시 열리지 않도록)
+    window.history.replaceState({}, '', window.location.pathname);
+    setTimeout(function(){ _navigateToChatRoom(roomId); }, 300);
+  } catch(e){}
+}
+
+// 2) 앱이 이미 열려있어서 서비스워커가 postMessage로 알려준 경우
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', function(event){
+    if (event.data && event.data.type === 'open-chat-room' && event.data.roomId) {
+      _navigateToChatRoom(event.data.roomId);
+    }
+  });
+}
+
+// 학생/선생님 화면 어느 쪽이든 채팅 탭으로 이동한 뒤 해당 대화방을 염
+function _navigateToChatRoom(roomId){
+  if (!currentUser || !currentProfile) return;
+  if (currentProfile.role === 'student') {
+    studentTab(3);
+    setTimeout(function(){ openKChatRoom(roomId); }, 300);
+  } else {
+    renderTeacher(4); // 선생님/마스터의 "대화방" 탭은 항상 인덱스 4
+    setTimeout(function(){ openKChatRoom(roomId); }, 300);
+  }
+}
 
 // 포그라운드 FCM 수신 - 앱이 열려있을 때는 서비스 워커가 아니라 여기로 전달되므로,
 // 직접 알림을 띄워줘야 함 (안 그러면 앱을 켜두고 있을 때만 알림이 조용히 사라짐)
@@ -5405,6 +5442,8 @@ function _doGoToScreen(user) {
           registerFCMToken(user.uid);
           buildTeacherTabs(currentProfile.role === 'master'); renderTeacher(0);
         } else { signOut(auth); showScreen('screen-login'); }
+        // 알림 클릭으로 앱이 새로 열린 경우 - URL의 openChat 파라미터로 해당 채팅방까지 자동 이동
+        _maybeOpenChatFromUrl();
       } else { signOut(auth); showScreen('screen-login'); }
     }).catch(function(e) { console.error('[_doGoToScreen] getDoc 실패:', e); showScreen('screen-login'); });
   } else {
@@ -9358,11 +9397,13 @@ window.openKChatRoom = function(roomId) {
       }
     }
 
-    // 미읽음 0으로 리셋
+    // 미읽음 0으로 리셋 (다른 필드를 통째로 덮어쓰지 않도록 이 필드 하나만 원자적으로 업데이트)
     var u = _curChatRoomMeta.unread || {};
     if (u[currentUser.uid] > 0) {
-      u[currentUser.uid] = 0;
-      updateDoc(doc(db, 'chatRooms', roomId), {unread: u}).catch(function(){});
+      _curChatRoomMeta.unread = Object.assign({}, u, {[currentUser.uid]: 0});
+      var _resetUpdate = {};
+      _resetUpdate['unread.'+currentUser.uid] = 0;
+      updateDoc(doc(db, 'chatRooms', roomId), _resetUpdate).catch(function(e){console.error('미읽음 리셋 실패', e);});
     }
 
     // 메시지 리스너
@@ -9580,12 +9621,14 @@ window.sendKChatMsg = function() {
 
   function _afterSend(messageData) {
     // 채팅방 메타데이터 업데이트 (마지막 메시지 + 다른 사람들 미읽음 증가)
-    var unread = _curChatRoomMeta.unread || {};
+    // 전체 unread 맵을 읽어서-고쳐서-통째로 다시 쓰면, 그 사이에 상대방이 자기 읽음 처리를
+    // 한 게 덮어써지는 경쟁 상태(race condition)가 생길 수 있음 - 그래서 Firestore의
+    // increment()로 필드 하나씩만 원자적으로 올리도록 바꿈 (동시에 여러 메시지가 오가도 안전)
+    var updates = {};
     others.forEach(function(uid){
-      unread[uid] = (unread[uid]||0) + 1;
+      updates['unread.'+uid] = increment(1);
     });
-    unread[currentUser.uid] = 0;
-    _curChatRoomMeta.unread = unread;
+    updates['unread.'+currentUser.uid] = 0;
     var lastMsg = {
       text: messageData.text || '',
       fileName: messageData.fileName || null,
@@ -9594,13 +9637,17 @@ window.sendKChatMsg = function() {
       senderUid: currentUser.uid,
       createdAt: serverTimestamp()
     };
+    updates.lastMessage = lastMsg;
     // 상대방이 이 대화를 숨겨뒀었다면, 메시지가 오면 다시 목록에 보이도록 해제
     var clearedHiddenFor = (_curChatRoomMeta.hiddenFor || []).filter(function(uid){ return others.indexOf(uid) === -1; });
-    updateDoc(doc(db, 'chatRooms', _curChatRoomId), {
-      lastMessage: lastMsg,
-      unread: unread,
-      hiddenFor: clearedHiddenFor
-    }).catch(function(e){console.error('update lastMessage failed', e);});
+    updates.hiddenFor = clearedHiddenFor;
+    // 로컬 표시용 미리보기 값도 갱신 (증가분을 반영해서 화면에 즉시 보이도록)
+    var localUnread = Object.assign({}, _curChatRoomMeta.unread || {});
+    others.forEach(function(uid){ localUnread[uid] = (localUnread[uid]||0) + 1; });
+    localUnread[currentUser.uid] = 0;
+    _curChatRoomMeta.unread = localUnread;
+    updateDoc(doc(db, 'chatRooms', _curChatRoomId), updates)
+      .catch(function(e){console.error('update lastMessage failed', e);});
     // 알림 전송 (인앱 기록 + 실제 푸시 - 백그라운드/종료 상태에서도 수신)
     var notifPreview = messageData.text || ('📎 '+(messageData.fileName||'파일'));
     others.forEach(function(uid){
