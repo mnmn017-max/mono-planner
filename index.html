@@ -1018,6 +1018,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .omr-digit-btn.default-selected{background:var(--surface3);color:var(--tx4);border-color:var(--border);}
 .omr-digit-btn.selected{background:var(--burg);border-color:var(--burg);color:#fff;box-shadow:0 3px 8px rgba(123,29,29,0.3);}
 
+/* 포그라운드에서 뜨는 인앱 알림 배너 (앱을 보고 있을 때 푸시 알림 대신 표시) */
+.inapp-notif-banner{
+  position:fixed;top:14px;left:50%;
+  transform:translateX(-50%) translateY(-140%);
+  width:min(360px,92vw);z-index:9999;
+  background:#fff;border:1px solid var(--border2);border-radius:14px;
+  padding:14px 16px;box-shadow:0 10px 30px rgba(50,30,10,0.22);
+  border-left:4px solid var(--burg);
+  transition:transform .3s cubic-bezier(0.34,1.56,0.64,1);
+  pointer-events:none;
+}
+.inapp-notif-banner.show{transform:translateX(-50%) translateY(0);}
+.inapp-notif-title{font-size:13px;font-weight:800;color:var(--burg);margin-bottom:3px;}
+.inapp-notif-body{font-size:12.5px;color:var(--tx2);line-height:1.5;}
+
 /* 종료 임박 알림 배너 - 상단 고정, 눈에 잘 띄게 떴다 사라짐 */
 .exam-warn-banner{
   position:fixed;top:0;left:0;right:0;
@@ -2514,10 +2529,48 @@ window.enableNotificationsNow = function() {
   registerFCMToken(currentUser.uid, true);
 };
 
-// 포그라운드 FCM 수신 - 서비스 워커에서 처리하므로 여기서는 아무것도 안 함
+// 포그라운드 FCM 수신 - 앱이 열려있을 때는 서비스 워커가 아니라 여기로 전달되므로,
+// 직접 알림을 띄워줘야 함 (안 그러면 앱을 켜두고 있을 때만 알림이 조용히 사라짐)
 onMessage(messaging, function(payload) {
-  // 의도적으로 비워둠 - 서비스 워커가 모든 알림 처리
+  var title = (payload.notification && payload.notification.title) || '📋 알림';
+  var body = (payload.notification && payload.notification.body) || '';
+
+  // 인앱 배너로도 항상 보여줌 (권한 여부와 무관하게, 화면 보고 있을 때 확실히 알 수 있도록)
+  _showInAppNotifBanner(title, body);
+
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  if (navigator.serviceWorker && navigator.serviceWorker.getRegistration) {
+    navigator.serviceWorker.getRegistration().then(function(reg){
+      if (reg && reg.showNotification) {
+        reg.showNotification(title, { body: body, icon: '/icon-192.png', badge: '/icon-192.png', data: payload.data||{} });
+      } else {
+        try { new Notification(title, { body: body, icon: '/icon-192.png' }); } catch(e){}
+      }
+    }).catch(function(){
+      try { new Notification(title, { body: body, icon: '/icon-192.png' }); } catch(e){}
+    });
+  } else {
+    try { new Notification(title, { body: body, icon: '/icon-192.png' }); } catch(e){}
+  }
 });
+
+// 앱을 보고 있을 때(포그라운드) 화면 상단에 잠깐 뜨는 인앱 알림 배너
+function _showInAppNotifBanner(title, body){
+  var existing = document.getElementById('inapp-notif-banner');
+  if (existing) existing.remove();
+  var el = document.createElement('div');
+  el.id = 'inapp-notif-banner';
+  el.className = 'inapp-notif-banner';
+  el.innerHTML = '<div class="inapp-notif-title"></div><div class="inapp-notif-body"></div>';
+  el.querySelector('.inapp-notif-title').textContent = title;
+  el.querySelector('.inapp-notif-body').textContent = body;
+  document.body.appendChild(el);
+  requestAnimationFrame(function(){ el.classList.add('show'); });
+  setTimeout(function(){
+    el.classList.remove('show');
+    setTimeout(function(){ el.remove(); }, 300);
+  }, 6000);
+}
 
 // 새벽 4시 기준 오늘 날짜 (4시 이전이면 어제로 처리)
 var EXAM_SOURCE_LABELS = {
