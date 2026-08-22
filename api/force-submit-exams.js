@@ -7,17 +7,23 @@
 
 const admin = require('firebase-admin');
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
-    }),
-  });
+function ensureAdminInitialized() {
+  if (!admin.apps.length) {
+    if (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_CLIENT_EMAIL || !process.env.FIREBASE_PRIVATE_KEY) {
+      throw new Error('Firebase Admin 환경변수(FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY)가 Vercel에 설정되어 있지 않습니다.');
+    }
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      }),
+    });
+  }
+  return admin.firestore();
 }
 
-const db = admin.firestore();
+let db; // 핸들러 첫 호출 시 지연 초기화됨
 const DEFAULT_SUBJECT_NAMES = { ko: '국어', en: '영어', ma: '수학', hi: '한국사', sc: '과학탐구', so: '사회탐구' };
 
 function gradeExamAnswers(subj, answers) {
@@ -196,6 +202,13 @@ async function writeExamResultToGrades(studentUid, sessionId, examId, exam, resu
 }
 
 module.exports = async function handler(req, res) {
+  try {
+    db = ensureAdminInitialized();
+  } catch (e) {
+    console.error('Firebase Admin 초기화 실패', e);
+    return res.status(500).json({ error: 'Firebase Admin 초기화 실패: ' + e.message });
+  }
+
   var authHeader = req.headers['authorization'] || '';
   var cronSecret = process.env.CRON_SECRET;
   var isCron = cronSecret && authHeader === 'Bearer ' + cronSecret;
