@@ -89,17 +89,24 @@ module.exports = async function handler(req, res) {
     sendJobs.push(
       admin.messaging().send({
         token: token,
-        notification: { title: String(title).slice(0, 80), body: String(body).slice(0, 200) },
-        data: Object.assign({}, data || {}, { click_action: "FLUTTER_NOTIFICATION_CLICK" }),
+        // notification 필드(최상위, webpush 하위 둘 다)를 넣지 않는다 - 이게 있으면
+        // 브라우저가 "알아서" 자동으로 알림을 띄우는 경로가 별도로 하나 더 생겨서,
+        // 앱 코드가 직접 띄우는 알림(포그라운드/백그라운드)과 겹쳐 2~4개씩 중복으로
+        // 뜨는 원인이 됐다. title/body를 data로만 보내고, 알림을 실제로 만드는 건
+        // 오직 앱 코드(foreground onMessage / SW onBackgroundMessage) 한 곳으로 통일한다.
+        data: Object.assign({}, data || {}, {
+          title: String(title).slice(0, 80),
+          body: String(body).slice(0, 200),
+          click_action: "FLUTTER_NOTIFICATION_CLICK"
+        }),
         android: { priority: "high" },
         apns: {
           headers: { "apns-priority": "10" },
-          payload: { aps: { sound: "default" } }
+          payload: { aps: { sound: "default", "content-available": 1 } }
         },
         webpush: {
           headers: { Urgency: "high", TTL: "300" }, // 5분 안에 전달 못하면 폐기 (오래된 알림 뒤늦게 몰아오는 것 방지)
-          fcmOptions: { link: "/" },
-          notification: { icon: "/icon-192.png" }
+          fcmOptions: { link: "/" }
         }
       })
         .then(function () {
