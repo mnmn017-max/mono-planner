@@ -2782,17 +2782,28 @@ function _showInAppNotifBanner(title, body){
 // ═══════════════════════════════════════
 // 시험 출처/분류 - 시험 생성("시험 구분")과 성적 탭 필터가 같은 목록을 공유하도록 통합.
 // 지점별로 Firestore에 저장해두고, 어느 화면에서든 "+ 새 분류 추가"로 늘릴 수 있게 함.
+//
+// 주의: 통합 전에 두 화면이 서로 다른 목록을 따로 쓰고 있었음 -
+//   시험 생성: 연습용/대성/메가스터디/이투스/평가원/교육청/기타
+//   성적 탭 필터: 연습용/사설/정규/대성
+// 하나를 기준으로 삼으면 다른 쪽에서 이미 써오던 분류가 필터 목록에서 사라져서
+// (예: "사설"/"정규"로 분류해둔 기존 성적을 더 이상 못 걸러보게 됨) 안 되므로,
+// 기본값은 반드시 두 목록을 빠짐없이 합친 것으로 둔다.
 // ═══════════════════════════════════════
 var _examSourceOptionsCache = null;
-var DEFAULT_EXAM_SOURCE_OPTIONS = ['연습용','평가원','교육청','대성','메가스터디','이투스','기타'];
+var DEFAULT_EXAM_SOURCE_OPTIONS = ['연습용','사설','정규','대성','메가스터디','이투스','평가원','교육청','기타'];
 
 function loadExamSourceOptions(){
   if (_examSourceOptionsCache) return Promise.resolve(_examSourceOptionsCache);
   var branch = getBranch();
   return getDoc(doc(db,'examSourceOptions',branch)).then(function(d){
-    var opts = (d.exists() && d.data().options && d.data().options.length) ? d.data().options : DEFAULT_EXAM_SOURCE_OPTIONS.slice();
-    _examSourceOptionsCache = opts;
-    return opts;
+    var saved = (d.exists() && d.data().options) ? d.data().options : [];
+    // 혹시 이전에 불완전한 기본값으로 이미 저장된 지점이 있어도, 원래 두 화면에서
+    // 쓰던 분류들은 항상 누락 없이 포함되도록 매번 기본 목록과 합집합으로 보정
+    var merged = DEFAULT_EXAM_SOURCE_OPTIONS.slice();
+    saved.forEach(function(o){ if (merged.indexOf(o) === -1) merged.push(o); });
+    _examSourceOptionsCache = merged;
+    return merged;
   }).catch(function(){ return DEFAULT_EXAM_SOURCE_OPTIONS.slice(); });
 }
 
