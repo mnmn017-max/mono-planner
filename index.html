@@ -1367,6 +1367,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .exam-bulk-input{width:44px;height:28px;text-align:center;border:1px solid var(--border);border-radius:6px;font-size:12px;padding:0 2px;}
 .exam-bulk-select{height:28px;border:1px solid var(--border);border-radius:6px;font-size:11px;padding:0 4px;}
 
+.exam-mgmt-cat-btn{
+  padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;
+  color:var(--tx3);font-size:12px;cursor:pointer;
+}
+.exam-mgmt-cat-btn.active{background:var(--blue-l);border-color:rgba(29,78,216,0.2);color:#7aa8ff;}
+.exam-mgmt-cat-add{background:var(--gold-l);border-color:rgba(184,132,26,0.3);color:var(--gold);}
+
 /* 정답 빠른 순차 입력 */
 .exam-quick-answer-box{background:var(--gold-l);border:1px solid rgba(184,132,26,0.25);border-radius:10px;padding:12px 14px;margin-bottom:10px;}
 .quick-ans-title{font-size:12px;font-weight:800;color:var(--gold);margin-bottom:10px;}
@@ -1831,15 +1838,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
     <div class="modal-label">시험 이름</div>
     <input class="modal-input" id="exam-title-input" placeholder="예: 3월 모의고사"/>
     <div style="display:flex;gap:10px;">
-      <div style="flex:1;"><div class="modal-label">시험 구분</div>
-        <select class="modal-select" id="exam-source-select">
-          <option value="practice">연습용(자체제작)</option>
-          <option value="daesung">대성</option>
-          <option value="megastudy">메가스터디</option>
-          <option value="etoos">이투스</option>
-          <option value="pyeongga">평가원</option>
-          <option value="office">교육청</option>
-          <option value="etc">기타</option>
+      <div style="flex:1;"><div class="modal-label">시험 구분 <span style="font-weight:400;color:var(--tx4);">(성적 탭 필터와 연동됩니다)</span></div>
+        <select class="modal-select" id="exam-source-select" onchange="if(this.value==='__add_new__')openAddExamSourceOption('exam-source-select');">
         </select>
       </div>
       <div style="flex:1;"><div class="modal-label">시험 유형</div>
@@ -2056,12 +2056,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <div class="modal-label">시험 종류</div>
   <select class="modal-select" id="edit-grade-type"><option value="mock">모의고사</option><option value="school">내신</option></select>
   <div class="modal-label">분류</div>
-  <select class="modal-select" id="edit-grade-category">
+  <select class="modal-select" id="edit-grade-category" onchange="if(this.value==='__add_new__')openAddExamSourceOption('edit-grade-category');">
     <option value="">분류 없음</option>
-    <option value="연습용">연습용</option>
-    <option value="사설">사설</option>
-    <option value="정규">정규</option>
-    <option value="대성">대성</option>
   </select>
   <div class="modal-label">시험명</div><input class="modal-input" id="edit-grade-exam-name" placeholder="시험명"/>
   <div class="modal-label">응시일</div><input class="modal-input" type="date" id="edit-grade-exam-date"/>
@@ -2160,6 +2156,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <input type="hidden" id="grade-target-uid"/>
   <div class="modal-label">시험 종류</div>
   <select class="modal-select" id="grade-type"><option value="mock">모의고사</option><option value="school">내신</option></select>
+  <div class="modal-label">분류</div>
+  <select class="modal-select" id="grade-category" onchange="if(this.value==='__add_new__')openAddExamSourceOption('grade-category');">
+    <option value="">분류 없음</option>
+  </select>
   <div class="modal-label">시험명</div><input class="modal-input" id="grade-exam-name" placeholder="예: 2025년 9월 모의평가"/>
   <div class="modal-label">응시일</div><input class="modal-input" type="date" id="grade-exam-date"/>
   <div class="modal-label">과목별 점수 / 등급</div>
@@ -2779,11 +2779,68 @@ function _showInAppNotifBanner(title, body){
 }
 
 // 새벽 4시 기준 오늘 날짜 (4시 이전이면 어제로 처리)
+// ═══════════════════════════════════════
+// 시험 출처/분류 - 시험 생성("시험 구분")과 성적 탭 필터가 같은 목록을 공유하도록 통합.
+// 지점별로 Firestore에 저장해두고, 어느 화면에서든 "+ 새 분류 추가"로 늘릴 수 있게 함.
+// ═══════════════════════════════════════
+var _examSourceOptionsCache = null;
+var DEFAULT_EXAM_SOURCE_OPTIONS = ['연습용','평가원','교육청','대성','메가스터디','이투스','기타'];
+
+function loadExamSourceOptions(){
+  if (_examSourceOptionsCache) return Promise.resolve(_examSourceOptionsCache);
+  var branch = getBranch();
+  return getDoc(doc(db,'examSourceOptions',branch)).then(function(d){
+    var opts = (d.exists() && d.data().options && d.data().options.length) ? d.data().options : DEFAULT_EXAM_SOURCE_OPTIONS.slice();
+    _examSourceOptionsCache = opts;
+    return opts;
+  }).catch(function(){ return DEFAULT_EXAM_SOURCE_OPTIONS.slice(); });
+}
+
+function addExamSourceOption(label){
+  label = (label||'').trim();
+  if (!label) return Promise.resolve(_examSourceOptionsCache || DEFAULT_EXAM_SOURCE_OPTIONS.slice());
+  var branch = getBranch();
+  return loadExamSourceOptions().then(function(opts){
+    if (opts.indexOf(label) !== -1) return opts; // 이미 있으면 그대로
+    var updated = opts.concat([label]);
+    return setDoc(doc(db,'examSourceOptions',branch), {options: updated}, {merge:true}).then(function(){
+      _examSourceOptionsCache = updated;
+      return updated;
+    });
+  });
+}
+
 var EXAM_SOURCE_LABELS = {
   practice:'연습용', daesung:'대성', megastudy:'메가스터디', etoos:'이투스',
   pyeongga:'평가원', office:'교육청', etc:'기타'
 };
 function examSourceLabel(v){ return EXAM_SOURCE_LABELS[v] || v || ''; }
+
+// exam-source-select(시험 생성)를 공유 목록으로 채움. 선택된 값이 있으면 유지.
+function populateExamSourceSelect(currentValue){
+  var sel = document.getElementById('exam-source-select');
+  if (!sel) return;
+  loadExamSourceOptions().then(function(opts){
+    sel.innerHTML = opts.map(function(o){ return '<option value="'+escapeHtml(o)+'">'+escapeHtml(o)+'</option>'; }).join('')
+      + '<option value="__add_new__">+ 새 분류 직접 추가</option>';
+    if (currentValue) sel.value = examSourceLabel(currentValue); // 예전 영문 키로 저장된 시험도 라벨로 맞춰서 선택
+  });
+}
+
+// 어디서든(시험 생성 select, 성적 탭 필터) 새 분류를 추가하면 양쪽 다 갱신되도록 공통 처리
+window.openAddExamSourceOption = function(selectIdToRestore){
+  var name = prompt('새로 추가할 시험 분류 이름을 입력해주세요\n(예: 스카이에듀, 시대인재 등)');
+  if (!name || !name.trim()) {
+    if (selectIdToRestore) { var s=document.getElementById(selectIdToRestore); if (s) s.value = s.options[0] ? s.options[0].value : ''; }
+    return;
+  }
+  addExamSourceOption(name.trim()).then(function(){
+    populateExamSourceSelect(name.trim());
+    if (typeof renderGradeCategoryTabs === 'function') renderGradeCategoryTabs();
+  });
+};
+
+
 
 function escapeHtml(value) {
   return String(value == null ? '' : value)
@@ -2800,7 +2857,11 @@ function escapeHtml(value) {
 // ══════════════════════════════════════════════════════════
 
 function buildTExamManage(){
-  return getDocs(query(collection(db,'exams'), where('branch','==',getBranch()))).then(function(snap){
+  return Promise.all([
+    getDocs(query(collection(db,'exams'), where('branch','==',getBranch()))),
+    loadExamSourceOptions()
+  ]).then(function(results){
+    var snap = results[0], sourceOpts = results[1];
     var exams = snap.docs.map(function(d){return Object.assign({id:d.id}, d.data());})
       .sort(function(a,b){
         var at=a.createdAt?a.createdAt.toMillis():0, bt=b.createdAt?b.createdAt.toMillis():0;
@@ -2816,8 +2877,13 @@ function buildTExamManage(){
       +'<button class="modal-btn cancel" style="margin:0;" onclick="runExamForceSubmitNow()">지금 바로 강제제출 처리</button>'
       +'</div>'
     ) : '';
+    var catTabs = ['전체'].concat(sourceOpts).map(function(c,i){
+      var active = c === (_currentExamMgmtCategory||'전체');
+      return '<button onclick="switchExamMgmtCategory(\''+escapeHtml(c).replace(/'/g,"\\'")+'\')" class="exam-mgmt-cat-btn'+(active?' active':'')+'">'+escapeHtml(c)+'</button>';
+    }).join('') + '<button onclick="openAddExamSourceOption()" class="exam-mgmt-cat-btn exam-mgmt-cat-add">+ 분류 추가</button>';
     return safetyCard + '<div class="card">'
       +'<div class="card-h"><div class="card-title">📝 시험 관리</div><button class="modal-btn primary" style="margin:0;width:auto;padding:8px 16px;font-size:12px;" onclick="openCreateExamModal()">+ 새 시험 만들기</button></div>'
+      +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px;" id="exam-mgmt-cat-tabs">'+catTabs+'</div>'
       +'<div id="exam-list-area">'+listHtml+'</div>'
       +'</div>';
   }).catch(function(e){
@@ -2825,6 +2891,20 @@ function buildTExamManage(){
     return '<div class="card"><div style="color:var(--red);font-size:13px;padding:20px;">시험 목록을 불러오지 못했습니다</div></div>';
   });
 }
+
+var _currentExamMgmtCategory = '전체';
+window.switchExamMgmtCategory = function(cat){
+  _currentExamMgmtCategory = cat;
+  document.querySelectorAll('.exam-mgmt-cat-btn').forEach(function(btn){
+    if (btn.classList.contains('exam-mgmt-cat-add')) return;
+    btn.classList.toggle('active', btn.textContent === cat);
+  });
+  var cards = document.querySelectorAll('#exam-list-area .exam-card');
+  cards.forEach(function(card){
+    var src = card.dataset.examSource || '';
+    card.style.display = (cat === '전체' || src === cat) ? '' : 'none';
+  });
+};
 
 window.runExamForceSubmitNow = function(){
   var statusEl = document.getElementById('exam-safety-status');
@@ -2941,7 +3021,7 @@ function examCardHtml(ex){
   var totalScore = subj && subj.questions ? subj.questions.reduce(function(s,q){return s+(q.point||0);},0) : 0;
   var assignedCount = (ex.assignedTo||[]).length;
   var sourceLabel = examSourceLabel(ex.examSource);
-  return '<div class="exam-card" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px;">'
+  return '<div class="exam-card" data-exam-source="'+escapeHtml(sourceLabel)+'" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px;">'
     +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">'
     +'<div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><div style="font-size:15px;font-weight:700;color:var(--tx1);">'+escapeHtml(ex.title)+'</div>'
     +(sourceLabel?'<span style="font-size:10px;font-weight:700;color:var(--burg);background:var(--burg-l);padding:2px 8px;border-radius:5px;">'+escapeHtml(sourceLabel)+'</span>':'')
@@ -2996,6 +3076,7 @@ window.openCreateExamModal = function(){
   var startAtInput = document.getElementById('exam-start-at-input');
   if (startAtInput) startAtInput.value = '';
   document.getElementById('exam-source-select').value = '';
+  populateExamSourceSelect();
   document.getElementById('exam-type-select').value = 'mock';
   document.getElementById('modal-create-exam-title').textContent = '📝 새 시험 만들기';
   document.getElementById('exam-save-btn').textContent = '시험 저장';
@@ -3036,6 +3117,7 @@ window.openEditExamModal = function(examId){
       openModal('modal-create-exam');
       document.getElementById('exam-title-input').value = exam.title || '';
       document.getElementById('exam-source-select').value = exam.examSource || '';
+      populateExamSourceSelect(exam.examSource);
       document.getElementById('exam-type-select').value = exam.gradeType || 'mock';
       document.getElementById('exam-mode-single-btn').classList.toggle('active', _examMode==='single');
       document.getElementById('exam-mode-multi-btn').classList.toggle('active', _examMode==='multi');
@@ -4876,6 +4958,7 @@ function _writeExamResultToGrades(studentUid, sessionId, exam, results){
     wrongBySubj: wrongBySubj,
     examSessionId: sessionId,
     examId: exam.id || null,
+    examSource: examSourceLabel(exam.examSource) || null,
     source: 'exam_auto',
     createdAt: serverTimestamp()
   });
@@ -8519,7 +8602,16 @@ window.teacherTab=function(i){
   document.querySelectorAll('.dt-sb-item[id^="tsb-"]').forEach(function(t,j){t.classList.toggle('active',i===j);});
   renderTeacher(i);
 };
+// 탭을 빠르게 여러 번 전환하면, 먼저 누른(느린) 탭의 응답이 나중에 도착해서
+// 방금 누른 새 탭 내용을 덮어써버리는 경쟁 상태가 있었음 - "불러오는 중"이 계속
+// 반복되거나 엉뚱한 탭 내용이 잠깐 보이는 원인이 이거였음.
+// 매 호출마다 고유 번호(세대)를 매겨서, 응답이 왔을 때 "그 사이 더 최근 탭 클릭이
+// 있었는지" 확인하고 있었다면 그 응답은 버리는 방식으로 해결.
+var _teacherRenderGen = 0;
 window.renderTeacher=function(i){
+  var myGen = ++_teacherRenderGen;
+  function isStale(){ return myGen !== _teacherRenderGen; }
+
   if(unsubChat){unsubChat();unsubChat=null;}
   teacherChatUid=null;
   var isMaster=currentProfile&&currentProfile.role==='master';
@@ -8535,16 +8627,17 @@ window.renderTeacher=function(i){
     }
     return dtHeader+'<div class="teacher-content-inner">'+h+'</div>';
   }
-  if(i===0) buildTDashboard().then(function(h){c.innerHTML=wrap(0,h); loadStudyRankings('study-rankings-teacher');});
-  else if(i===1) buildTPlanner().then(function(h){c.innerHTML=wrap(1,h); teacherPlannerHistory(); filterLecturesByStudent(_lectureFilterUid);});
-  else if(i===2) buildTGrades().then(function(h){c.innerHTML=wrap(2,h);});
-  else if(i===3) buildTRewards().then(function(h){c.innerHTML=wrap(3,h);});
-  else if(i===4) buildTChat().then(function(h){c.innerHTML=wrap(4,h); listenKChatRooms();});
-  else if(i===5) buildTNotice().then(function(h){c.innerHTML=wrap(5,h);});
-  else if(i===6) buildTAccounts().then(function(h){c.innerHTML=wrap(6,h);});
-  else if(i===7) buildTExamManage().then(function(h){c.innerHTML=wrap(7,h);});
-  else if(i===8&&isMaster) buildAllChats().then(function(h){c.innerHTML=wrap(8,h);});
+  if(i===0) buildTDashboard().then(function(h){ if(isStale())return; c.innerHTML=wrap(0,h); loadStudyRankings('study-rankings-teacher');});
+  else if(i===1) buildTPlanner().then(function(h){ if(isStale())return; c.innerHTML=wrap(1,h); teacherPlannerHistory(); filterLecturesByStudent(_lectureFilterUid);});
+  else if(i===2) buildTGrades().then(function(h){ if(isStale())return; c.innerHTML=wrap(2,h);});
+  else if(i===3) buildTRewards().then(function(h){ if(isStale())return; c.innerHTML=wrap(3,h);});
+  else if(i===4) buildTChat().then(function(h){ if(isStale())return; c.innerHTML=wrap(4,h); listenKChatRooms();});
+  else if(i===5) buildTNotice().then(function(h){ if(isStale())return; c.innerHTML=wrap(5,h);});
+  else if(i===6) buildTAccounts().then(function(h){ if(isStale())return; c.innerHTML=wrap(6,h);});
+  else if(i===7) buildTExamManage().then(function(h){ if(isStale())return; c.innerHTML=wrap(7,h);});
+  else if(i===8&&isMaster) buildAllChats().then(function(h){ if(isStale())return; c.innerHTML=wrap(8,h);});
 };
+
 
 // ── loadStudentList 캐시 (5분) ──
 var _studentListCache = null;
@@ -8582,24 +8675,38 @@ function loadStudentList(){
 function buildTDashboard(){
   return loadStudentList().then(function(students){
     var today=getPlannerDate();
-    return getDocs(query(collection(db,'planners'),where('date','==',today))).then(function(plannerSnap){
-      var _myBP=getBranch();
+    var _myBP=getBranch();
+    // 오늘 플래너 조회와 코멘트 조회는 서로 의존관계가 없으므로 병렬로 동시에 요청
+    return Promise.all([
+      getDocs(query(collection(db,'planners'),where('date','==',today))),
+      getDocs(query(collection(db,'comments'), where('branch','==',_myBP)))
+    ]).then(function(dashResults){
+      var plannerSnap = dashResults[0], allCommentsSnap = dashResults[1];
       var submittedToday=plannerSnap.docs.filter(function(d){var b=d.data().branch;return !b||b===_myBP;}).map(function(d){return d.data().name;});
-      // 상담 알림 데이터 수집
-      var consultPromises=students.map(function(s){
-        return getDocs(query(collection(db,'comments'),where('studentUid','==',s.uid),limit(5))).then(function(snap){
-          if(snap.empty) return {uid:s.uid,name:s.name,days:999,urgent:true};
-          var sorted=snap.docs.map(function(d){return d.data();}).sort(function(a,b){
-            var at=a.createdAt?a.createdAt.toMillis():0,bt=b.createdAt?b.createdAt.toMillis():0;
-            return bt-at;
-          });
-          var lastDate=sorted[0].createdAt?sorted[0].createdAt.toDate():null;
-          if(!lastDate) return {uid:s.uid,name:s.name,days:999,urgent:true};
-          var days=Math.floor((new Date()-lastDate)/(1000*60*60*24));
-          return {uid:s.uid,name:s.name,days:days,urgent:days>=14,warning:days>=7&&days<14};
-        }).catch(function(){return {uid:s.uid,name:s.name,days:0,urgent:false};});
+      // 상담 알림 데이터 수집 - 예전에는 학생 한 명당 조회를 따로따로 날려서(N+1) 학생 수만큼
+      // 네트워크 요청이 생겨 느렸음. 지점 전체 코멘트를 한 번에 불러온 뒤 학생별로 묶는 방식으로 변경.
+      var commentsByUid = {};
+      allCommentsSnap.docs.forEach(function(d){
+        var c = d.data();
+        if (!c.studentUid) return;
+        if (!commentsByUid[c.studentUid]) commentsByUid[c.studentUid] = [];
+        commentsByUid[c.studentUid].push(c);
       });
-      return Promise.all(consultPromises).then(function(consults){
+      var consults = students.map(function(s){
+        var list = commentsByUid[s.uid] || [];
+        if (!list.length) return {uid:s.uid,name:s.name,days:999,urgent:true};
+        var sorted = list.slice().sort(function(a,b){
+          var at=a.createdAt?a.createdAt.toMillis():0,bt=b.createdAt?b.createdAt.toMillis():0;
+          return bt-at;
+        });
+        var lastDate=sorted[0].createdAt?sorted[0].createdAt.toDate():null;
+        if(!lastDate) return {uid:s.uid,name:s.name,days:999,urgent:true};
+        var days=Math.floor((new Date()-lastDate)/(1000*60*60*24));
+        return {uid:s.uid,name:s.name,days:days,urgent:days>=14,warning:days>=7&&days<14};
+      });
+      return {consults: consults, submittedToday: submittedToday};
+    }).then(function(dashData){
+        var consults = dashData.consults, submittedToday = dashData.submittedToday;
         // 학생별 상태 매핑
         var consultMap={};
         consults.forEach(function(c){consultMap[c.uid]=c;});
@@ -8681,14 +8788,24 @@ function buildTDashboard(){
         return html;
       });
     });
-  });
 }
 
 function buildTPlanner(){
   return loadStudentList().then(function(students){
     var today=getPlannerDate();
     var isMasterOrTeacher = currentProfile && (currentProfile.role==='master' || currentProfile.role==='teacher');
-    return getDocs(query(collection(db,'planners'),where('date','==',today))).then(function(plannerSnap){
+    var d30 = new Date(); d30.setDate(d30.getDate()-29);
+    var d30Str = d30.getFullYear()+'-'+String(d30.getMonth()+1).padStart(2,'0')+'-'+String(d30.getDate()).padStart(2,'0');
+    // 아래 세 조회(오늘 플래너/최근 30일 플래너/인강 목록)는 서로 의존관계가 없는데
+    // 예전에는 하나씩 순서대로 기다리는 구조라 느렸음. 먼저 전부 병렬로 미리 받아두고,
+    // 아래 기존 처리 흐름(순차 체인 구조)은 그대로 둔 채 이미 받아둔 결과를 즉시 넘겨줌.
+    return Promise.all([
+      getDocs(query(collection(db,'planners'),where('date','==',today))),
+      getDocs(query(collection(db,'planners'), where('date','>=',d30Str))),
+      getDocs(collection(db,'lectures'))
+    ]).then(function(prefetch){
+    var _prefetchToday = prefetch[0], _prefetchHist = prefetch[1], _prefetchLectures = prefetch[2];
+    return Promise.resolve(_prefetchToday).then(function(plannerSnap){
       var myBranchP=getBranch();
       var todayPlanners=plannerSnap.docs
         .filter(function(d){var b=d.data().branch;return !b||b===myBranchP;})
@@ -8697,10 +8814,8 @@ function buildTPlanner(){
       todayPlanners.forEach(function(p){ submittedUids[p.uid]=true; });
       var absentStudents = students.filter(function(s){ return !submittedUids[s.uid]; });
 
-      // 최근 30일 제출 기록 (제출률/제출지연 횟수 계산용) - date 문자열 범위 쿼리 1회로 조회 후 지점 필터
-      var d30 = new Date(); d30.setDate(d30.getDate()-29);
-      var d30Str = d30.getFullYear()+'-'+String(d30.getMonth()+1).padStart(2,'0')+'-'+String(d30.getDate()).padStart(2,'0');
-      var histPromise = getDocs(query(collection(db,'planners'), where('date','>=',d30Str))).then(function(snap){
+      // 최근 30일 제출 기록 (제출률/제출지연 횟수 계산용) - 이미 병렬로 받아둔 결과 사용
+      var histPromise = Promise.resolve(_prefetchHist).then(function(snap){
         var rows = snap.docs.filter(function(d){var b=d.data().branch;return !b||b===myBranchP;}).map(function(d){return d.data();});
         var byUid = {};
         rows.forEach(function(r){
@@ -8712,7 +8827,7 @@ function buildTPlanner(){
       }).catch(function(){ return {}; });
 
       return histPromise.then(function(histByUid){
-      return getDocs(collection(db,'lectures')).then(function(_lSnap){
+      return Promise.resolve(_prefetchLectures).then(function(_lSnap){
         var myBranch=getBranch();
         var isDefault=true; // branch 없는 기존 데이터 항상 포함
         var lectureSnap={docs:_lSnap.docs.filter(function(d){var b=d.data().branch;return isDefault?(!b||b===myBranch):b===myBranch;})};
@@ -8796,6 +8911,7 @@ function buildTPlanner(){
           +lectureHtml;
       }).catch(function(){return '';});
       });
+    });
     });
   });
 }
@@ -8993,15 +9109,30 @@ function buildTGrades(){
       +'<button id="tg-tab-mock" onclick="switchGradeTab(\'mock\')" style="flex:1;padding:8px;background:var(--burg-l2);border:1px solid rgba(201,168,76,0.4);border-radius:8px;color:var(--burg);font-size:13px;font-weight:600;cursor:pointer">모의고사</button>'
       +'<button id="tg-tab-school" onclick="switchGradeTab(\'school\')" style="flex:1;padding:8px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--tx3);font-size:13px;cursor:pointer">내신</button>'
       +'</div>'
-      +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px" id="tg-category-tabs">'
-      +['전체','연습용','사설','정규','대성'].map(function(c,i){
-        return '<button onclick="switchGradeCategory(\''+c+'\')" id="tg-cat-'+c+'" style="padding:6px 10px;background:'+(i===0?'var(--blue-l)':'var(--surface2)')+';border:1px solid '+(i===0?'rgba(29,78,216,0.2)':'var(--border)')+';border-radius:6px;color:'+(i===0?'#7aa8ff':'var(--tx3)')+';font-size:12px;cursor:pointer">'+c+'</button>';
-      }).join('')
-      +'</div>'
+      +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px" id="tg-category-tabs"><div style="color:var(--tx4);font-size:11px;">분류 불러오는 중...</div></div>'
       +'<div id="t-grade-list"><div style="color:var(--tx3);font-size:13px">학생을 선택하세요</div></div>'
       +'<div class="section-label" style="margin-top:16px">성적 대행 입력</div>'
       +'<select class="modal-select" id="t-grade-input-student"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select>'
       +'<button class="modal-btn primary" onclick="openTeacherGradeModal()">성적 입력 시작</button>';
+  }).then(function(html){
+    setTimeout(renderGradeCategoryTabs, 0);
+    return html;
+  });
+}
+
+// 시험 생성("시험 구분")과 완전히 같은 공유 목록으로 성적 탭 분류 필터를 그림.
+// 어느 화면에서 "+ 새 분류 추가"를 하든 이 함수를 다시 불러서 즉시 반영됨.
+function renderGradeCategoryTabs(){
+  var host = document.getElementById('tg-category-tabs');
+  if (!host) return;
+  loadExamSourceOptions().then(function(opts){
+    var cats = ['전체'].concat(opts);
+    host.innerHTML = cats.map(function(c,i){
+      var active = c === _currentGradeCategory;
+      return '<button onclick="switchGradeCategory(\''+escapeHtml(c).replace(/'/g,"\\'")+'\')" id="tg-cat-'+i+'" '
+        + 'style="padding:6px 10px;background:'+(active?'var(--blue-l)':'var(--surface2)')+';border:1px solid '+(active?'rgba(29,78,216,0.2)':'var(--border)')+';border-radius:6px;color:'+(active?'#7aa8ff':'var(--tx3)')+';font-size:12px;cursor:pointer;">'+escapeHtml(c)+'</button>';
+    }).join('')
+    + '<button onclick="openAddExamSourceOption()" style="padding:6px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:12px;cursor:pointer;">+ 분류 추가</button>';
   });
 }
 var _currentGradeCategory='전체';
@@ -9019,12 +9150,7 @@ window.filterGradeSearch=function(q){
 };
 window.switchGradeCategory=function(cat){
   _currentGradeCategory=cat;
-  ['전체','연습용','사설','정규','대성'].forEach(function(c){
-    var btn=document.getElementById('tg-cat-'+c);
-    if(!btn) return;
-    if(c===cat){btn.style.background='rgba(74,127,255,0.15)';btn.style.borderColor='rgba(74,127,255,0.3)';btn.style.color='#7aa8ff';}
-    else{btn.style.background='var(--surface2)';btn.style.borderColor='var(--border)';btn.style.color='var(--tx3)';}
-  });
+  renderGradeCategoryTabs();
   var uid=document.getElementById('t-grade-student').value;
   if(uid) loadStudentGrades(uid);
 };
@@ -9091,7 +9217,7 @@ window.loadStudentGrades=function(uid){
     var grades=allGrades.filter(function(g){
       if((g.type||'mock')!==tab) return false;
       if(_currentGradeCategory==='전체') return true;
-      return (g.category||'')=== _currentGradeCategory;
+      return (g.examSource||g.category||'')=== _currentGradeCategory;
     });
 
     // 과목 순서 정렬
@@ -9302,7 +9428,14 @@ window.openEditGradeModal=function(gradeId, studentUid){
     document.getElementById('edit-grade-exam-name').value=g.examName||'';
     document.getElementById('edit-grade-exam-date').value=g.examDate||'';
     document.getElementById('edit-grade-type').value=g.type||'mock';
-    document.getElementById('edit-grade-category').value=g.category||'';
+    var curCategory = g.examSource || g.category || '';
+    loadExamSourceOptions().then(function(opts){
+      var sel = document.getElementById('edit-grade-category');
+      sel.innerHTML = '<option value="">분류 없음</option>'
+        + opts.map(function(o){ return '<option value="'+escapeHtml(o)+'">'+escapeHtml(o)+'</option>'; }).join('')
+        + '<option value="__add_new__">+ 새 분류 직접 추가</option>';
+      sel.value = curCategory;
+    });
     var scores=g.scores||{};
     var wrongBySubj=g.wrongBySubj||{};
     // 기본 4과목
@@ -9392,7 +9525,7 @@ window.saveEditGrade=function(){
     else if(existWKeys[n-1]) delete wrongBySubj[existWKeys[n-1]];
   });
   updateDoc(doc(db,'grades',gradeId),{
-    examName:examName, examDate:examDate, type:type, category:category,
+    examName:examName, examDate:examDate, type:type, category:category, examSource:category,
     scores:scores, wrongBySubj:wrongBySubj,
     refMistake:document.getElementById('edit-grade-ref-mistake').value,
     refWeak:document.getElementById('edit-grade-ref-weak').value,
