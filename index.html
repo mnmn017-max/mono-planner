@@ -7767,15 +7767,17 @@ function avatarCircleHtml(name, avatar, sizePx, opts){
   sizePx = sizePx || 40;
   var radius = opts.radius != null ? opts.radius : '50%';
   var base = 'width:'+sizePx+'px;height:'+sizePx+'px;border-radius:'+radius+';display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;';
+  var cursorStyle = opts.onclick ? 'cursor:pointer;' : '';
+  var clickAttr = opts.onclick ? ' onclick="'+opts.onclick+'"' : '';
   if (avatar && avatar.type === 'image' && avatar.value) {
-    return '<div style="'+base+'background:var(--surface2);" class="'+(opts.cls||'')+'"><img src="'+escapeHtml(avatar.value)+'" style="width:100%;height:100%;object-fit:cover;"/></div>';
+    return '<div style="'+base+cursorStyle+'background:var(--surface2);" class="'+(opts.cls||'')+'"'+clickAttr+'><img src="'+escapeHtml(avatar.value)+'" style="width:100%;height:100%;object-fit:cover;"/></div>';
   }
   if (avatar && avatar.type === 'emoji' && avatar.value) {
-    return '<div style="'+base+'background:var(--surface2);font-size:'+Math.round(sizePx*0.55)+'px;line-height:1;" class="'+(opts.cls||'')+'">'+avatar.value+'</div>';
+    return '<div style="'+base+cursorStyle+'background:var(--surface2);font-size:'+Math.round(sizePx*0.55)+'px;line-height:1;" class="'+(opts.cls||'')+'"'+clickAttr+'>'+avatar.value+'</div>';
   }
   var bg = opts.bg || 'background:linear-gradient(135deg,var(--burg),var(--burg2));';
   var fontSizePx = opts.fontSizePx || Math.round(sizePx*0.4);
-  return '<div style="'+base+bg+'color:#fff;font-size:'+fontSizePx+'px;font-weight:700;" class="'+(opts.cls||'')+'">'+escapeHtml((name||'?').slice(0,opts.chars||1))+'</div>';
+  return '<div style="'+base+cursorStyle+bg+'color:#fff;font-size:'+fontSizePx+'px;font-weight:700;" class="'+(opts.cls||'')+'"'+clickAttr+'>'+escapeHtml((name||'?').slice(0,opts.chars||1))+'</div>';
 }
 
 function _applyAvatar(el, name, avatar) {
@@ -10658,7 +10660,7 @@ function renderKChatMessages(msgs) {
     var readMark = '';
     if (isMe && unreadCount > 0) readMark = '<div class="kchat-read">'+unreadCount+'</div>';
     out += '<div class="kchat-row '+(isMe?'mine':'theirs')+(continued?' continued':'')+'">'
-      + '<div class="kchat-msg-avatar" style="'+avatarStyle+'">'+avatarText+'</div>'
+      + '<div class="kchat-msg-avatar" style="'+avatarStyle+(isMe?'':'cursor:pointer;')+'"'+(isMe?'':' onclick="openChatPartnerProfile(\''+m.senderUid+'\')"')+'>'+avatarText+'</div>'
       + '<div class="kchat-bubble-wrap">'
       + nameLine
       + '<div class="kchat-bubble-row">'
@@ -10887,7 +10889,7 @@ function _renderKakaoMessages(msgs, myUid) {
       var nextMin = nextTs.getFullYear()+'-'+nextTs.getMonth()+'-'+nextTs.getDate()+'-'+nextTs.getHours()+'-'+nextTs.getMinutes();
       if (next.senderUid === m.senderUid && nextMin === minuteKey) showTime = false;
     }
-    var avatar = avatarCircleHtml(m.senderName, m.senderAvatar, 34, {fontSizePx:12});
+    var avatar = avatarCircleHtml(m.senderName, m.senderAvatar, 34, {fontSizePx:12, onclick: (!isMe && m.senderUid) ? "openChatPartnerProfile('"+m.senderUid+"')" : null});
     var nameLine = isMe || continued ? '' : '<div class="kchat-name">'+(m.senderName||'')+'</div>';
     var bubbleContent;
     if (m.fileUrl) {
@@ -10946,7 +10948,7 @@ function renderTChatMessages(msgs,highlight){
       var re=new RegExp('('+highlight.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi');
       text=text.replace(re,'<mark style="background:#FAE100;border-radius:3px;padding:0 2px;color:#1A1010;">$1</mark>');
       return '<div class="kchat-row '+(isMe?'mine':'theirs')+'">'
-        +avatarCircleHtml(m.senderName, m.senderAvatar, 34, {fontSizePx:12})
+        +avatarCircleHtml(m.senderName, m.senderAvatar, 34, {fontSizePx:12, onclick: (!isMe && m.senderUid) ? "openChatPartnerProfile('"+m.senderUid+"')" : null})
         +'<div class="kchat-bubble-wrap">'
         +(isMe?'':'<div class="kchat-name">'+(m.senderName||'')+'</div>')
         +'<div class="kchat-bubble-row">'
