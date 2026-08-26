@@ -11149,7 +11149,13 @@ window.resetTodayPlanner=function(){
 };
 
 function buildTAccounts(){
-  return loadStudentList().then(function(students){
+  var myBranchAcc=getBranch();
+  // 계정관리 화면은 정지된 계정도 반드시 보여야(그래야 정지 해제도 가능) 하므로,
+  // "활성 학생만" 거르는 loadStudentList() 캐시를 쓰지 않고 이 화면 전용으로 전체를 따로 불러온다.
+  return getDocs(query(collection(db,'users'),where('role','==','student'))).then(function(studentSnap){
+    var students = studentSnap.docs
+      .filter(function(d){var b=d.data().branch;return !b||b===myBranchAcc;})
+      .map(function(d){return Object.assign({uid:d.id},d.data());});
     return getDocs(query(collection(db,'users'),where('role','in',['teacher','master']))).then(function(teacherSnap){
       var myBranch=getBranch();
       var teachers=teacherSnap.docs
