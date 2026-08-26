@@ -1689,6 +1689,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 </div>
 
 <!-- 아바타 편집 모달 -->
+<!-- 상점으로 벌점 상쇄 모달 -->
+<div class="modal-overlay" id="modal-offset-points"><div class="modal" style="max-width:420px;">
+  <div class="modal-title">🔄 상점으로 벌점 상쇄</div>
+  <div style="font-size:12px;color:var(--tx3);margin-bottom:14px;line-height:1.6;">
+    모아둔 상점을 사용해서 벌점을 줄입니다. 상점과 벌점 양쪽에 상쇄 기록이 남고, <b>원래의 상점/벌점 내역은 지워지지 않습니다.</b>
+  </div>
+  <div id="offset-points-summary" style="background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;"></div>
+  <div class="modal-label">상쇄할 점수</div>
+  <input class="modal-input" type="number" min="1" id="offset-points-amount" placeholder="숫자만 입력"/>
+  <div id="offset-points-error" style="color:var(--red);font-size:12px;margin-top:6px;display:none;"></div>
+  <button class="modal-btn primary" onclick="submitOffsetPoints()" style="margin-top:12px;">상쇄 적용하기</button>
+  <button class="modal-btn cancel" onclick="closeModal('modal-offset-points')">취소</button>
+</div></div>
+
 <div id="modal-avatar-edit" class="modal-overlay">
   <div class="modal" style="max-width:420px;">
     <div class="modal-title">프로필 아바타 변경</div>
@@ -5682,7 +5696,7 @@ window.openChatPartnerProfile = function(uid) {
     rows += '<div class="cpp-row"><span class="cpp-label">아이디</span><span class="cpp-value">'+escapeHtml(u.username||'-')+'</span></div>';
 
     body.innerHTML = '<div style="text-align:center;margin-bottom:16px;">'
-      + '<div style="width:64px;height:64px;border-radius:50%;'+avatarBg+'display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:700;margin:0 auto 10px;">'+escapeHtml((u.name||'?').slice(0,1))+'</div>'
+      + '<div style="margin:0 auto 10px;width:64px;">'+avatarCircleHtml(u.name, u.avatar, 64, {fontSizePx:22, bg:avatarBg})+'</div>'
       + '<div style="font-size:17px;font-weight:700;color:var(--tx1);">'+escapeHtml(u.name||'')+'</div>'
       + '<div style="font-size:12px;color:var(--tx3);margin-top:2px;">'+roleLabel+'</div>'
       + '</div>'
@@ -7744,6 +7758,26 @@ window.toggleTeacherNotifPanel = function() {
 // 채팅 알림 전송 헬퍼
 
 // ─── 프로필 아바타 렌더링 ───
+// 다른 사람(학생/선생님)의 아바타를 HTML 문자열로 그려주는 공통 헬퍼.
+// 문자열 템플릿으로 화면을 그리는 이 앱 특성상, DOM에 직접 적용하는 _applyAvatar와
+// 별개로 이 함수가 필요함 - 학생현황 카드, 채팅 상대방 정보 등 "다른 사람"의
+// 프로필(이미지/이모지/이니셜)을 어디서든 똑같은 방식으로 보여주기 위해 사용.
+function avatarCircleHtml(name, avatar, sizePx, opts){
+  opts = opts || {};
+  sizePx = sizePx || 40;
+  var radius = opts.radius != null ? opts.radius : '50%';
+  var base = 'width:'+sizePx+'px;height:'+sizePx+'px;border-radius:'+radius+';display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;';
+  if (avatar && avatar.type === 'image' && avatar.value) {
+    return '<div style="'+base+'background:var(--surface2);" class="'+(opts.cls||'')+'"><img src="'+escapeHtml(avatar.value)+'" style="width:100%;height:100%;object-fit:cover;"/></div>';
+  }
+  if (avatar && avatar.type === 'emoji' && avatar.value) {
+    return '<div style="'+base+'background:var(--surface2);font-size:'+Math.round(sizePx*0.55)+'px;line-height:1;" class="'+(opts.cls||'')+'">'+avatar.value+'</div>';
+  }
+  var bg = opts.bg || 'background:linear-gradient(135deg,var(--burg),var(--burg2));';
+  var fontSizePx = opts.fontSizePx || Math.round(sizePx*0.4);
+  return '<div style="'+base+bg+'color:#fff;font-size:'+fontSizePx+'px;font-weight:700;" class="'+(opts.cls||'')+'">'+escapeHtml((name||'?').slice(0,opts.chars||1))+'</div>';
+}
+
 function _applyAvatar(el, name, avatar) {
   if (!el) return;
   if (avatar && avatar.type === 'image' && avatar.value) {
@@ -8301,10 +8335,13 @@ function loadRewardData(){
   }).catch(function(){});
   // 점수 합산
   getDocs(query(collection(db,'points'),where('studentUid','==',currentUser.uid))).then(function(snap){
-    var plus=0,minus=0;
-    snap.docs.forEach(function(d){var p=d.data();if(p.type==='plus')plus+=parseInt(p.points)||0;else minus+=parseInt(p.points)||0;});
+    var plus=0,minus=0,offset=0;
+    snap.docs.forEach(function(d){var p=d.data();if(p.type==='plus')plus+=parseInt(p.points)||0;else if(p.type==='minus')minus+=parseInt(p.points)||0;else if(p.type==='offset')offset+=parseInt(p.points)||0;});
+    plus -= offset; minus -= offset;
     var el=document.getElementById('points-summary');if(!el)return;
-    el.innerHTML='<div class="stat-grid" style="margin-bottom:12px"><div class="stat-card"><div class="stat-val" style="color:var(--burg)">'+plus+'점</div><div class="stat-lbl">누적 상점</div></div><div class="stat-card"><div class="stat-val" style="color:var(--red)">'+minus+'점</div><div class="stat-lbl">누적 벌점</div></div></div><div style="background:var(--gold-l);border:1px solid rgba(184,132,26,0.2);border-radius:10px;padding:10px 14px;margin-bottom:12px;text-align:center"><span style="font-size:14px;font-weight:700;color:var(--burg)">현재 점수: '+(plus-minus)+'점</span></div>';
+    var canOffset = plus > 0 && minus > 0;
+    el.innerHTML='<div class="stat-grid" style="margin-bottom:12px"><div class="stat-card"><div class="stat-val" style="color:var(--burg)">'+plus+'점</div><div class="stat-lbl">누적 상점</div></div><div class="stat-card"><div class="stat-val" style="color:var(--red)">'+minus+'점</div><div class="stat-lbl">누적 벌점</div></div></div><div style="background:var(--gold-l);border:1px solid rgba(184,132,26,0.2);border-radius:10px;padding:10px 14px;margin-bottom:12px;text-align:center"><span style="font-size:14px;font-weight:700;color:var(--burg)">현재 점수: '+(plus-minus)+'점</span></div>'
+      + (canOffset ? '<button class="modal-btn primary" style="margin-bottom:12px;" onclick="openOffsetPointsModal()">🔄 상점으로 벌점 상쇄하기</button>' : '');
   }).catch(function(){});
   // 상벌점 규정
   getDocs(query(collection(db,'rules'),where('branch','==',getBranch()),limit(1))).then(function(snap){
@@ -8318,7 +8355,7 @@ function loadRewardData(){
     if(snap.empty){el.innerHTML='<div style="color:var(--tx3);font-size:13px">내역이 없습니다</div>';return;}
     var items=snap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
     items.sort(function(a,b){var at=a.createdAt?a.createdAt.toMillis():0;var bt=b.createdAt?b.createdAt.toMillis():0;return bt-at;});
-    el.innerHTML=items.map(function(p){var date=p.createdAt?p.createdAt.toDate().toLocaleDateString('ko-KR'):'';return '<div class="history-item"><div class="history-dot '+p.type+'"></div><div style="flex:1;font-size:13px;white-space:pre-wrap;word-break:break-word;">'+p.reason+'</div><div style="font-size:13px;font-weight:600;'+(p.type==='plus'?'color:var(--burg)':'color:var(--red)')+'">'+(p.type==='plus'?'+':'-')+p.points+'점</div><div style="font-size:11px;color:var(--tx3);margin-left:6px">'+date+'</div></div>';}).join('');
+    el.innerHTML=items.map(function(p){var date=p.createdAt?p.createdAt.toDate().toLocaleDateString('ko-KR'):'';var isOffset=p.type==='offset';var color=isOffset?'var(--gold)':(p.type==='plus'?'var(--burg)':'var(--red)');var prefix=isOffset?'상쇄 ':(p.type==='plus'?'+':'-');return '<div class="history-item"><div class="history-dot '+(isOffset?'offset':p.type)+'" style="'+(isOffset?'background:var(--gold);':'')+'"></div><div style="flex:1;font-size:13px;white-space:pre-wrap;word-break:break-word;">'+p.reason+'</div><div style="font-size:13px;font-weight:600;color:'+color+';">'+prefix+p.points+'점</div><div style="font-size:11px;color:var(--tx3);margin-left:6px">'+date+'</div></div>';}).join('');
   }).catch(function(){var el=document.getElementById('points-history');if(el)el.innerHTML='<div style="color:var(--tx3);font-size:13px">불러오기 실패</div>';});
 }
 window.sendAppeal=function(){
@@ -8775,10 +8812,10 @@ function buildTDashboard(){
           else if(c.warning) badges+='<span class="badge badge-gold">상담 '+c.days+'일</span>';
           if(submitted) badges+='<span class="badge badge-green">✓ 제출</span>';
           else badges+='<span class="badge badge-red">미제출</span>';
-          var avatar=(s.name||'?').slice(0,2);
+          var avatar=avatarCircleHtml(s.name, s.avatar, 40, {chars:2, cls:'s-card-av-inner'});
           return '<div class="s-card '+cardClass+'" onclick="teacherTab(2);setTimeout(function(){var sel=document.getElementById(\'t-grade-student\');if(sel){sel.value=\''+s.uid+'\';loadStudentGrades(\''+s.uid+'\');}},200);">'
             +'<div class="s-card-h">'
-            +'<div class="s-card-av">'+avatar+'</div>'
+            +avatar
             +'<div style="flex:1;min-width:0;">'
             +'<div class="s-card-name">'+s.name+' <button onclick="event.stopPropagation();goToStudentComment(\'' + s.uid + '\',\'' + encodeURIComponent(s.name) + '\')" title="플래너에서 코멘트 작성" style="background:var(--burg-l);color:var(--burg);border:none;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:700;cursor:pointer;">💬 코멘트</button></div>'
             +'<div class="s-card-meta">'+(s.grade||'')+' · '+(s.school||'')+'</div>'
@@ -9738,6 +9775,34 @@ function buildTRewards(){
         +'<button class="modal-btn primary" onclick="saveScholar()" style="margin:0;">장학생 등록</button>'
         +'</div>';
 
+      // 3-1. 학생별 누적 상점/벌점 요약 카드
+      var totalsByUid = {};
+      points.forEach(function(p){
+        if (!totalsByUid[p.studentUid]) totalsByUid[p.studentUid] = {plus:0, minus:0, offset:0};
+        if (p.type === 'plus') totalsByUid[p.studentUid].plus += parseInt(p.points)||0;
+        else if (p.type === 'minus') totalsByUid[p.studentUid].minus += parseInt(p.points)||0;
+        else if (p.type === 'offset') totalsByUid[p.studentUid].offset += parseInt(p.points)||0;
+      });
+      var summaryRows = students.map(function(s){
+        var t = totalsByUid[s.uid] || {plus:0, minus:0, offset:0};
+        var plus = t.plus - t.offset, minus = t.minus - t.offset;
+        var net = plus - minus;
+        return {uid:s.uid, name:s.name, plus:plus, minus:minus, net:net};
+      }).sort(function(a,b){ return b.net - a.net; });
+      var summaryHtml = summaryRows.map(function(r){
+        return '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--surface2);border-radius:8px;margin-bottom:5px;">'
+          + '<div style="flex:1;font-size:13px;font-weight:600;color:var(--tx1);">'+escapeHtml(r.name)+'</div>'
+          + '<div style="font-size:12px;color:var(--burg);font-weight:700;">상점 '+r.plus+'</div>'
+          + '<div style="font-size:12px;color:var(--red);font-weight:700;">벌점 '+r.minus+'</div>'
+          + '<div style="font-size:12px;font-weight:800;color:'+(r.net>=0?'var(--green)':'var(--red)')+';min-width:56px;text-align:right;">순점수 '+r.net+'</div>'
+          + '<button onclick="openOffsetPointsModal(\''+r.uid+'\',\''+escapeHtml(r.name)+'\')" style="padding:5px 9px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;font-weight:600;white-space:nowrap;">상점으로 벌점 상쇄</button>'
+          + '</div>';
+      }).join('') || '<div style="color:var(--tx3);font-size:13px;text-align:center;padding:14px;">학생이 없습니다</div>';
+      var summaryCard = '<div class="card">'
+        + '<div class="card-h"><div class="card-title">📊 학생별 누적 상점/벌점</div></div>'
+        + summaryHtml
+        + '</div>';
+
       // 4. 최근 내역
       var historyItems = points.slice(0,30).map(function(p){
         var s=students.find(function(st){return st.uid===p.studentUid;});
@@ -9772,10 +9837,70 @@ function buildTRewards(){
         +'</div>'
       ) : '';
 
-      return giveCard + top5CronCard + rulesCard + scholarCard + historyCard;
+      return giveCard + summaryCard + top5CronCard + rulesCard + scholarCard + historyCard;
     });
   });
 }
+// ═══════════════════════════════════════
+// 상점으로 벌점 상쇄 - 학생 본인 화면 + 선생님/마스터 화면 양쪽에서 사용
+// ═══════════════════════════════════════
+window._offsetTargetUid = null;
+window._offsetTargetName = null;
+
+window.openOffsetPointsModal = function(uid, name){
+  // 학생 계정에서 자기 자신을 상쇄할 때는 uid/name 없이 호출됨
+  var isSelf = !uid;
+  window._offsetTargetUid = uid || currentUser.uid;
+  window._offsetTargetName = name || currentProfile.name;
+
+  var summaryEl = document.getElementById('offset-points-summary');
+  summaryEl.textContent = '불러오는 중...';
+  document.getElementById('offset-points-amount').value = '';
+  document.getElementById('offset-points-error').style.display = 'none';
+  openModal('modal-offset-points');
+
+  getDocs(query(collection(db,'points'), where('studentUid','==',window._offsetTargetUid))).then(function(snap){
+    var plus=0, minus=0, offset=0;
+    snap.docs.forEach(function(d){var p=d.data();if(p.type==='plus')plus+=parseInt(p.points)||0;else if(p.type==='minus')minus+=parseInt(p.points)||0;else if(p.type==='offset')offset+=parseInt(p.points)||0;});
+    plus -= offset; minus -= offset; // 이미 상쇄한 만큼은 양쪽에서 미리 빼서, 남은 "실질" 잔액만 보여줌
+    window._offsetAvailablePlus = plus;
+    window._offsetAvailableMinus = minus;
+    var maxUsable = Math.max(0, Math.min(plus, minus));
+    summaryEl.innerHTML = '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--tx3);">'+escapeHtml(window._offsetTargetName)+'님 누적 상점</span><span style="font-weight:700;color:var(--burg);">'+plus+'점</span></div>'
+      + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--tx3);">누적 벌점</span><span style="font-weight:700;color:var(--red);">'+minus+'점</span></div>'
+      + '<div style="display:flex;justify-content:space-between;padding-top:6px;border-top:1px solid var(--border2);"><span style="color:var(--tx3);">최대 상쇄 가능</span><span style="font-weight:700;color:var(--gold);">'+maxUsable+'점</span></div>';
+  }).catch(function(){ summaryEl.textContent = '불러오기 실패'; });
+};
+
+window.submitOffsetPoints = function(){
+  var amount = parseInt(document.getElementById('offset-points-amount').value, 10);
+  var errEl = document.getElementById('offset-points-error');
+  errEl.style.display = 'none';
+
+  if (!amount || amount <= 0) { errEl.textContent = '상쇄할 점수를 입력해주세요'; errEl.style.display='block'; return; }
+  var maxUsable = Math.min(window._offsetAvailablePlus||0, window._offsetAvailableMinus||0);
+  if (amount > maxUsable) { errEl.textContent = '최대 '+maxUsable+'점까지만 상쇄할 수 있습니다 (보유 상점 또는 벌점 부족)'; errEl.style.display='block'; return; }
+
+  var uid = window._offsetTargetUid;
+  var name = window._offsetTargetName;
+  var byName = currentProfile ? currentProfile.name : '본인';
+
+  // type:'offset'이라는 세 번째 기록 유형 하나만 남긴다. 원래의 상점/벌점 개별 내역(type:'plus'/'minus')은
+  // 절대 건드리지 않고 그대로 두되, 화면에서 "누적 상점"과 "누적 벌점"을 계산할 때 이 offset 합계만큼
+  // 양쪽에서 똑같이 빼서 보여준다 (순점수=상점-벌점은 항상 그대로 유지됨 - 상쇄는 기록 정리일 뿐 특혜가 아님).
+  addDoc(collection(db,'points'), {
+    branch: getBranch(), studentUid: uid, type: 'offset',
+    reason: '상점으로 벌점 상쇄 ('+byName+')', points: amount,
+    givenBy: currentUser.uid, givenByName: byName, createdAt: serverTimestamp()
+  }).then(function(){
+    closeModal('modal-offset-points');
+    alert(escapeHtml(name)+'님의 상점 '+amount+'점으로 벌점 '+amount+'점을 상쇄했습니다.');
+    invalidateTeacherTabCache(3);
+    if (currentProfile.role === 'student') { loadRewardsPage(); }
+    if (document.getElementById('teacher-content')) { renderTeacher(3); }
+  }).catch(function(e){ alert('처리 실패: '+e.message); });
+};
+
 window.givePoints=function(){
   var uid=document.getElementById('reward-student-select').value;
   var type=document.getElementById('reward-type-select').value;
@@ -9953,8 +10078,23 @@ function buildKakaoChatPage() {
 }
 
 // 채팅방 목록 리스닝
+// 채팅방 목록에서 상대방 아바타를 보여주기 위한 가벼운 캐시. 방(room) 문서 자체엔
+// 상대방 아바타가 저장되어 있지 않아서, 지점 내 전체 사용자의 아바타만 따로 5분 캐싱해서 사용.
+var _avatarCache = {};
+var _avatarCacheTime = 0;
+function loadAvatarCache(){
+  if (Date.now() - _avatarCacheTime < 300000 && Object.keys(_avatarCache).length) return Promise.resolve(_avatarCache);
+  return getDocs(query(collection(db,'users'), where('branch','==',getBranch()))).then(function(snap){
+    _avatarCache = {};
+    snap.docs.forEach(function(d){ _avatarCache[d.id] = d.data().avatar || null; });
+    _avatarCacheTime = Date.now();
+    return _avatarCache;
+  }).catch(function(){ return _avatarCache; });
+}
+
 function listenKChatRooms() {
   if (!currentUser) return;
+  loadAvatarCache(); // 미리 받아둠 - 방 목록 렌더링 시점엔 대부분 이미 캐시가 채워져 있게 됨
   // 옛 chats 데이터 자동 마이그레이션 (한 번만 실행)
   var migrateKey = 'kchat_migrated_' + currentUser.uid;
   if (!localStorage.getItem(migrateKey)) {
@@ -10024,19 +10164,18 @@ function renderKChatRooms(rooms) {
   }
   el.innerHTML = rooms.map(function(r){
     // 상대방 정보 추출 (1:1은 상대방, 단톡은 그룹명)
-    var displayName, avatarText, avatarBg;
+    var displayName, avatarHtmlStr;
     if (r.isGroup) {
       displayName = r.groupName || '단톡방';
-      avatarText = r.participants ? r.participants.length : 0;
-      avatarBg = 'background:linear-gradient(135deg,#D4A04A,#B8841A);';
+      avatarHtmlStr = '<div class="kchat-avatar" style="background:linear-gradient(135deg,#D4A04A,#B8841A);">'+(r.participants?r.participants.length:0)+'</div>';
     } else {
       var otherUid = (r.participants||[]).find(function(u){return u !== currentUser.uid;});
       displayName = (r.participantNames && r.participantNames[otherUid]) || '알 수 없음';
-      avatarText = displayName.slice(0,1);
       var otherRole = r.participantRoles && r.participantRoles[otherUid];
-      avatarBg = otherRole==='master' ? 'background:linear-gradient(135deg,#B91C1C,#7B1D1D);' 
+      var bg = otherRole==='master' ? 'background:linear-gradient(135deg,#B91C1C,#7B1D1D);' 
               : otherRole==='teacher' ? 'background:linear-gradient(135deg,var(--burg),var(--burg2));'
               : 'background:linear-gradient(135deg,#D4A04A,#B8841A);';
+      avatarHtmlStr = avatarCircleHtml(displayName, _avatarCache[otherUid], 44, {bg:bg, cls:'kchat-avatar', fontSizePx:16});
     }
     var lastText = '대화를 시작해보세요';
     var lastTime = '';
@@ -10059,7 +10198,7 @@ function renderKChatRooms(rooms) {
     var unread = (r.unread && r.unread[currentUser.uid]) || 0;
     var unreadBadge = unread > 0 ? '<div class="kchat-unread">'+(unread>99?'99+':unread)+'</div>' : '';
     return '<div class="kchat-room-item" data-name="'+displayName+'" onclick="openKChatRoom(\''+r.id+'\')">'
-      +'<div class="kchat-avatar" style="'+avatarBg+'">'+avatarText+'</div>'
+      +avatarHtmlStr
       +'<div class="kchat-room-info">'
       +'<div class="kchat-room-top">'
       +'<div class="kchat-room-name">'+displayName+(r.isGroup?' <span style="font-size:11px;color:var(--tx4);font-weight:500;">'+r.participants.length+'</span>':'')+'</div>'
@@ -10607,13 +10746,13 @@ function renderNewChatTargets(users) {
   if (!users.length) { list.innerHTML = '<div style="color:var(--tx3);font-size:13px;text-align:center;padding:20px;">대화 가능한 사용자가 없습니다</div>'; return; }
   list.innerHTML = users.map(function(u){
     var roleLabel = u.role==='master'?'마스터' : u.role==='teacher'?'선생님' : '학생';
-    var initial = (u.name||'?').slice(0,1);
     var bg = u.role==='master' ? 'background:linear-gradient(135deg,#B91C1C,#7B1D1D);' 
           : u.role==='teacher' ? 'background:linear-gradient(135deg,var(--burg),var(--burg2));'
           : 'background:linear-gradient(135deg,#D4A04A,#B8841A);';
+    var avatarHtml = avatarCircleHtml(u.name, u.avatar, 36, {bg:bg, fontSizePx:14});
     return '<div class="newchat-row" data-uid="'+u.uid+'" data-name="'+u.name+'" data-role="'+u.role+'" onclick="toggleNewChatTarget(this)">'
       +'<div class="newchat-checkbox"></div>'
-      +'<div class="kchat-avatar" style="'+bg+'width:38px;height:38px;font-size:13px;">'+initial+'</div>'
+      +'<div class="kchat-avatar" style="width:38px;height:38px;">'+avatarHtml+'</div>'
       +'<div style="flex:1;min-width:0;">'
       +'<div style="font-size:14px;font-weight:600;color:var(--tx1);">'+u.name+'</div>'
       +'<div style="font-size:11px;color:var(--tx3);">'+roleLabel+(u.school?' · '+u.school:'')+(u.grade?' · '+u.grade:'')+'</div>'
@@ -10748,7 +10887,7 @@ function _renderKakaoMessages(msgs, myUid) {
       var nextMin = nextTs.getFullYear()+'-'+nextTs.getMonth()+'-'+nextTs.getDate()+'-'+nextTs.getHours()+'-'+nextTs.getMinutes();
       if (next.senderUid === m.senderUid && nextMin === minuteKey) showTime = false;
     }
-    var avatar = '<div class="kchat-msg-avatar">'+(m.senderName||'?').slice(0,1)+'</div>';
+    var avatar = avatarCircleHtml(m.senderName, m.senderAvatar, 34, {fontSizePx:12});
     var nameLine = isMe || continued ? '' : '<div class="kchat-name">'+(m.senderName||'')+'</div>';
     var bubbleContent;
     if (m.fileUrl) {
@@ -10807,7 +10946,7 @@ function renderTChatMessages(msgs,highlight){
       var re=new RegExp('('+highlight.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi');
       text=text.replace(re,'<mark style="background:#FAE100;border-radius:3px;padding:0 2px;color:#1A1010;">$1</mark>');
       return '<div class="kchat-row '+(isMe?'mine':'theirs')+'">'
-        +'<div class="kchat-msg-avatar">'+(m.senderName||'?').slice(0,1)+'</div>'
+        +avatarCircleHtml(m.senderName, m.senderAvatar, 34, {fontSizePx:12})
         +'<div class="kchat-bubble-wrap">'
         +(isMe?'':'<div class="kchat-name">'+(m.senderName||'')+'</div>')
         +'<div class="kchat-bubble-row">'
@@ -11517,7 +11656,7 @@ function renderMasterMessages(msgs, highlight) {
     var bubble = m.fileUrl ? '<a href="'+m.fileUrl+'" target="_blank" class="kchat-file">📎 '+(m.fileName||'파일')+'</a>' : '<div class="kchat-bubble">'+text+'</div>';
     var readCount = (m.readBy||[]).length;
     out += '<div class="kchat-row theirs'+(continued?' continued':'')+'">'
-      + '<div class="kchat-msg-avatar">'+avatar+'</div>'
+      + avatar
       + '<div class="kchat-bubble-wrap">'
       + nameLine
       + '<div class="kchat-bubble-row">'
