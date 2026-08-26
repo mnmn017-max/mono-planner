@@ -1145,6 +1145,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 }
 .exam-add-chip-btn:hover{background:var(--burg2);}
 
+.exam-tts-provider-btn{
+  flex:1;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);
+  background:var(--surface2);color:var(--tx3);font-size:12px;font-weight:700;cursor:pointer;
+}
+.exam-tts-provider-btn.active{background:var(--burg-l2);border-color:var(--burg);color:var(--burg);}
+
 /* 파일 업로드 버튼 - 앱 톤에 맞춘 커스텀 버튼 */
 .exam-file-upload-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
 .exam-file-upload-btn{
@@ -1881,9 +1887,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
       <input class="modal-input" type="number" id="exam-warn-add-input" placeholder="분 단위로 입력 (예: 5)" style="margin:0;flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();addExamWarnChip();}"/>
       <button onclick="addExamWarnChip()" class="exam-add-chip-btn">+ 추가</button>
     </div>
-    <div style="display:flex;gap:10px;margin-top:14px;">
+
+    <div class="modal-label" style="margin-top:14px;">🔊 목소리 출처</div>
+    <div style="display:flex;gap:8px;margin-bottom:10px;">
+      <button type="button" id="exam-tts-provider-device-btn" class="exam-tts-provider-btn active" onclick="setExamTtsProvider('device')">이 기기의 기본 목소리</button>
+      <button type="button" id="exam-tts-provider-cloud-btn" class="exam-tts-provider-btn" onclick="setExamTtsProvider('cloud')">고품질 클라우드 목소리 (더 다양함)</button>
+    </div>
+
+    <div id="exam-tts-device-panel" style="display:flex;gap:10px;">
       <div style="flex:1;">
-        <div class="modal-label">🔊 음성 안내 목소리</div>
+        <div class="modal-label">음성 안내 목소리</div>
         <select class="modal-select" id="exam-tts-voice-select"><option value="">기본 목소리</option></select>
       </div>
       <div style="width:140px;">
@@ -1894,7 +1907,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
         </div>
       </div>
     </div>
-    <button type="button" onclick="testExamTtsVoice()" class="exam-add-chip-btn" style="margin-top:8px;">🔈 미리듣기</button>
+
+    <div id="exam-tts-cloud-panel" style="display:none;">
+      <div class="modal-label">클라우드 목소리 선택</div>
+      <select class="modal-select" id="exam-tts-cloud-voice-select">
+        <option value="ko-KR-Neural2-A">여성 A (자연스러운 톤)</option>
+        <option value="ko-KR-Neural2-B">여성 B (밝은 톤)</option>
+        <option value="ko-KR-Neural2-C">남성 A (차분한 톤)</option>
+        <option value="ko-KR-Wavenet-A">여성 C</option>
+        <option value="ko-KR-Wavenet-B">남성 B</option>
+        <option value="ko-KR-Wavenet-C">남성 C (또렷한 발음)</option>
+        <option value="ko-KR-Wavenet-D">여성 D</option>
+        <option value="ko-KR-Standard-A">여성 E (기본)</option>
+        <option value="ko-KR-Standard-C">남성 D (기본)</option>
+        <option value="ko-KR-Standard-D">남성 E (기본)</option>
+      </select>
+      <div style="font-size:11px;color:var(--tx4);margin-top:4px;line-height:1.5;">Google Cloud 음성입니다. 매달 일정량 무료이고, 이 앱에서 쓰는 정도로는 사실상 무료 한도 안에서 계속 쓰실 수 있어요.</div>
+    </div>
+
+    <button type="button" onclick="testExamTtsVoice()" class="exam-add-chip-btn" style="margin-top:10px;">🔈 미리듣기</button>
   </div>
 
   <button class="modal-btn primary" id="exam-save-btn" onclick="saveExam()">시험 저장</button>
@@ -3095,6 +3126,8 @@ window.openCreateExamModal = function(){
   document.getElementById('exam-add-subject-btn').style.display = 'none';
   document.getElementById('exam-tts-volume-input').value = 100;
   document.getElementById('exam-tts-volume-label').textContent = '100%';
+  setExamTtsProvider('device');
+  document.getElementById('exam-tts-cloud-voice-select').value = 'ko-KR-Neural2-A';
   var startAtInput = document.getElementById('exam-start-at-input');
   if (startAtInput) startAtInput.value = '';
   document.getElementById('exam-source-select').value = '';
@@ -3146,6 +3179,8 @@ window.openEditExamModal = function(examId){
       document.getElementById('exam-add-subject-btn').style.display = _examMode==='multi' ? 'inline-block' : 'none';
       document.getElementById('exam-tts-volume-input').value = Math.round((exam.ttsVolume!=null?exam.ttsVolume:1)*100);
       document.getElementById('exam-tts-volume-label').textContent = Math.round((exam.ttsVolume!=null?exam.ttsVolume:1)*100)+'%';
+      setExamTtsProvider(exam.ttsProvider === 'cloud' ? 'cloud' : 'device');
+      document.getElementById('exam-tts-cloud-voice-select').value = exam.ttsCloudVoiceName || 'ko-KR-Neural2-A';
       var startAtInput = document.getElementById('exam-start-at-input');
       if (startAtInput) {
         if (exam.startAtMs) {
@@ -3175,9 +3210,11 @@ function populateExamTtsVoices(){
   function fill(){
     var voices = speechSynthesis.getVoices() || [];
     var korean = voices.filter(function(v){ return v.lang && v.lang.toLowerCase().indexOf('ko') === 0; });
-    var others = voices.filter(function(v){ return !(v.lang && v.lang.toLowerCase().indexOf('ko') === 0); });
-    var ordered = korean.concat(others);
-    sel.innerHTML = '<option value="">기본 목소리</option>' + ordered.map(function(v){
+    if (!korean.length) {
+      sel.innerHTML = '<option value="">기본 목소리 (이 기기에 설치된 한국어 목소리를 찾지 못했습니다)</option>';
+      return;
+    }
+    sel.innerHTML = '<option value="">기본 목소리</option>' + korean.map(function(v){
       return '<option value="'+escapeHtml(v.voiceURI)+'">'+escapeHtml(v.name)+' ('+escapeHtml(v.lang)+')</option>';
     }).join('');
   }
@@ -3187,11 +3224,74 @@ function populateExamTtsVoices(){
   }
 }
 
-window.testExamTtsVoice = function(){
-  var voiceURI = document.getElementById('exam-tts-voice-select').value;
-  var volume = (parseInt(document.getElementById('exam-tts-volume-input').value, 10) || 0) / 100;
-  _speakExamWithOptions('5분 남았습니다', voiceURI, volume);
+// ═══════════════════════════════════════
+// 종료 알림 목소리 - "이 기기의 기본 목소리" / "고품질 클라우드 목소리" 두 가지 출처 지원
+// ═══════════════════════════════════════
+var _examTtsProvider = 'device'; // 'device' | 'cloud'
+
+window.setExamTtsProvider = function(provider){
+  _examTtsProvider = provider;
+  document.getElementById('exam-tts-provider-device-btn').classList.toggle('active', provider==='device');
+  document.getElementById('exam-tts-provider-cloud-btn').classList.toggle('active', provider==='cloud');
+  document.getElementById('exam-tts-device-panel').style.display = provider==='device' ? 'flex' : 'none';
+  document.getElementById('exam-tts-cloud-panel').style.display = provider==='cloud' ? 'block' : 'none';
 };
+
+window.testExamTtsVoice = function(){
+  if (_examTtsProvider === 'cloud') {
+    var voiceName = document.getElementById('exam-tts-cloud-voice-select').value;
+    _playCloudTts('5분 남았습니다', voiceName, 1);
+  } else {
+    var voiceURI = document.getElementById('exam-tts-voice-select').value;
+    var volume = (parseInt(document.getElementById('exam-tts-volume-input').value, 10) || 0) / 100;
+    _speakExamWithOptions('5분 남았습니다', voiceURI, volume);
+  }
+};
+
+// 클라우드 음성을 서버(/api/tts-generate)에 요청해서 mp3로 재생. 응답을 짧게 캐싱해서
+// 같은 문구를 여러 번 재생할 때(예: 여러 과목이 같은 "5분 남았습니다"를 쓰는 경우) 매번
+// 다시 요청하지 않도록 함.
+var _cloudTtsCache = {};
+function _playCloudTts(text, voiceName, volume){
+  var cacheKey = voiceName+'|'+text;
+  if (_cloudTtsCache[cacheKey]) {
+    _playBase64Mp3(_cloudTtsCache[cacheKey], volume);
+    return;
+  }
+  fetch('/api/tts-generate', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({text: text, voiceName: voiceName})
+  }).then(function(r){
+    if (!r.ok) return r.json().then(function(e){ throw new Error(e.error || ('HTTP '+r.status)); });
+    return r.json();
+  }).then(function(data){
+    _cloudTtsCache[cacheKey] = data.audioContent;
+    if (Object.keys(_cloudTtsCache).length > 30) _cloudTtsCache = {}; // 너무 쌓이지 않게 가끔 비움
+    _playBase64Mp3(data.audioContent, volume);
+  }).catch(function(e){
+    console.error('[클라우드 음성 재생 실패]', e);
+    alert('클라우드 음성 재생에 실패했습니다: ' + e.message);
+  });
+}
+
+function _playBase64Mp3(base64, volume){
+  try {
+    var audio = new Audio('data:audio/mp3;base64,' + base64);
+    audio.volume = (volume != null ? volume : 1);
+    audio.play().catch(function(e){ console.warn('[음성 재생 차단됨]', e); });
+  } catch(e){ console.error(e); }
+}
+
+// 실제 시험 진행 중 종료 알림이 울릴 때 호출되는 공통 진입점 - exam 설정에 따라
+// 기기 목소리(speechSynthesis) 또는 클라우드 목소리 중 알맞은 쪽으로 재생
+function _speakExamAlert(text, exam){
+  if (exam && exam.ttsProvider === 'cloud' && exam.ttsCloudVoiceName) {
+    _playCloudTts(text, exam.ttsCloudVoiceName, exam.ttsVolume != null ? exam.ttsVolume : 1);
+  } else {
+    _speakExamWithOptions(text, exam ? exam.ttsVoiceURI : null, exam && exam.ttsVolume != null ? exam.ttsVolume : 1);
+  }
+}
 
 function _newExamSubjectBlock(){
   return { subject:'ko', durationMin:100, breakAfterMin:20, listeningUrl:null, questions:[], gradeCutoffs:_defaultGradeCutoffs() };
@@ -4053,6 +4153,8 @@ window.saveExam = function(){
   var startAtRaw = document.getElementById('exam-start-at-input').value;
   var ttsVoiceURI = document.getElementById('exam-tts-voice-select').value || null;
   var ttsVolume = (parseInt(document.getElementById('exam-tts-volume-input').value, 10) || 0) / 100;
+  var ttsProvider = _examTtsProvider;
+  var ttsCloudVoiceName = document.getElementById('exam-tts-cloud-voice-select').value || null;
 
   if (!title) { alert('시험 이름을 입력해주세요'); return; }
   if (!_examSubjectBlocks.length) { alert('과목을 1개 이상 설정해주세요'); return; }
@@ -4115,6 +4217,8 @@ window.saveExam = function(){
     ttsEnabled: true,
     ttsVoiceURI: ttsVoiceURI,
     ttsVolume: ttsVolume,
+    ttsProvider: ttsProvider,
+    ttsCloudVoiceName: ttsCloudVoiceName,
     startAtMs: startAtMs,
     subjects: normalizedSubjects
   };
@@ -4805,7 +4909,7 @@ function _primeSpeechOnUserGesture(){
 // 방금 누른 실제 터치 동작 안에서 다시 한 번 "잠금 해제"함 (아이패드 대응)
 window.testExamWarnSound = function(){
   var exam = ExamEngine.exam || {};
-  _speakExamWithOptions('소리 테스트입니다. 이렇게 종료 알림이 들립니다', exam.ttsVoiceURI, exam.ttsVolume != null ? exam.ttsVolume : 1);
+  _speakExamAlert('소리 테스트입니다. 이렇게 종료 알림이 들립니다', exam);
   _showExamWarnBanner('소리 테스트 - 잘 들리시나요?');
 };
 
@@ -4916,7 +5020,7 @@ function _showExamWarnBanner(text){
 
 function _speakExam(text){
   var exam = ExamEngine.exam || {};
-  _speakExamWithOptions(text, exam.ttsVoiceURI, exam.ttsVolume != null ? exam.ttsVolume : 1);
+  _speakExamAlert(text, exam);
 }
 
 function _speakExamWithOptions(text, voiceURI, volume){
