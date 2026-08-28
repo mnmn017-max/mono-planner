@@ -6497,9 +6497,17 @@ window.autoFindUnivLogo = function(){
           if (filename) candidates.push({ label: labels[prop], filename: filename });
         });
       });
+      // 위키데이터에 구조화된 항목으로 등록 안 된 경우가 많아서, 위키미디어 공용 파일들을
+      // 파일명으로 직접 훑어서 "엠블럼/인장/상징/심볼" 같은 단어가 들어간 이미지를 추가로 찾아본다
+      // (구조화된 데이터보다는 덜 정확하지만, 후보를 더 넓게 보여줄 수 있음)
+      return searchCommonsForLogoFiles(univName).then(function(extra){
+        return candidates.concat(extra);
+      });
+    })
+    .then(function(candidates){
       if (!candidates.length) throw new Error('no-candidates');
       renderUnivLogoCandidates(candidates);
-      statusEl.innerHTML = '아래에서 원하는 이미지를 골라 눌러주세요.';
+      statusEl.innerHTML = '아래에서 원하는 이미지를 골라 눌러주세요. 마음에 드는 게 없으면 "직접 선택"으로 올려주세요.';
     })
     .catch(function(){
       // 위키데이터에 이미지 관련 속성이 아예 없는 학교는 위키백과 대표 이미지로 대체 시도
@@ -6524,6 +6532,23 @@ window.autoFindUnivLogo = function(){
 };
 
 // 찾은 후보 이미지들을 작은 썸네일 여러 개로 보여주고, 클릭하면 그걸로 확정
+// 위키미디어 공용에서 이 학교 이름 + "seal/emblem/logo/symbol/엠블럼/인장/상징/문장" 같은
+// 키워드로 파일을 검색해서, 파일명에 그런 단어가 들어간 이미지를 후보로 추가한다.
+// (Wikidata의 구조화된 항목보다 정확도는 떨어질 수 있어서 최대 4개까지만 보여줌)
+function searchCommonsForLogoFiles(univName){
+  var query = univName + ' seal OR emblem OR symbol OR logo OR crest OR mark';
+  return fetch('https://commons.wikimedia.org/w/api.php?action=query&list=search&srnamespace=6&srlimit=8&srsearch='+encodeURIComponent(query)+'&format=json&origin=*')
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      var results = (data.query && data.query.search) || [];
+      return results.slice(0, 4).map(function(item){
+        var filename = item.title.replace(/^File:/, '');
+        return { label: '공용 검색: ' + filename.slice(0, 18) + (filename.length>18?'…':''), filename: filename };
+      });
+    })
+    .catch(function(){ return []; });
+}
+
 function renderUnivLogoCandidates(candidates){
   var host = document.getElementById('ps-univ-logo-candidates');
   host.innerHTML = candidates.map(function(c, i){
