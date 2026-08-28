@@ -2320,7 +2320,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
       🖼 직접 선택<input type="file" accept="image/*" style="display:none;" onchange="uploadProfileUnivLogo(this)"/>
     </label>
   </div>
-  <div id="ps-univ-logo-status" style="font-size:11px;color:var(--tx4);margin-top:-8px;margin-bottom:12px;"></div>
+  <div id="ps-univ-logo-status" style="font-size:11px;color:var(--tx4);margin-top:-8px;margin-bottom:8px;"></div>
+  <div id="ps-univ-logo-candidates" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;"></div>
   <div class="modal-label" id="ps-goal-label" style="display:none;">목표</div><input class="modal-input" id="ps-goal" placeholder="예: 공무원 합격, 자격증 취득, 이직 등" style="display:none;"/>
   <div class="modal-label">비밀번호 변경 (선택)</div><input class="modal-input" type="password" id="ps-pw" placeholder="새 비밀번호 (6자 이상)"/>
   <button class="modal-btn primary" onclick="saveProfileStudent()">저장하기</button>
@@ -6443,6 +6444,7 @@ function syncStudentUI() {
   window._psUnivLogoUrl = undefined; // 모달 다시 열 때마다 "변경 안 함" 상태로 리셋
   renderProfileUnivLogoPreview(p.univLogo || null);
   var univLogoStatusEl = document.getElementById('ps-univ-logo-status'); if (univLogoStatusEl) univLogoStatusEl.textContent = '';
+  var univLogoCandEl = document.getElementById('ps-univ-logo-candidates'); if (univLogoCandEl) univLogoCandEl.innerHTML = '';
   var g = document.getElementById('ps-grade');
   if (g && p.grade) { for (var i=0;i<g.options.length;i++) { if(g.options[i].value===p.grade){g.options[i].selected=true;break;} } }
   if (window.onGradeChange && g) onGradeChange(g.value);
@@ -6468,32 +6470,40 @@ window.autoFindUnivLogo = function(){
   var univName = document.getElementById('ps-univ').value.trim();
   if (!univName) { alert('먼저 목표 대학을 입력해주세요'); return; }
   var statusEl = document.getElementById('ps-univ-logo-status');
-  statusEl.textContent = '🔍 로고 이미지 검색 중...';
+  statusEl.textContent = '🔍 검색 중...';
+  document.getElementById('ps-univ-logo-candidates').innerHTML = '';
 
-  // 1단계: 위키데이터에서 이 학교의 항목(entity)을 검색
+  // 위키데이터에서 이 학교의 항목(entity)을 검색
   fetch('https://www.wikidata.org/w/api.php?action=wbsearchentities&search='+encodeURIComponent(univName)+'&language=ko&format=json&origin=*')
     .then(function(r){ return r.json(); })
     .then(function(searchData){
       var entityId = searchData.search && searchData.search[0] && searchData.search[0].id;
       if (!entityId) throw new Error('no-entity');
-      // 2단계: 그 항목의 "로고 이미지"(P154) 속성을 조회 - 캠퍼스 사진이 아니라 진짜 로고만 정확히 가져옴
-      return fetch('https://www.wikidata.org/w/api.php?action=wbgetclaims&entity='+entityId+'&property=P154&format=json&origin=*')
-        .then(function(r2){ return r2.json(); });
+      // 로고(P154), 문장/인장(P41), 대표이미지(P18)를 한 번에 조회 - 학교마다 어떤 게
+      // 등록되어 있는지 달라서(글자 로고만 있거나, 문장이 따로 있거나) 여러 후보를 같이 찾아
+      // 직접 고를 수 있게 함 (자동으로 하나 딱 정해버리면 워드마크만 나오는 경우가 있었음)
+      return fetch('https://www.wikidata.org/w/api.php?action=wbgetclaims&entity='+entityId+'&property=P154|P41|P18&format=json&origin=*');
     })
+    .then(function(r2){ return r2.json(); })
     .then(function(claimData){
-      var claims = claimData.claims && claimData.claims.P154;
-      var filename = claims && claims[0] && claims[0].mainsnak && claims[0].mainsnak.datavalue && claims[0].mainsnak.datavalue.value;
-      if (!filename) throw new Error('no-logo-property');
-      // 위키미디어 공용의 실제 파일 경로로 변환
-      var url = 'https://commons.wikimedia.org/wiki/Special:FilePath/' + encodeURIComponent(filename);
-      window._psUnivLogoUrl = url;
-      renderProfileUnivLogoPreview(url);
-      statusEl.innerHTML = '✓ 위키데이터에 등록된 공식 로고를 찾았어요.';
+      var claims = claimData.claims || {};
+      var labels = { P154: '로고(등록된 그대로)', P41: '문장/인장', P18: '대표 이미지' };
+      var candidates = [];
+      ['P154','P41','P18'].forEach(function(prop){
+        var list = claims[prop];
+        if (!list) return;
+        list.forEach(function(c){
+          var filename = c.mainsnak && c.mainsnak.datavalue && c.mainsnak.datavalue.value;
+          if (filename) candidates.push({ label: labels[prop], filename: filename });
+        });
+      });
+      if (!candidates.length) throw new Error('no-candidates');
+      renderUnivLogoCandidates(candidates);
+      statusEl.innerHTML = '아래에서 원하는 이미지를 골라 눌러주세요.';
     })
     .catch(function(){
-      // 위키데이터에 "로고 이미지" 항목이 따로 없는 학교도 있어서, 이 경우엔 위키백과 대표 이미지로 대체
-      // (건물 사진 등 로고가 아닌 이미지일 수 있음 - 이땐 "직접 선택"으로 바꾸시는 걸 권장)
-      statusEl.textContent = '🔍 위키데이터에 로고가 없어 위키백과 대표 이미지로 재검색 중...';
+      // 위키데이터에 이미지 관련 속성이 아예 없는 학교는 위키백과 대표 이미지로 대체 시도
+      statusEl.textContent = '🔍 위키백과에서 재검색 중...';
       fetch('https://ko.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(univName))
         .then(function(r){
           if (!r.ok) throw new Error('찾을 수 없음');
@@ -6501,9 +6511,8 @@ window.autoFindUnivLogo = function(){
         })
         .then(function(data){
           if (data.thumbnail && data.thumbnail.source) {
-            window._psUnivLogoUrl = data.thumbnail.source;
-            renderProfileUnivLogoPreview(data.thumbnail.source);
-            statusEl.innerHTML = '⚠️ 정확한 로고는 못 찾았어요. 대신 위키백과 대표 이미지를 가져왔는데, 로고가 아닐 수 있어요 - 맞는지 확인해주시고 안 맞으면 "직접 선택"으로 바꿔주세요.';
+            renderUnivLogoCandidates([{ label:'위키백과 대표 이미지', url: data.thumbnail.source }]);
+            statusEl.innerHTML = '⚠️ 정확한 로고는 못 찾았어요. 아래 이미지가 맞는지 확인해주세요 (로고가 아닐 수 있음).';
           } else {
             statusEl.innerHTML = '이미지를 찾지 못했어요. "직접 선택"으로 올려주세요.';
           }
@@ -6512,6 +6521,25 @@ window.autoFindUnivLogo = function(){
           statusEl.innerHTML = '자동 검색에 실패했어요. "직접 선택"으로 올려주세요.';
         });
     });
+};
+
+// 찾은 후보 이미지들을 작은 썸네일 여러 개로 보여주고, 클릭하면 그걸로 확정
+function renderUnivLogoCandidates(candidates){
+  var host = document.getElementById('ps-univ-logo-candidates');
+  host.innerHTML = candidates.map(function(c, i){
+    var url = c.url || ('https://commons.wikimedia.org/wiki/Special:FilePath/' + encodeURIComponent(c.filename));
+    return '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;" onclick="selectUnivLogoCandidate(\''+url.replace(/'/g,"\\'")+'\')">'
+      + '<img src="'+escapeHtml(url)+'" style="width:56px;height:56px;border-radius:10px;object-fit:contain;background:var(--surface2);border:1.5px solid var(--border);padding:4px;"/>'
+      + '<span style="font-size:10px;color:var(--tx3);">'+escapeHtml(c.label)+'</span>'
+      + '</div>';
+  }).join('');
+}
+
+window.selectUnivLogoCandidate = function(url){
+  window._psUnivLogoUrl = url;
+  renderProfileUnivLogoPreview(url);
+  document.getElementById('ps-univ-logo-status').textContent = '✓ 선택 완료';
+  document.getElementById('ps-univ-logo-candidates').innerHTML = '';
 };
 
 window.uploadProfileUnivLogo = function(input){
