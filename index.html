@@ -10300,10 +10300,34 @@ window.filterStudentPointHistory = function(type, skipButtonUpdate){
       + '<div style="font-size:13px;color:var(--tx1);margin-bottom:3px;white-space:pre-wrap;word-break:break-word;">'+escapeHtml(p.reason||'')+'</div>'
       + '<div style="font-size:11px;color:var(--tx4);">'+date+(p.givenByName?' · '+escapeHtml(p.givenByName):'')+'</div>'
       + '</div>'
-      + '<div style="font-size:15px;font-weight:700;color:'+color+';flex-shrink:0;">'+prefix+p.points+'점</div>'
+      + '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0;">'
+      + '<div style="font-size:15px;font-weight:700;color:'+color+';">'+prefix+p.points+'점</div>'
+      + '<button onclick="deleteStudentPointHistoryItem(\''+p.id+'\')" style="padding:3px 8px;background:var(--red-l);border:1px solid rgba(185,28,28,0.2);border-radius:5px;color:var(--red);font-size:10px;cursor:pointer;font-weight:600;">삭제</button>'
+      + '</div>'
       + '</div>';
   }).join('');
 };
+
+window.deleteStudentPointHistoryItem = function(id){
+  if (!confirm('이 상벌점 내역을 삭제하시겠습니까?')) return;
+  deleteDoc(doc(db,'points',id)).then(function(){
+    // 모달을 닫았다 다시 여는 것 없이, 이미 불러와둔 목록에서 바로 빼고 요약 숫자도 다시 계산
+    _studentPointHistoryAll = _studentPointHistoryAll.filter(function(p){ return p.id !== id; });
+    var plus=0, minus=0, offset=0;
+    _studentPointHistoryAll.forEach(function(p){
+      if (p.type==='plus') plus+=parseInt(p.points)||0;
+      else if (p.type==='minus') minus+=parseInt(p.points)||0;
+      else if (p.type==='offset') offset+=parseInt(p.points)||0;
+    });
+    document.getElementById('student-point-history-summary').innerHTML =
+      '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--tx3);">누적 상점</span><span style="font-weight:700;color:var(--burg);">'+(plus-offset)+'점</span></div>'
+      + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--tx3);">누적 벌점</span><span style="font-weight:700;color:var(--red);">'+(minus-offset)+'점</span></div>'
+      + '<div style="display:flex;justify-content:space-between;padding-top:6px;border-top:1px solid var(--border2);"><span style="color:var(--tx3);">총 기록 건수</span><span style="font-weight:700;color:var(--tx1);">'+_studentPointHistoryAll.length+'건</span></div>';
+    filterStudentPointHistory(_studentPointHistoryFilter, true);
+    invalidateTeacherTabCache(3); // 뒤의 상벌점 탭도 다음에 볼 때 최신 상태로 보이도록
+  }).catch(function(e){ alert('삭제 실패: ' + e.message); });
+};
+
 
 window.openOffsetPointsModal = function(uid, name){
   // 학생 계정에서 자기 자신을 상쇄할 때는 uid/name 없이 호출됨
