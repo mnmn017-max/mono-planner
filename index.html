@@ -5337,6 +5337,7 @@ function _awardExamRewards(studentUid, exam, results, prevScores){
     var subjDef = (exam.subjects && exam.subjects[r.subjectIndex]) || null;
 
     // 2) 이전 시험 대비 점수 상승 시 과목당 +10
+    // 같은 과목(subj 키)끼리만 비교되므로 이걸로 충분함 - 연습용 시험도 향상 판정에 포함
     if (prevScores && prevScores[subj] != null && r.score > prevScores[subj]) {
       addDoc(collection(db,'points'), {
         branch: branch, studentUid: studentUid, type:'plus',
@@ -8728,7 +8729,7 @@ function loadRewardData(){
   getDocs(query(collection(db,'points'),where('studentUid','==',currentUser.uid))).then(function(snap){
     var plus=0,minus=0,offset=0;
     snap.docs.forEach(function(d){var p=d.data();if(p.type==='plus')plus+=parseInt(p.points)||0;else if(p.type==='minus')minus+=parseInt(p.points)||0;else if(p.type==='offset')offset+=parseInt(p.points)||0;});
-    plus -= offset; minus -= offset;
+    plus = Math.max(0, plus - offset); minus = Math.max(0, minus - offset);
     var el=document.getElementById('points-summary');if(!el)return;
     var canOffset = plus > 0 && minus > 0;
     el.innerHTML='<div class="stat-grid" style="margin-bottom:12px"><div class="stat-card"><div class="stat-val" style="color:var(--burg)">'+plus+'점</div><div class="stat-lbl">누적 상점</div></div><div class="stat-card"><div class="stat-val" style="color:var(--red)">'+minus+'점</div><div class="stat-lbl">누적 벌점</div></div></div><div style="background:var(--gold-l);border:1px solid rgba(184,132,26,0.2);border-radius:10px;padding:10px 14px;margin-bottom:12px;text-align:center"><span style="font-size:14px;font-weight:700;color:var(--burg)">현재 점수: '+(plus-minus)+'점</span></div>'
@@ -10176,7 +10177,7 @@ function buildTRewards(){
       });
       var summaryRows = students.map(function(s){
         var t = totalsByUid[s.uid] || {plus:0, minus:0, offset:0};
-        var plus = t.plus - t.offset, minus = t.minus - t.offset;
+        var plus = Math.max(0, t.plus - t.offset), minus = Math.max(0, t.minus - t.offset);
         var net = plus - minus;
         return {uid:s.uid, name:s.name, plus:plus, minus:minus, net:net};
       }).sort(function(a,b){ return b.net - a.net; });
@@ -10268,8 +10269,8 @@ window.openStudentPointHistoryModal = function(uid, name){
       else if (p.type==='offset') offset+=parseInt(p.points)||0;
     });
     document.getElementById('student-point-history-summary').innerHTML =
-      '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--tx3);">누적 상점</span><span style="font-weight:700;color:var(--burg);">'+(plus-offset)+'점</span></div>'
-      + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--tx3);">누적 벌점</span><span style="font-weight:700;color:var(--red);">'+(minus-offset)+'점</span></div>'
+      '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--tx3);">누적 상점</span><span style="font-weight:700;color:var(--burg);">'+Math.max(0,plus-offset)+'점</span></div>'
+      + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--tx3);">누적 벌점</span><span style="font-weight:700;color:var(--red);">'+Math.max(0,minus-offset)+'점</span></div>'
       + '<div style="display:flex;justify-content:space-between;padding-top:6px;border-top:1px solid var(--border2);"><span style="color:var(--tx3);">총 기록 건수</span><span style="font-weight:700;color:var(--tx1);">'+_studentPointHistoryAll.length+'건</span></div>';
     filterStudentPointHistory('all', true);
   }).catch(function(){
@@ -10320,8 +10321,8 @@ window.deleteStudentPointHistoryItem = function(id){
       else if (p.type==='offset') offset+=parseInt(p.points)||0;
     });
     document.getElementById('student-point-history-summary').innerHTML =
-      '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--tx3);">누적 상점</span><span style="font-weight:700;color:var(--burg);">'+(plus-offset)+'점</span></div>'
-      + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--tx3);">누적 벌점</span><span style="font-weight:700;color:var(--red);">'+(minus-offset)+'점</span></div>'
+      '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--tx3);">누적 상점</span><span style="font-weight:700;color:var(--burg);">'+Math.max(0,plus-offset)+'점</span></div>'
+      + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--tx3);">누적 벌점</span><span style="font-weight:700;color:var(--red);">'+Math.max(0,minus-offset)+'점</span></div>'
       + '<div style="display:flex;justify-content:space-between;padding-top:6px;border-top:1px solid var(--border2);"><span style="color:var(--tx3);">총 기록 건수</span><span style="font-weight:700;color:var(--tx1);">'+_studentPointHistoryAll.length+'건</span></div>';
     filterStudentPointHistory(_studentPointHistoryFilter, true);
     invalidateTeacherTabCache(3); // 뒤의 상벌점 탭도 다음에 볼 때 최신 상태로 보이도록
@@ -10344,7 +10345,7 @@ window.openOffsetPointsModal = function(uid, name){
   getDocs(query(collection(db,'points'), where('studentUid','==',window._offsetTargetUid))).then(function(snap){
     var plus=0, minus=0, offset=0;
     snap.docs.forEach(function(d){var p=d.data();if(p.type==='plus')plus+=parseInt(p.points)||0;else if(p.type==='minus')minus+=parseInt(p.points)||0;else if(p.type==='offset')offset+=parseInt(p.points)||0;});
-    plus -= offset; minus -= offset; // 이미 상쇄한 만큼은 양쪽에서 미리 빼서, 남은 "실질" 잔액만 보여줌
+    plus = Math.max(0, plus - offset); minus = Math.max(0, minus - offset); // 이미 상쇄한 만큼은 양쪽에서 미리 빼서, 남은 "실질" 잔액만 보여줌 (0 밑으로는 안 내려가게)
     window._offsetAvailablePlus = plus;
     window._offsetAvailableMinus = minus;
     var maxUsable = Math.max(0, Math.min(plus, minus));
