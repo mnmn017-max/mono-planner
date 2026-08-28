@@ -1696,6 +1696,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 
 <!-- 아바타 편집 모달 -->
 <!-- 상점으로 벌점 상쇄 모달 -->
+<!-- 학생별 상벌점 전체 내역 조회 (점검용) -->
+<div class="modal-overlay" id="modal-student-point-history"><div class="modal" style="max-width:480px;max-height:85vh;overflow-y:auto;">
+  <div class="modal-title" id="student-point-history-title">📋 상벌점 내역</div>
+  <div id="student-point-history-summary" style="background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;"></div>
+  <div style="display:flex;gap:6px;margin-bottom:12px;" id="student-point-history-filter">
+    <button type="button" class="exam-mgmt-cat-btn active" onclick="filterStudentPointHistory('all')">전체</button>
+    <button type="button" class="exam-mgmt-cat-btn" onclick="filterStudentPointHistory('plus')">상점만</button>
+    <button type="button" class="exam-mgmt-cat-btn" onclick="filterStudentPointHistory('minus')">벌점만</button>
+    <button type="button" class="exam-mgmt-cat-btn" onclick="filterStudentPointHistory('offset')">상쇄만</button>
+  </div>
+  <div id="student-point-history-list"></div>
+  <button class="modal-btn cancel" onclick="closeModal('modal-student-point-history')" style="margin-top:12px;">닫기</button>
+</div></div>
+
 <div class="modal-overlay" id="modal-offset-points"><div class="modal" style="max-width:420px;">
   <div class="modal-title">🔄 상점으로 벌점 상쇄</div>
   <div style="font-size:12px;color:var(--tx3);margin-bottom:14px;line-height:1.6;">
@@ -1712,7 +1726,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 <!-- 이미지 크게 보기 (로고 등) -->
 <div class="modal-overlay" id="modal-image-lightbox" onclick="if(event.target===this)closeModal('modal-image-lightbox');" style="background:rgba(0,0,0,0.85);">
   <div style="max-width:90vw;max-height:85vh;display:flex;flex-direction:column;align-items:center;">
-    <img id="image-lightbox-img" src="" style="max-width:100%;max-height:75vh;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,0.5);"/>
+    <img id="image-lightbox-img" src="" style="width:min(420px,85vw);height:min(420px,85vw);max-height:75vh;object-fit:contain;background:#fff;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,0.5);"/>
     <button class="modal-btn cancel" style="margin-top:16px;width:auto;padding:10px 24px;" onclick="closeModal('modal-image-lightbox')">닫기</button>
   </div>
 </div>
@@ -2315,13 +2329,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   </div>
   <div id="ps-univ-logo-preview" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"></div>
   <div style="display:flex;gap:8px;margin-bottom:14px;">
-    <button type="button" onclick="autoFindUnivLogo()" class="exam-add-chip-btn" style="background:var(--gold);">🔍 자동으로 로고 찾기</button>
     <label class="exam-add-chip-btn" style="cursor:pointer;display:inline-flex;align-items:center;background:var(--surface2);color:var(--tx2);">
       🖼 직접 선택<input type="file" accept="image/*" style="display:none;" onchange="uploadProfileUnivLogo(this)"/>
     </label>
   </div>
   <div id="ps-univ-logo-status" style="font-size:11px;color:var(--tx4);margin-top:-8px;margin-bottom:8px;"></div>
   <div id="ps-univ-logo-candidates" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;"></div>
+
+  <div style="background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:14px;">
+    <div style="font-size:12px;font-weight:700;color:var(--tx2);margin-bottom:8px;">💡 더 정확한 방법 - 학교 홈페이지 주소로 가져오기</div>
+    <div style="font-size:11px;color:var(--tx4);margin-bottom:8px;line-height:1.5;">대부분 대학 홈페이지는 브라우저 탭에 뜨는 작은 아이콘(파비콘)으로 자기네 상징을 쓰고 있어서, 이게 훨씬 정확할 때가 많아요.</div>
+    <div style="display:flex;gap:8px;">
+      <input class="modal-input" id="ps-univ-domain-input" placeholder="예: yonsei.ac.kr" style="margin:0;flex:1;"/>
+      <button type="button" onclick="fetchUnivFavicon()" class="exam-add-chip-btn" style="white-space:nowrap;">가져오기</button>
+    </div>
+  </div>
+
   <div class="modal-label" id="ps-goal-label" style="display:none;">목표</div><input class="modal-input" id="ps-goal" placeholder="예: 공무원 합격, 자격증 취득, 이직 등" style="display:none;"/>
   <div class="modal-label">비밀번호 변경 (선택)</div><input class="modal-input" type="password" id="ps-pw" placeholder="새 비밀번호 (6자 이상)"/>
   <button class="modal-btn primary" onclick="saveProfileStudent()">저장하기</button>
@@ -6466,88 +6489,23 @@ window._psUnivLogoUrl = undefined; // undefined면 안 바꿈, null이면 삭제
 // 위키백과 공개 API로 대학 로고를 자동으로 찾아본다 (요청 API 키 필요없음, 무료).
 // 100% 정확하지는 않을 수 있어서 - 위키 문서가 없거나 로고가 아닌 다른 사진이 걸려있을 수 있음 -
 // 찾은 이미지를 먼저 미리보기로 보여주고, 학생이 확인 후 "직접 선택"으로 바꿀 수 있게 해둠.
-window.autoFindUnivLogo = function(){
-  var univName = document.getElementById('ps-univ').value.trim();
-  if (!univName) { alert('먼저 목표 대학을 입력해주세요'); return; }
-  var statusEl = document.getElementById('ps-univ-logo-status');
-  statusEl.textContent = '🔍 검색 중...';
-  document.getElementById('ps-univ-logo-candidates').innerHTML = '';
+// 학교 홈페이지 주소로 파비콘(브라우저 탭 아이콘)을 가져옴. 대부분 대학 사이트가
+// 파비콘으로 자기네 상징을 쓰기 때문에 위키 검색보다 훨씬 정확한 경우가 많고,
+// 이미지 태그로 직접 불러오는 방식이라 CORS 문제 자체가 없어 훨씬 안정적임.
+window.fetchUnivFavicon = function(){
+  var domain = document.getElementById('ps-univ-domain-input').value.trim()
+    .replace(/^https?:\/\//,'').replace(/\/.*$/,''); // http(s):// 나 뒤에 붙은 경로 제거
+  if (!domain) { alert('학교 홈페이지 주소를 입력해주세요 (예: yonsei.ac.kr)'); return; }
 
-  // 위키데이터에서 이 학교의 항목(entity)을 검색
-  fetch('https://www.wikidata.org/w/api.php?action=wbsearchentities&search='+encodeURIComponent(univName)+'&language=ko&format=json&origin=*')
-    .then(function(r){ return r.json(); })
-    .then(function(searchData){
-      var entityId = searchData.search && searchData.search[0] && searchData.search[0].id;
-      if (!entityId) throw new Error('no-entity');
-      // 로고(P154), 문장/인장(P41), 대표이미지(P18)를 한 번에 조회 - 학교마다 어떤 게
-      // 등록되어 있는지 달라서(글자 로고만 있거나, 문장이 따로 있거나) 여러 후보를 같이 찾아
-      // 직접 고를 수 있게 함 (자동으로 하나 딱 정해버리면 워드마크만 나오는 경우가 있었음)
-      return fetch('https://www.wikidata.org/w/api.php?action=wbgetclaims&entity='+entityId+'&property=P154|P41|P18&format=json&origin=*');
-    })
-    .then(function(r2){ return r2.json(); })
-    .then(function(claimData){
-      var claims = claimData.claims || {};
-      var labels = { P154: '로고(등록된 그대로)', P41: '문장/인장', P18: '대표 이미지' };
-      var candidates = [];
-      ['P154','P41','P18'].forEach(function(prop){
-        var list = claims[prop];
-        if (!list) return;
-        list.forEach(function(c){
-          var filename = c.mainsnak && c.mainsnak.datavalue && c.mainsnak.datavalue.value;
-          if (filename) candidates.push({ label: labels[prop], filename: filename });
-        });
-      });
-      // 위키데이터에 구조화된 항목으로 등록 안 된 경우가 많아서, 위키미디어 공용 파일들을
-      // 파일명으로 직접 훑어서 "엠블럼/인장/상징/심볼" 같은 단어가 들어간 이미지를 추가로 찾아본다
-      // (구조화된 데이터보다는 덜 정확하지만, 후보를 더 넓게 보여줄 수 있음)
-      return searchCommonsForLogoFiles(univName).then(function(extra){
-        return candidates.concat(extra);
-      });
-    })
-    .then(function(candidates){
-      if (!candidates.length) throw new Error('no-candidates');
-      renderUnivLogoCandidates(candidates);
-      statusEl.innerHTML = '아래에서 원하는 이미지를 골라 눌러주세요. 마음에 드는 게 없으면 "직접 선택"으로 올려주세요.';
-    })
-    .catch(function(){
-      // 위키데이터에 이미지 관련 속성이 아예 없는 학교는 위키백과 대표 이미지로 대체 시도
-      statusEl.textContent = '🔍 위키백과에서 재검색 중...';
-      fetch('https://ko.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(univName))
-        .then(function(r){
-          if (!r.ok) throw new Error('찾을 수 없음');
-          return r.json();
-        })
-        .then(function(data){
-          if (data.thumbnail && data.thumbnail.source) {
-            renderUnivLogoCandidates([{ label:'위키백과 대표 이미지', url: data.thumbnail.source }]);
-            statusEl.innerHTML = '⚠️ 정확한 로고는 못 찾았어요. 아래 이미지가 맞는지 확인해주세요 (로고가 아닐 수 있음).';
-          } else {
-            statusEl.innerHTML = '이미지를 찾지 못했어요. "직접 선택"으로 올려주세요.';
-          }
-        })
-        .catch(function(){
-          statusEl.innerHTML = '자동 검색에 실패했어요. "직접 선택"으로 올려주세요.';
-        });
-    });
+  // 구글 파비콘 서비스는 sz(크기)를 크게 요청해도, 실제로는 작은 원본(16~32px)을 그냥
+  // 늘려서 주는 경우가 많아 화질이 안 좋을 수 있음. 애플 터치 아이콘(아이폰 홈화면용으로
+  // 원래 180px 이상으로 만들어두는 경우가 많음)을 시도해보면 더 선명한 경우가 있어서 같이 후보로 둠.
+  renderUnivLogoCandidates([
+    { label: '애플 터치 아이콘(더 선명할 수 있음)', url: 'https://' + domain + '/apple-touch-icon.png' },
+    { label: '홈페이지 아이콘', url: 'https://www.google.com/s2/favicons?domain=' + encodeURIComponent(domain) + '&sz=256' }
+  ]);
+  document.getElementById('ps-univ-logo-status').innerHTML = '아래에서 확인하고 선택해주세요. <b>둘 다 화질이 안 좋으면, 이건 이 사이트가 원래 작은 아이콘만 갖고 있다는 뜻이라 자동으로는 한계가 있어요</b> - 이럴 땐 대학 홈페이지의 "CI/BI" 페이지에서 로고를 받아 "직접 선택"으로 올리시는 게 가장 확실합니다.';
 };
-
-// 찾은 후보 이미지들을 작은 썸네일 여러 개로 보여주고, 클릭하면 그걸로 확정
-// 위키미디어 공용에서 이 학교 이름 + "seal/emblem/logo/symbol/엠블럼/인장/상징/문장" 같은
-// 키워드로 파일을 검색해서, 파일명에 그런 단어가 들어간 이미지를 후보로 추가한다.
-// (Wikidata의 구조화된 항목보다 정확도는 떨어질 수 있어서 최대 4개까지만 보여줌)
-function searchCommonsForLogoFiles(univName){
-  var query = univName + ' seal OR emblem OR symbol OR logo OR crest OR mark';
-  return fetch('https://commons.wikimedia.org/w/api.php?action=query&list=search&srnamespace=6&srlimit=8&srsearch='+encodeURIComponent(query)+'&format=json&origin=*')
-    .then(function(r){ return r.json(); })
-    .then(function(data){
-      var results = (data.query && data.query.search) || [];
-      return results.slice(0, 4).map(function(item){
-        var filename = item.title.replace(/^File:/, '');
-        return { label: '공용 검색: ' + filename.slice(0, 18) + (filename.length>18?'…':''), filename: filename };
-      });
-    })
-    .catch(function(){ return []; });
-}
 
 function renderUnivLogoCandidates(candidates){
   var host = document.getElementById('ps-univ-logo-candidates');
@@ -8179,7 +8137,17 @@ window.toggleTeacherNotifPanel = function() {
 // 이미지(로고 등)를 눌러서 크게 볼 수 있게 하는 공통 함수
 window.openImageLightbox = function(url){
   if (!url) return;
-  document.getElementById('image-lightbox-img').src = url;
+  var img = document.getElementById('image-lightbox-img');
+  img.style.width = ''; img.style.height = ''; // 이전 크기 흔적 제거
+  img.src = url;
+  img.onload = function(){
+    // 원본이 작은 이미지(파비콘 등)를 무작정 420px까지 늘리면 뿌옇게 깨져 보이므로,
+    // 원본 크기의 최대 3배까지만 확대하고, 그 이상은 원본 그대로(선명하게) 보여줌
+    var nat = Math.max(img.naturalWidth||128, img.naturalHeight||128);
+    var box = Math.min(420, nat * 3);
+    img.style.width = box + 'px';
+    img.style.height = box + 'px';
+  };
   openModal('modal-image-lightbox');
 };
 
@@ -10219,6 +10187,7 @@ function buildTRewards(){
           + '<div style="font-size:12px;color:var(--red);font-weight:700;">벌점 '+r.minus+'</div>'
           + '<div style="font-size:12px;font-weight:800;color:'+(r.net>=0?'var(--green)':'var(--red)')+';min-width:56px;text-align:right;">순점수 '+r.net+'</div>'
           + '<button onclick="openOffsetPointsModal(\''+r.uid+'\',\''+escapeHtml(r.name)+'\')" style="padding:5px 9px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;font-weight:600;white-space:nowrap;">상점으로 벌점 상쇄</button>'
+          + '<button onclick="openStudentPointHistoryModal(\''+r.uid+'\',\''+escapeHtml(r.name)+'\')" style="padding:5px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--tx2);font-size:11px;cursor:pointer;font-weight:600;white-space:nowrap;">📋 내역 보기</button>'
           + '</div>';
       }).join('') || '<div style="color:var(--tx3);font-size:13px;text-align:center;padding:14px;">학생이 없습니다</div>';
       var summaryCard = '<div class="card">'
@@ -10269,6 +10238,72 @@ function buildTRewards(){
 // ═══════════════════════════════════════
 window._offsetTargetUid = null;
 window._offsetTargetName = null;
+
+// ═══════════════════════════════════════
+// 학생별 상벌점 전체 내역 조회 (점검용) - "최근 상벌점 내역"은 전체 학생 통합 최근 200건만
+// 보여주는데, 이건 특정 학생 한 명만 콕 집어 처음부터 끝까지 다 확인할 수 있게 함
+// (지점 전체 목록에서 걸러내는 게 아니라 그 학생 것만 따로 조회해서, 오래된 내역도 안 빠짐)
+// ═══════════════════════════════════════
+var _studentPointHistoryAll = [];
+var _studentPointHistoryFilter = 'all';
+
+window.openStudentPointHistoryModal = function(uid, name){
+  document.getElementById('student-point-history-title').textContent = '📋 ' + name + '님 상벌점 내역';
+  document.getElementById('student-point-history-summary').textContent = '불러오는 중...';
+  document.getElementById('student-point-history-list').innerHTML = '';
+  _studentPointHistoryFilter = 'all';
+  filterStudentPointHistory('all', true);
+  openModal('modal-student-point-history');
+
+  getDocs(query(collection(db,'points'), where('studentUid','==',uid))).then(function(snap){
+    _studentPointHistoryAll = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); })
+      .sort(function(a,b){
+        var at=a.createdAt?a.createdAt.toMillis():0, bt=b.createdAt?b.createdAt.toMillis():0;
+        return bt-at;
+      });
+    var plus=0, minus=0, offset=0;
+    _studentPointHistoryAll.forEach(function(p){
+      if (p.type==='plus') plus+=parseInt(p.points)||0;
+      else if (p.type==='minus') minus+=parseInt(p.points)||0;
+      else if (p.type==='offset') offset+=parseInt(p.points)||0;
+    });
+    document.getElementById('student-point-history-summary').innerHTML =
+      '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--tx3);">누적 상점</span><span style="font-weight:700;color:var(--burg);">'+(plus-offset)+'점</span></div>'
+      + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--tx3);">누적 벌점</span><span style="font-weight:700;color:var(--red);">'+(minus-offset)+'점</span></div>'
+      + '<div style="display:flex;justify-content:space-between;padding-top:6px;border-top:1px solid var(--border2);"><span style="color:var(--tx3);">총 기록 건수</span><span style="font-weight:700;color:var(--tx1);">'+_studentPointHistoryAll.length+'건</span></div>';
+    filterStudentPointHistory('all', true);
+  }).catch(function(){
+    document.getElementById('student-point-history-summary').innerHTML = '<span style="color:var(--red);">불러오기 실패</span>';
+  });
+};
+
+window.filterStudentPointHistory = function(type, skipButtonUpdate){
+  _studentPointHistoryFilter = type;
+  if (!skipButtonUpdate) {
+    document.querySelectorAll('#student-point-history-filter .exam-mgmt-cat-btn').forEach(function(btn){
+      btn.classList.toggle('active', btn.textContent === (type==='all'?'전체':type==='plus'?'상점만':type==='minus'?'벌점만':'상쇄만'));
+    });
+  }
+  var list = document.getElementById('student-point-history-list');
+  var filtered = type === 'all' ? _studentPointHistoryAll : _studentPointHistoryAll.filter(function(p){ return p.type === type; });
+  if (!filtered.length) {
+    list.innerHTML = '<div style="color:var(--tx3);font-size:13px;text-align:center;padding:20px 0;">내역이 없습니다</div>';
+    return;
+  }
+  list.innerHTML = filtered.map(function(p){
+    var date = p.createdAt ? p.createdAt.toDate().toLocaleString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+    var isPlus = p.type === 'plus', isOffset = p.type === 'offset';
+    var color = isOffset ? 'var(--gold)' : (isPlus ? 'var(--burg)' : 'var(--red)');
+    var prefix = isOffset ? '상쇄 ' : (isPlus ? '+' : '-');
+    return '<div style="display:flex;align-items:flex-start;gap:10px;padding:11px 12px;background:var(--surface2);border-radius:8px;margin-bottom:6px;border-left:3px solid '+color+';">'
+      + '<div style="flex:1;min-width:0;">'
+      + '<div style="font-size:13px;color:var(--tx1);margin-bottom:3px;white-space:pre-wrap;word-break:break-word;">'+escapeHtml(p.reason||'')+'</div>'
+      + '<div style="font-size:11px;color:var(--tx4);">'+date+(p.givenByName?' · '+escapeHtml(p.givenByName):'')+'</div>'
+      + '</div>'
+      + '<div style="font-size:15px;font-weight:700;color:'+color+';flex-shrink:0;">'+prefix+p.points+'점</div>'
+      + '</div>';
+  }).join('');
+};
 
 window.openOffsetPointsModal = function(uid, name){
   // 학생 계정에서 자기 자신을 상쇄할 때는 uid/name 없이 호출됨
