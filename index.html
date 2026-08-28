@@ -2302,6 +2302,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <select class="modal-select" id="ps-grade" onchange="onGradeChange(this.value)"><option value="중학교 1학년">중학교 1학년</option><option value="중학교 2학년">중학교 2학년</option><option value="중학교 3학년">중학교 3학년</option><option value="고등학교 1학년">고등학교 1학년</option><option value="고등학교 2학년">고등학교 2학년</option><option value="고등학교 3학년">고등학교 3학년</option><option value="N수">N수 (재수/N수)</option><option value="성인">성인</option></select>
   <div class="modal-label" id="ps-univ-label">목표 대학</div><input class="modal-input" id="ps-univ" placeholder="예: 연세대학교"/>
   <div class="modal-label" id="ps-dept-label">목표 학과</div><input class="modal-input" id="ps-dept" placeholder="예: 경영학과"/>
+  <div id="ps-univ-logo-row" class="modal-label" style="display:flex;align-items:center;justify-content:space-between;">
+    <span>학교 로고 이미지 <span style="font-weight:400;color:var(--tx4);">(선택, 안 올리면 이니셜로 표시)</span></span>
+  </div>
+  <div id="ps-univ-logo-preview" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"></div>
+  <div style="display:flex;gap:8px;margin-bottom:14px;">
+    <button type="button" onclick="autoFindUnivLogo()" class="exam-add-chip-btn" style="background:var(--gold);">🔍 자동으로 로고 찾기</button>
+    <label class="exam-add-chip-btn" style="cursor:pointer;display:inline-flex;align-items:center;background:var(--surface2);color:var(--tx2);">
+      🖼 직접 선택<input type="file" accept="image/*" style="display:none;" onchange="uploadProfileUnivLogo(this)"/>
+    </label>
+  </div>
+  <div id="ps-univ-logo-status" style="font-size:11px;color:var(--tx4);margin-top:-8px;margin-bottom:12px;"></div>
   <div class="modal-label" id="ps-goal-label" style="display:none;">목표</div><input class="modal-input" id="ps-goal" placeholder="예: 공무원 합격, 자격증 취득, 이직 등" style="display:none;"/>
   <div class="modal-label">비밀번호 변경 (선택)</div><input class="modal-input" type="password" id="ps-pw" placeholder="새 비밀번호 (6자 이상)"/>
   <button class="modal-btn primary" onclick="saveProfileStudent()">저장하기</button>
@@ -5934,7 +5945,7 @@ window.openChatPartnerProfile = function(uid) {
       if (u.grade === '성인') {
         rows += '<div class="cpp-row"><span class="cpp-label">목표</span><span class="cpp-value">'+escapeHtml(u.goal||'-')+'</span></div>';
       } else {
-        rows += '<div class="cpp-row"><span class="cpp-label">목표대학</span><span class="cpp-value">'+escapeHtml(u.univ||'-')+'</span></div>';
+        rows += '<div class="cpp-row"><span class="cpp-label">목표대학</span><span class="cpp-value">'+escapeHtml(u.univ||'-')+(u.dept?' '+escapeHtml(u.dept):'')+'</span></div>';
       }
     } else {
       rows += '<div class="cpp-row"><span class="cpp-label">역할</span><span class="cpp-value">'+roleLabel+'</span></div>';
@@ -6421,6 +6432,9 @@ function syncStudentUI() {
   _applyAvatar(document.getElementById('dt-student-avatar'), p.name, p.avatar);
   var fields = {name:'ps-name',school:'ps-school',univ:'ps-univ',dept:'ps-dept',goal:'ps-goal'};
   Object.keys(fields).forEach(function(k) { var el = document.getElementById(fields[k]); if(el) el.value=p[k]||''; });
+  window._psUnivLogoUrl = undefined; // 모달 다시 열 때마다 "변경 안 함" 상태로 리셋
+  renderProfileUnivLogoPreview(p.univLogo || null);
+  var univLogoStatusEl = document.getElementById('ps-univ-logo-status'); if (univLogoStatusEl) univLogoStatusEl.textContent = '';
   var g = document.getElementById('ps-grade');
   if (g && p.grade) { for (var i=0;i<g.options.length;i++) { if(g.options[i].value===p.grade){g.options[i].selected=true;break;} } }
   if (window.onGradeChange && g) onGradeChange(g.value);
@@ -6437,8 +6451,70 @@ function syncTeacherUI() {
   _applyAvatar(document.getElementById('dt-teacher-avatar'), p.name, p.avatar);
   var ptn = document.getElementById('pt-name'); if(ptn) ptn.value=p.name||'';
 }
+window._psUnivLogoUrl = undefined; // undefined면 안 바꿈, null이면 삭제, 문자열이면 새로 설정
+
+// 위키백과 공개 API로 대학 로고를 자동으로 찾아본다 (요청 API 키 필요없음, 무료).
+// 100% 정확하지는 않을 수 있어서 - 위키 문서가 없거나 로고가 아닌 다른 사진이 걸려있을 수 있음 -
+// 찾은 이미지를 먼저 미리보기로 보여주고, 학생이 확인 후 "직접 선택"으로 바꿀 수 있게 해둠.
+window.autoFindUnivLogo = function(){
+  var univName = document.getElementById('ps-univ').value.trim();
+  if (!univName) { alert('먼저 목표 대학을 입력해주세요'); return; }
+  var statusEl = document.getElementById('ps-univ-logo-status');
+  statusEl.textContent = '🔍 위키백과에서 검색 중...';
+
+  fetch('https://ko.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(univName))
+    .then(function(r){
+      if (!r.ok) throw new Error('찾을 수 없음');
+      return r.json();
+    })
+    .then(function(data){
+      if (data.thumbnail && data.thumbnail.source) {
+        window._psUnivLogoUrl = data.thumbnail.source;
+        renderProfileUnivLogoPreview(data.thumbnail.source);
+        statusEl.innerHTML = '✓ 위키백과에서 이미지를 찾았어요. 로고가 아니거나 안 맞으면 "직접 선택"으로 바꿔주세요.';
+      } else {
+        statusEl.innerHTML = '위키백과에 등록된 이미지를 찾지 못했어요. "직접 선택"으로 올려주세요.';
+      }
+    })
+    .catch(function(){
+      statusEl.innerHTML = '자동 검색에 실패했어요. "직접 선택"으로 올려주세요.';
+    });
+};
+
+window.uploadProfileUnivLogo = function(input){
+  if (!input.files || !input.files[0]) return;
+  var file = input.files[0];
+  var preview = document.getElementById('ps-univ-logo-preview');
+  var statusEl = document.getElementById('ps-univ-logo-status');
+  if (statusEl) statusEl.textContent = '';
+  preview.innerHTML = '<span style="font-size:12px;color:var(--tx3);">⏳ 업로드 중...</span>';
+
+  var fd = new FormData();
+  fd.append('file', file);
+  fd.append('upload_preset', CLOUDINARY_PRESET);
+  fd.append('resource_type', 'image');
+
+  fetch('https://api.cloudinary.com/v1_1/'+CLOUDINARY_CLOUD+'/image/upload', {method:'POST', body:fd})
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if (!data.secure_url) throw new Error('업로드 실패');
+      window._psUnivLogoUrl = data.secure_url;
+      renderProfileUnivLogoPreview(data.secure_url);
+    })
+    .catch(function(){ preview.innerHTML = '<span style="font-size:12px;color:var(--red);">업로드 실패</span>'; });
+};
+
+function renderProfileUnivLogoPreview(url){
+  var preview = document.getElementById('ps-univ-logo-preview');
+  if (!preview) return;
+  if (!url) { preview.innerHTML = '<span style="font-size:12px;color:var(--tx4);">등록된 로고 없음 (이니셜로 표시됩니다)</span>'; return; }
+  preview.innerHTML = '<img src="'+escapeHtml(url)+'" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid var(--border);"/>'
+    + '<button type="button" onclick="window._psUnivLogoUrl=null;renderProfileUnivLogoPreview(null);" style="font-size:11px;color:var(--red);background:none;border:none;cursor:pointer;text-decoration:underline;">삭제</button>';
+}
+
 window.saveProfileStudent = function() {
   var fields = {name:document.getElementById('ps-name').value,school:document.getElementById('ps-school').value,grade:document.getElementById('ps-grade').value,univ:document.getElementById('ps-univ').value,dept:document.getElementById('ps-dept').value,goal:document.getElementById('ps-goal').value};
+  if (window._psUnivLogoUrl !== undefined) fields.univLogo = window._psUnivLogoUrl; // null이면 삭제, 문자열이면 새로 설정
   var newPw = document.getElementById('ps-pw').value;
   setDoc(doc(db,'users',currentUser.uid), fields, {merge:true}).then(function() {
     currentProfile = Object.assign({}, currentProfile, fields);
@@ -6545,7 +6621,12 @@ function updateDesktopRightPanel(tab) {
 function buildDashboard() {
   var p = currentProfile || {};
   var p_name = p.name||'학생';
-  var dt_header = '<div class="dt-header dt-only"><div><div class="dt-header-title">안녕하세요, '+p_name+' 👋</div><div class="dt-header-sub">'+(p.school||'')+(p.school?' · ':'')+(p.grade||'')+((p.grade==='성인'&&p.goal)?' · 목표 '+p.goal:(p.univ?' · 목표 '+p.univ:''))+'</div></div></div>';
+  var _univDeptText = (p.grade==='성인'&&p.goal) ? (' · 목표 '+p.goal) : (p.univ ? (' · 목표 '+p.univ+(p.dept?' '+p.dept:'')) : '');
+  var _univBadge = (p.grade!=='성인' && p.univ) ? avatarCircleHtml(p.univ, p.univLogo ? {type:'image', value:p.univLogo} : null, 18, {fontSizePx:10, chars:1}) : '';
+  var dt_header = '<div class="dt-header dt-only"><div><div class="dt-header-title">안녕하세요, '+p_name+' 👋</div><div class="dt-header-sub" style="display:flex;align-items:center;gap:5px;">'
+    + '<span>'+(p.school||'')+(p.school?' · ':'')+(p.grade||'')+'</span>'
+    + (_univDeptText ? '<span style="display:flex;align-items:center;gap:4px;">'+_univBadge+'<span>'+_univDeptText+'</span></span>' : '')
+    + '</div></div></div>';
   var content = ''
     +'<div class="card card-gold mentor-card-host"><div id="mentor-comment-area"><div style="color:var(--tx3);font-size:12px;text-align:center;padding:8px;">멘토 코멘트 로딩 중...</div></div></div>'
     +'<div id="lecture-dashboard"></div>'
