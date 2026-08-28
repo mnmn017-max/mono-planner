@@ -6,6 +6,8 @@
 // 컬렉션에도 자동으로 저장됩니다.
 
 const admin = require('firebase-admin');
+var EXAM_SOURCE_LABELS = { practice:'연습용', daesung:'대성', megastudy:'메가스터디', etoos:'이투스', pyeongga:'평가원', office:'교육청', etc:'기타' };
+function examSourceLabel(v){ return EXAM_SOURCE_LABELS[v] || v || null; }
 
 function parseServiceAccountJson(raw) {
   // FIREBASE_SERVICE_ACCOUNT는 base64로 인코딩되어 저장된 경우가 많다 (줄바꿈/따옴표 이스케이프 문제 회피용).
@@ -188,6 +190,7 @@ async function awardExamRewards(studentUid, branch, exam, results, prevScores, s
     var subjName = await getSubjectLabel(studentUid, r.subject, subjectNameCache);
     var subjDef = (exam.subjects && exam.subjects[r.subjectIndex]) || null;
 
+    // 같은 과목(r.subject 키)끼리만 비교되므로 이걸로 충분함 - 연습용 시험도 향상 판정에 포함
     if (prevScores && prevScores[r.subject] != null && r.score > prevScores[r.subject]) {
       await db.collection('points').add({
         branch: branch, studentUid: studentUid, type: 'plus',
@@ -223,6 +226,7 @@ async function writeExamResultToGrades(studentUid, sessionId, examId, exam, resu
     wrongBySubj: wrongBySubj,
     examSessionId: sessionId,
     examId: examId || null,
+    examSource: examSourceLabel(exam.examSource),
     source: 'exam_auto_forced',
     createdAt: admin.firestore.FieldValue.serverTimestamp()
   });
