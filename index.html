@@ -1709,6 +1709,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <button class="modal-btn cancel" onclick="closeModal('modal-offset-points')">취소</button>
 </div></div>
 
+<!-- 이미지 크게 보기 (로고 등) -->
+<div class="modal-overlay" id="modal-image-lightbox" onclick="if(event.target===this)closeModal('modal-image-lightbox');" style="background:rgba(0,0,0,0.85);">
+  <div style="max-width:90vw;max-height:85vh;display:flex;flex-direction:column;align-items:center;">
+    <img id="image-lightbox-img" src="" style="max-width:100%;max-height:75vh;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,0.5);"/>
+    <button class="modal-btn cancel" style="margin-top:16px;width:auto;padding:10px 24px;" onclick="closeModal('modal-image-lightbox')">닫기</button>
+  </div>
+</div>
+
 <div id="modal-avatar-edit" class="modal-overlay">
   <div class="modal" style="max-width:420px;">
     <div class="modal-title">프로필 아바타 변경</div>
@@ -6460,24 +6468,49 @@ window.autoFindUnivLogo = function(){
   var univName = document.getElementById('ps-univ').value.trim();
   if (!univName) { alert('먼저 목표 대학을 입력해주세요'); return; }
   var statusEl = document.getElementById('ps-univ-logo-status');
-  statusEl.textContent = '🔍 위키백과에서 검색 중...';
+  statusEl.textContent = '🔍 로고 이미지 검색 중...';
 
-  fetch('https://ko.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(univName))
-    .then(function(r){
-      if (!r.ok) throw new Error('찾을 수 없음');
-      return r.json();
+  // 1단계: 위키데이터에서 이 학교의 항목(entity)을 검색
+  fetch('https://www.wikidata.org/w/api.php?action=wbsearchentities&search='+encodeURIComponent(univName)+'&language=ko&format=json&origin=*')
+    .then(function(r){ return r.json(); })
+    .then(function(searchData){
+      var entityId = searchData.search && searchData.search[0] && searchData.search[0].id;
+      if (!entityId) throw new Error('no-entity');
+      // 2단계: 그 항목의 "로고 이미지"(P154) 속성을 조회 - 캠퍼스 사진이 아니라 진짜 로고만 정확히 가져옴
+      return fetch('https://www.wikidata.org/w/api.php?action=wbgetclaims&entity='+entityId+'&property=P154&format=json&origin=*')
+        .then(function(r2){ return r2.json(); });
     })
-    .then(function(data){
-      if (data.thumbnail && data.thumbnail.source) {
-        window._psUnivLogoUrl = data.thumbnail.source;
-        renderProfileUnivLogoPreview(data.thumbnail.source);
-        statusEl.innerHTML = '✓ 위키백과에서 이미지를 찾았어요. 로고가 아니거나 안 맞으면 "직접 선택"으로 바꿔주세요.';
-      } else {
-        statusEl.innerHTML = '위키백과에 등록된 이미지를 찾지 못했어요. "직접 선택"으로 올려주세요.';
-      }
+    .then(function(claimData){
+      var claims = claimData.claims && claimData.claims.P154;
+      var filename = claims && claims[0] && claims[0].mainsnak && claims[0].mainsnak.datavalue && claims[0].mainsnak.datavalue.value;
+      if (!filename) throw new Error('no-logo-property');
+      // 위키미디어 공용의 실제 파일 경로로 변환
+      var url = 'https://commons.wikimedia.org/wiki/Special:FilePath/' + encodeURIComponent(filename);
+      window._psUnivLogoUrl = url;
+      renderProfileUnivLogoPreview(url);
+      statusEl.innerHTML = '✓ 위키데이터에 등록된 공식 로고를 찾았어요.';
     })
     .catch(function(){
-      statusEl.innerHTML = '자동 검색에 실패했어요. "직접 선택"으로 올려주세요.';
+      // 위키데이터에 "로고 이미지" 항목이 따로 없는 학교도 있어서, 이 경우엔 위키백과 대표 이미지로 대체
+      // (건물 사진 등 로고가 아닌 이미지일 수 있음 - 이땐 "직접 선택"으로 바꾸시는 걸 권장)
+      statusEl.textContent = '🔍 위키데이터에 로고가 없어 위키백과 대표 이미지로 재검색 중...';
+      fetch('https://ko.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(univName))
+        .then(function(r){
+          if (!r.ok) throw new Error('찾을 수 없음');
+          return r.json();
+        })
+        .then(function(data){
+          if (data.thumbnail && data.thumbnail.source) {
+            window._psUnivLogoUrl = data.thumbnail.source;
+            renderProfileUnivLogoPreview(data.thumbnail.source);
+            statusEl.innerHTML = '⚠️ 정확한 로고는 못 찾았어요. 대신 위키백과 대표 이미지를 가져왔는데, 로고가 아닐 수 있어요 - 맞는지 확인해주시고 안 맞으면 "직접 선택"으로 바꿔주세요.';
+          } else {
+            statusEl.innerHTML = '이미지를 찾지 못했어요. "직접 선택"으로 올려주세요.';
+          }
+        })
+        .catch(function(){
+          statusEl.innerHTML = '자동 검색에 실패했어요. "직접 선택"으로 올려주세요.';
+        });
     });
 };
 
@@ -6508,7 +6541,7 @@ function renderProfileUnivLogoPreview(url){
   var preview = document.getElementById('ps-univ-logo-preview');
   if (!preview) return;
   if (!url) { preview.innerHTML = '<span style="font-size:12px;color:var(--tx4);">등록된 로고 없음 (이니셜로 표시됩니다)</span>'; return; }
-  preview.innerHTML = '<img src="'+escapeHtml(url)+'" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid var(--border);"/>'
+  preview.innerHTML = '<img src="'+escapeHtml(url)+'" onclick="openImageLightbox(\''+url.replace(/'/g,"\\'")+'\')" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid var(--border);cursor:pointer;"/>'
     + '<button type="button" onclick="window._psUnivLogoUrl=null;renderProfileUnivLogoPreview(null);" style="font-size:11px;color:var(--red);background:none;border:none;cursor:pointer;text-decoration:underline;">삭제</button>';
 }
 
@@ -6622,7 +6655,7 @@ function buildDashboard() {
   var p = currentProfile || {};
   var p_name = p.name||'학생';
   var _univDeptText = (p.grade==='성인'&&p.goal) ? (' · 목표 '+p.goal) : (p.univ ? (' · 목표 '+p.univ+(p.dept?' '+p.dept:'')) : '');
-  var _univBadge = (p.grade!=='성인' && p.univ) ? avatarCircleHtml(p.univ, p.univLogo ? {type:'image', value:p.univLogo} : null, 18, {fontSizePx:10, chars:1}) : '';
+  var _univBadge = (p.grade!=='성인' && p.univ) ? avatarCircleHtml(p.univ, p.univLogo ? {type:'image', value:p.univLogo} : null, 18, {fontSizePx:10, chars:1, onclick: p.univLogo ? "openImageLightbox('"+p.univLogo.replace(/'/g,"\\'")+"')" : null}) : '';
   var dt_header = '<div class="dt-header dt-only"><div><div class="dt-header-title">안녕하세요, '+p_name+' 👋</div><div class="dt-header-sub" style="display:flex;align-items:center;gap:5px;">'
     + '<span>'+(p.school||'')+(p.school?' · ':'')+(p.grade||'')+'</span>'
     + (_univDeptText ? '<span style="display:flex;align-items:center;gap:4px;">'+_univBadge+'<span>'+_univDeptText+'</span></span>' : '')
@@ -8090,6 +8123,13 @@ window.toggleTeacherNotifPanel = function() {
 // 문자열 템플릿으로 화면을 그리는 이 앱 특성상, DOM에 직접 적용하는 _applyAvatar와
 // 별개로 이 함수가 필요함 - 학생현황 카드, 채팅 상대방 정보 등 "다른 사람"의
 // 프로필(이미지/이모지/이니셜)을 어디서든 똑같은 방식으로 보여주기 위해 사용.
+// 이미지(로고 등)를 눌러서 크게 볼 수 있게 하는 공통 함수
+window.openImageLightbox = function(url){
+  if (!url) return;
+  document.getElementById('image-lightbox-img').src = url;
+  openModal('modal-image-lightbox');
+};
+
 function avatarCircleHtml(name, avatar, sizePx, opts){
   opts = opts || {};
   sizePx = sizePx || 40;
