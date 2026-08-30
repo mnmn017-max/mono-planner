@@ -4890,7 +4890,8 @@ window.openExamMonitor = function(examId){
 // ══════════════════════════════════════════════════════════
 
 function buildExamListPage(){
-  return '<div class="card"><div class="card-h"><div class="card-title">📝 나의 시험</div></div><div id="exam-list-student">불러오는 중...</div></div>';
+  var __dt_h = '<div class="dt-header dt-only"><div><div class="dt-header-title">나의 시험</div></div></div>';
+  return __dt_h+'<div class="dt-main-grid"><div style="grid-column:1/-1;"><div class="card"><div class="card-h"><div class="card-title">📝 나의 시험</div></div><div id="exam-list-student">불러오는 중...</div></div></div></div>';
 }
 
 function loadExamList(){
