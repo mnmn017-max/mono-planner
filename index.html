@@ -5036,6 +5036,17 @@ window.startExam = function(sessionId){
     }
   } catch(e){ console.warn('[TTS 잠금해제 실패]', e); }
 
+  // 듣기평가 파일(HTML5 audio) 자동재생도 브라우저가 막는 경우가 있어서, 같은 원리로
+  // 지금(진짜 클릭 시점)에 무음으로 짧게 재생→정지를 한 번 해두면, 나중에 화면이 자동으로
+  // 전환되며 재생되는 듣기 파일도 막히지 않고 통과되는 경우가 많음.
+  try {
+    var primeAudio = new Audio();
+    primeAudio.volume = 0;
+    primeAudio.src = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//tQxAADB8AhSmxhIIEVCSiJrDCQBTcu3UrAIwUdkRgQbFAZC7k+9re83/6svUAxrM5tQmMAAAAAAAAAAAAAAAAA';
+    var p = primeAudio.play();
+    if (p && p.then) { p.then(function(){ primeAudio.pause(); }).catch(function(){}); }
+  } catch(e){}
+
   getDoc(doc(db,'examSessions',sessionId)).then(function(sessDoc){
     if (!sessDoc.exists()) { alert('시험 세션을 찾을 수 없습니다'); return; }
     var sess = Object.assign({id:sessDoc.id}, sessDoc.data());
@@ -5271,6 +5282,29 @@ function _enterBreakScreen(sessionId, exam, finishedSubjIdx, breakDeadlineMs){
   }, 1000);
 }
 
+// 듣기 파일 자동재생이 브라우저 정책으로 막혔을 때, 학생이 직접 눌러서 재생할 수 있도록
+// 화면 위에 눈에 띄는 배너를 띄움. 직접 누르는 클릭은 브라우저가 항상 허용하기 때문에
+// 이 방법이 가장 확실함.
+function _showListeningPlayFallback(url, sessionId){
+  if (document.getElementById('listening-fallback-banner')) return; // 중복 방지
+  var banner = document.createElement('div');
+  banner.id = 'listening-fallback-banner';
+  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:linear-gradient(135deg,var(--burg),var(--burg2));color:#fff;padding:14px 18px;display:flex;align-items:center;justify-content:center;gap:14px;z-index:250;box-shadow:0 4px 16px rgba(123,29,29,0.35);';
+  banner.innerHTML = '<span style="font-size:14px;font-weight:700;">🔊 듣기 파일이 자동으로 재생되지 않았어요 - 아래 버튼을 눌러 재생해주세요</span>'
+    + '<button id="listening-fallback-play-btn" style="padding:8px 18px;background:#fff;color:var(--burg);border:none;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">▶ 재생하기</button>';
+  document.body.appendChild(banner);
+
+  document.getElementById('listening-fallback-play-btn').onclick = function(){
+    var audio = new Audio(url);
+    audio.play().then(function(){
+      updateDoc(doc(db,'examSessions',sessionId), {listeningPlayed:true}).catch(function(){});
+      banner.remove();
+    }).catch(function(e){
+      alert('재생에 실패했습니다. 기기 음량 및 무음 모드를 확인한 뒤 다시 눌러주세요.\n('+e.message+')');
+    });
+  };
+}
+
 function _enterExamScreen(sessionId, exam, subj, subjIdx, deadlineMs, savedAnswers, listeningPlayed){
   ExamEngine.sessionId = sessionId;
   ExamEngine.examId = exam.id;
@@ -5285,11 +5319,19 @@ function _enterExamScreen(sessionId, exam, subj, subjIdx, deadlineMs, savedAnswe
   showScreen('screen-exam');
   document.getElementById('screen-exam').innerHTML = buildExamTakingHtml(exam, subj);
 
-  // 듣기 파일 자동 1회 재생
-  if (subj.listeningUrl && !listeningPlayed) {
-    var audio = new Audio(subj.listeningUrl);
-    audio.play().catch(function(){});
-    updateDoc(doc(db,'examSessions',sessionId), {listeningPlayed:true}).catch(function(){});
+  // 듣기 파일 자동 1회 재생. 브라우저가 자동재생을 막는 경우가 있어서(기기/브라우저마다
+  // 다르고, 클릭 없이 화면이 뜨는 경우일수록 더 잘 막힘), 성공했을 때만 "재생함"으로
+  // 기록하고, 실패하면 학생이 직접 누를 수 있는 버튼을 보여줌 - 예전엔 실패해도 무조건
+  // "재생함"으로 기록해버려서 다시는 재생을 시도할 방법조차 없었음.
+  if (subj.listeningUrl) {
+    if (!listeningPlayed) {
+      var audio = new Audio(subj.listeningUrl);
+      audio.play().then(function(){
+        updateDoc(doc(db,'examSessions',sessionId), {listeningPlayed:true}).catch(function(){});
+      }).catch(function(){
+        _showListeningPlayFallback(subj.listeningUrl, sessionId);
+      });
+    }
   }
 
   renderExamOmrGrid(subj);
