@@ -63,7 +63,6 @@
   --accent:#7B1D1D;
 }
 html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
-*{touch-action:manipulation;}
 button,.todo-check-hit,.todo-item,.s-card,.nav-item,.dt-sb-item,.kchat-room-item,a,[onclick]{touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',sans-serif;background:var(--bg);color:var(--tx1);overflow:hidden;width:100%;height:100%;font-size:14px;-webkit-font-smoothing:antialiased;}
 .screen{
@@ -142,7 +141,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .timer-banner-empty-text{font-size:11px;color:var(--tx3);}
 
 /* ── 콘텐츠 영역 ── */
-.content-area{flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:10px;}
+.content-area{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:12px 14px;display:flex;flex-direction:column;gap:10px;}
 .content-area::-webkit-scrollbar{width:5px;}
 .content-area::-webkit-scrollbar-thumb{background:var(--border);border-radius:5px;}
 
@@ -1263,6 +1262,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 /* 시험 전략 노트 / 시험 회고 화면 */
 .refl-wrap{flex:1;min-height:0;overflow-y:auto;display:flex;align-items:flex-start;justify-content:center;padding:36px 16px;background:radial-gradient(ellipse at 50% 0%,#F3E9D2,var(--bg) 60%);}
 .refl-card{width:100%;max-width:640px;background:#fff;border-radius:20px;padding:34px 34px 30px;box-shadow:0 16px 44px rgba(50,30,10,0.16);border:1px solid var(--border2);}
+
+.elective-choice-list{display:flex;flex-direction:column;gap:10px;margin-top:20px;}
+.elective-choice-btn{
+  padding:16px 20px;background:var(--surface2);border:1.5px solid var(--border);border-radius:12px;
+  font-size:15px;font-weight:700;color:var(--tx1);cursor:pointer;text-align:left;transition:all .15s;
+}
+.elective-choice-btn:hover{background:var(--burg-l2);border-color:var(--burg);color:var(--burg);}
+.elective-choice-btn:active{transform:scale(0.98);}
 .refl-brand{display:flex;justify-content:center;margin-bottom:14px;}
 .refl-brand-logo{height:72px;width:auto;object-fit:contain;}
 .refl-back-btn{
@@ -1710,6 +1717,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <button class="modal-btn cancel" onclick="closeModal('modal-student-point-history')" style="margin-top:12px;">닫기</button>
 </div></div>
 
+<!-- 선택과목 마스터 목록 관리 -->
+<div class="modal-overlay" id="modal-elective-manage"><div class="modal" style="max-width:460px;max-height:85vh;overflow-y:auto;">
+  <div class="modal-title">🔧 선택과목 관리</div>
+  <div style="font-size:12px;color:var(--tx3);margin-bottom:14px;line-height:1.6;">여기서 미리 만들어둔 선택과목만 시험 생성/성적 입력에서 고를 수 있어요. 자유 입력 대신 이 목록에서만 고르게 해서, 오타나 띄어쓰기 차이로 같은 과목이 따로 집계되는 걸 막습니다.</div>
+  <div class="modal-label">과목</div>
+  <select class="modal-select" id="elective-manage-subject-select" onchange="renderElectiveManageList()">
+    <option value="ko">국어</option>
+    <option value="ma">수학</option>
+    <option value="sc">과학탐구</option>
+    <option value="so">사회탐구</option>
+  </select>
+  <div id="elective-manage-list" style="margin:10px 0;"></div>
+  <div style="display:flex;gap:8px;">
+    <input class="modal-input" id="elective-manage-add-input" placeholder="새 선택과목 이름 (예: 생명과학Ⅰ)" style="margin:0;flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();addElectiveOption();}"/>
+    <button onclick="addElectiveOption()" class="exam-add-chip-btn">+ 추가</button>
+  </div>
+  <button class="modal-btn cancel" onclick="closeModal('modal-elective-manage')" style="margin-top:16px;">닫기</button>
+</div></div>
+
 <div class="modal-overlay" id="modal-offset-points"><div class="modal" style="max-width:420px;">
   <div class="modal-title">🔄 상점으로 벌점 상쇄</div>
   <div style="font-size:12px;color:var(--tx3);margin-bottom:14px;line-height:1.6;">
@@ -2132,7 +2158,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <div class="modal-label">응시일</div><input class="modal-input" type="date" id="edit-grade-exam-date"/>
   <div class="modal-label">과목별 점수 / 등급</div>
   <div style="background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:6px">
-    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="subject-tag subj-ko" style="width:52px;text-align:center">국어</span><select class="modal-select" id="edit-gs-ko-opt" style="flex:1;margin-bottom:0;font-size:12px"><option value="">선택과목 없음</option><option value="화법과 작문">화법과 작문</option><option value="언어와 매체">언어와 매체</option></select></div>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="subject-tag subj-ko" style="width:52px;text-align:center">국어</span><select class="modal-select" id="edit-gs-ko-opt" style="flex:1;margin-bottom:0;font-size:12px"><option value="">선택과목 없음</option></select></div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--tx3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-ko-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-ko-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
     <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--tx3);width:52px">오답</span><input class="modal-input" id="edit-wrong-ko" placeholder="오답 문항 (예: 3,7,15)" style="flex:1;margin-bottom:0"/></div>
   </div>
@@ -2142,7 +2168,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
     <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--tx3);width:52px">오답</span><input class="modal-input" id="edit-wrong-en" placeholder="오답 문항 (예: 23,30)" style="flex:1;margin-bottom:0"/></div>
   </div>
   <div style="background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:6px">
-    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="subject-tag subj-ma" style="width:52px;text-align:center">수학</span><select class="modal-select" id="edit-gs-ma-opt" style="flex:1;margin-bottom:0;font-size:12px"><option value="">선택과목 없음</option><option value="미적분">미적분</option><option value="확률과 통계">확률과 통계</option><option value="기하">기하</option></select></div>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="subject-tag subj-ma" style="width:52px;text-align:center">수학</span><select class="modal-select" id="edit-gs-ma-opt" style="flex:1;margin-bottom:0;font-size:12px"><option value="">선택과목 없음</option></select></div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--tx3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-ma-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-ma-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
     <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--tx3);width:52px">오답</span><input class="modal-input" id="edit-wrong-ma" placeholder="오답 문항 (예: 21,29,30)" style="flex:1;margin-bottom:0"/></div>
   </div>
@@ -2156,8 +2182,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <div style="background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:6px">
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
       <span style="font-size:11px;color:var(--tx3);width:40px;flex-shrink:0">탐구1</span>
-      <select class="modal-select" id="edit-tan1-type" style="width:70px;flex-shrink:0;margin-bottom:0;font-size:12px"><option value="">선택</option><option value="sc">과탐</option><option value="so">사탐</option></select>
-      <input class="modal-input" id="edit-tan1-name" placeholder="과목명" style="flex:1;margin-bottom:0;font-size:12px"/>
+      <select class="modal-select" id="edit-tan1-type" style="width:70px;flex-shrink:0;margin-bottom:0;font-size:12px" onchange="populateTanNameSelect(1)"><option value="">선택</option><option value="sc">과탐</option><option value="so">사탐</option></select>
+      <select class="modal-select" id="edit-tan1-name" style="flex:1;margin-bottom:0;font-size:12px"><option value="">과목 선택</option></select>
     </div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px">
       <span style="font-size:11px;color:var(--tx3);width:52px">점수/등급</span>
@@ -2172,8 +2198,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <div style="background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:10px">
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
       <span style="font-size:11px;color:var(--tx3);width:40px;flex-shrink:0">탐구2</span>
-      <select class="modal-select" id="edit-tan2-type" style="width:70px;flex-shrink:0;margin-bottom:0;font-size:12px"><option value="">선택</option><option value="sc">과탐</option><option value="so">사탐</option></select>
-      <input class="modal-input" id="edit-tan2-name" placeholder="과목명" style="flex:1;margin-bottom:0;font-size:12px"/>
+      <select class="modal-select" id="edit-tan2-type" style="width:70px;flex-shrink:0;margin-bottom:0;font-size:12px" onchange="populateTanNameSelect(2)"><option value="">선택</option><option value="sc">과탐</option><option value="so">사탐</option></select>
+      <select class="modal-select" id="edit-tan2-name" style="flex:1;margin-bottom:0;font-size:12px"><option value="">과목 선택</option></select>
     </div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px">
       <span style="font-size:11px;color:var(--tx3);width:52px">점수/등급</span>
@@ -2883,6 +2909,128 @@ function _showInAppNotifBanner(title, body){
 var _examSourceOptionsCache = null;
 var DEFAULT_EXAM_SOURCE_OPTIONS = ['연습용','사설','정규','대성','메가스터디','이투스','평가원','교육청','기타'];
 
+// ═══════════════════════════════════════
+// 선택과목 마스터 목록 - 국어(화작/언매), 수학(확통/미적/기하), 과학탐구/사회탐구
+// 세부과목을 "그때그때 자유 입력"하면 오타나 띄어쓰기 차이로 같은 과목이 다른 과목으로
+// 집계되는 문제가 생기므로, 지점별로 미리 목록화해두고 시험 생성/성적 입력에서는
+// 이 목록에서 "선택"만 하도록 함. 목록 자체는 이 화면에서 추가/삭제/이름변경 가능.
+// 과목이 electives가 필요없으면 그냥 빈 목록으로 두면 됨(강제로 뭔가 만들어두지 않음).
+// ═══════════════════════════════════════
+var _electiveOptionsCache = null; // {ko:[...], ma:[...], sc:[...], so:[...], ...}
+var DEFAULT_ELECTIVE_OPTIONS = {
+  ko: ['화법과 작문', '언어와 매체'],
+  ma: ['확률과 통계', '미적분', '기하'],
+  sc: ['물리학Ⅰ','화학Ⅰ','생명과학Ⅰ','지구과학Ⅰ','물리학Ⅱ','화학Ⅱ','생명과학Ⅱ','지구과학Ⅱ'],
+  so: ['생활과 윤리','윤리와 사상','한국지리','세계지리','동아시아사','세계사','정치와 법','경제','사회문화']
+};
+
+function loadElectiveOptions(){
+  if (_electiveOptionsCache) return Promise.resolve(_electiveOptionsCache);
+  var branch = getBranch();
+  return getDoc(doc(db,'electiveSubjectOptions',branch)).then(function(d){
+    var saved = (d.exists() && d.data().subjects) ? d.data().subjects : {};
+    var merged = {};
+    Object.keys(DEFAULT_ELECTIVE_OPTIONS).forEach(function(k){ merged[k] = DEFAULT_ELECTIVE_OPTIONS[k].slice(); });
+    Object.keys(saved).forEach(function(k){ merged[k] = saved[k]; }); // 저장된 게 있으면 (빈 배열 포함) 그걸로 덮어씀
+    _electiveOptionsCache = merged;
+    return merged;
+  }).catch(function(){ return Object.assign({}, DEFAULT_ELECTIVE_OPTIONS); });
+}
+
+function saveElectiveOptionsForSubject(subjKey, list){
+  var branch = getBranch();
+  return loadElectiveOptions().then(function(all){
+    all[subjKey] = list;
+    _electiveOptionsCache = all;
+    return setDoc(doc(db,'electiveSubjectOptions',branch), {subjects: all}, {merge:true});
+  });
+}
+
+// 탐구1/탐구2의 "과탐/사탐" 선택에 따라, 그에 맞는 마스터 목록으로 과목명 select를 채움
+window.populateTanNameSelect = function(n, preloadedOptions){
+  var typeSel = document.getElementById('edit-tan'+n+'-type');
+  var nameSel = document.getElementById('edit-tan'+n+'-name');
+  if (!typeSel || !nameSel) return;
+  var type = typeSel.value; // 'sc' or 'so'
+  if (!type) { nameSel.innerHTML = '<option value="">먼저 과탐/사탐을 선택하세요</option>'; return; }
+  var fillFn = function(all){
+    var list = all[type] || [];
+    nameSel.innerHTML = '<option value="">과목 선택</option>' + list.map(function(o){ return '<option value="'+escapeHtml(o)+'">'+escapeHtml(o)+'</option>'; }).join('');
+  };
+  if (preloadedOptions) fillFn(preloadedOptions);
+  else loadElectiveOptions().then(fillFn);
+};
+
+window.openElectiveManageModal = function(){
+  openModal('modal-elective-manage');
+  renderElectiveManageList();
+};
+
+window.renderElectiveManageList = function(){
+  var subj = document.getElementById('elective-manage-subject-select').value;
+  var host = document.getElementById('elective-manage-list');
+  host.innerHTML = '<div style="color:var(--tx3);font-size:12px;">불러오는 중...</div>';
+  loadElectiveOptions().then(function(all){
+    var list = all[subj] || [];
+    if (!list.length) {
+      host.innerHTML = '<div style="color:var(--tx4);font-size:12px;padding:8px 0;">등록된 선택과목이 없습니다 (이 과목은 선택과목 없이 그냥 진행됩니다)</div>';
+      return;
+    }
+    host.innerHTML = list.map(function(name, i){
+      return '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--surface2);border-radius:8px;margin-bottom:5px;">'
+        + '<span style="flex:1;font-size:13px;color:var(--tx1);">'+escapeHtml(name)+'</span>'
+        + '<button onclick="renameElectiveOption('+i+')" style="padding:3px 8px;background:var(--surface);border:1px solid var(--border);border-radius:5px;font-size:11px;cursor:pointer;color:var(--tx2);">이름변경</button>'
+        + '<button onclick="removeElectiveOption('+i+')" style="padding:3px 8px;background:var(--red-l);border:1px solid rgba(185,28,28,0.2);border-radius:5px;font-size:11px;cursor:pointer;color:var(--red);">삭제</button>'
+        + '</div>';
+    }).join('');
+  });
+};
+
+window.addElectiveOption = function(){
+  var subj = document.getElementById('elective-manage-subject-select').value;
+  var input = document.getElementById('elective-manage-add-input');
+  var name = input.value.trim();
+  if (!name) return;
+  loadElectiveOptions().then(function(all){
+    var list = (all[subj] || []).slice();
+    if (list.indexOf(name) !== -1) { alert('이미 있는 과목입니다'); return; }
+    list.push(name);
+    return saveElectiveOptionsForSubject(subj, list).then(function(){
+      input.value = '';
+      renderElectiveManageList();
+    });
+  });
+};
+
+window.removeElectiveOption = function(idx){
+  var subj = document.getElementById('elective-manage-subject-select').value;
+  loadElectiveOptions().then(function(all){
+    var list = (all[subj] || []).slice();
+    var removed = list[idx];
+    if (!confirm('"'+removed+'"을(를) 목록에서 삭제하시겠습니까?\n(이미 이 이름으로 저장된 기존 성적 데이터는 그대로 남습니다)')) return;
+    list.splice(idx, 1);
+    saveElectiveOptionsForSubject(subj, list).then(renderElectiveManageList);
+  });
+};
+
+window.renameElectiveOption = function(idx){
+  var subj = document.getElementById('elective-manage-subject-select').value;
+  loadElectiveOptions().then(function(all){
+    var list = (all[subj] || []).slice();
+    var oldName = list[idx];
+    var newName = prompt('새 이름을 입력해주세요', oldName);
+    if (!newName || !newName.trim() || newName.trim() === oldName) return;
+    newName = newName.trim();
+    if (list.indexOf(newName) !== -1) { alert('이미 있는 이름입니다'); return; }
+    list[idx] = newName;
+    saveElectiveOptionsForSubject(subj, list).then(function(){
+      alert('이름을 변경했습니다.\n(이미 "'+oldName+'"으로 저장된 기존 성적 데이터는 자동으로 안 바뀌니, 필요하면 개별 성적에서 직접 수정해주세요)');
+      renderElectiveManageList();
+    });
+  });
+};
+
+
 function loadExamSourceOptions(){
   if (_examSourceOptionsCache) return Promise.resolve(_examSourceOptionsCache);
   var branch = getBranch();
@@ -2983,7 +3131,7 @@ function buildTExamManage(){
       return '<button onclick="switchExamMgmtCategory(\''+escapeHtml(c).replace(/'/g,"\\'")+'\')" class="exam-mgmt-cat-btn'+(active?' active':'')+'">'+escapeHtml(c)+'</button>';
     }).join('') + '<button onclick="openAddExamSourceOption()" class="exam-mgmt-cat-btn exam-mgmt-cat-add">+ 분류 추가</button>';
     return safetyCard + '<div class="card">'
-      +'<div class="card-h"><div class="card-title">📝 시험 관리</div><button class="modal-btn primary" style="margin:0;width:auto;padding:8px 16px;font-size:12px;" onclick="openCreateExamModal()">+ 새 시험 만들기</button></div>'
+      +'<div class="card-h"><div class="card-title">📝 시험 관리</div><div style="display:flex;gap:6px;"><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openElectiveManageModal()">🔧 선택과목 관리</button><button class="modal-btn primary" style="margin:0;width:auto;padding:8px 16px;font-size:12px;" onclick="openCreateExamModal()">+ 새 시험 만들기</button></div></div>'
       +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px;" id="exam-mgmt-cat-tabs">'+catTabs+'</div>'
       +'<div id="exam-list-area">'+listHtml+'</div>'
       +'</div>';
@@ -3051,6 +3199,8 @@ window.runExamForceSubmitNow = function(){
           if (sess.status === 'in_progress') {
             if (!sess.deadlineMs || sess.deadlineMs > now) return;
             var subjIdx = sess.currentSubjectIndex || 0;
+            // 항상 "현재" 시험 설정으로 채점 - 선생님이 배점/정답을 고치면 이미 응시중이던
+            // 학생에게도 그대로 반영되도록 함 (요청사항)
             var subj = exam.subjects[subjIdx];
             if (!subj) return;
 
@@ -3069,9 +3219,9 @@ window.runExamForceSubmitNow = function(){
 
             if (isLastSubject) {
               return updateDoc(doc(db,'examSessions',s.id), {status:'graded', subjectResults:results, currentAnswers:{}})
-                .then(function(){ return _getPrevSubjectScores(sess.studentUid, exam.gradeType); })
+                .then(function(){ return _getPrevSubjectScores(sess.studentUid, exam.gradeType, examSourceLabel(exam.examSource)); })
                 .then(function(prevScores){
-                  return _writeExamResultToGrades(sess.studentUid, s.id, exam, results).then(function(){
+                  return _writeExamResultToGrades(sess.studentUid, s.id, exam, results, sess.electiveChoices).then(function(){
                     _awardExamRewards(sess.studentUid, exam, results, prevScores);
                   });
                 })
@@ -3132,6 +3282,7 @@ function examCardHtml(ex){
     +'<button onclick="openAssignExamModal(\''+ex.id+'\')" class="btn-secondary" style="font-size:11px;padding:6px 10px;">배정</button>'
     +'<button onclick="openExamMonitor(\''+ex.id+'\')" class="btn-primary" style="font-size:11px;padding:6px 10px;">현황</button>'
     +'<button onclick="openEditExamModal(\''+ex.id+'\')" style="font-size:11px;padding:6px 10px;background:#eef7ff;border:1px solid rgba(59,130,246,0.25);border-radius:6px;color:#2563eb;cursor:pointer;">✏️ 설정 수정</button>'
+    +'<button onclick="reGradeExamSessions(\''+ex.id+'\',\''+escapeHtml(ex.title).replace(/'/g,"\\'")+'\')" style="font-size:11px;padding:6px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);cursor:pointer;">🔄 다시 채점하기</button>'
     +'<button onclick="openExamReflections(\''+ex.id+'\',\''+escapeHtml(ex.title)+'\')" style="font-size:11px;padding:6px 10px;background:#eef2ff;border:1px solid rgba(79,70,229,0.2);border-radius:6px;color:#4338ca;cursor:pointer;">🌱 다음 걸음을 위하여</button>'
     +'<button onclick="deleteExamConfirm(\''+ex.id+'\',\''+escapeHtml(ex.title)+'\')" style="font-size:11px;padding:6px 10px;background:var(--red-l);border:1px solid rgba(185,28,28,0.2);border-radius:6px;color:var(--red);cursor:pointer;">삭제</button>'
     +'<button onclick="openEditGradeCutoffModal(\''+ex.id+'\')" style="font-size:11px;padding:6px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.25);border-radius:6px;color:var(--gold);cursor:pointer;">📐 등급표</button>'
@@ -3209,8 +3360,13 @@ window.openEditExamModal = function(examId){
       _editingExamId = examId;
       _examMode = exam.type || 'single';
       _examSubjectBlocks = (exam.subjects||[]).map(function(s){
+        var subj = s.subject, exCat = s.exCategory||null;
+        // 예전 시험은 과학탐구/사회탐구가 그냥 sc/so로 저장되어 있었는데, 새 구조(탐구과목1/2 +
+        // 계열)로 자연스럽게 열리도록 여기서 한 번 변환해줌
+        if (subj === 'sc' || subj === 'so') { exCat = subj; subj = 'ex1'; }
         return {
-          subject: s.subject, durationMin: s.durationMin, breakAfterMin: s.breakAfterMin||0,
+          subject: subj, exCategory: exCat, electiveOptions: s.electiveOptions||[],
+          durationMin: s.durationMin, breakAfterMin: s.breakAfterMin||0,
           listeningUrl: s.listeningUrl||null, listeningDurationSec: s.listeningDurationSec||null,
           questions: (s.questions||[]).map(function(q){ return Object.assign({}, q); }),
           gradeCutoffs: s.gradeCutoffs ? s.gradeCutoffs.map(function(c){return Object.assign({},c);}) : _defaultGradeCutoffs()
@@ -3465,7 +3621,7 @@ function _speakExamAlert(text, exam, minutesLeft){
 }
 
 function _newExamSubjectBlock(){
-  return { subject:'ko', durationMin:100, breakAfterMin:20, listeningUrl:null, questions:[], gradeCutoffs:_defaultGradeCutoffs() };
+  return { subject:'ko', exCategory:null, electiveOptions:[], durationMin:100, breakAfterMin:20, listeningUrl:null, questions:[], gradeCutoffs:_defaultGradeCutoffs() };
 }
 
 function _defaultGradeCutoffs(){
@@ -3656,20 +3812,75 @@ window.updateExamSubjectField = function(idx, field, value){
   if (!b) return;
   if (field==='durationMin' || field==='breakAfterMin') b[field] = parseInt(value,10)||0;
   else b[field] = value;
+  if (field === 'subject' || field === 'exCategory') {
+    b.electiveOptions = []; // 과목/계열이 바뀌면 이전에 골라둔 선택과목은 더 이상 안 맞을 수 있어 초기화
+    renderExamSubjectBlocks(); // 계열 선택창 등 구조 자체가 바뀌어야 해서 전체 재렌더
+  }
+};
+
+// 과목(또는 탐구 계열)에 맞는 마스터 목록을 불러와서, 이 시험에 적용할 선택과목을
+// 체크박스로 여러 개 고를 수 있게 함. 마스터 목록이 비어있는 과목이면 아무것도 안 뜨고
+// (선택과목 없이 그냥 진행) - 억지로 뭔가 강제하지 않음.
+window.renderExamElectivePanel = function(idx){
+  var block = _examSubjectBlocks[idx];
+  var host = document.getElementById('exam-elective-panel-'+idx);
+  if (!block || !host) return;
+  var isExplore = block.subject === 'ex1' || block.subject === 'ex2';
+  var baseKey = isExplore ? block.exCategory : block.subject;
+  if (!baseKey) { host.innerHTML = ''; return; }
+  if (isExplore && !block.exCategory) { host.innerHTML = '<div style="font-size:11px;color:var(--tx4);">위에서 계열(과학탐구/사회탐구)을 먼저 선택해주세요</div>'; return; }
+
+  loadElectiveOptions().then(function(all){
+    var list = all[baseKey] || [];
+    if (!list.length) {
+      host.innerHTML = '<div style="font-size:11px;color:var(--tx4);">이 과목엔 등록된 선택과목이 없습니다 (선택과목 없이 진행됩니다). "🔧 선택과목 관리"에서 추가할 수 있어요.</div>';
+      return;
+    }
+    var checked = block.electiveOptions || [];
+    host.innerHTML = '<div class="modal-label" style="margin-bottom:6px;">선택과목 <span class="exam-optional-tag">이 시험에서 학생이 고를 수 있는 과목 - 여러 개 선택 가능, 선택사항</span></div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:8px;">'
+      + list.map(function(name){
+          var isChecked = checked.indexOf(name) !== -1;
+          return '<label style="display:flex;align-items:center;gap:5px;padding:6px 10px;background:'+(isChecked?'var(--burg-l2)':'var(--surface2)')+';border:1px solid '+(isChecked?'var(--burg)':'var(--border)')+';border-radius:8px;font-size:12px;cursor:pointer;color:'+(isChecked?'var(--burg)':'var(--tx2)')+';">'
+            + '<input type="checkbox" '+(isChecked?'checked':'')+' onchange="toggleExamElectiveOption('+idx+',\''+escapeHtml(name).replace(/'/g,"\\'")+'\',this.checked)" style="margin:0;"/>'
+            + escapeHtml(name)
+            + '</label>';
+        }).join('')
+      + '</div>';
+  });
+};
+
+window.toggleExamElectiveOption = function(idx, name, isChecked){
+  var block = _examSubjectBlocks[idx];
+  if (!block) return;
+  if (!block.electiveOptions) block.electiveOptions = [];
+  if (isChecked) {
+    if (block.electiveOptions.indexOf(name) === -1) block.electiveOptions.push(name);
+  } else {
+    block.electiveOptions = block.electiveOptions.filter(function(n){ return n !== name; });
+  }
 };
 
 window.renderExamSubjectBlocks = function(){
   var container = document.getElementById('exam-subjects-container');
   if (!container) return;
-  var subjList = (typeof subjectNames !== 'undefined' && subjectNames)
-    ? Object.keys(subjectNames).map(function(k){ return {key:k, name:subjectNames[k]}; })
-    : [{key:'ko',name:'국어'},{key:'en',name:'영어'},{key:'ma',name:'수학'},{key:'hi',name:'한국사'},{key:'sc',name:'과학탐구'},{key:'so',name:'사회탐구'}];
+  // 시험 관리 화면에서만 "과학탐구/사회탐구"를 "탐구과목1/탐구과목2"로 표시 (성적탭 등 다른
+  // 화면의 subjectNames는 그대로 둠 - 거기까지 바뀌면 플래너 등 무관한 곳까지 영향을 줌).
+  // ex1/ex2를 고르면 그 안에서 "계열(과학탐구/사회탐구)"을 따로 정하고, 그 계열의 마스터
+  // 목록에서 선택과목을 여러 개 고를 수 있음.
+  var subjList = [
+    {key:'ko',name:'국어'},{key:'en',name:'영어'},{key:'ma',name:'수학'},{key:'hi',name:'한국사'},
+    {key:'ex1',name:'탐구과목1'},{key:'ex2',name:'탐구과목2'}
+  ];
 
   container.innerHTML = _examSubjectBlocks.map(function(block, idx){
     var isLast = idx === _examSubjectBlocks.length - 1;
     var subjOptionsHtml = subjList.map(function(s){
       return '<option value="'+s.key+'"'+(block.subject===s.key?' selected':'')+'>'+escapeHtml(s.name)+'</option>';
     }).join('');
+    var isExplore = block.subject === 'ex1' || block.subject === 'ex2';
+    // 선택과목 마스터 목록 기준 과목 키 (탐구는 계열에 따라 sc/so, 나머지는 그대로)
+    var electiveBaseKey = isExplore ? (block.exCategory || '') : block.subject;
 
     return '<div class="exam-section exam-subject-block">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">'
@@ -3681,6 +3892,16 @@ window.renderExamSubjectBlocks = function(){
       +   '<div style="width:120px;"><div class="modal-label">시간(분)</div><input class="modal-input" type="number" value="'+block.durationMin+'" oninput="updateExamSubjectField('+idx+',\'durationMin\',this.value)"/></div>'
       +   (_examMode==='multi' && !isLast ? '<div style="width:130px;"><div class="modal-label">다음 쉬는시간(분)</div><input class="modal-input" type="number" value="'+block.breakAfterMin+'" oninput="updateExamSubjectField('+idx+',\'breakAfterMin\',this.value)"/></div>' : '')
       + '</div>'
+
+      + (isExplore ?
+          '<div style="margin-top:10px;"><div class="modal-label">계열</div><select class="modal-select" onchange="updateExamSubjectField('+idx+',\'exCategory\',this.value)">'
+          + '<option value="">선택해주세요</option>'
+          + '<option value="sc"'+(block.exCategory==='sc'?' selected':'')+'>과학탐구</option>'
+          + '<option value="so"'+(block.exCategory==='so'?' selected':'')+'>사회탐구</option>'
+          + '</select></div>'
+        : '')
+
+      + '<div id="exam-elective-panel-'+idx+'" style="margin-top:10px;"></div>'
 
       + '<div style="margin-top:12px;">'
       +   '<button type="button" class="exam-cutoff-toggle-btn" onclick="toggleGradeCutoffPanel('+idx+')">📐 등급 커트라인 설정 <span class="exam-optional-tag">선택사항</span> <span id="exam-cutoff-arrow-'+idx+'">▾</span></button>'
@@ -3736,7 +3957,7 @@ window.renderExamSubjectBlocks = function(){
       + '</div>';
   }).join('');
 
-  _examSubjectBlocks.forEach(function(_, idx){ renderExamQuestionBuilder(idx); renderGradeCutoffRows(idx); renderQuickAnswerBox(idx); });
+  _examSubjectBlocks.forEach(function(_, idx){ renderExamQuestionBuilder(idx); renderGradeCutoffRows(idx); renderQuickAnswerBox(idx); renderExamElectivePanel(idx); });
 };
 
 window.addExamQuestion = function(blockIdx, type){
@@ -4371,6 +4592,8 @@ window.saveExam = function(){
     });
     return {
       subject: block.subject,
+      exCategory: block.exCategory || null,
+      electiveOptions: block.electiveOptions || [],
       order: i+1,
       durationMin: block.durationMin,
       breakAfterMin: (i < _examSubjectBlocks.length-1) ? (block.breakAfterMin||0) : 0,
@@ -4788,10 +5011,57 @@ window.startExam = function(sessionId){
 };
 
 function _beginSubjectNow(sessionId, exam, subj, subjIdx){
-  _maybeShowStrategyThenStart(sessionId, exam, subj, subjIdx, function(){
-    _actuallyStartSubjectTimer(sessionId, exam, subj, subjIdx);
+  _maybeShowElectiveThenStart(sessionId, exam, subj, subjIdx, function(){
+    _maybeShowStrategyThenStart(sessionId, exam, subj, subjIdx, function(){
+      _actuallyStartSubjectTimer(sessionId, exam, subj, subjIdx);
+    });
   });
 }
+
+// 이 과목에 선택과목이 설정되어 있으면(electiveOptions가 1개 이상), 응시 시작 전에
+// 학생이 하나를 고르는 화면을 먼저 보여줌. 없으면 바로 다음 단계(전략노트/시험시작)로 넘어감.
+function _maybeShowElectiveThenStart(sessionId, exam, subj, subjIdx, proceedFn){
+  if (!subj.electiveOptions || !subj.electiveOptions.length) { proceedFn(); return; }
+  // 이미 골라둔 적 있으면(예: 대기화면에서 나갔다 다시 들어온 경우) 다시 안 물어봄
+  getDoc(doc(db,'examSessions',sessionId)).then(function(sd){
+    var existing = sd.exists() && sd.data().electiveChoices && sd.data().electiveChoices[subjIdx];
+    if (existing) { proceedFn(); return; }
+    _enterElectiveChoiceScreen(sessionId, exam, subj, subjIdx, proceedFn);
+  }).catch(function(){ _enterElectiveChoiceScreen(sessionId, exam, subj, subjIdx, proceedFn); });
+}
+
+function _enterElectiveChoiceScreen(sessionId, exam, subj, subjIdx, proceedFn){
+  showScreen('screen-exam');
+  var isExplore = subj.subject === 'ex1' || subj.subject === 'ex2';
+  var categoryLabel = isExplore ? (subj.exCategory === 'sc' ? '과학탐구' : '사회탐구') : (subjectNames[subj.subject] || subj.subject);
+  var el = document.getElementById('screen-exam');
+  el.innerHTML = '<div class="refl-wrap">'
+    + '<div class="refl-card">'
+    +   '<div class="refl-kicker">SUBJECT CHOICE</div>'
+    +   '<div class="refl-title">'+escapeHtml(categoryLabel)+' 선택과목을 골라주세요</div>'
+    +   '<div class="refl-sub">이번 시험에서 응시할 선택과목을 하나 골라주세요. 시작하고 나면 바꿀 수 없어요.</div>'
+    +   '<div class="elective-choice-list">'
+    +     subj.electiveOptions.map(function(name){
+            return '<button type="button" class="elective-choice-btn" onclick="_submitElectiveChoice(\''+escapeHtml(name).replace(/'/g,"\\'")+'\')">'+escapeHtml(name)+'</button>';
+          }).join('')
+    +   '</div>'
+    + '</div>'
+    + '</div>';
+
+  window._electiveProceedCtx = {sessionId:sessionId, exam:exam, subj:subj, subjIdx:subjIdx, proceedFn:proceedFn};
+}
+
+window._submitElectiveChoice = function(name){
+  var ctx = window._electiveProceedCtx;
+  if (!ctx) return;
+  if (!confirm('"'+name+'"(으)로 응시하시겠습니까?\n시작 후에는 바꿀 수 없습니다.')) return;
+  var field = {};
+  field['electiveChoices.'+ctx.subjIdx] = name;
+  updateDoc(doc(db,'examSessions',ctx.sessionId), field).then(function(){
+    window._electiveProceedCtx = null;
+    ctx.proceedFn();
+  }).catch(function(e){ alert('저장 실패: ' + e.message); });
+};
 
 function _actuallyStartSubjectTimer(sessionId, exam, subj, subjIdx){
   var now = Date.now();
@@ -4886,6 +5156,7 @@ window._saveStrategyDuringWait = function(examId, subject, subjIdx, sessionId){
 
 function _startNextSubject(sessionId, exam, subjIdx){
   var subj = exam.subjects[subjIdx];
+  _maybeShowElectiveThenStart(sessionId, exam, subj, subjIdx, function(){
   _maybeShowStrategyThenStart(sessionId, exam, subj, subjIdx, function(){
     var now = Date.now();
     var deadline = now + subj.durationMin*60000;
@@ -4899,6 +5170,7 @@ function _startNextSubject(sessionId, exam, subjIdx){
     }).then(function(){
       _enterExamScreen(sessionId, exam, subj, subjIdx, deadline, {});
     });
+  });
   });
 }
 
@@ -5250,26 +5522,51 @@ function _examTodayDateStr(){
 }
 
 // 시험 자동채점 결과를 기존 성적탭(모의고사/내신)에 그대로 저장
-function _writeExamResultToGrades(studentUid, sessionId, exam, results){
+// 채점 결과(results)를 성적탭이 쓰는 scores/wrongBySubj 형태로 변환하는 공통 로직.
+// 새로 채점해서 저장할 때(_writeExamResultToGrades)와, 나중에 "다시 채점하기"로
+// 기존 성적을 업데이트할 때 둘 다 이 함수를 재사용해서 완전히 같은 규칙을 따르게 함.
+function _buildGradesScoresFromResults(exam, results, electiveChoices){
   var scores = {}, wrongBySubj = {};
+  var usedExploreKeys = [];
   results.forEach(function(r){
     if (!r) return;
-    var key = r.subject;
     var subjDef = (exam.subjects && exam.subjects[r.subjectIndex]) || null;
+    var isExplore = subjDef && (subjDef.subject === 'ex1' || subjDef.subject === 'ex2');
+    var chosenElective = electiveChoices && electiveChoices[r.subjectIndex];
     var cutoffs = subjDef ? subjDef.gradeCutoffs : null;
     var grade = cutoffs ? computeGradeFromCutoffs(cutoffs, r.score) : '';
-    scores[key] = { score: r.score, grade: grade, label: subjectNames[key]||key, group: key };
+
+    var key, label, group, option;
+    if (isExplore) {
+      group = subjDef.exCategory || 'sc';
+      var n = usedExploreKeys.filter(function(g){return g===group;}).length;
+      key = group + (n===0 ? '1' : '3');
+      usedExploreKeys.push(group);
+      label = chosenElective || (group==='sc'?'과학탐구':'사회탐구');
+    } else {
+      key = r.subject; group = key;
+      label = subjectNames[key] || key;
+      if (chosenElective) { option = chosenElective; label = label + ' (' + chosenElective + ')'; }
+    }
+
+    scores[key] = { score: r.score, grade: grade, label: label, group: group };
+    if (option) scores[key].option = option;
     if (r.wrongNumbers && r.wrongNumbers.length) {
       wrongBySubj[key] = r.wrongNumbers.join(', ');
     }
   });
+  return { scores: scores, wrongBySubj: wrongBySubj };
+}
+
+function _writeExamResultToGrades(studentUid, sessionId, exam, results, electiveChoices){
+  var built = _buildGradesScoresFromResults(exam, results, electiveChoices);
   return addDoc(collection(db,'grades'), {
     uid: studentUid,
     type: exam.gradeType || 'mock',
     examName: exam.title,
     examDate: _examTodayDateStr(),
-    scores: scores,
-    wrongBySubj: wrongBySubj,
+    scores: built.scores,
+    wrongBySubj: built.wrongBySubj,
     examSessionId: sessionId,
     examId: exam.id || null,
     examSource: examSourceLabel(exam.examSource) || null,
@@ -5279,24 +5576,27 @@ function _writeExamResultToGrades(studentUid, sessionId, exam, results){
 }
 
 // 같은 유형(모의고사/내신)의 과목별 "직전" 점수를 조회 (성적 향상 판정용)
-function _getPrevSubjectScores(studentUid, gradeType){
+// 같은 유형(모의고사/내신) + 같은 시험 분류(연습용/평가원 등) 안에서, 과목별 "역대 최고점"을
+// 조회 (성적 향상 판정용). 분류를 구분 안 하면 총점 규모가 다른 시험끼리 섞여서 비교가
+// 이상해질 수 있고("연습용 17점→평가원 90점"), 직전 점수만 보면 왔다갔다하는 것만으로도
+// 상점을 받을 수 있어서, "그 분류 안에서 지금까지 낸 최고점보다 진짜로 올랐을 때"만
+// 인정하도록 함.
+function _getPrevSubjectScores(studentUid, gradeType, examSource){
   return getDocs(query(collection(db,'grades'), where('uid','==',studentUid))).then(function(snap){
     var docs = snap.docs.map(function(d){return d.data();})
-      .filter(function(g){ return (g.type||'mock') === (gradeType||'mock'); })
-      .sort(function(a,b){
-        var at=a.createdAt?a.createdAt.toMillis():0, bt=b.createdAt?b.createdAt.toMillis():0;
-        return bt-at; // 최신순
+      .filter(function(g){
+        return (g.type||'mock') === (gradeType||'mock') && (g.examSource||'') === (examSource||'');
       });
-    var prevBySubj = {};
+    var maxBySubj = {};
     docs.forEach(function(g){
       if (!g.scores) return;
       Object.keys(g.scores).forEach(function(key){
-        if (prevBySubj[key] === undefined && g.scores[key] && g.scores[key].score != null) {
-          prevBySubj[key] = parseInt(g.scores[key].score, 10);
-        }
+        var s = (g.scores[key] && g.scores[key].score != null) ? parseInt(g.scores[key].score, 10) : null;
+        if (s == null) return;
+        if (maxBySubj[key] === undefined || s > maxBySubj[key]) maxBySubj[key] = s;
       });
     });
-    return prevBySubj;
+    return maxBySubj;
   }).catch(function(){ return {}; });
 }
 
@@ -5393,8 +5693,8 @@ function _finalizeExamSubmit(sessionId, exam, subj, subjIdx, answers, autoSubmit
         return updateDoc(doc(db,'examSessions',sessionId), {status:'graded'});
       }).then(function(){
         var studentUid = sess.studentUid || currentUser.uid;
-        return _getPrevSubjectScores(studentUid, exam.gradeType).then(function(prevScores){
-          return _writeExamResultToGrades(studentUid, sessionId, exam, results).then(function(){
+        return _getPrevSubjectScores(studentUid, exam.gradeType, examSourceLabel(exam.examSource)).then(function(prevScores){
+          return _writeExamResultToGrades(studentUid, sessionId, exam, results, sess.electiveChoices).then(function(){
             _awardExamRewards(studentUid, exam, results, prevScores);
           });
         });
@@ -5670,6 +5970,80 @@ window._submitReflectionAndProceed = function(){
 };
 
 // ── 채점 엔진 ──
+// 채점된 답안(subjectResult.answers)에서 학생이 실제로 고른/입력한 값만 다시 뽑아내서,
+// gradeExamAnswers가 요구하는 {문항번호: 답} 형태로 되돌린다. "다시 채점하기"에서
+// 새 배점/정답으로 재계산할 때, 학생이 새로 답을 입력할 필요 없이 이미 낸 답 그대로
+// 다시 채점하기 위해 필요함.
+function _reconstructAnswersFromResult(subjectResult){
+  var answers = {};
+  (subjectResult.answers || []).forEach(function(d){
+    if (d.shortMode === 'digit') {
+      answers[d.no] = { digits: String(d.studentAnswer||'000').split('').map(function(c){ return parseInt(c,10)||0; }) };
+    } else if (d.type === 'mc') {
+      answers[d.no] = d.studentAnswer != null ? parseInt(d.studentAnswer,10) : null;
+    } else {
+      answers[d.no] = d.studentAnswer || '';
+    }
+  });
+  return answers;
+}
+
+// 시험 설정(배점/정답/등급컷)을 고친 뒤, 이미 채점 완료된 학생들의 성적에도 새 설정을
+// 반영하고 싶을 때 쓰는 기능. 학생이 실제로 낸 답은 그대로 두고, 그 답을 새 배점/정답
+// 기준으로 다시 채점해서 세션과 성적탭 데이터를 함께 업데이트한다.
+window.reGradeExamSessions = function(examId, examTitle){
+  if (!confirm('"'+examTitle+'" 시험을 새 설정(배점/정답/등급컷)으로 다시 채점하시겠습니까?\n\n이미 채점 완료된 학생들의 성적이 새 설정 기준으로 갱신됩니다.\n(학생이 낸 답 자체는 그대로 유지되고, 채점 결과만 다시 계산됩니다)')) return;
+
+  getDoc(doc(db,'exams',examId)).then(function(examDoc){
+    if (!examDoc.exists()) { alert('시험을 찾을 수 없습니다'); return; }
+    var exam = Object.assign({id:examId}, examDoc.data());
+
+    return getDocs(query(collection(db,'examSessions'), where('examId','==',examId), where('status','==','graded'))).then(function(sessSnap){
+      if (sessSnap.empty) { alert('다시 채점할 완료된 응시 기록이 없습니다.'); return; }
+
+      var chain = Promise.resolve();
+      var successCount = 0, failCount = 0;
+
+      sessSnap.docs.forEach(function(sessDoc){
+        chain = chain.then(function(){
+          var sess = sessDoc.data();
+          var oldResults = sess.subjectResults || [];
+          var newResults = oldResults.map(function(oldR, idx){
+            if (!oldR) return oldR;
+            var subjDef = exam.subjects[idx];
+            if (!subjDef) return oldR; // 그 사이 과목 자체가 삭제됐으면 예전 결과 그대로 둠
+            var reconstructed = _reconstructAnswersFromResult(oldR);
+            var graded = gradeExamAnswers(subjDef, reconstructed);
+            return Object.assign({}, oldR, {
+              score: graded.score, totalScore: graded.totalScore, correctCount: graded.correctCount,
+              wrongNumbers: graded.wrongNumbers, mcAccuracy: graded.mcAccuracy, shortAccuracy: graded.shortAccuracy,
+              answers: graded.details, regradedAt: Date.now()
+            });
+          });
+
+          var built = _buildGradesScoresFromResults(exam, newResults, sess.electiveChoices);
+
+          return updateDoc(doc(db,'examSessions',sessDoc.id), { subjectResults: newResults }).then(function(){
+            // 이 세션에서 만들어진 성적 문서를 찾아서 같은 규칙으로 업데이트 (새로 만들지 않음)
+            return getDocs(query(collection(db,'grades'), where('examSessionId','==',sessDoc.id)));
+          }).then(function(gradeSnap){
+            if (gradeSnap.empty) return; // 성적탭에 반영된 적 없으면 세션만 갱신하고 끝
+            var gradeDocRef = doc(db,'grades',gradeSnap.docs[0].id);
+            return updateDoc(gradeDocRef, { scores: built.scores, wrongBySubj: built.wrongBySubj });
+          }).then(function(){ successCount++; })
+            .catch(function(e){ console.error('재채점 실패', sessDoc.id, e); failCount++; });
+        });
+      });
+
+      return chain.then(function(){
+        alert('다시 채점 완료!\n\n성공: '+successCount+'명\n'+(failCount ? ('실패: '+failCount+'명\n') : '')+'\n※ 성적 향상 등 자동 상점은 중복 지급을 막기 위해 재채점 시에는 다시 지급되지 않습니다.');
+        invalidateTeacherTabCache(2); invalidateTeacherTabCache(7);
+        renderTeacher(7);
+      });
+    });
+  }).catch(function(e){ alert('다시 채점 실패: ' + e.message); });
+};
+
 function gradeExamAnswers(subj, answers){
   var details = [];
   var score = 0, totalScore = 0, correctCount = 0;
@@ -9928,8 +10302,6 @@ window.openEditGradeModal=function(gradeId, studentUid){
     });
     var koOpt=document.getElementById('edit-gs-ko-opt');
     var maOpt=document.getElementById('edit-gs-ma-opt');
-    if(koOpt) koOpt.value=(scores.ko&&scores.ko.option)||'';
-    if(maOpt) maOpt.value=(scores.ma&&scores.ma.option)||'';
     // 탐구 2과목 - scores에서 sc/so 키 순서대로 불러오기
     var tanKeys=Object.keys(scores).filter(function(k){return k.startsWith('sc')||k.startsWith('so');}).sort();
     var wbTanKeys=Object.keys(wrongBySubj).filter(function(k){return k.startsWith('sc')||k.startsWith('so');}).sort();
@@ -9937,8 +10309,8 @@ window.openEditGradeModal=function(gradeId, studentUid){
     var tan1sk=tanKeys[0]||null;
     var tan1wk=wbTanKeys[0]||null;
     var tan1=tan1sk?scores[tan1sk]:{};
-    document.getElementById('edit-tan1-type').value=tan1sk?(tan1sk.replace(/\d+$/,'')):( tan1wk?tan1wk.replace(/\d+$/,''):'');
-    document.getElementById('edit-tan1-name').value=tan1.label||'';
+    var tan1Type=tan1sk?(tan1sk.replace(/\d+$/,'')):( tan1wk?tan1wk.replace(/\d+$/,''):'');
+    document.getElementById('edit-tan1-type').value=tan1Type;
     document.getElementById('edit-tan1-score').value=tan1.score||'';
     document.getElementById('edit-tan1-grade').value=tan1.grade||'';
     document.getElementById('edit-tan1-wrong').value=tan1wk?wrongBySubj[tan1wk]:'';
@@ -9946,11 +10318,18 @@ window.openEditGradeModal=function(gradeId, studentUid){
     var tan2sk=tanKeys[1]||null;
     var tan2wk=wbTanKeys[1]||null;
     var tan2=tan2sk?scores[tan2sk]:{};
-    document.getElementById('edit-tan2-type').value=tan2sk?(tan2sk.replace(/\d+$/,'')):( tan2wk?tan2wk.replace(/\d+$/,''):'');
-    document.getElementById('edit-tan2-name').value=tan2.label||'';
+    var tan2Type=tan2sk?(tan2sk.replace(/\d+$/,'')):( tan2wk?tan2wk.replace(/\d+$/,''):'');
+    document.getElementById('edit-tan2-type').value=tan2Type;
     document.getElementById('edit-tan2-score').value=tan2.score||'';
     document.getElementById('edit-tan2-grade').value=tan2.grade||'';
     document.getElementById('edit-tan2-wrong').value=tan2wk?wrongBySubj[tan2wk]:'';
+    // 선택과목 마스터 목록을 불러온 뒤, 국어/수학/탐구1/탐구2 select들을 채우고 기존 값 복원
+    loadElectiveOptions().then(function(all){
+      if (koOpt) { koOpt.innerHTML = '<option value="">선택과목 없음</option>' + (all.ko||[]).map(function(o){return '<option value="'+escapeHtml(o)+'">'+escapeHtml(o)+'</option>';}).join(''); koOpt.value=(scores.ko&&scores.ko.option)||''; }
+      if (maOpt) { maOpt.innerHTML = '<option value="">선택과목 없음</option>' + (all.ma||[]).map(function(o){return '<option value="'+escapeHtml(o)+'">'+escapeHtml(o)+'</option>';}).join(''); maOpt.value=(scores.ma&&scores.ma.option)||''; }
+      populateTanNameSelect(1, all); document.getElementById('edit-tan1-name').value = tan1.label||'';
+      populateTanNameSelect(2, all); document.getElementById('edit-tan2-name').value = tan2.label||'';
+    });
     // 기존 동적 영역 숨기기
     var dynArea=document.getElementById('edit-dynamic-subjects');
     if(dynArea) dynArea.style.display='none';
