@@ -140,7 +140,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .timer-banner-empty-text{font-size:11px;color:var(--tx3);}
 
 /* ── 콘텐츠 영역 ── */
-.content-area{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:12px 14px;display:flex;flex-direction:column;gap:10px;}
+.content-area{flex:1;min-height:0;overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:12px 14px;display:flex;flex-direction:column;gap:10px;}
 .content-area::-webkit-scrollbar{width:5px;}
 .content-area::-webkit-scrollbar-thumb{background:var(--border);border-radius:5px;}
 
