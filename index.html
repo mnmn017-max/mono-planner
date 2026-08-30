@@ -5296,8 +5296,13 @@ function _showListeningPlayFallback(url, sessionId){
 
   document.getElementById('listening-fallback-play-btn').onclick = function(){
     var audio = new Audio(url);
-    audio.play().then(function(){
+    // "재생 시작됨"이 아니라 "끝까지 다 재생됨"일 때만 완료로 기록 - 재생 시작하자마자
+    // 완료로 기록해버리면, 재생 도중 학생이 나갔다 들어왔을 때 이미 "다 들은 것"으로
+    // 처리되어서 나머지를 다시 들을 방법이 없어짐
+    audio.addEventListener('ended', function(){
       updateDoc(doc(db,'examSessions',sessionId), {listeningPlayed:true}).catch(function(){});
+    });
+    audio.play().then(function(){
       banner.remove();
     }).catch(function(e){
       alert('재생에 실패했습니다. 기기 음량 및 무음 모드를 확인한 뒤 다시 눌러주세요.\n('+e.message+')');
@@ -5323,12 +5328,16 @@ function _enterExamScreen(sessionId, exam, subj, subjIdx, deadlineMs, savedAnswe
   // 다르고, 클릭 없이 화면이 뜨는 경우일수록 더 잘 막힘), 성공했을 때만 "재생함"으로
   // 기록하고, 실패하면 학생이 직접 누를 수 있는 버튼을 보여줌 - 예전엔 실패해도 무조건
   // "재생함"으로 기록해버려서 다시는 재생을 시도할 방법조차 없었음.
+  // 또한 "재생 시작됨"이 아니라 "끝까지 다 재생됨"(ended 이벤트)일 때만 완료로 기록 -
+  // 재생 도중에 학생이 나갔다 들어오면 처음부터 다시 들려줘야지, 시작했다는 이유만으로
+  // "다 들은 것"으로 처리해버리면 나머지를 다시 들을 방법이 없어짐.
   if (subj.listeningUrl) {
     if (!listeningPlayed) {
       var audio = new Audio(subj.listeningUrl);
-      audio.play().then(function(){
+      audio.addEventListener('ended', function(){
         updateDoc(doc(db,'examSessions',sessionId), {listeningPlayed:true}).catch(function(){});
-      }).catch(function(){
+      });
+      audio.play().catch(function(){
         _showListeningPlayFallback(subj.listeningUrl, sessionId);
       });
     }
