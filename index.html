@@ -332,12 +332,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   .timer-banner-time{font-size:26px;}
   .teacher-topbar{padding:13px 22px;}
   .teacher-content{padding:16px 22px;}
-  /* 세로 공간이 좁은 태블릿 가로모드에서는 사이드바 탭을 좀 더 촘촘하게 줄여서
-     스크롤 없이도 최대한 다 보이게 함 */
-  .dt-sidebar{padding:12px 10px;gap:2px;}
-  .dt-sb-logo{width:150px;height:70px;margin-bottom:10px;}
-  .dt-sb-item{width:150px;min-height:52px;padding:6px 6px;gap:2px;}
-  .dt-sb-item-label{font-size:10px;}
+  /* 세로 공간이 좁은 태블릿 가로모드에서는, 스크롤 대신 탭들을 2열로 나란히 배치해서
+     한눈에 다 보이게 함 (아이콘+라벨이 세로로 쌓이던 걸 가로 2열로 바꿔서 절반 높이만 차지) */
+  .dt-sidebar{padding:12px 8px;gap:6px;width:160px;}
+  .dt-sb-logo{width:130px;height:60px;margin-bottom:6px;}
+  .dt-sb-nav-group{display:grid;grid-template-columns:repeat(2,1fr);gap:4px;width:100%;}
+  #teacher-sb-items{display:grid !important;grid-template-columns:repeat(2,1fr);gap:4px;width:100%;}
+  .dt-sb-item{width:100%;min-height:44px;padding:6px 4px;gap:1px;}
+  .dt-sb-item-label{font-size:9px;}
+  .dt-sb-item svg{width:18px;height:18px;}
 }
 
 /* ════════════════════════════════════════
@@ -1505,6 +1508,50 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .exam-ranking-table tr:nth-child(2) .exam-ranking-rank{color:#8c8c8c;}
 .exam-ranking-table tr:nth-child(3) .exam-ranking-rank{color:#b5651d;}
 .exam-ranking-score{font-weight:700;color:var(--burg);text-align:right;}
+
+/* ── 시험 진행 화면 (외부 공개용 대형 디스플레이) ── */
+.exdisp-wrap{width:100%;height:100%;display:flex;flex-direction:column;background:radial-gradient(ellipse at 50% 0%,#2a2118,#141210 70%);color:#fff;font-family:'Malgun Gothic',sans-serif;position:relative;overflow:hidden;}
+.exdisp-topbar{display:flex;align-items:center;justify-content:space-between;padding:18px 28px;background:rgba(0,0,0,0.3);flex-shrink:0;}
+.exdisp-title{font-size:18px;font-weight:800;color:#f5e6c8;}
+.exdisp-listening-toggle{font-size:13px;color:#ddd;display:flex;align-items:center;gap:6px;cursor:pointer;}
+.exdisp-listening-toggle input{width:16px;height:16px;}
+.exdisp-close-btn{padding:8px 16px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#fff;font-size:12px;cursor:pointer;}
+.exdisp-body{flex:1;display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto;}
+
+.exdisp-waiting{width:100%;max-width:900px;text-align:center;}
+.exdisp-countdown-label{font-size:16px;color:#d8b878;font-weight:700;letter-spacing:2px;margin-bottom:10px;}
+.exdisp-countdown{font-size:clamp(48px,10vw,96px);font-weight:800;font-family:'Courier New',monospace;color:#fff;letter-spacing:4px;text-shadow:0 0 30px rgba(216,184,120,0.4);}
+.exdisp-join-count{font-size:14px;color:#bbb;margin:14px 0 24px;}
+.exdisp-participant-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:12px;max-height:44vh;overflow-y:auto;padding:4px;}
+.exdisp-participant{background:rgba(255,255,255,0.05);border:1.5px solid rgba(255,255,255,0.1);border-radius:14px;padding:14px 8px;transition:all .25s;}
+.exdisp-participant.joined{background:rgba(216,184,120,0.15);border-color:#d8b878;}
+.exdisp-participant-av{width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;margin:0 auto 8px;}
+.exdisp-participant.joined .exdisp-participant-av{background:#d8b878;color:#1a1410;}
+.exdisp-participant-name{font-size:13px;font-weight:600;color:#eee;margin-bottom:4px;}
+.exdisp-participant-status{font-size:11px;color:#888;}
+.exdisp-participant.joined .exdisp-participant-status{color:#d8b878;font-weight:700;}
+
+.exdisp-live{text-align:center;}
+.exdisp-subj-name{font-size:clamp(22px,4vw,34px);font-weight:800;color:#f5e6c8;margin-bottom:20px;}
+.exdisp-clock-svg{width:min(50vh,340px);height:min(50vh,340px);filter:drop-shadow(0 10px 30px rgba(0,0,0,0.5));}
+.exdisp-remain-label{font-size:14px;color:#bbb;margin-top:18px;letter-spacing:2px;}
+.exdisp-remain{font-size:clamp(40px,8vw,72px);font-weight:800;font-family:'Courier New',monospace;color:#fff;letter-spacing:3px;}
+
+.exdisp-break{text-align:center;}
+.exdisp-break-label{font-size:22px;color:#d8b878;font-weight:700;margin-bottom:16px;}
+.exdisp-break-timer{font-size:clamp(48px,10vw,88px);font-weight:800;font-family:'Courier New',monospace;color:#fff;}
+.exdisp-break-sub{font-size:14px;color:#999;margin-top:12px;}
+
+.exdisp-done{text-align:center;font-size:80px;}
+.exdisp-done-text{font-size:20px;color:#f5e6c8;margin-top:16px;font-weight:700;}
+
+.exdisp-warn-banner{
+  position:absolute;top:90px;left:50%;transform:translateX(-50%);
+  background:linear-gradient(135deg,var(--burg),#5a1515);color:#fff;padding:16px 32px;border-radius:14px;
+  font-size:22px;font-weight:800;box-shadow:0 10px 34px rgba(0,0,0,0.5);z-index:20;
+  animation:exdispWarnPop .3s ease;
+}
+@keyframes exdispWarnPop{from{opacity:0;transform:translateX(-50%) translateY(-14px);}to{opacity:1;transform:translateX(-50%) translateY(0);}}
 .exam-report-total-label{font-size:11px;color:var(--tx3);font-weight:700;letter-spacing:2px;margin-bottom:6px;}
 .exam-report-total-score{font-size:42px;font-weight:800;color:var(--burg);}
 .exam-report-total-score span{font-size:15px;color:var(--tx3);font-weight:600;margin-left:4px;}
@@ -1631,6 +1678,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <!-- 데스크탑 사이드바 -->
   <aside class="dt-sidebar">
     <div class="dt-sb-logo"><svg viewBox="230 430 810 430" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block;"><path d="M 356.0,638.0 L 352.0,636.0 L 353.0,641.0 C 353.89822,640.36182 355.28802,639.79114 356.83334,638.0 C 359.43213000000003,634.98779 364.7081,627.78033 367.33334,624.0 C 375.50027,612.23962 383.54630000000003,600.29761 392.33334,589.0 C 424.60489,547.50806 458.47156,506.30414 503.0,476.0 C 514.05023,468.47968 525.62811,460.81128 538.0,456.0 C 543.18079,453.98529 547.15076,451.30231 553.0,453.33331 C 556.47028,454.53827 558.12921,456.89856 558.0,460.0 C 557.85852,463.39587 555.91681,468.90887 554.5,472.0 C 551.82019,477.84692 547.97498,484.88641 544.83331,491.0 C 538.26111,503.78925 529.66779,515.99835 521.66669,528.0 C 519.1923800000001,531.71143 515.5012800000001,536.74805 513.33331,540.0 C 502.76574999999997,555.85126 491.22098,574.43671 480.0,592.0 C 477.67612,595.63739 474.21222,600.77905 472.33334,604.0 C 469.15237,609.45306 464.88297,616.617 462.66666000000004,623.0 C 461.80301000000003,625.4873 459.16510000000005,631.28558 461.33334,633.83331 C 464.21051,637.21399 468.65381,631.22327 471.0,629.33331 C 480.66302,621.54919 488.27567,611.72437 497.0,603.0 C 523.66687,576.33313 553.19183,548.20685 587.0,530.83331 C 593.16138,527.66705 600.48975,523.83679 607.0,521.66669 C 611.79669,520.06781 618.43762,517.37476 624.0,519.33331 C 628.1286,520.78705 629.94946,524.36023 630.0,528.0 C 630.0734,533.2901 626.94458,539.99963 625.0,545.0 C 619.71393,558.59283 611.45142,571.69116 605.16669,585.0 C 603.84351,587.802 602.88428,590.17206 601.66669,593.0 C 598.53345,600.2771 595.0,608.08862 595.0,616.0 C 595.0,619.34241 594.19537,621.08875 596.33331,624.0 C 598.06909,626.36359 600.18213,626.88257 603.0,627.0 C 607.31384,627.17975 610.3598,626.13287 614.0,624.66669 C 621.65533,621.58331 631.72247,614.36707 638.0,609.83331 C 640.46143,608.0556 641.64545,607.73004 644.0,605.83331 C 646.1803,604.07697 648.44849,601.9595899999999 651.0,599.83331 C 654.72186,596.73175 659.1889,594.44336 661.66669,592.5 C 664.79761,590.04437 664.90814,584.96277 671.0,588.5 C 673.09271,589.71515 673.53076,593.36847 673.66669,595.0 C 673.81512,596.78162 674.06555,597.46143 673.66669,599.0 C 671.84381,606.03107 666.52484,612.7699 660.0,616.66669 C 657.03314,618.4386000000001 653.9425,620.7262000000001 650.0,621.0 C 642.74054,621.50409 644.0,614.18134 644.0,611.0 C 644.0,609.21045 644.0,608.00183 644.0,608.0 M 440.0,500.0 C 425.52921,517.73834 414.12228,539.25446 402.66666,558.0 C 394.0686,572.06952 384.25478999999996,584.94666 375.66666,599.0 C 371.77709999999996,605.36475 367.30276,611.42981 363.66666,617.0 C 360.06143,622.52289 353.40445,629.70819 358.0,635.0 M 749.0,584.0 L 745.0,585.33331 L 740.0,585.0 L 734.0,585.16669 L 728.0,586.0 L 715.0,586.0 L 682.0,589.0 M 745.0,587.0 C 741.89813,591.3656 738.45154,594.6463 733.33331,601.0 C 731.99445,602.66205 728.16266,607.67468 727.5,609.0 C 726.48749,611.02509 726.32568,612.23193 726.0,614.0 C 727.62305,613.82916 728.69653,613.83698 731.0,612.33331 C 733.11829,610.95056 740.4873,605.02411 743.0,603.0 C 749.40466,597.8407 757.79138,592.33752 765.0,588.83331 C 769.06848,586.8555299999999 773.91333,584.29352 779.0,585.0 C 789.53247,586.46283 779.0861,601.80249 779.0,608.0 C 778.9511,611.52557 778.84979,614.07104 783.0,616.0 C 788.34119,618.48254 794.45551,616.45172 799.0,615.0 C 806.22247,612.69281 816.00409,609.13696 823.0,605.83331 C 826.27069,604.28882 830.84979,601.94385 834.0,600.5 C 836.13147,599.52307 837.41907,599.2912 839.0,599.0 C 838.47845,601.83124 837.37231,603.26416 835.33331,608.0 C 833.75,611.67737 833.66034,617.13501 837.0,619.66669 C 838.53241,620.8283700000001 839.84814,621.0850800000001 842.0,620.66669 C 845.60431,619.96588 848.22003,618.3269700000001 851.0,616.66669 C 856.11987,613.60895 860.36713,608.9666100000001 863.33331,604.0 C 865.172,600.92126 868.77838,595.95782 868.83331,592.0 C 868.90311,586.97253 865.53088,587.33075 861.0,589.0 M 851.0,590.0 C 846.0119,593.54419 842.78754,596.38617 840.0,598.0 M 662.0,593.0 C 665.96649,595.8183 669.03998,595.0 673.0,595.0 M 726.0,614.0 C 721.69098,618.42548 720.4364,620.49774 718.0,623.0 M 355.0,632.0 L 353.0,634.0 M 351.0,642.0 L 346.0,649.0 M 357.0,703.0 C 357.0,698.98767 357.0,698.53082 357.0,695.0 C 357.0,692.87384 357.0,692.23437 357.0,690.0 C 357.0,688.46112 356.75638,687.19946 357.5,686.16669 C 358.70535,684.49261 361.96701,684.95789 365.0,685.0 C 370.05133,685.0702 376.36453,687.14038 377.66666,693.0 C 379.51031,701.29651 367.98868,703.91681 362.0,704.0 C 355.03061,704.0968 357.0,710.26599 357.0,717.0 M 784.0,718.0 L 770.0,718.0 L 765.5,716.83331 L 765.0,712.0 L 765.33331,701.0 L 765.0,695.0 L 766.16669,685.5 L 770.0,685.0 L 784.0,685.0 M 841.0,716.0 C 841.0,710.07123 838.81616,691.54755 841.5,687.0 C 842.82886,684.74835 844.47015,685.03516 847.0,685.0 C 852.60785,684.9221 858.06946,684.66492 861.0,690.0 C 864.82373,696.96106 856.13647,699.22058 855.16669,704.0 C 854.38184,707.86804 861.10608,715.21222 862.0,717.0 M 620.0,686.0 C 620.0,689.74805 619.67896,696.63464 620.33331,700.0 C 620.93579,703.09845 621.24091,705.66412 621.0,710.0 C 620.8537,712.63367 620.00116,713.59094 619.0,715.0 C 613.02014,710.7511 601.28638,691.63953 595.0,688.0 C 592.69208,693.48145 594.0,704.12646 594.0,717.0 M 706.0,686.0 C 706.0,698.8082899999999 708.65259,708.4519 704.0,715.0 C 703.01257,714.2984 701.51904,713.5675 700.16669,712.0 C 697.9470200000001,709.42725 687.15533,694.28796 685.0,692.0 C 683.16028,690.04706 681.74017,689.23645 680.0,688.0 L 679.0,692.0 L 679.0,716.0 M 434.0,687.0 L 434.5,716.0 L 440.0,718.0 L 453.0,718.0 M 513.0,707.0 C 513.43237,701.52356 518.02795,690.12531 523.0,687.0 C 527.0733,692.52802 530.87909,701.67572 532.0,707.0 C 528.33356,708.06134 524.54517,708.13977 517.0,708.0 C 515.49896,707.9722 514.45361,707.33362 513.0,707.83331 C 510.67746,708.63171 509.06293,713.63409 508.0,717.0 M 680.0,687.0 L 680.0,688.0 M 766.0,701.0 C 769.75293,701.0 774.56464,701.0 781.0,701.0 M 842.0,703.0 C 847.33075,703.0 848.60303,703.0 855.0,703.0 M 532.0,707.0 C 534.56647,710.25085 534.995,711.55786 537.0,717.0 M 434.0,764.0 L 776.0,764.0" fill="none" stroke="#ffffff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/><path d="M 442.0,804.3333700000001 C 445.048,803.2127700000001 447.79742,804.1307400000001 449.83334,806.16663 C 453.40494,809.73828 450.65491000000003,816.1231700000001 446.0,817.5 C 441.48859,818.83435 438.33334,812.90161 438.33334,810.0 C 438.33334,807.52454 439.85364000000004,805.12244 442.0,804.33337 M 521.0,804.0 L 521.0,817.0 M 572.0,811.0 L 567.16669,809.83337 L 566.16669,806.0 L 574.0,804.0 M 609.0,811.0 C 609.0,808.53357 608.04449,805.9856 610.16669,804.5 C 612.81732,802.64453 617.71973,805.68243 616.5,809.0 C 614.99719,813.08752 609.15198,811.22644 609.0,817.0 M 633.0,804.0 C 633.0,811.38843 630.96021,817.84631 639.0,817.0 M 721.0,804.0 C 721.0,809.98889 721.51782,811.39514 720.0,815.0 C 716.26691,812.6535 714.9306,809.18176 712.0,806.0 C 710.48218,809.60492 711.0,811.01123 711.0,817.0 M 744.0,811.0 C 741.7597,810.941 740.70538,811.37207 739.16669,809.83337 C 735.07904,805.74573 741.83063,804.0 746.0,804.0 M 763.0,816.0 C 763.0311,814.81848 763.33331,812.22363 763.33331,811.0 C 763.33331,809.08911 762.6285399999999,808.85742 763.0,807.0 C 763.72614,803.36938 768.67529,802.91638 770.5,806.16663 C 772.47241,809.68005 767.58801,811.5291100000001 771.0,816.0 M 479.0,805.0 C 479.0,810.56677 479.39246,811.69293 478.0,815.0 C 474.08405,812.53857 472.62692,809.22009 470.0,806.0 C 468.60754,809.30707 469.0,810.43323 469.0,816.0 M 496.0,805.0 C 496.0,813.16071 495.29294,817.39154 503.0,818.0 M 549.0,805.0 L 547.0,815.0 C 542.85925,810.50427 542.32788,808.85352 540.0,806.0 L 538.0,816.0 M 658.0,813.0 C 658.37537,808.24512 658.94055,807.24353 662.0,805.0 C 663.63605,808.27209 664.17731,809.09222 665.0,813.0 C 661.12585,814.12146 658.94995,811.84326 656.0,816.0 M 694.0,805.0 C 694.0,810.56677 694.39246,811.69287 693.0,815.0 C 689.08405,812.53857 687.62689,809.22009 685.0,806.0 C 683.60754,809.30713 684.0,810.43323 684.0,816.0 M 566.0,811.0 C 566.0,815.41541 566.16327,817.17993 573.0,817.0 M 738.0,811.0 C 738.0,815.82556 738.44312,817.0 745.0,817.0 M 765.0,811.0 L 768.0,812.0 M 666.0,814.0 L 667.0,816.0" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div class="dt-sb-nav-group">
     <div class="dt-sb-item active" id="sb-0" onclick="studentTab(0)">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></svg>
       <span class="dt-sb-item-label">홈</span>
@@ -1655,6 +1703,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
       <span class="dt-sb-item-label">알림</span>
       <div class="notif-badge" id="dt-notif-badge">0</div>
+    </div>
     </div>
     <div class="dt-sb-spacer"></div>
     <div class="dt-sb-avatar" id="dt-student-avatar" onclick="openModal('modal-profile-student')">?</div>
@@ -1735,6 +1784,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 
 <!-- TEACHER -->
 <div id="screen-exam" class="screen"></div>
+<div id="screen-exam-display" class="screen"></div>
 
 <div id="screen-teacher" class="screen">
 
@@ -2165,6 +2215,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 </div></div>
 
 <!-- 시험 묶음 목록 -->
+<!-- 실시간 응시 현황 -->
+<div class="modal-overlay" id="modal-live-exam-status"><div class="modal" style="max-width:480px;max-height:85vh;overflow-y:auto;">
+  <div class="modal-title">🔴 실시간 응시 현황</div>
+  <div id="live-exam-status-body"></div>
+  <div style="display:flex;gap:8px;margin-top:12px;">
+    <button class="modal-btn cancel" onclick="_loadLiveExamStatus()" style="margin:0;">🔄 새로고침</button>
+    <button class="modal-btn cancel" onclick="closeModal('modal-live-exam-status')" style="margin:0;">닫기</button>
+  </div>
+</div></div>
+
 <div class="modal-overlay" id="modal-exam-merge-groups"><div class="modal" style="max-width:460px;max-height:80vh;overflow-y:auto;">
   <div class="modal-title">📋 시험 묶음 목록</div>
   <div id="exam-merge-groups-body"></div>
@@ -3273,7 +3333,7 @@ function buildTExamManage(){
       return '<button onclick="switchExamMgmtCategory(\''+escapeHtml(c).replace(/'/g,"\\'")+'\')" class="exam-mgmt-cat-btn'+(active?' active':'')+'">'+escapeHtml(c)+'</button>';
     }).join('') + '<button onclick="openAddExamSourceOption()" class="exam-mgmt-cat-btn exam-mgmt-cat-add">+ 분류 추가</button>';
     return safetyCard + '<div class="card">'
-      +'<div class="card-h"><div class="card-title">📝 시험 관리</div><div style="display:flex;gap:6px;flex-wrap:wrap;"><button id="exam-merge-toggle-btn" class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="_toggleExamMergeMode()">🔗 시험 묶기</button><button id="exam-merge-confirm-btn" class="modal-btn primary" style="display:none;margin:0;width:auto;padding:8px 16px;font-size:12px;background:var(--gold);" onclick="openMergeExamsModal()">선택한 시험 묶기</button><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openExamMergeGroupsModal()">📋 묶음 목록</button><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openElectiveManageModal()">🔧 선택과목 관리</button><button class="modal-btn primary" style="margin:0;width:auto;padding:8px 16px;font-size:12px;" onclick="openCreateExamModal()">+ 새 시험 만들기</button></div></div>'
+      +'<div class="card-h"><div class="card-title">📝 시험 관리</div><div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;background:#fef2f2;color:#dc2626;" onclick="openLiveExamStatusModal()">🔴 실시간 응시 현황</button><button id="exam-merge-toggle-btn" class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="_toggleExamMergeMode()">🔗 시험 묶기</button><button id="exam-merge-confirm-btn" class="modal-btn primary" style="display:none;margin:0;width:auto;padding:8px 16px;font-size:12px;background:var(--gold);" onclick="openMergeExamsModal()">선택한 시험 묶기</button><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openExamMergeGroupsModal()">📋 묶음 목록</button><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openElectiveManageModal()">🔧 선택과목 관리</button><button class="modal-btn primary" style="margin:0;width:auto;padding:8px 16px;font-size:12px;" onclick="openCreateExamModal()">+ 새 시험 만들기</button></div></div>'
       +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px;" id="exam-mgmt-cat-tabs">'+catTabs+'</div>'
       +'<div id="exam-list-area">'+listHtml+'</div>'
       +'</div>';
@@ -3297,8 +3357,21 @@ window.switchExamMgmtCategory = function(cat){
   });
 };
 
-window.runExamForceSubmitNow = function(){
-  var statusEl = document.getElementById('exam-safety-status');
+// 시험 카드에서 "이 시험만 강제제출" - 여러 시험이 동시에 진행 중일 때, 전체가 아니라
+// 이 시험 하나만 골라서 처리하고 싶을 때 씀
+window._runExamForceSubmitForExam = function(examId, examTitle){
+  if (!confirm('"'+examTitle+'" 시험만 강제제출 처리하시겠습니까?\n(마감시각이 지났는데 아직 응시중/대기중인 학생만 대상입니다)')) return;
+  runExamForceSubmitNow(examId, null);
+};
+
+// 특정 학생 한 명만 강제제출 - 시험 현황/모니터 화면에서 사용
+window._runExamForceSubmitForStudent = function(examId, uid, studentName){
+  if (!confirm(studentName+' 학생만 강제제출 처리하시겠습니까?\n(마감시각이 지났는데 아직 응시중/대기중인 경우만 대상입니다)')) return;
+  runExamForceSubmitNow(examId, uid);
+};
+
+window.runExamForceSubmitNow = function(filterExamId, filterUid){
+  var statusEl = document.getElementById('exam-safety-status') || document.getElementById('exam-safety-status-'+(filterExamId||''));
   if (statusEl) statusEl.textContent = '⏳ 처리 중... (서버 없이 브라우저에서 직접 처리합니다)';
 
   var now = Date.now();
@@ -3311,8 +3384,13 @@ window.runExamForceSubmitNow = function(){
     return examCache[examId];
   }
 
-  getDocs(query(collection(db,'examSessions'), where('status','in',['waiting','in_progress','break']))).then(function(snap){
+  var baseQuery = filterExamId
+    ? query(collection(db,'examSessions'), where('status','in',['waiting','in_progress','break']), where('examId','==',filterExamId))
+    : query(collection(db,'examSessions'), where('status','in',['waiting','in_progress','break']));
+
+  getDocs(baseQuery).then(function(snap){
     var sessions = snap.docs.map(function(d){ return {id:d.id, data:d.data()}; });
+    if (filterUid) sessions = sessions.filter(function(s){ return s.data.studentUid === filterUid; });
     var chain = Promise.resolve();
 
     sessions.forEach(function(s){
@@ -3428,6 +3506,8 @@ function examCardHtml(ex){
     +'<button onclick="openExamMonitor(\''+ex.id+'\')" class="btn-primary" style="font-size:11px;padding:6px 10px;">현황</button>'
     +'<button onclick="openEditExamModal(\''+ex.id+'\')" style="font-size:11px;padding:6px 10px;background:#eef7ff;border:1px solid rgba(59,130,246,0.25);border-radius:6px;color:#2563eb;cursor:pointer;">✏️ 설정 수정</button>'
     +'<button onclick="openExamFullRanking(\''+ex.id+'\',\''+escapeHtml(ex.title).replace(/'/g,"\\'")+'\')" style="font-size:11px;padding:6px 10px;background:#fff7ed;border:1px solid rgba(234,88,12,0.25);border-radius:6px;color:#c2410c;cursor:pointer;">🏆 전체 순위</button>'
+    +(currentProfile && currentProfile.role==='master' ? '<button onclick="_runExamForceSubmitForExam(\''+ex.id+'\',\''+escapeHtml(ex.title).replace(/'/g,"\\'")+'\')" style="font-size:11px;padding:6px 10px;background:#fef2f2;border:1px solid rgba(220,38,38,0.25);border-radius:6px;color:#dc2626;cursor:pointer;">⚡ 이 시험만 강제제출</button>' : '')
+    +(ex.startAtMs ? '<button onclick="openExamDisplayScreen(\''+ex.id+'\')" style="font-size:11px;padding:6px 10px;background:#1a1a1a;border:none;border-radius:6px;color:#fff;cursor:pointer;">🖥 진행 화면</button>' : '')
     +'<button onclick="reGradeExamSessions(\''+ex.id+'\',\''+escapeHtml(ex.title).replace(/'/g,"\\'")+'\')" style="font-size:11px;padding:6px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);cursor:pointer;">🔄 다시 채점하기</button>'
     +'<button onclick="openExamReflections(\''+ex.id+'\',\''+escapeHtml(ex.title)+'\')" style="font-size:11px;padding:6px 10px;background:#eef2ff;border:1px solid rgba(79,70,229,0.2);border-radius:6px;color:#4338ca;cursor:pointer;">🌱 다음 걸음을 위하여</button>'
     +'<button onclick="deleteExamConfirm(\''+ex.id+'\',\''+escapeHtml(ex.title)+'\')" style="font-size:11px;padding:6px 10px;background:var(--red-l);border:1px solid rgba(185,28,28,0.2);border-radius:6px;color:var(--red);cursor:pointer;">삭제</button>'
@@ -6596,6 +6676,291 @@ window.runExamGroupGradeMerge = function(groupId){
 };
 
 // 지금까지 만들어둔 시험 묶음 목록을 보여주고, 각각 "새로 합치기"로 재실행할 수 있게 함
+// 실시간 응시 현황 - 지점 전체에서 지금 이 순간 응시 중/대기 중인 학생을 한 화면에서 확인
+// (여러 시험이 동시에 진행 중일 수 있어서, 어떤 학생이 어떤 시험을 언제 시작해서 언제
+// 끝나는지까지 한눈에 보여줌). 필요하면 그 자리에서 특정 학생만 강제제출도 가능.
+// ═══════════════════════════════════════
+// 시험 진행 화면 (외부 공개용) - 시험장에 띄워두는 대형 화면. 시작 전엔 참가자 명단과
+// 카운트다운, 시작되면 시계와 남은시간만 크게 보여줌(OMR 없음). 종료 알림은 항상 울리고,
+// 듣기 파일 자동재생은 선생님이 켜고 끌 수 있음.
+// ═══════════════════════════════════════
+var ExamDisplay = { examId:null, exam:null, schedule:null, tickInterval:null, listeningEnabled:true, playedListeningFor:{}, warnedSet:{} };
+
+window.openExamDisplayScreen = function(examId){
+  ExamDisplay.examId = examId;
+  ExamDisplay.playedListeningFor = {};
+  ExamDisplay.warnedSet = {};
+  showScreen('screen-exam-display');
+  document.getElementById('screen-exam-display').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#fff;background:#1a1a1a;font-size:16px;">불러오는 중...</div>';
+
+  getDoc(doc(db,'exams',examId)).then(function(d){
+    if (!d.exists()) { alert('시험을 찾을 수 없습니다'); showScreen('screen-teacher'); return; }
+    ExamDisplay.exam = Object.assign({id:examId}, d.data());
+    ExamDisplay.schedule = _computeExamDisplaySchedule(ExamDisplay.exam);
+    _renderExamDisplayFrame();
+    _tickExamDisplay();
+    if (ExamDisplay.tickInterval) clearInterval(ExamDisplay.tickInterval);
+    ExamDisplay.tickInterval = setInterval(_tickExamDisplay, 1000);
+  });
+};
+
+window.closeExamDisplayScreen = function(){
+  if (ExamDisplay.tickInterval) clearInterval(ExamDisplay.tickInterval);
+  ExamDisplay.tickInterval = null;
+  showScreen('screen-teacher');
+  renderTeacher(7);
+};
+
+// exam.startAtMs와 각 과목 durationMin/breakAfterMin을 이어붙여서, "지금 몇 교시 진행중인지 /
+// 쉬는시간인지 / 아직 시작 전인지 / 다 끝났는지"를 실시간 시각만으로 계산할 수 있는 일정표를 만듦
+// (일괄 시작 시험은 전원이 동시에 시작하므로, 개별 학생 세션을 조회할 필요 없이 이 계산만으로 충분함)
+function _computeExamDisplaySchedule(exam){
+  var subjects = exam.subjects || [];
+  var phases = [];
+  var cursor = exam.startAtMs || Date.now();
+  subjects.forEach(function(subj, i){
+    var startMs = cursor;
+    var endMs = startMs + (subj.durationMin||0)*60000;
+    phases.push({ type:'subject', idx:i, subj:subj, startMs:startMs, endMs:endMs });
+    cursor = endMs;
+    if (i < subjects.length-1 && subj.breakAfterMin) {
+      var bStart = cursor, bEnd = bStart + subj.breakAfterMin*60000;
+      phases.push({ type:'break', afterIdx:i, startMs:bStart, endMs:bEnd });
+      cursor = bEnd;
+    }
+  });
+  return phases;
+}
+
+function _renderExamDisplayFrame(){
+  var el = document.getElementById('screen-exam-display');
+  el.innerHTML = '<div class="exdisp-wrap">'
+    + '<div class="exdisp-topbar">'
+    +   '<div class="exdisp-title">'+escapeHtml(ExamDisplay.exam.title)+'</div>'
+    +   '<label class="exdisp-listening-toggle"><input type="checkbox" id="exdisp-listening-toggle" checked onchange="ExamDisplay.listeningEnabled=this.checked;"/> 🎧 듣기 파일 자동재생</label>'
+    +   '<button class="exdisp-close-btn" onclick="closeExamDisplayScreen()">✕ 닫기</button>'
+    + '</div>'
+    + '<div id="exdisp-body" class="exdisp-body"></div>'
+    + '<div id="exdisp-warn-flash" class="exam-warn-flash"></div>'
+    + '</div>';
+}
+
+function _tickExamDisplay(){
+  if (!ExamDisplay.exam) return;
+  var now = Date.now();
+  var schedule = ExamDisplay.schedule;
+  var body = document.getElementById('exdisp-body');
+  if (!body) return;
+
+  // 1) 아직 시작 전 (대기실)
+  if (now < (ExamDisplay.exam.startAtMs || 0)) {
+    _renderExamDisplayWaitingRoom(now);
+    return;
+  }
+  // 2) 진행중인 phase 찾기
+  var current = schedule.find(function(p){ return now >= p.startMs && now < p.endMs; });
+  // 3) 다 끝난 경우
+  if (!current) {
+    var last = schedule[schedule.length-1];
+    if (!last || now >= last.endMs) {
+      body.innerHTML = '<div class="exdisp-done">🎉<div class="exdisp-done-text">모든 시험 일정이 종료되었습니다</div></div>';
+      return;
+    }
+    return;
+  }
+
+  if (current.type === 'break') {
+    var remainSec = Math.max(0, Math.round((current.endMs-now)/1000));
+    body.innerHTML = '<div class="exdisp-break">'
+      + '<div class="exdisp-break-label">☕ 쉬는 시간</div>'
+      + '<div class="exdisp-break-timer">'+_fmtMMSS(remainSec)+'</div>'
+      + '<div class="exdisp-break-sub">다음 과목 '+String(new Date(current.endMs).getHours()).padStart(2,'0')+':'+String(new Date(current.endMs).getMinutes()).padStart(2,'0')+' 시작</div>'
+      + '</div>';
+    return;
+  }
+
+  // 4) 과목 진행중 - 시계 + 남은시간
+  var subj = current.subj;
+  var subjName = subjectNames[subj.subject] || subj.subject;
+  if (!document.getElementById('exdisp-clock')) {
+    body.innerHTML = _buildExamDisplayLiveHtml(subjName, current);
+  }
+  var remainSec = Math.max(0, Math.round((current.endMs-now)/1000));
+  var remainEl = document.getElementById('exdisp-remain');
+  if (remainEl) remainEl.textContent = _fmtMMSS(remainSec);
+
+  // 아날로그 시계 (실제 현재시각 표시 - 학생 화면과 동일 방식)
+  var d = new Date();
+  var h=d.getHours()%12, m=d.getMinutes(), s=d.getSeconds();
+  _setClockHand('exdisp-clock-hour-g', (h+m/60)*30);
+  _setClockHand('exdisp-clock-min-g', (m+s/60)*6);
+  _setClockHand('exdisp-clock-sec-g', s*6);
+
+  // 듣기 파일 - 이 과목이 막 시작된 시점에 한 번만, 토글이 켜져 있을 때만 자동재생
+  if (subj.listeningUrl && ExamDisplay.listeningEnabled && !ExamDisplay.playedListeningFor[current.idx] && (now - current.startMs) < 5000) {
+    ExamDisplay.playedListeningFor[current.idx] = true;
+    try { new Audio(subj.listeningUrl).play().catch(function(){}); } catch(e){}
+  }
+
+  // 종료 알림 - 듣기 설정과 무관하게 항상 울림
+  (subj.warnMinutesList||exam_getDefaultWarnList()).forEach(function(min){
+    var key = current.idx+'_'+min;
+    if (ExamDisplay.warnedSet[key]) return;
+    if (remainSec <= min*60) {
+      ExamDisplay.warnedSet[key] = true;
+      _showExamDisplayWarnBanner(min+'분 남았습니다');
+    }
+  });
+}
+function exam_getDefaultWarnList(){ return [10,5,1]; }
+
+function _buildExamDisplayLiveHtml(subjName, phase){
+  return '<div class="exdisp-live">'
+    + '<div class="exdisp-subj-name">'+escapeHtml(subjName)+'</div>'
+    + '<svg id="exdisp-clock" viewBox="0 0 240 240" class="exdisp-clock-svg">'
+    +   '<circle cx="120" cy="120" r="118" fill="#fff" stroke="var(--burg)" stroke-width="3"/>'
+    +   '<circle cx="120" cy="120" r="112" fill="none" stroke="var(--gold2)" stroke-width="1"/>'
+    +   Array.from({length:12},function(_,i){
+          var a=i*30*Math.PI/180; var r1=95,r2=108;
+          var x1=120+r1*Math.sin(a),y1=120-r1*Math.cos(a),x2=120+r2*Math.sin(a),y2=120-r2*Math.cos(a);
+          return '<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="var(--burg)" stroke-width="2.5" stroke-linecap="round"/>';
+        }).join('')
+    +   '<g id="exdisp-clock-hour-g" transform="rotate(0 120 120)"><path d="M120,132 L117,64 L120,50 L123,64 Z" fill="#1a1a1a"/></g>'
+    +   '<g id="exdisp-clock-min-g" transform="rotate(0 120 120)"><path d="M120,138 L118,40 L120,26 L122,40 Z" fill="#1a1a1a"/></g>'
+    +   '<g id="exdisp-clock-sec-g" transform="rotate(0 120 120)"><line x1="120" y1="145" x2="120" y2="30" stroke="var(--burg)" stroke-width="1.6" stroke-linecap="round"/><circle cx="120" cy="145" r="4" fill="var(--burg)"/></g>'
+    +   '<circle cx="120" cy="120" r="5.5" fill="var(--burg)" stroke="var(--gold2)" stroke-width="1.2"/>'
+    + '</svg>'
+    + '<div class="exdisp-remain-label">남은 시간</div>'
+    + '<div id="exdisp-remain" class="exdisp-remain">--:--</div>'
+    + '</div>';
+}
+
+function _fmtMMSS(totalSec){
+  var m = Math.floor(totalSec/60), s = totalSec%60;
+  return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+}
+
+function _showExamDisplayWarnBanner(text){
+  var body = document.getElementById('exdisp-body');
+  if (!body) return;
+  var banner = document.createElement('div');
+  banner.className = 'exdisp-warn-banner';
+  banner.textContent = '⏰ ' + text;
+  body.appendChild(banner);
+  var flash = document.getElementById('exdisp-warn-flash');
+  if (flash) { flash.classList.remove('exam-warn-flash-active'); void flash.offsetWidth; flash.classList.add('exam-warn-flash-active'); }
+  try {
+    var beep = new Audio('data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//tQxAADB8AhSmxhIIEVCSiJrDCQBTcu3UrAIwUdkRgQbFAZC7k+9re83/6svUAxrM5tQmMAAAAAAAAAAAAAAAAA');
+    beep.play().catch(function(){});
+  } catch(e){}
+  setTimeout(function(){ banner.remove(); }, 8000);
+}
+
+var _exdispWaitingLastFetch = 0;
+function _renderExamDisplayWaitingRoom(now){
+  var body = document.getElementById('exdisp-body');
+  var remainSec = Math.max(0, Math.round((ExamDisplay.exam.startAtMs-now)/1000));
+
+  // 참가자 목록 자체는 5초에 한 번만 새로 조회 (매초 다시 불러오면 낭비) - 카운트다운
+  // 숫자만 매초 가볍게 갱신
+  var countdownEl = document.getElementById('exdisp-countdown');
+  if (countdownEl && now - _exdispWaitingLastFetch < 5000) {
+    countdownEl.textContent = _fmtMMSS(remainSec);
+    return;
+  }
+  _exdispWaitingLastFetch = now;
+
+  Promise.all([
+    getDocs(query(collection(db,'examSessions'), where('examId','==',ExamDisplay.examId))),
+    loadStudentList()
+  ]).then(function(results){
+    var sessions = results[0].docs.map(function(d){return d.data();});
+    var students = results[1];
+    var statusByUid = {}; sessions.forEach(function(s){ statusByUid[s.studentUid] = s.status; });
+    var assignedUids = ExamDisplay.exam.assignedTo || [];
+    var participants = students.filter(function(s){ return assignedUids.indexOf(s.uid) !== -1; });
+
+    var joinedCount = participants.filter(function(s){ return statusByUid[s.uid] && statusByUid[s.uid] !== 'not_started'; }).length;
+
+    var cardsHtml = participants.map(function(s){
+      var joined = statusByUid[s.uid] && statusByUid[s.uid] !== 'not_started';
+      return '<div class="exdisp-participant'+(joined?' joined':'')+'">'
+        + '<div class="exdisp-participant-av">'+escapeHtml((s.name||'?').slice(0,1))+'</div>'
+        + '<div class="exdisp-participant-name">'+escapeHtml(s.name)+'</div>'
+        + '<div class="exdisp-participant-status">'+(joined?'✓ 참가중':'대기')+'</div>'
+        + '</div>';
+    }).join('');
+
+    var currentRemainSec = Math.max(0, Math.round((ExamDisplay.exam.startAtMs-Date.now())/1000));
+    body.innerHTML = '<div class="exdisp-waiting">'
+      + '<div class="exdisp-countdown-label">시험 시작까지</div>'
+      + '<div class="exdisp-countdown" id="exdisp-countdown">'+_fmtMMSS(currentRemainSec)+'</div>'
+      + '<div class="exdisp-join-count">참가 확인 '+joinedCount+' / '+participants.length+'명</div>'
+      + '<div class="exdisp-participant-grid">'+(cardsHtml||'<div style="color:#999;">배정된 학생이 없습니다</div>')+'</div>'
+      + '</div>';
+  });
+}
+
+window.openLiveExamStatusModal = function(){
+  document.getElementById('live-exam-status-body').innerHTML = '<div style="color:var(--tx3);font-size:12px;padding:10px 0;">불러오는 중...</div>';
+  openModal('modal-live-exam-status');
+  _loadLiveExamStatus();
+};
+
+window._loadLiveExamStatus = function(){
+  Promise.all([
+    getDocs(query(collection(db,'examSessions'), where('branch','==',getBranch()), where('status','in',['waiting','in_progress','break']))),
+    loadStudentList()
+  ]).then(function(results){
+    var sessions = results[0].docs.map(function(d){return Object.assign({id:d.id}, d.data());});
+    var students = results[1];
+    var nameMap = {}; students.forEach(function(s){ nameMap[s.uid]=s.name; });
+
+    if (!sessions.length) {
+      document.getElementById('live-exam-status-body').innerHTML = '<div style="color:var(--tx4);font-size:12px;padding:14px 0;text-align:center;">지금 응시 중이거나 대기 중인 학생이 없습니다.</div>';
+      return;
+    }
+
+    var examIds = Array.from(new Set(sessions.map(function(s){return s.examId;})));
+    Promise.all(examIds.map(function(eid){ return getDoc(doc(db,'exams',eid)); })).then(function(examDocs){
+      var examMap = {};
+      examDocs.forEach(function(d,i){ examMap[examIds[i]] = d.exists() ? d.data() : null; });
+
+      var statusLabel = {waiting:'대기중(출석)', in_progress:'응시중', break:'쉬는시간'};
+      var fmtTime = function(ms){ if(!ms) return '-'; var d=new Date(ms); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
+
+      var rows = sessions.map(function(sess){
+        var exam = examMap[sess.examId];
+        var subjIdx = sess.currentSubjectIndex || 0;
+        var subj = exam && exam.subjects ? exam.subjects[subjIdx] : null;
+        var startMs = sess.deadlineMs && subj ? sess.deadlineMs - subj.durationMin*60000 : null;
+        var remainMin = sess.deadlineMs ? Math.max(0, Math.round((sess.deadlineMs - Date.now())/60000)) : null;
+        return {
+          name: nameMap[sess.studentUid]||'?', examTitle: exam ? exam.title : '(삭제된 시험)',
+          status: statusLabel[sess.status]||sess.status, startMs: startMs, endMs: sess.deadlineMs,
+          remainMin: remainMin, examId: sess.examId, uid: sess.studentUid
+        };
+      }).sort(function(a,b){ return (a.remainMin==null?9999:a.remainMin) - (b.remainMin==null?9999:b.remainMin); });
+
+      var html = '<div style="font-size:11px;color:var(--tx3);margin-bottom:10px;">현재 '+rows.length+'명 · 남은 시간 적은 순</div>'
+        + rows.map(function(r){
+          var urgent = r.remainMin != null && r.remainMin <= 10;
+          return '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:10px 12px;background:var(--surface2);border-radius:10px;margin-bottom:6px;'+(urgent?'border:1px solid rgba(220,38,38,0.3);':'')+'">'
+            + '<div style="flex:1 1 100%;display:flex;justify-content:space-between;align-items:center;">'
+            +   '<div><b style="font-size:13px;color:var(--tx1);">'+escapeHtml(r.name)+'</b> <span style="font-size:11px;color:var(--tx3);">· '+escapeHtml(r.examTitle)+'</span></div>'
+            +   '<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:5px;background:'+(r.status==='응시중'?'var(--burg-l)':'var(--gold-l)')+';color:'+(r.status==='응시중'?'var(--burg)':'var(--gold)')+';">'+r.status+'</span>'
+            + '</div>'
+            + '<div style="font-size:11px;color:var(--tx3);">'+fmtTime(r.startMs)+' 시작 ~ '+fmtTime(r.endMs)+' 종료'+(r.remainMin!=null?' · 남은 '+r.remainMin+'분':'')+'</div>'
+            + '<button onclick="_runExamForceSubmitForStudent(\''+r.examId+'\',\''+r.uid+'\',\''+escapeHtml(r.name).replace(/'/g,"\\'")+'\')" style="margin-left:auto;font-size:10px;padding:4px 8px;background:#fef2f2;border:1px solid rgba(220,38,38,0.25);border-radius:6px;color:#dc2626;cursor:pointer;">⚡ 강제제출</button>'
+            + '</div>';
+        }).join('');
+      document.getElementById('live-exam-status-body').innerHTML = html;
+    });
+  }).catch(function(e){
+    document.getElementById('live-exam-status-body').innerHTML = '<div style="color:var(--red);font-size:12px;">불러오기 실패: '+e.message+'</div>';
+  });
+};
+
 window.openExamMergeGroupsModal = function(){
   document.getElementById('exam-merge-groups-body').innerHTML = '<div style="color:var(--tx3);font-size:12px;padding:10px 0;">불러오는 중...</div>';
   openModal('modal-exam-merge-groups');
@@ -8023,6 +8388,11 @@ function buildDashboard() {
   var content = ''
     +'<div class="card card-gold mentor-card-host"><div id="mentor-comment-area"><div style="color:var(--tx3);font-size:12px;text-align:center;padding:8px;">멘토 코멘트 로딩 중...</div></div></div>'
     +'<div id="lecture-dashboard"></div>'
+    +'<div class="card" id="daily-memo-card"><div class="card-h"><div class="card-title">📮 내일의 나에게</div><span id="daily-memo-save-status" style="font-size:10px;color:var(--tx4);"></span></div>'
+    +'<div id="daily-memo-yesterday-box" style="display:none;"></div>'
+    +'<div style="font-size:11px;color:var(--tx3);margin-bottom:6px;">오늘 못다한 것, 내일 꼭 해야 할 것을 남겨두면 내일 플래너 쓰기 전에 다시 보여드려요.</div>'
+    +'<textarea id="daily-memo-input" placeholder="예: 영어 단어 30개 못 외움 → 내일 아침에 마저 하기" oninput="saveDailyMemoDebounced()" style="width:100%;min-height:64px;border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;resize:vertical;background:var(--surface2);color:var(--tx1);box-sizing:border-box;"></textarea>'
+    +'</div>'
     +'<div class="card"><div class="card-h"><div class="card-title">오늘의 플래너</div><div style="display:flex;gap:6px;align-items:center;"><span id="planner-progress-text" style="font-size:10px;color:var(--tx3);"></span><button class="btn-secondary" onclick="showPlannerHistory()" style="padding:5px 9px;font-size:10px;">📅 기록</button><button class="btn-primary" onclick="openModal(\'modal-submit-planner\')" style="padding:5px 11px;font-size:10px;">제출</button></div></div><div class="planner-progress"><div class="planner-progress-fill" id="planner-progress-fill" style="width:0%"></div></div><div id="todo-list" class="planner-list"><div style="color:var(--tx3);font-size:12px;padding:8px;text-align:center;">불러오는 중...</div></div><button class="add-btn" onclick="openModal(\'modal-todo\')">+ 할 일 추가</button></div>'
     +'<div class="card"><div class="card-h"><div class="card-title">오늘 학습 요약</div></div><div id="study-report"><div style="color:var(--tx3);font-size:12px;text-align:center;padding:8px;">불러오는 중...</div></div></div>'
     +'<div class="card"><div class="card-h"><div class="card-title">주간 과목 몰입도</div></div><div id="weekly-report"><div style="color:var(--tx3);font-size:12px;text-align:center;padding:8px;">불러오는 중...</div></div></div>'
@@ -8037,8 +8407,61 @@ function listenTodos() {
   // 타이머 배너 상태 동기화
   _renderTimerBanner(!!TimerEngine.todoId);
   if (TimerEngine.todoId) _tickDisplay();
-  loadMentorComment(); renderWeeklyReport(); loadLectureDashboard(); loadStudyRankings('study-rankings-student');
+  loadMentorComment(); renderWeeklyReport(); loadLectureDashboard(); loadStudyRankings('study-rankings-student'); loadDailyMemo();
 }
+
+// "내일의 나에게" - 오늘 날짜로 메모를 남기면, 다음날 접속했을 때(플래너 쓰기 전) 어제
+// 남긴 메모를 다시 보여줌. 하루에 하나씩(uid+날짜로 문서 식별), 입력하는 대로 자동저장.
+var _dailyMemoSaveTimer = null;
+function loadDailyMemo(){
+  if (!currentUser) return;
+  var today = getPlannerDate();
+  var yEl = document.getElementById('daily-memo-yesterday-box');
+  var input = document.getElementById('daily-memo-input');
+  if (!input) return;
+
+  // 오늘 메모 불러오기
+  getDoc(doc(db,'dailyMemos', currentUser.uid+'_'+today)).then(function(d){
+    input.value = (d.exists() && d.data().content) ? d.data().content : '';
+  }).catch(function(){});
+
+  // 어제 메모 불러오기 (오늘 날짜 기준으로 하루 전 - getPlannerDate와 같은 방식으로 계산)
+  var yDate = new Date(today+'T00:00:00+09:00');
+  yDate.setDate(yDate.getDate()-1);
+  var yStr = yDate.getFullYear()+'-'+String(yDate.getMonth()+1).padStart(2,'0')+'-'+String(yDate.getDate()).padStart(2,'0');
+  getDoc(doc(db,'dailyMemos', currentUser.uid+'_'+yStr)).then(function(d){
+    if (yEl) {
+      if (d.exists() && d.data().content && d.data().content.trim()) {
+        yEl.style.display = 'block';
+        yEl.innerHTML = '<div style="background:var(--gold-l);border:1px solid rgba(184,132,26,0.25);border-radius:10px;padding:10px 12px;margin-bottom:10px;">'
+          + '<div style="font-size:11px;font-weight:700;color:var(--gold);margin-bottom:4px;">🔔 어제 남긴 메모</div>'
+          + '<div style="font-size:13px;color:var(--tx1);white-space:pre-wrap;word-break:break-word;">'+escapeHtml(d.data().content)+'</div>'
+          + '</div>';
+      } else {
+        yEl.style.display = 'none';
+        yEl.innerHTML = '';
+      }
+    }
+  }).catch(function(){});
+}
+
+window.saveDailyMemoDebounced = function(){
+  if (_dailyMemoSaveTimer) clearTimeout(_dailyMemoSaveTimer);
+  var statusEl = document.getElementById('daily-memo-save-status');
+  if (statusEl) statusEl.textContent = '입력 중...';
+  _dailyMemoSaveTimer = setTimeout(function(){
+    if (!currentUser) return;
+    var today = getPlannerDate();
+    var content = document.getElementById('daily-memo-input').value;
+    setDoc(doc(db,'dailyMemos', currentUser.uid+'_'+today), {
+      uid: currentUser.uid, date: today, content: content, updatedAt: serverTimestamp()
+    }, {merge:true}).then(function(){
+      if (statusEl) statusEl.textContent = '✓ 저장됨';
+    }).catch(function(){
+      if (statusEl) statusEl.textContent = '저장 실패';
+    });
+  }, 700);
+};
 
 function loadTodos() {
   if (!currentUser) return;
@@ -11631,13 +12054,15 @@ function buildTRewards(){
         return {uid:s.uid, name:s.name, plus:plus, minus:minus, net:net};
       }).sort(function(a,b){ return b.net - a.net; });
       var summaryHtml = summaryRows.map(function(r){
-        return '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--surface2);border-radius:8px;margin-bottom:5px;">'
-          + '<div style="flex:1;font-size:13px;font-weight:600;color:var(--tx1);">'+escapeHtml(r.name)+'</div>'
-          + '<div style="font-size:12px;color:var(--burg);font-weight:700;">상점 '+r.plus+'</div>'
-          + '<div style="font-size:12px;color:var(--red);font-weight:700;">벌점 '+r.minus+'</div>'
-          + '<div style="font-size:12px;font-weight:800;color:'+(r.net>=0?'var(--green)':'var(--red)')+';min-width:56px;text-align:right;">순점수 '+r.net+'</div>'
-          + '<button onclick="openOffsetPointsModal(\''+r.uid+'\',\''+escapeHtml(r.name)+'\')" style="padding:5px 9px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;font-weight:600;white-space:nowrap;">상점으로 벌점 상쇄</button>'
-          + '<button onclick="openStudentPointHistoryModal(\''+r.uid+'\',\''+escapeHtml(r.name)+'\')" style="padding:5px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--tx2);font-size:11px;cursor:pointer;font-weight:600;white-space:nowrap;">📋 내역 보기</button>'
+        return '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:9px 12px;background:var(--surface2);border-radius:8px;margin-bottom:5px;">'
+          + '<div style="flex:1 1 100%;display:flex;align-items:center;gap:10px;min-width:0;">'
+          +   '<div style="flex:1;font-size:13px;font-weight:600;color:var(--tx1);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(r.name)+'</div>'
+          +   '<div style="font-size:12px;color:var(--burg);font-weight:700;white-space:nowrap;">상점 '+r.plus+'</div>'
+          +   '<div style="font-size:12px;color:var(--red);font-weight:700;white-space:nowrap;">벌점 '+r.minus+'</div>'
+          +   '<div style="font-size:12px;font-weight:800;color:'+(r.net>=0?'var(--green)':'var(--red)')+';white-space:nowrap;">순점수 '+r.net+'</div>'
+          + '</div>'
+          + '<button onclick="openOffsetPointsModal(\''+r.uid+'\',\''+escapeHtml(r.name)+'\')" style="flex:1 1 auto;padding:6px 9px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;font-weight:600;white-space:nowrap;">상점으로 벌점 상쇄</button>'
+          + '<button onclick="openStudentPointHistoryModal(\''+r.uid+'\',\''+escapeHtml(r.name)+'\')" style="flex:1 1 auto;padding:6px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--tx2);font-size:11px;cursor:pointer;font-weight:600;white-space:nowrap;">📋 내역 보기</button>'
           + '</div>';
       }).join('') || '<div style="color:var(--tx3);font-size:13px;text-align:center;padding:14px;">학생이 없습니다</div>';
       var summaryCard = '<div class="card">'
