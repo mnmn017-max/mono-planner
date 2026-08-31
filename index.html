@@ -1446,12 +1446,32 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .exam-report-meta{font-size:12px;opacity:.85;}
 .exam-report-scoreband{background:var(--surface2);padding:22px;text-align:center;border-bottom:1px solid var(--border2);}
 
-.omr-replay-subj-title{font-size:14px;font-weight:800;color:var(--burg);margin-bottom:6px;padding-bottom:6px;border-bottom:2px solid var(--burg-l2);}
-.omr-replay-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--tx3);margin-bottom:10px;}
-.omr-replay-legend .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:middle;}
-.omr-mc-bubble.readonly{cursor:default;pointer-events:none;}
-.omr-mc-bubble.readonly.wrong-picked{background:var(--red);border-color:var(--red);color:#fff;}
-.omr-mc-bubble.readonly.correct-hint{border:2px solid var(--green);color:var(--green);font-weight:800;}
+/* 실제 수능 OMR 답안지 느낌 - 흑백 인쇄물 스타일 */
+.omr-sheet{background:#fdfdfa;border:2.5px solid #1a1a1a;border-radius:2px;font-family:'Malgun Gothic',sans-serif;margin-bottom:16px;}
+.omr-sheet-header{background:#1a1a1a;color:#fff;padding:12px 16px;display:flex;align-items:baseline;gap:10px;}
+.omr-sheet-header-title{font-size:16px;font-weight:800;letter-spacing:4px;}
+.omr-sheet-header-sub{font-size:13px;font-weight:600;color:#ddd;}
+.omr-sheet-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:10px;color:#555;padding:8px 14px;border-bottom:1.5px solid #1a1a1a;background:#f2f0ea;}
+.omr-sheet-legend-mark{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:4px;vertical-align:middle;border:1.5px solid #1a1a1a;}
+.omr-sheet-legend-mark.ok{background:#1a1a1a;}
+.omr-sheet-legend-mark.ng{background:#b91c1c;border-color:#b91c1c;}
+.omr-sheet-legend-mark.hint{background:none;border-color:#b91c1c;}
+.omr-sheet-body{padding:6px 14px;}
+.omr-sheet-row{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px dashed #ccc;}
+.omr-sheet-qno{width:26px;flex-shrink:0;font-size:12px;font-weight:800;color:#1a1a1a;text-align:right;font-family:'Courier New',monospace;}
+.omr-sheet-bubbles{display:flex;gap:7px;}
+.omr-sheet-bubble{
+  display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;
+  font-size:15px;line-height:1;color:#1a1a1a;border-radius:50%;
+}
+.omr-sheet-bubble.marked{background:#1a1a1a;color:#fff;border-radius:50%;}
+.omr-sheet-bubble.marked-wrong{background:#b91c1c;color:#fff;border-radius:50%;}
+.omr-sheet-bubble.correct-hint{box-shadow:0 0 0 1.5px #b91c1c;border-radius:50%;color:#b91c1c;}
+.omr-sheet-shortanswer{display:flex;gap:3px;}
+.omr-sheet-digitbox{display:inline-flex;align-items:center;justify-content:center;width:20px;height:24px;border:1.3px solid #1a1a1a;font-size:12px;font-weight:700;font-family:'Courier New',monospace;}
+.omr-sheet-correctnote{margin-left:auto;font-size:11px;font-weight:700;}
+.omr-sheet-correctnote.ok{color:#1a1a1a;}
+.omr-sheet-correctnote.ng{color:#b91c1c;}
 .exam-report-total-label{font-size:11px;color:var(--tx3);font-weight:700;letter-spacing:2px;margin-bottom:6px;}
 .exam-report-total-score{font-size:42px;font-weight:800;color:var(--burg);}
 .exam-report-total-score span{font-size:15px;color:var(--tx3);font-weight:600;margin-left:4px;}
@@ -5422,6 +5442,14 @@ function _enterExamScreen(sessionId, exam, subj, subjIdx, deadlineMs, savedAnswe
   ExamEngine.answers = savedAnswers || {};
   ExamEngine.warnedSet = {};
   ExamEngine.submitting = false;
+  ExamEngine.electiveChoice = null; // 수능 시간 모드에서 탐구 라벨에 세부과목명을 같이 보여주기 위함
+  getDoc(doc(db,'examSessions',sessionId)).then(function(sd){
+    var choices = sd.exists() ? sd.data().electiveChoices : null;
+    if (choices && choices[subjIdx]) {
+      ExamEngine.electiveChoice = choices[subjIdx];
+      _updateExamTimeRangeLabel(); // 이미 그려진 화면이면 라벨을 다시 갱신
+    }
+  }).catch(function(){});
 
   showScreen('screen-exam');
   document.getElementById('screen-exam').innerHTML = buildExamTakingHtml(exam, subj, deadlineMs);
@@ -5520,7 +5548,7 @@ function buildExamTakingHtml(exam, subj, deadlineMs){
     +     '</div>'
     +     '<div class="exam-clock-catchphrase">&ldquo;너의 꾸준함과 우리의 치열함이 기적을 이루길&rdquo;</div>'
     +     (startEndLabel ? '<div class="exam-clock-timerange" id="exam-clock-timerange">'+startEndLabel+'</div>' : '')
-    +     '<button type="button" id="exam-clock-mode-btn" class="exam-clock-mode-btn" onclick="toggleExamClockMode()">'+(_examClockMode==='real'?'🕐 실제 시각':'📅 수능 시간')+'</button>'
+    +     '<button type="button" id="exam-clock-mode-btn" class="exam-clock-mode-btn" onclick="toggleExamClockMode()">'+(_examClockMode==='real'?'📅 수능 시간으로 보기':'🕐 실제 시각으로 보기')+'</button>'
     +     '<div class="exam-clock-footer-brand">'
     +       '<img src="'+LIGHTHOUSE_LOGO_DATAURI+'" alt="" class="exam-clock-footer-icon"/>'
     +       '<span>멘토즈 스터디카페 울산송정점</span>'
@@ -5660,7 +5688,9 @@ function _scheduleExamAutosave(){
 // 이 시각을 기준으로 시계를 보여주되, 흐르는 속도는 항상 실제 시간과 정확히 1:1로
 // 맞춰서(그냥 표시 기준점만 다르게) 오차 없이 흐르도록 함.
 var CSAT_TIMETABLE = {
-  ko:{h:8,m:40}, ma:{h:10,m:30}, en:{h:13,m:10}, hi:{h:14,m:50}, ex1:{h:14,m:50}, ex2:{h:14,m:50}
+  ko:{h:8,m:40}, ma:{h:10,m:30}, en:{h:13,m:10},
+  // 4교시(한국사/탐구)는 한국사 - 탐구1 - 탐구2 순서로 각각 다른 시각에 시작함
+  hi:{h:14,m:50}, ex1:{h:15,m:35}, ex2:{h:16,m:17}
 };
 
 var _examClockMode = localStorage.getItem('examClockMode') || 'real'; // 'real' | 'csat'
@@ -5675,7 +5705,8 @@ window.toggleExamClockMode = function(){
 function _updateExamClockModeBtn(){
   var btn = document.getElementById('exam-clock-mode-btn');
   if (!btn) return;
-  btn.textContent = (_examClockMode === 'real') ? '🕐 실제 시각' : '📅 수능 시간';
+  // 지금 어떤 모드인지가 아니라, "누르면 뭘로 바뀌는지"를 보여줘야 헷갈리지 않음
+  btn.textContent = (_examClockMode === 'real') ? '📅 수능 시간으로 보기' : '🕐 실제 시각으로 보기';
 }
 
 function _updateExamTimeRangeLabel(){
@@ -5687,7 +5718,8 @@ function _updateExamTimeRangeLabel(){
   if (_examClockMode === 'csat' && CSAT_TIMETABLE[subj.subject]) {
     var base = CSAT_TIMETABLE[subj.subject];
     var endTotalMin = base.h*60+base.m+subj.durationMin;
-    el.textContent = fmt(base.h,base.m) + ' ~ ' + fmt(Math.floor(endTotalMin/60)%24, endTotalMin%60) + ' (수능 시간표 기준)';
+    var electiveLabel = (ExamEngine.electiveChoice) ? '('+ExamEngine.electiveChoice+') ' : '';
+    el.textContent = electiveLabel + fmt(base.h,base.m) + ' ~ ' + fmt(Math.floor(endTotalMin/60)%24, endTotalMin%60) + ' (수능 시간표 기준)';
   } else {
     var sd = new Date(startMs), ed = new Date(ExamEngine.deadlineMs);
     el.textContent = fmt(sd.getHours(),sd.getMinutes()) + ' ~ ' + fmt(ed.getHours(),ed.getMinutes());
@@ -6583,7 +6615,7 @@ window.viewExamResult = function(sessionId){
     var sess = sessDoc.data();
     sess._sessionId = sessionId;
     return getDoc(doc(db,'exams',sess.examId)).then(function(examDoc){
-      var exam = examDoc.exists() ? examDoc.data() : {};
+      var exam = examDoc.exists() ? examDoc.data() : { title: '(삭제된 시험)' };
       _renderExamReportCard(sess, exam);
     });
   }).catch(function(e){
@@ -6594,6 +6626,9 @@ window.viewExamResult = function(sessionId){
 // 실제 응시 화면과 완전히 같은 스타일(둥근 마킹 버튼)로, 학생이 실제로 마킹했던 그대로를
 // 읽기전용으로 다시 보여줌. 정답은 초록 테두리로, 학생이 고른 게 오답이면 빨갛게 채워서
 // 어디를 놓쳤는지 한눈에 보이게 함.
+// 실제 수능 시험장에서 쓰는 OMR 답안지와 비슷한 형태로 그림 - 원문자(①②③④⑤)를 쓰고,
+// 마킹된 자리는 연필로 칠한 것처럼 까맣게 채워서 진짜 답안지 느낌을 내려고 함.
+var CIRCLED_NUMS = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨'];
 function _buildOmrReplayHtml(subjName, answers){
   var rows = (answers||[]).map(function(a){
     if (a.type === 'mc') {
@@ -6604,27 +6639,36 @@ function _buildOmrReplayHtml(subjName, answers){
         var n = i+1;
         var isStudent = studentVal === n;
         var isCorrectChoice = correctVal === n;
-        var cls = 'omr-mc-bubble readonly';
-        if (isStudent && a.isCorrect) cls += ' selected'; // 맞은 답 (학생이 고른 것 = 정답)
-        else if (isStudent && !a.isCorrect) cls += ' wrong-picked'; // 학생이 골랐는데 틀림
-        if (isCorrectChoice && !isStudent) cls += ' correct-hint'; // 학생이 안 골랐지만 정답인 자리 표시
-        return '<div class="'+cls+'">'+n+'</div>';
+        var cls = 'omr-sheet-bubble';
+        if (isStudent) cls += a.isCorrect ? ' marked' : ' marked-wrong'; // 학생이 실제로 칠한 자리(연필 채움)
+        if (isCorrectChoice && !isStudent) cls += ' correct-hint'; // 정답이었는데 안 고른 자리 - 빨간 테두리로만 표시
+        return '<span class="'+cls+'">'+(CIRCLED_NUMS[i]||n)+'</span>';
       }).join('');
-      return '<div class="omr-row"><div class="omr-qno">'+a.no+'</div><div class="omr-choices">'+bubbles+'</div></div>';
+      return '<div class="omr-sheet-row"><span class="omr-sheet-qno">'+a.no+'</span><span class="omr-sheet-bubbles">'+bubbles+'</span></div>';
     } else {
-      // 주관식(자릿수형/텍스트형)은 버블 형태가 아니라 "내 답 / 정답" 텍스트로 표시
+      // 주관식은 실제 수능 답안지의 "단답형 기재란"처럼 칸에 적힌 형태로 표시
       var myAns = (a.studentAnswer!=null && a.studentAnswer!=='') ? a.studentAnswer : '무응답';
-      return '<div class="omr-row" style="align-items:center;">'
-        + '<div class="omr-qno">'+a.no+'</div>'
-        + '<div style="font-size:13px;'+(a.isCorrect?'color:var(--green);':'color:var(--red);')+'">내 답: '+escapeHtml(String(myAns))+' &nbsp;·&nbsp; 정답: '+escapeHtml(String(a.correctAnswer))+'</div>'
+      var digits = String(myAns).split('');
+      var digitBoxes = digits.map(function(d){ return '<span class="omr-sheet-digitbox">'+escapeHtml(d)+'</span>'; }).join('');
+      return '<div class="omr-sheet-row">'
+        + '<span class="omr-sheet-qno">'+a.no+'</span>'
+        + '<span class="omr-sheet-shortanswer">'+digitBoxes+'</span>'
+        + '<span class="omr-sheet-correctnote '+(a.isCorrect?'ok':'ng')+'">정답 '+escapeHtml(String(a.correctAnswer))+'</span>'
         + '</div>';
     }
   }).join('');
-  return '<div class="omr-replay-subj-title">'+escapeHtml(subjName)+'</div><div class="omr-replay-legend">'
-    + '<span><i class="dot" style="background:var(--burg);"></i>내가 맞게 고름</span>'
-    + '<span><i class="dot" style="background:var(--red);"></i>내가 틀리게 고름</span>'
-    + '<span><i class="dot" style="border:2px solid var(--green);background:none;"></i>정답 위치</span>'
-    + '</div>' + rows;
+  return '<div class="omr-sheet">'
+    + '<div class="omr-sheet-header">'
+    +   '<div class="omr-sheet-header-title">답 안 지</div>'
+    +   '<div class="omr-sheet-header-sub">'+escapeHtml(subjName)+'</div>'
+    + '</div>'
+    + '<div class="omr-sheet-legend">'
+    +   '<span><i class="omr-sheet-legend-mark ok"></i>정답으로 마킹</span>'
+    +   '<span><i class="omr-sheet-legend-mark ng"></i>오답으로 마킹</span>'
+    +   '<span><i class="omr-sheet-legend-mark hint"></i>정답 (미마킹)</span>'
+    + '</div>'
+    + '<div class="omr-sheet-body">'+rows+'</div>'
+    + '</div>';
 }
 
 window.openExamOmrReplay = function(sessionId){
