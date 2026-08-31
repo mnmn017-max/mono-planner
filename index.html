@@ -1484,6 +1484,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 /* 서술형(텍스트) 답안 */
 .omr-sheet-textwrap{border-top:1px dashed #ccc;padding-top:8px;}
 .omr-sheet-textrow{display:flex;align-items:center;gap:10px;font-size:12px;padding:5px 0;border-bottom:1px dashed #ddd;}
+
+.omr-sheet-zoom-hint{font-size:11px;color:var(--tx4);text-align:center;margin-bottom:8px;}
+.omr-sheet-zoomed{transform:scale(1.7);transform-origin:top center;margin-top:40px;margin-bottom:60px;width:588px;}
+@media(max-width:600px){ .omr-sheet-zoomed{transform:scale(1.3);width:500px;} }
 .exam-report-total-label{font-size:11px;color:var(--tx3);font-weight:700;letter-spacing:2px;margin-bottom:6px;}
 .exam-report-total-score{font-size:42px;font-weight:800;color:var(--burg);}
 .exam-report-total-score span{font-size:15px;color:var(--tx3);font-weight:600;margin-left:4px;}
@@ -2119,6 +2123,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <div class="modal-title">🗒 내 OMR 답안지</div>
   <div id="omr-replay-body"></div>
   <button class="modal-btn cancel" onclick="closeModal('modal-omr-replay')" style="margin-top:14px;">닫기</button>
+</div></div>
+
+<!-- OMR 확대 보기 -->
+<div class="modal-overlay" id="modal-omr-zoom" onclick="if(event.target===this)closeModal('modal-omr-zoom');" style="background:rgba(0,0,0,0.85);align-items:center;">
+  <div style="max-width:96vw;max-height:92vh;overflow:auto;background:transparent;">
+    <div id="omr-zoom-body" class="omr-sheet-zoomed"></div>
+    <button class="modal-btn cancel" style="margin:14px auto 0;width:auto;padding:10px 24px;display:block;" onclick="closeModal('modal-omr-zoom')">닫기</button>
+  </div>
+</div>
+
+<!-- 성적 합치기 -->
+<div class="modal-overlay" id="modal-merge-grades"><div class="modal" style="max-width:440px;">
+  <div class="modal-title">🔗 성적 합치기</div>
+  <div class="modal-label">합칠 성적</div>
+  <div id="merge-grades-source-list" style="background:var(--surface2);border-radius:10px;padding:10px 14px;margin-bottom:14px;"></div>
+  <div class="modal-label">합쳐진 시험 이름</div>
+  <input class="modal-input" id="merge-grades-name-input" placeholder="예: 8월 대성 모의고사"/>
+  <div style="font-size:11px;color:var(--tx4);margin-bottom:14px;line-height:1.5;">합치면 선택한 성적들의 과목별 점수가 하나로 모이고, 원본 성적들은 삭제됩니다. 되돌릴 수 없어요.</div>
+  <button class="modal-btn primary" onclick="confirmMergeGrades()">합치기</button>
+  <button class="modal-btn cancel" onclick="closeModal('modal-merge-grades')">취소</button>
 </div></div>
 
 <!-- 채팅방 메뉴 모달 -->
@@ -6739,10 +6763,27 @@ window.openExamOmrReplay = function(sessionId){
       var subjName = subjectNames[r.subject]||r.subject;
       return _buildOmrReplayHtml(subjName, r.answers);
     }).join('<div style="height:20px;"></div>');
-    document.getElementById('omr-replay-body').innerHTML = html || '<div style="color:var(--tx3);padding:20px;">표시할 답안이 없습니다.</div>';
+    window._lastOmrReplayHtml = html; // 확대보기에서 재사용
+    document.getElementById('omr-replay-body').innerHTML = html
+      ? '<div class="omr-sheet-zoom-hint">🔍 눌러서 확대해서 보기</div>' + html
+      : '<div style="color:var(--tx3);padding:20px;">표시할 답안이 없습니다.</div>';
+    if (html) {
+      document.getElementById('omr-replay-body').querySelectorAll('.omr-sheet').forEach(function(el){
+        el.style.cursor = 'zoom-in';
+        el.onclick = function(){ openOmrZoomView(); };
+      });
+    }
   }).catch(function(e){
     document.getElementById('omr-replay-body').innerHTML = '<div style="color:var(--red);padding:20px;">불러오기 실패: '+e.message+'</div>';
   });
+};
+
+// OMR 답안지를 크게 확대해서 보여줌 - 문항이 많으면 원래 크기론 마킹이 잘 안 보일 수 있어서,
+// 눌렀을 때 전체화면에 가깝게 크게 띄워줌
+window.openOmrZoomView = function(){
+  if (!window._lastOmrReplayHtml) return;
+  document.getElementById('omr-zoom-body').innerHTML = window._lastOmrReplayHtml;
+  openModal('modal-omr-zoom');
 };
 
 function _renderExamReportCard(sess, exam){
@@ -10582,7 +10623,7 @@ window.loadExamStats=function(encodedName, targetId){
     var bySubj={};
     sameExam.forEach(function(d){var g=d.data();Object.keys(g.scores||{}).forEach(function(k){if(!bySubj[k])bySubj[k]=[];bySubj[k].push({uid:g.uid,score:parseInt(g.scores[k].score)||0,grade:g.scores[k].grade});});});
     var rankHtml=Object.keys(bySubj).slice(0,6).map(function(k){
-      var arr=bySubj[k].sort(function(a,b){return a.grade?a.grade-b.grade:b.score-a.score;});
+      var arr=bySubj[k].sort(function(a,b){return b.score-a.score;}); // 항상 점수 높은 순 (등급 유무에 따라 기준이 뒤섞이던 버그 수정)
       return '<div style="font-size:12px;margin-bottom:4px"><span class="subject-tag subj-'+k.replace(/\d+$/,'')+'" style="font-size:10px">'+( subjectNames[k]||k)+'</span> '
         +arr.slice(0,3).map(function(r,i){return (i+1)+'위 '+r.score+'점';}).join(' / ')+'</div>';
     }).join('');
@@ -10790,12 +10831,14 @@ window.loadStudentGrades=function(uid){
       var examKey=encodeURIComponent(g.examName)+'-'+g.examDate;
       var statsBtn='<div style="margin-top:10px"><button onclick="loadExamStatsForTeacher(\''+encodeURIComponent(g.examName)+'\',\''+uid+'\',\''+examKey+'\')" style="padding:7px 12px;background:rgba(74,127,255,0.1);border:1px solid rgba(74,127,255,0.2);border-radius:6px;color:var(--blue);font-size:11px;cursor:pointer;width:100%">📊 같은 시험 응시 학생 비교분석</button><div id="teacher-exam-stats-'+examKey+'" style="display:none;margin-top:8px"></div></div>';
 
-      return '<div class="score-card" style="margin-bottom:12px">'
+      return '<div class="score-card" style="margin-bottom:12px" data-grade-id="'+g._id+'">'
         +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'
+        +'<div style="display:flex;align-items:center;gap:8px;">'
+        +'<input type="checkbox" class="grade-merge-checkbox" value="'+g._id+'" style="display:none;width:18px;height:18px;flex-shrink:0;" onchange="_syncMergeGradeBtn()"/>'
         +'<div><div style="font-size:15px;font-weight:700">'+g.examName+'</div>'
         +'<div style="font-size:11px;color:var(--tx3);margin-top:2px;display:flex;gap:6px;align-items:center">'+g.examDate
         +(g.category?'<span style="padding:2px 7px;background:rgba(74,127,255,0.1);border:1px solid rgba(74,127,255,0.2);border-radius:4px;color:var(--blue);font-size:10px">'+g.category+'</span>':'')
-        +'</div></div>'
+        +'</div></div></div>'
         +'<div style="display:flex;gap:5px">'
         +'<button onclick="openGradeMemoModal(\''+g._id+'\')" style="padding:5px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer">📝 메모</button>'
         +'<button onclick="openEditGradeModal(\''+g._id+'\',\''+uid+'\')" style="padding:5px 10px;background:var(--burg-l);border:1px solid var(--burg-l2);border-radius:6px;color:var(--burg);font-size:11px;cursor:pointer">수정</button>'
@@ -10805,9 +10848,96 @@ window.loadStudentGrades=function(uid){
         +wrongHtml+refHtml+prevHtml+statsBtn+'</div>';
     }).join('');
 
-    el.innerHTML = chartHtml + cardsHtml;
+    var mergeBar = (currentProfile.role==='teacher'||currentProfile.role==='master')
+      ? '<div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px;">'
+        + '<button id="grade-merge-toggle-btn" onclick="_toggleGradeMergeMode()" style="padding:6px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--tx2);font-size:11px;cursor:pointer;">🔗 성적 합치기</button>'
+        + '<button id="grade-merge-confirm-btn" onclick="openMergeGradesModal(\''+uid+'\')" style="display:none;padding:6px 12px;background:var(--burg);border:none;border-radius:6px;color:#fff;font-size:11px;cursor:pointer;font-weight:700;">선택한 성적 합치기</button>'
+        + '</div>'
+      : '';
+
+    el.innerHTML = chartHtml + mergeBar + cardsHtml;
   }).catch(function(e){el.innerHTML='<div style="color:var(--red);font-size:13px">오류: '+e.message+'</div>';});
 };
+// ═══════════════════════════════════════
+// 성적 합치기 (선생님/마스터 전용) - 같은 학생의 서로 다른 시험(예: 국어/수학 따로
+// 올라간 성적)을 하나로 합침. 과목별 점수를 다 모으고, 이름도 새로 지을 수 있음.
+// ═══════════════════════════════════════
+window._gradeMergeMode = false;
+
+window._toggleGradeMergeMode = function(){
+  window._gradeMergeMode = !window._gradeMergeMode;
+  document.querySelectorAll('.grade-merge-checkbox').forEach(function(cb){
+    cb.style.display = window._gradeMergeMode ? 'block' : 'none';
+    if (!window._gradeMergeMode) cb.checked = false;
+  });
+  var toggleBtn = document.getElementById('grade-merge-toggle-btn');
+  if (toggleBtn) toggleBtn.textContent = window._gradeMergeMode ? '✕ 합치기 취소' : '🔗 성적 합치기';
+  _syncMergeGradeBtn();
+};
+
+window._syncMergeGradeBtn = function(){
+  var confirmBtn = document.getElementById('grade-merge-confirm-btn');
+  if (!confirmBtn) return;
+  var checkedCount = document.querySelectorAll('.grade-merge-checkbox:checked').length;
+  confirmBtn.style.display = (window._gradeMergeMode && checkedCount >= 2) ? 'inline-block' : 'none';
+};
+
+window.openMergeGradesModal = function(uid){
+  var ids = Array.from(document.querySelectorAll('.grade-merge-checkbox:checked')).map(function(cb){return cb.value;});
+  if (ids.length < 2) { alert('합칠 성적을 2개 이상 선택해주세요'); return; }
+  window._mergeGradeIds = ids;
+  window._mergeGradeUid = uid;
+
+  Promise.all(ids.map(function(id){ return getDoc(doc(db,'grades',id)); })).then(function(docs){
+    var grades = docs.map(function(d){ return Object.assign({_id:d.id}, d.data()); });
+    window._mergeGradeSources = grades;
+    var namesHtml = grades.map(function(g){ return '<div style="font-size:12px;color:var(--tx2);padding:4px 0;">· '+escapeHtml(g.examName)+' ('+escapeHtml(g.examDate||'')+')</div>'; }).join('');
+    document.getElementById('merge-grades-source-list').innerHTML = namesHtml;
+    document.getElementById('merge-grades-name-input').value = grades[0].examName;
+    openModal('modal-merge-grades');
+  });
+};
+
+window.confirmMergeGrades = function(){
+  var newName = document.getElementById('merge-grades-name-input').value.trim();
+  if (!newName) { alert('합쳐진 시험 이름을 입력해주세요'); return; }
+  var grades = window._mergeGradeSources;
+  if (!grades || grades.length < 2) return;
+
+  // 과목별 점수(scores)와 오답(wrongBySubj)을 전부 하나로 합침. 같은 과목 키가 이미
+  // 있으면(예: 둘 다 국어를 갖고 있는 이상 상황) 나중 것으로 덮어쓰지 않고 먼저 값 유지.
+  var mergedScores = {}, mergedWrong = {};
+  grades.forEach(function(g){
+    Object.keys(g.scores||{}).forEach(function(k){ if (mergedScores[k]===undefined) mergedScores[k] = g.scores[k]; });
+    Object.keys(g.wrongBySubj||{}).forEach(function(k){ if (mergedWrong[k]===undefined) mergedWrong[k] = g.wrongBySubj[k]; });
+  });
+  var earliestDate = grades.map(function(g){return g.examDate;}).sort()[0];
+  var baseGrade = grades[0];
+
+  var mergedData = {
+    uid: window._mergeGradeUid,
+    type: baseGrade.type || 'mock',
+    examName: newName,
+    examDate: earliestDate,
+    scores: mergedScores,
+    wrongBySubj: mergedWrong,
+    examSource: baseGrade.examSource || null,
+    source: 'merged',
+    mergedFrom: grades.map(function(g){return g._id;}),
+    createdAt: serverTimestamp()
+  };
+
+  addDoc(collection(db,'grades'), mergedData).then(function(){
+    // 원본 성적들은 합쳐진 뒤 삭제 (하나로 통합됐으니 중복으로 남겨두지 않음)
+    return Promise.all(grades.map(function(g){ return deleteDoc(doc(db,'grades',g._id)); }));
+  }).then(function(){
+    closeModal('modal-merge-grades');
+    window._gradeMergeMode = false;
+    alert('성적을 합쳤습니다.');
+    loadStudentGrades(window._mergeGradeUid);
+  }).catch(function(e){ alert('합치기 실패: ' + e.message); });
+};
+
 window.deleteGrade=function(gradeId, studentUid){
   if(!confirm('이 성적을 삭제하시겠습니까?')) return;
   deleteDoc(doc(db,'grades',gradeId)).then(function(){
@@ -11013,7 +11143,7 @@ window.loadExamStatsForTeacher=function(encodedName,targetUid,examKey){
       function _rrank(k){var b=k.replace(/\d+$/,'');var i=_ro.indexOf(b);return i>=0?i:99;}
       var sortedRankSubjs=Object.keys(bySubj).sort(function(a,b){return _rrank(a)-_rrank(b);});
       var rankHtml=sortedRankSubjs.map(function(k){
-        var arr=bySubj[k].sort(function(a,b){return a.grade?a.grade-b.grade:b.score-a.score;});
+        var arr=bySubj[k].sort(function(a,b){return b.score-a.score;}); // 항상 점수 높은 순 (등급 유무에 따라 기준이 뒤섞이던 버그 수정)
         var myRank=arr.findIndex(function(r){return r.uid===targetUid;})+1;
         var label=arr[0]&&arr[0].label||(subjectNames[k]||k);
         var base=k.replace(/\d+$/,'');
