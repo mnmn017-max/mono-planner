@@ -332,6 +332,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   .timer-banner-time{font-size:26px;}
   .teacher-topbar{padding:13px 22px;}
   .teacher-content{padding:16px 22px;}
+  /* 세로 공간이 좁은 태블릿 가로모드에서는 사이드바 탭을 좀 더 촘촘하게 줄여서
+     스크롤 없이도 최대한 다 보이게 함 */
+  .dt-sidebar{padding:12px 10px;gap:2px;}
+  .dt-sb-logo{width:150px;height:70px;margin-bottom:10px;}
+  .dt-sb-item{width:150px;min-height:52px;padding:6px 6px;gap:2px;}
+  .dt-sb-item-label{font-size:10px;}
 }
 
 /* ════════════════════════════════════════
@@ -423,6 +429,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
     gap:4px;
     flex-shrink:0;
     height:100%;
+    overflow-y:auto; /* 탭이 늘어나서 화면 높이를 넘으면 잘리지 않고 스크롤되도록 */
   }
   .dt-sb-logo{width:176px;height:94px;border-radius:14px;background:var(--burg);display:flex;align-items:center;justify-content:center;margin-bottom:18px;overflow:visible;flex-shrink:0;box-shadow:0 4px 14px rgba(123,29,29,0.3);padding:10px 14px;}
   .dt-sb-item{width:170px;min-height:64px;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;position:relative;transition:all .15s;color:var(--tx3);flex-shrink:0;padding:10px 6px;}
@@ -3339,7 +3346,7 @@ window.runExamForceSubmitNow = function(){
             var subj = exam.subjects[subjIdx];
             if (!subj) return;
 
-            var graded = gradeExamAnswers(subj, sess.currentAnswers || {});
+            var graded = gradeExamAnswers(_resolveSubjForGrading(subj, sess.electiveChoices && sess.electiveChoices[subjIdx]), sess.currentAnswers || {});
             var subjectResult = {
               subject: subj.subject, subjectIndex: subjIdx,
               startedAtMs: sess.deadlineMs - subj.durationMin*60000,
@@ -3505,6 +3512,15 @@ window.openEditExamModal = function(examId){
         if (subj === 'sc' || subj === 'so') { exCat = subj; subj = 'ex1'; }
         return {
           subject: subj, exCategory: exCat, electiveOptions: s.electiveOptions||[],
+          questionsByElective: (function(){
+            var out = {};
+            if (s.questionsByElective) {
+              Object.keys(s.questionsByElective).forEach(function(name){
+                out[name] = (s.questionsByElective[name]||[]).map(function(q){ return Object.assign({}, q); });
+              });
+            }
+            return out;
+          })(),
           durationMin: s.durationMin, breakAfterMin: s.breakAfterMin||0,
           listeningUrl: s.listeningUrl||null, listeningDurationSec: s.listeningDurationSec||null,
           questions: (s.questions||[]).map(function(q){ return Object.assign({}, q); }),
@@ -3763,7 +3779,7 @@ function _speakExamAlert(text, exam, minutesLeft){
 }
 
 function _newExamSubjectBlock(){
-  return { subject:'ko', exCategory:null, electiveOptions:[], durationMin:100, breakAfterMin:20, listeningUrl:null, questions:[], gradeCutoffsEnabled:false, gradeCutoffs:_defaultGradeCutoffs() };
+  return { subject:'ko', exCategory:null, electiveOptions:[], questionsByElective:{}, durationMin:100, breakAfterMin:20, listeningUrl:null, questions:[], gradeCutoffsEnabled:false, gradeCutoffs:_defaultGradeCutoffs() };
 }
 
 function _defaultGradeCutoffs(){
@@ -4008,11 +4024,47 @@ window.toggleExamElectiveOption = function(idx, name, isChecked){
   var block = _examSubjectBlocks[idx];
   if (!block) return;
   if (!block.electiveOptions) block.electiveOptions = [];
+  if (!block.questionsByElective) block.questionsByElective = {};
   if (isChecked) {
     if (block.electiveOptions.indexOf(name) === -1) block.electiveOptions.push(name);
+    if (!block.questionsByElective[name]) block.questionsByElective[name] = [];
   } else {
     block.electiveOptions = block.electiveOptions.filter(function(n){ return n !== name; });
+    // 체크 해제해도 이미 입력해둔 문항은 바로 안 지우고 questionsByElective에 남겨둠
+    // (실수로 체크 풀었다 다시 켰을 때 문항이 사라지지 않도록)
   }
+  _syncExamActiveQuestionsPointer(idx);
+  renderExamQuestionBuilder(idx);
+};
+
+// block.questions를 "지금 편집 중인 선택과목의 문항 배열"을 가리키는 포인터로 유지함.
+// 이렇게 하면 문항 추가/삭제/일괄생성 등 기존 로직을 하나도 안 건드리고도, 그 로직들이
+// 자동으로 "지금 선택된 과목"의 문항을 다루게 됨 (배열은 참조 타입이라 questionsByElective
+// 안의 배열과 block.questions가 항상 같은 실체를 가리키게 유지)
+function _syncExamActiveQuestionsPointer(idx){
+  var block = _examSubjectBlocks[idx];
+  if (!block) return;
+  if (!block.electiveOptions || !block.electiveOptions.length) {
+    // 선택과목이 없으면 원래대로 - block.questions가 이미 questionsByElective를 가리키고
+    // 있었다면(직전까지 선택과목이 있었던 경우) 공용 문항 배열로 되돌림
+    if (!block._ownQuestions) block._ownQuestions = block.questions && block.questions.length && !block._fromElective ? block.questions : [];
+    block.questions = block._ownQuestions;
+    return;
+  }
+  if (!block._currentElective || block.electiveOptions.indexOf(block._currentElective) === -1) {
+    block._currentElective = block.electiveOptions[0];
+  }
+  if (!block.questionsByElective[block._currentElective]) block.questionsByElective[block._currentElective] = [];
+  block.questions = block.questionsByElective[block._currentElective];
+  block._fromElective = true;
+}
+
+window.switchExamQuestionElective = function(blockIdx, electiveName){
+  var block = _examSubjectBlocks[blockIdx];
+  if (!block) return;
+  block._currentElective = electiveName;
+  _syncExamActiveQuestionsPointer(blockIdx);
+  renderExamQuestionBuilder(blockIdx);
 };
 
 window.renderExamSubjectBlocks = function(){
@@ -4152,10 +4204,24 @@ window.renderExamQuestionBuilder = function(blockIdx){
   var block = _examSubjectBlocks[blockIdx];
   var area = document.getElementById('exam-question-builder-'+blockIdx);
   if (!area || !block) return;
+  _syncExamActiveQuestionsPointer(blockIdx);
+
+  var tabsHtml = '';
+  if (block.electiveOptions && block.electiveOptions.length) {
+    tabsHtml = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;padding:8px;background:var(--gold-l);border-radius:8px;">'
+      + '<div style="width:100%;font-size:11px;color:var(--gold);font-weight:700;margin-bottom:2px;">📚 선택과목마다 문항/정답이 따로예요 - 아래에서 과목을 골라 그 과목 문항을 입력하세요</div>'
+      + block.electiveOptions.map(function(name){
+          var isActive = name === block._currentElective;
+          var qCount = (block.questionsByElective && block.questionsByElective[name]) ? block.questionsByElective[name].length : 0;
+          return '<button type="button" onclick="switchExamQuestionElective('+blockIdx+',\''+escapeHtml(name).replace(/'/g,"\\'")+'\')" style="padding:6px 12px;border-radius:8px;border:1px solid '+(isActive?'var(--gold)':'var(--border)')+';background:'+(isActive?'var(--gold)':'var(--surface)')+';color:'+(isActive?'#fff':'var(--tx2)')+';font-size:12px;font-weight:600;cursor:pointer;">'+escapeHtml(name)+' ('+qCount+'문항)</button>';
+        }).join('')
+      + '</div>';
+  }
+
   if (!block.questions.length) {
-    area.innerHTML = '<div style="color:var(--tx4);font-size:12px;text-align:center;padding:20px 0;">위 버튼으로 문항을 추가하세요</div>';
+    area.innerHTML = tabsHtml + '<div style="color:var(--tx4);font-size:12px;text-align:center;padding:20px 0;">위 버튼으로 문항을 추가하세요</div>';
   } else {
-    area.innerHTML = block.questions.map(function(q, idx){
+    area.innerHTML = tabsHtml + block.questions.map(function(q, idx){
       var typeLabel = q.type === 'mc' ? '객관식' : '주관식';
       var rowExtra = '';
       if (q.type === 'mc') {
@@ -4742,18 +4808,31 @@ window.saveExam = function(){
   var warnMinutesList = _examWarnChips.slice().sort(function(a,b){ return b - a; });
   if (!warnMinutesList.length) warnMinutesList = [5];
 
-  var normalizedSubjects = _examSubjectBlocks.map(function(block, i){
-    var normalizedQuestions = block.questions.map(function(q){
+  var normalizeQuestionList = function(list){
+    return (list||[]).map(function(q){
       var copy = Object.assign({}, q);
       if (q.type === 'short' && q.shortMode === 'digit') {
         copy.answer = String(q.answer).replace(/\D/g,'').padStart(3,'0').slice(-3);
       }
       return copy;
     });
+  };
+
+  var normalizedSubjects = _examSubjectBlocks.map(function(block, i){
+    var normalizedQuestions = normalizeQuestionList(block.questions);
+    // 선택과목이 있으면, 지금 편집 중인 것만이 아니라 questionsByElective에 있는
+    // 모든 선택과목의 문항을 다 정규화해서 저장 (안 그러면 다른 선택과목 문항이 날아감)
+    var normalizedByElective = {};
+    if (block.electiveOptions && block.electiveOptions.length && block.questionsByElective) {
+      block.electiveOptions.forEach(function(name){
+        normalizedByElective[name] = normalizeQuestionList(block.questionsByElective[name]);
+      });
+    }
     return {
       subject: block.subject,
       exCategory: block.exCategory || null,
       electiveOptions: block.electiveOptions || [],
+      questionsByElective: normalizedByElective,
       order: i+1,
       durationMin: block.durationMin,
       breakAfterMin: (i < _examSubjectBlocks.length-1) ? (block.breakAfterMin||0) : 0,
@@ -5319,6 +5398,13 @@ window._submitElectiveChoice = function(name){
   field['electiveChoices.'+ctx.subjIdx] = name;
   updateDoc(doc(db,'examSessions',ctx.sessionId), field).then(function(){
     window._electiveProceedCtx = null;
+    ExamEngine.electiveChoice = name; // 채점 시점에 비동기 재조회 없이 바로 쓸 수 있도록 동기적으로도 세팅
+    // ctx.subj는 이후 이어지는 화면 진입/채점 로직들이 전부 같은 객체를 참조하고 있어서,
+    // 여기서 questions를 선택과목에 맞게 직접 바꿔치기해두면(참조 공유) 학생이 실제로
+    // 보는 문제 화면도, 나중 채점도 전부 자동으로 이 선택과목 문항을 쓰게 됨
+    if (ctx.subj.questionsByElective && ctx.subj.questionsByElective[name] && ctx.subj.questionsByElective[name].length) {
+      ctx.subj.questions = ctx.subj.questionsByElective[name];
+    }
     ctx.proceedFn();
   }).catch(function(e){ alert('저장 실패: ' + e.message); });
 };
@@ -6061,7 +6147,7 @@ function _finalizeExamSubmit(sessionId, exam, subj, subjIdx, answers, autoSubmit
   if (ExamEngine.clockInterval) clearInterval(ExamEngine.clockInterval);
   _releaseExamWakeLock();
 
-  var graded = gradeExamAnswers(subj, answers);
+  var graded = gradeExamAnswers(_resolveSubjForGrading(subj, ExamEngine.electiveChoice), answers);
 
   var subjectResult = {
     subject: subj.subject,
@@ -6616,7 +6702,7 @@ window.reGradeExamSessions = function(examId, examTitle){
             var subjDef = exam.subjects[idx];
             if (!subjDef) return oldR; // 그 사이 과목 자체가 삭제됐으면 예전 결과 그대로 둠
             var reconstructed = _reconstructAnswersFromResult(oldR);
-            var graded = gradeExamAnswers(subjDef, reconstructed);
+            var graded = gradeExamAnswers(_resolveSubjForGrading(subjDef, sess.electiveChoices && sess.electiveChoices[idx]), reconstructed);
             return Object.assign({}, oldR, {
               score: graded.score, totalScore: graded.totalScore, correctCount: graded.correctCount,
               wrongNumbers: graded.wrongNumbers, mcAccuracy: graded.mcAccuracy, shortAccuracy: graded.shortAccuracy,
@@ -6646,6 +6732,16 @@ window.reGradeExamSessions = function(examId, examTitle){
     });
   }).catch(function(e){ alert('다시 채점 실패: ' + e.message); });
 };
+
+// 선택과목별로 문항/정답이 따로 설정되어 있으면(questionsByElective), 학생이 그 시험에서
+// 실제로 고른 선택과목 기준으로 문항을 바꿔치기해서 채점 대상 subj를 만들어줌.
+// 선택과목이 없거나, 그 선택과목에 대한 문항이 따로 없으면 원래 questions 그대로 씀.
+function _resolveSubjForGrading(subj, electiveChoice){
+  if (subj && subj.questionsByElective && electiveChoice && subj.questionsByElective[electiveChoice] && subj.questionsByElective[electiveChoice].length) {
+    return Object.assign({}, subj, { questions: subj.questionsByElective[electiveChoice] });
+  }
+  return subj;
+}
 
 function gradeExamAnswers(subj, answers){
   var details = [];
