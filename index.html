@@ -6745,6 +6745,7 @@ function renderManualReviewModal(){
       + '<span style="width:74px;color:var(--tx3);font-size:11px;">'+typeLabel+'</span>'
       + '<span style="flex:1;">학생: <b>'+escapeHtml(String(a.studentAnswer!=null?a.studentAnswer:'(무응답)'))+'</b> / 정답: '+escapeHtml(String(a.correctAnswer))+'</span>'
       + badge + editedTag
+      + '<button type="button" onclick="editManualAnswer('+i+')" style="font-size:11px;padding:4px 8px;background:var(--burg-l);border:1px solid var(--burg-l2);border-radius:6px;color:var(--burg);cursor:pointer;">✏️ 답 수정</button>'
       + '<button type="button" onclick="toggleManualCorrect('+i+')" style="font-size:11px;padding:4px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;">뒤집기</button>'
       + '</div>';
   }).join('');
@@ -6753,6 +6754,49 @@ function renderManualReviewModal(){
 
 window.switchManualReviewSubject = function(idx){
   window._reviewSubjIdx = idx;
+  renderManualReviewModal();
+};
+
+// 학생이 실제로 낸 답 자체를 선생님이 고쳐서, 그 답으로 자동 재채점되게 함
+// (지금까지는 O/X만 뒤집을 수 있었는데, "학생이 답을 3번으로 냈는데 4번으로 잘못 기록됐다"
+// 같은 경우엔 답 자체를 바로잡아야 정확함 - gradeExamAnswers와 완전히 같은 채점 규칙을 그대로 씀)
+window.editManualAnswer = function(idx){
+  var results = window._reviewAllResults;
+  var subjIdx = window._reviewSubjIdx || 0;
+  var subj = results[subjIdx];
+  if (!subj) return;
+  var a = subj.answers[idx];
+
+  var newVal;
+  if (a.type === 'mc') {
+    var maxChoice = a.choices || 5;
+    newVal = prompt(a.no+'번 - 학생이 낸 답을 1~'+maxChoice+' 중에서 입력해주세요', a.studentAnswer!=null?a.studentAnswer:'');
+    if (newVal === null) return;
+    newVal = newVal.trim();
+    var n = parseInt(newVal,10);
+    if (!n || n < 1 || n > maxChoice) { alert('1~'+maxChoice+' 사이 숫자를 입력해주세요'); return; }
+    a.studentAnswer = String(n);
+    a.isCorrect = parseInt(a.studentAnswer,10) === parseInt(a.correctAnswer,10);
+  } else if (a.shortMode === 'digit') {
+    newVal = prompt(a.no+'번 - 학생이 낸 답(3자리 숫자)을 입력해주세요', a.studentAnswer!=null?a.studentAnswer:'');
+    if (newVal === null) return;
+    var digits = String(newVal).replace(/\D/g,'').padStart(3,'0').slice(-3);
+    a.studentAnswer = digits;
+    a.isCorrect = digits === String(a.correctAnswer);
+  } else {
+    newVal = prompt(a.no+'번 - 학생이 낸 답을 입력해주세요', a.studentAnswer!=null?a.studentAnswer:'');
+    if (newVal === null) return;
+    a.studentAnswer = newVal;
+    var rawN = newVal.toString().trim().toLowerCase().replace(/\s+/g,'');
+    var correctN = String(a.correctAnswer||'').trim().toLowerCase().replace(/\s+/g,'');
+    a.isCorrect = rawN === correctN && rawN !== '';
+  }
+
+  a.earned = a.isCorrect ? a.point : 0;
+  a.gradingMode = 'manual';
+  subj.score = subj.answers.reduce(function(s,x){return s+x.earned;},0);
+  subj.wrongNumbers = subj.answers.filter(function(x){return !x.isCorrect;}).map(function(x){return x.no;});
+  subj.correctCount = subj.answers.filter(function(x){return x.isCorrect;}).length;
   renderManualReviewModal();
 };
 
