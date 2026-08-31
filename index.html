@@ -334,13 +334,43 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   .teacher-content{padding:16px 22px;}
   /* 세로 공간이 좁은 태블릿 가로모드에서는, 스크롤 대신 탭들을 2열로 나란히 배치해서
      한눈에 다 보이게 함 (아이콘+라벨이 세로로 쌓이던 걸 가로 2열로 바꿔서 절반 높이만 차지) */
-  .dt-sidebar{padding:12px 8px;gap:6px;width:160px;}
+  .dt-sidebar{flex-direction:column;align-items:center;padding:12px 8px;gap:6px;width:160px;}
   .dt-sb-logo{width:130px;height:60px;margin-bottom:6px;}
   .dt-sb-nav-group{display:grid;grid-template-columns:repeat(2,1fr);gap:4px;width:100%;}
   #teacher-sb-items{display:grid !important;grid-template-columns:repeat(2,1fr);gap:4px;width:100%;}
   .dt-sb-item{width:100%;min-height:44px;padding:6px 4px;gap:1px;}
   .dt-sb-item-label{font-size:9px;}
   .dt-sb-item svg{width:18px;height:18px;}
+}
+
+/* ════════════════════════════════════════
+   데스크탑 전용 (1024px 이상) - 사이드바를 넓은 1열로 표시.
+   태블릿 좁은 구간(600~1023px)은 위 블록에서 이미 2열로 처리했으므로 여기서 건드리지 않음.
+   화면이 충분히 넓어서 스크롤이 거의 필요 없어 overflow는 넣지 않음(불필요한 스크롤바 방지).
+════════════════════════════════════════ */
+@media(min-width:1024px) and (orientation:landscape){
+  .dt-sidebar{
+    flex-direction:column;
+    width:200px;
+    background:var(--surface);
+    border-right:1px solid var(--border);
+    align-items:center;
+    padding:20px 12px;
+    gap:4px;
+    flex-shrink:0;
+    height:100%;
+  }
+  .dt-sb-logo{width:176px;height:94px;border-radius:14px;background:var(--burg);display:flex;align-items:center;justify-content:center;margin-bottom:18px;overflow:visible;flex-shrink:0;box-shadow:0 4px 14px rgba(123,29,29,0.3);padding:10px 14px;}
+  .dt-sb-item{width:170px;min-height:64px;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;position:relative;transition:all .15s;color:var(--tx3);flex-shrink:0;padding:10px 6px;}
+  .dt-sb-item-label{font-size:11px;font-weight:600;letter-spacing:0;color:inherit;line-height:1.15;text-align:center;}
+  .dt-sb-item.active{background:var(--burg-l);color:var(--burg);}
+  .dt-sb-item.active::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:24px;background:var(--burg);border-radius:0 2px 2px 0;}
+}
+/* 화면 자체가 좁은 게 아니라 세로로 짧아서(예: 노트북 작은 화면) 항목이 다 안 들어가는
+   극히 드문 경우에만 스크롤이 뜨도록 - 높이가 넉넉하면 이 조건 자체가 안 걸려서
+   평소엔 스크롤바가 전혀 안 보임 */
+@media(min-width:1024px) and (orientation:landscape) and (max-height:700px){
+  .dt-sidebar{overflow-y:auto;}
 }
 
 /* ════════════════════════════════════════
@@ -419,27 +449,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   #screen-student .bottom-nav{display:none !important;}
   #screen-student .bottom-brand{display:none !important;}
   .mobile-only{display:none !important;}
-  
-  /* 사이드바 */
-  .dt-sidebar{
-    display:flex !important;
-    flex-direction:column;
-    width:200px;
-    background:var(--surface);
-    border-right:1px solid var(--border);
-    align-items:center;
-    padding:20px 12px;
-    gap:4px;
-    flex-shrink:0;
-    height:100%;
-    overflow-y:auto; /* 탭이 늘어나서 화면 높이를 넘으면 잘리지 않고 스크롤되도록 */
-  }
-  .dt-sb-logo{width:176px;height:94px;border-radius:14px;background:var(--burg);display:flex;align-items:center;justify-content:center;margin-bottom:18px;overflow:visible;flex-shrink:0;box-shadow:0 4px 14px rgba(123,29,29,0.3);padding:10px 14px;}
-  .dt-sb-item{width:170px;min-height:64px;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;position:relative;transition:all .15s;color:var(--tx3);flex-shrink:0;padding:10px 6px;}
-  .dt-sb-item-label{font-size:11px;font-weight:600;letter-spacing:0;color:inherit;line-height:1.15;text-align:center;}
-  
-  .dt-sb-item.active{background:var(--burg-l);color:var(--burg);}
-  .dt-sb-item.active::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:24px;background:var(--burg);border-radius:0 2px 2px 0;}
+  .dt-sidebar{display:flex !important;} /* 태블릿(600~1023px)/데스크탑(1024px~) 공통: 항상 사이드바 보이기. 세부 크기/배치는 아래 각 구간별 블록에서 지정 */
   .dt-sb-spacer{flex:1;}
   .dt-sb-avatar{width:48px;height:48px;border-radius:50%;background:var(--burg);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:#fff;cursor:pointer;flex-shrink:0;margin-bottom:6px;background-size:cover;background-position:center;}
   
@@ -3324,8 +3334,12 @@ function buildTExamManage(){
       '<div class="card">'
       +'<div class="card-h"><div class="card-title">🛡 시험 강제제출 안전장치</div></div>'
       +'<div style="font-size:12px;color:var(--tx3);margin-bottom:10px;line-height:1.6;">마감시각이 지났는데도 학생이 앱을 안 열어서 응시중 상태로 남아있는 시험을 처리합니다. 이 버튼은 <b>브라우저에서 직접 처리</b>되어 별도 서버 설정 없이 바로 사용할 수 있어요. (개발자용 Vercel Cron 자동화도 별도로 지원됩니다)</div>'
+      +'<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">'
+      +  '<select class="modal-select" id="exam-safety-target-exam" style="flex:1;min-width:140px;margin:0;" onchange="_updateExamSafetyStudentOptions()"><option value="">전체 시험 대상</option>'+exams.map(function(e){return '<option value="'+e.id+'">'+escapeHtml(e.title)+'</option>';}).join('')+'</select>'
+      +  '<select class="modal-select" id="exam-safety-target-student" style="flex:1;min-width:140px;margin:0;"><option value="">전체 학생 대상</option></select>'
+      +'</div>'
       +'<div id="exam-safety-status" style="font-size:12px;color:var(--tx3);margin-bottom:10px;"></div>'
-      +'<button class="modal-btn cancel" style="margin:0;" onclick="runExamForceSubmitNow()">지금 바로 강제제출 처리</button>'
+      +'<button class="modal-btn cancel" style="margin:0;" onclick="_runExamForceSubmitFromCard()">지금 바로 강제제출 처리</button>'
       +'</div>'
     ) : '';
     var catTabs = ['전체'].concat(sourceOpts).map(function(c,i){
@@ -3357,16 +3371,33 @@ window.switchExamMgmtCategory = function(cat){
   });
 };
 
-// 시험 카드에서 "이 시험만 강제제출" - 여러 시험이 동시에 진행 중일 때, 전체가 아니라
-// 이 시험 하나만 골라서 처리하고 싶을 때 씀
-window._runExamForceSubmitForExam = function(examId, examTitle){
-  if (!confirm('"'+examTitle+'" 시험만 강제제출 처리하시겠습니까?\n(마감시각이 지났는데 아직 응시중/대기중인 학생만 대상입니다)')) return;
-  runExamForceSubmitNow(examId, null);
-};
-
 // 특정 학생 한 명만 강제제출 - 시험 현황/모니터 화면에서 사용
 window._runExamForceSubmitForStudent = function(examId, uid, studentName){
   if (!confirm(studentName+' 학생만 강제제출 처리하시겠습니까?\n(마감시각이 지났는데 아직 응시중/대기중인 경우만 대상입니다)')) return;
+  runExamForceSubmitNow(examId, uid);
+};
+
+// "특정 시험" 드롭다운을 고르면, 그 시험에 배정된 학생만 "특정 학생" 드롭다운에 채워줌
+window._updateExamSafetyStudentOptions = function(){
+  var examSel = document.getElementById('exam-safety-target-exam');
+  var studentSel = document.getElementById('exam-safety-target-student');
+  if (!examSel || !studentSel) return;
+  var examId = examSel.value;
+  studentSel.innerHTML = '<option value="">전체 학생 대상</option>';
+  if (!examId) return;
+  Promise.all([getDoc(doc(db,'exams',examId)), loadStudentList()]).then(function(results){
+    var exam = results[0].data();
+    var students = results[1];
+    var assignedUids = exam.assignedTo || [];
+    var assigned = students.filter(function(s){ return assignedUids.indexOf(s.uid) !== -1; });
+    studentSel.innerHTML = '<option value="">전체 학생 대상</option>' + assigned.map(function(s){ return '<option value="'+s.uid+'">'+escapeHtml(s.name)+'</option>'; }).join('');
+  });
+};
+
+// 카드 안의 드롭다운 선택값을 그대로 강제제출 실행에 넘겨줌 (전체/특정시험/특정학생 다 이걸로 처리)
+window._runExamForceSubmitFromCard = function(){
+  var examId = document.getElementById('exam-safety-target-exam').value || null;
+  var uid = document.getElementById('exam-safety-target-student').value || null;
   runExamForceSubmitNow(examId, uid);
 };
 
@@ -3506,7 +3537,6 @@ function examCardHtml(ex){
     +'<button onclick="openExamMonitor(\''+ex.id+'\')" class="btn-primary" style="font-size:11px;padding:6px 10px;">현황</button>'
     +'<button onclick="openEditExamModal(\''+ex.id+'\')" style="font-size:11px;padding:6px 10px;background:#eef7ff;border:1px solid rgba(59,130,246,0.25);border-radius:6px;color:#2563eb;cursor:pointer;">✏️ 설정 수정</button>'
     +'<button onclick="openExamFullRanking(\''+ex.id+'\',\''+escapeHtml(ex.title).replace(/'/g,"\\'")+'\')" style="font-size:11px;padding:6px 10px;background:#fff7ed;border:1px solid rgba(234,88,12,0.25);border-radius:6px;color:#c2410c;cursor:pointer;">🏆 전체 순위</button>'
-    +(currentProfile && currentProfile.role==='master' ? '<button onclick="_runExamForceSubmitForExam(\''+ex.id+'\',\''+escapeHtml(ex.title).replace(/'/g,"\\'")+'\')" style="font-size:11px;padding:6px 10px;background:#fef2f2;border:1px solid rgba(220,38,38,0.25);border-radius:6px;color:#dc2626;cursor:pointer;">⚡ 이 시험만 강제제출</button>' : '')
     +(ex.startAtMs ? '<button onclick="openExamDisplayScreen(\''+ex.id+'\')" style="font-size:11px;padding:6px 10px;background:#1a1a1a;border:none;border-radius:6px;color:#fff;cursor:pointer;">🖥 진행 화면</button>' : '')
     +'<button onclick="reGradeExamSessions(\''+ex.id+'\',\''+escapeHtml(ex.title).replace(/'/g,"\\'")+'\')" style="font-size:11px;padding:6px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);cursor:pointer;">🔄 다시 채점하기</button>'
     +'<button onclick="openExamReflections(\''+ex.id+'\',\''+escapeHtml(ex.title)+'\')" style="font-size:11px;padding:6px 10px;background:#eef2ff;border:1px solid rgba(79,70,229,0.2);border-radius:6px;color:#4338ca;cursor:pointer;">🌱 다음 걸음을 위하여</button>'
