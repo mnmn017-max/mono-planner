@@ -2145,6 +2145,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 
 <!-- 성적 합치기 -->
 <!-- 시험별 전체 순위 -->
+<!-- 시험 묶기 확인 -->
+<div class="modal-overlay" id="modal-merge-exams"><div class="modal" style="max-width:440px;">
+  <div class="modal-title">🔗 시험 묶기</div>
+  <div class="modal-label">묶을 시험</div>
+  <div id="merge-exams-source-list" style="background:var(--surface2);border-radius:10px;padding:10px 14px;margin-bottom:14px;"></div>
+  <div class="modal-label">묶음(합쳐질 성적) 이름</div>
+  <input class="modal-input" id="merge-exams-name-input" placeholder="예: 8월 대성 모의고사"/>
+  <div style="font-size:11px;color:var(--tx4);margin-bottom:14px;line-height:1.6;">시험 자체(문항/응시)는 각자 그대로 유지되고, 이 시험들의 성적을 다 낸 학생들의 성적탭 기록만 하나로 합쳐집니다. 지금 이미 채점된 학생은 바로 합쳐지고, 앞으로 새로 채점되는 학생은 "묶음 목록"에서 "새로 합치기"를 눌러 반영하시면 됩니다.</div>
+  <button class="modal-btn primary" onclick="confirmMergeExams()">묶기</button>
+  <button class="modal-btn cancel" onclick="closeModal('modal-merge-exams')">취소</button>
+</div></div>
+
+<!-- 시험 묶음 목록 -->
+<div class="modal-overlay" id="modal-exam-merge-groups"><div class="modal" style="max-width:460px;max-height:80vh;overflow-y:auto;">
+  <div class="modal-title">📋 시험 묶음 목록</div>
+  <div id="exam-merge-groups-body"></div>
+  <button class="modal-btn cancel" onclick="closeModal('modal-exam-merge-groups')" style="margin-top:12px;">닫기</button>
+</div></div>
+
 <div class="modal-overlay" id="modal-exam-ranking"><div class="modal" style="max-width:480px;max-height:85vh;overflow-y:auto;">
   <div class="modal-title" id="exam-ranking-title">🏆 전체 순위</div>
   <div id="exam-ranking-body"></div>
@@ -3247,7 +3266,7 @@ function buildTExamManage(){
       return '<button onclick="switchExamMgmtCategory(\''+escapeHtml(c).replace(/'/g,"\\'")+'\')" class="exam-mgmt-cat-btn'+(active?' active':'')+'">'+escapeHtml(c)+'</button>';
     }).join('') + '<button onclick="openAddExamSourceOption()" class="exam-mgmt-cat-btn exam-mgmt-cat-add">+ 분류 추가</button>';
     return safetyCard + '<div class="card">'
-      +'<div class="card-h"><div class="card-title">📝 시험 관리</div><div style="display:flex;gap:6px;"><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openElectiveManageModal()">🔧 선택과목 관리</button><button class="modal-btn primary" style="margin:0;width:auto;padding:8px 16px;font-size:12px;" onclick="openCreateExamModal()">+ 새 시험 만들기</button></div></div>'
+      +'<div class="card-h"><div class="card-title">📝 시험 관리</div><div style="display:flex;gap:6px;flex-wrap:wrap;"><button id="exam-merge-toggle-btn" class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="_toggleExamMergeMode()">🔗 시험 묶기</button><button id="exam-merge-confirm-btn" class="modal-btn primary" style="display:none;margin:0;width:auto;padding:8px 16px;font-size:12px;background:var(--gold);" onclick="openMergeExamsModal()">선택한 시험 묶기</button><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openExamMergeGroupsModal()">📋 묶음 목록</button><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openElectiveManageModal()">🔧 선택과목 관리</button><button class="modal-btn primary" style="margin:0;width:auto;padding:8px 16px;font-size:12px;" onclick="openCreateExamModal()">+ 새 시험 만들기</button></div></div>'
       +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px;" id="exam-mgmt-cat-tabs">'+catTabs+'</div>'
       +'<div id="exam-list-area">'+listHtml+'</div>'
       +'</div>';
@@ -3388,12 +3407,15 @@ function examCardHtml(ex){
   var totalScore = subj && subj.questions ? subj.questions.reduce(function(s,q){return s+(q.point||0);},0) : 0;
   var assignedCount = (ex.assignedTo||[]).length;
   var sourceLabel = examSourceLabel(ex.examSource);
-  return '<div class="exam-card" data-exam-source="'+escapeHtml(sourceLabel)+'" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px;">'
+  return '<div class="exam-card" data-exam-id="'+ex.id+'" data-exam-source="'+escapeHtml(sourceLabel)+'" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px;">'
     +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">'
+    +'<div style="display:flex;gap:8px;align-items:flex-start;">'
+    +'<input type="checkbox" class="exam-merge-checkbox" value="'+ex.id+'" style="display:none;width:18px;height:18px;flex-shrink:0;margin-top:3px;" onchange="_syncExamMergeBtn()"/>'
     +'<div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><div style="font-size:15px;font-weight:700;color:var(--tx1);">'+escapeHtml(ex.title)+'</div>'
     +(sourceLabel?'<span style="font-size:10px;font-weight:700;color:var(--burg);background:var(--burg-l);padding:2px 8px;border-radius:5px;">'+escapeHtml(sourceLabel)+'</span>':'')
     +(multiLabel?'<span style="font-size:10px;font-weight:700;color:var(--gold);background:var(--gold-l);padding:2px 8px;border-radius:5px;">'+multiLabel+'</span>':'')+'</div>'
     +'<div style="font-size:12px;color:var(--tx3);margin-top:2px;">'+escapeHtml(subjName)+(multiLabel?' 외':'')+' · 문항 '+qCount+'개 · 총점 '+totalScore+'점 · 배정 '+assignedCount+'명</div></div>'
+    +'</div>'
     +'<div style="display:flex;gap:6px;">'
     +'<button onclick="openAssignExamModal(\''+ex.id+'\')" class="btn-secondary" style="font-size:11px;padding:6px 10px;">배정</button>'
     +'<button onclick="openExamMonitor(\''+ex.id+'\')" class="btn-primary" style="font-size:11px;padding:6px 10px;">현황</button>'
@@ -6373,6 +6395,157 @@ function _reconstructAnswersFromResult(subjectResult){
 // 기준으로 다시 채점해서 세션과 성적탭 데이터를 함께 업데이트한다.
 // 시험별 전체 순위 - 학생명/점수/순위를 한 화면에서 한꺼번에 확인 (선생님/마스터 전용).
 // 과목이 여러 개인 시험(예: 국어+수학 같이 치는 시험)은 과목별로 각각 순위표를 따로 보여줌.
+// ═══════════════════════════════════════
+// 시험 묶기 - 시험(문항/응시 세션) 자체는 각자 그대로 독립적으로 두고, "이 시험들은
+// 한 세트다"라고 묶어만 둠. 묶으면 그 시험들의 성적을 다 낸 학생들 성적탭 기록을
+// 자동으로 하나로 합쳐줌 (완전 실시간은 아니고, 새로 채점된 학생이 생기면 버튼 한 번으로
+// 일괄 처리하는 방식).
+// ═══════════════════════════════════════
+window._examMergeMode = false;
+
+window._toggleExamMergeMode = function(){
+  window._examMergeMode = !window._examMergeMode;
+  document.querySelectorAll('.exam-merge-checkbox').forEach(function(cb){
+    cb.style.display = window._examMergeMode ? 'block' : 'none';
+    if (!window._examMergeMode) cb.checked = false;
+  });
+  var toggleBtn = document.getElementById('exam-merge-toggle-btn');
+  if (toggleBtn) toggleBtn.textContent = window._examMergeMode ? '✕ 묶기 취소' : '🔗 시험 묶기';
+  _syncExamMergeBtn();
+};
+
+window._syncExamMergeBtn = function(){
+  var confirmBtn = document.getElementById('exam-merge-confirm-btn');
+  if (!confirmBtn) return;
+  var checkedCount = document.querySelectorAll('.exam-merge-checkbox:checked').length;
+  confirmBtn.style.display = (window._examMergeMode && checkedCount >= 2) ? 'inline-block' : 'none';
+};
+
+window.openMergeExamsModal = function(){
+  var ids = Array.from(document.querySelectorAll('.exam-merge-checkbox:checked')).map(function(cb){return cb.value;});
+  if (ids.length < 2) { alert('묶을 시험을 2개 이상 선택해주세요'); return; }
+  window._mergeExamIds = ids;
+
+  Promise.all(ids.map(function(id){ return getDoc(doc(db,'exams',id)); })).then(function(docs){
+    var exams = docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
+    window._mergeExamSources = exams;
+    var listHtml = exams.map(function(ex){ return '<div style="font-size:12px;color:var(--tx2);padding:4px 0;">· '+escapeHtml(ex.title)+'</div>'; }).join('');
+    document.getElementById('merge-exams-source-list').innerHTML = listHtml;
+    document.getElementById('merge-exams-name-input').value = exams[0].title;
+    openModal('modal-merge-exams');
+  });
+};
+
+window.confirmMergeExams = function(){
+  var mergedTitle = document.getElementById('merge-exams-name-input').value.trim();
+  if (!mergedTitle) { alert('묶음 이름을 입력해주세요'); return; }
+  var exams = window._mergeExamSources;
+  if (!exams || exams.length < 2) return;
+
+  addDoc(collection(db,'examMergeGroups'), {
+    branch: getBranch(),
+    mergedTitle: mergedTitle,
+    examIds: exams.map(function(e){return e.id;}),
+    examTitles: exams.map(function(e){return e.title;}),
+    createdAt: serverTimestamp()
+  }).then(function(groupDoc){
+    closeModal('modal-merge-exams');
+    window._examMergeMode = false;
+    // 묶는 즉시, 지금 이미 두 시험 성적을 다 낸 학생들 성적을 바로 합쳐줌
+    return runExamGroupGradeMerge(groupDoc.id);
+  }).then(function(mergedCount){
+    alert('시험을 묶었습니다.\n\n지금 바로 성적이 합쳐진 학생: '+(mergedCount||0)+'명\n(앞으로 새로 채점되는 학생은 "🔄 새로 합치기" 버튼으로 다시 확인해서 합쳐주세요)');
+    invalidateTeacherTabCache(7);
+    renderTeacher(7);
+  }).catch(function(e){ alert('묶기 실패: ' + e.message); });
+};
+
+// 이 묶음에 속한 시험들의 성적을 다 가진 학생을 찾아서, 아직 안 합쳐진 사람만 골라
+// 자동으로 합쳐줌 (이미 합쳐진 사람은 건드리지 않음 - mergedFrom 그룹아이디로 식별)
+window.runExamGroupGradeMerge = function(groupId){
+  return getDoc(doc(db,'examMergeGroups',groupId)).then(function(groupDoc){
+    var group = groupDoc.data();
+    var examIds = group.examIds;
+    return getDocs(query(collection(db,'grades'), where('examId','in',examIds))).then(function(snap){
+      var byUid = {};
+      snap.docs.forEach(function(d){
+        var g = Object.assign({_id:d.id}, d.data());
+        if (g.mergedFrom) return; // 이미 다른 묶음으로 합쳐진 성적은 건드리지 않음
+        if (!byUid[g.uid]) byUid[g.uid] = [];
+        byUid[g.uid].push(g);
+      });
+
+      var tasks = [];
+      var mergedCount = 0;
+      Object.keys(byUid).forEach(function(uid){
+        var gradesForUid = byUid[uid];
+        // 이 학생이 묶음 안의 시험을 "전부" 낸 경우에만 합침 (일부만 낸 사람은 대상 아님)
+        var examIdsCovered = new Set(gradesForUid.map(function(g){return g.examId;}));
+        var coversAll = examIds.every(function(eid){ return examIdsCovered.has(eid); });
+        if (!coversAll || gradesForUid.length < 2) return;
+
+        var mergedScores = {}, mergedWrong = {};
+        gradesForUid.forEach(function(g){
+          Object.keys(g.scores||{}).forEach(function(k){ if (mergedScores[k]===undefined) mergedScores[k] = g.scores[k]; });
+          Object.keys(g.wrongBySubj||{}).forEach(function(k){ if (mergedWrong[k]===undefined) mergedWrong[k] = g.wrongBySubj[k]; });
+        });
+        var earliestDate = gradesForUid.map(function(g){return g.examDate;}).sort()[0];
+        var base = gradesForUid[0];
+
+        var p = addDoc(collection(db,'grades'), {
+          uid: uid, type: base.type||'mock', examName: group.mergedTitle, examDate: earliestDate,
+          scores: mergedScores, wrongBySubj: mergedWrong, examSource: base.examSource||null,
+          source: 'merged_group', mergedFrom: gradesForUid.map(function(g){return g._id;}), mergeGroupId: groupId,
+          createdAt: serverTimestamp()
+        }).then(function(){
+          return Promise.all(gradesForUid.map(function(g){ return deleteDoc(doc(db,'grades',g._id)); }));
+        });
+        tasks.push(p);
+        mergedCount++;
+      });
+
+      return Promise.all(tasks).then(function(){ return mergedCount; });
+    });
+  });
+};
+
+// 지금까지 만들어둔 시험 묶음 목록을 보여주고, 각각 "새로 합치기"로 재실행할 수 있게 함
+window.openExamMergeGroupsModal = function(){
+  document.getElementById('exam-merge-groups-body').innerHTML = '<div style="color:var(--tx3);font-size:12px;padding:10px 0;">불러오는 중...</div>';
+  openModal('modal-exam-merge-groups');
+  getDocs(query(collection(db,'examMergeGroups'), where('branch','==',getBranch()))).then(function(snap){
+    if (snap.empty) {
+      document.getElementById('exam-merge-groups-body').innerHTML = '<div style="color:var(--tx4);font-size:12px;padding:10px 0;">아직 묶은 시험이 없습니다. 시험 관리에서 "🔗 시험 묶기"로 만들 수 있어요.</div>';
+      return;
+    }
+    var html = snap.docs.map(function(d){
+      var g = Object.assign({id:d.id}, d.data());
+      return '<div style="background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:8px;">'
+        + '<div style="font-size:13px;font-weight:700;color:var(--tx1);margin-bottom:4px;">'+escapeHtml(g.mergedTitle)+'</div>'
+        + '<div style="font-size:11px;color:var(--tx3);margin-bottom:8px;">'+ (g.examTitles||[]).map(escapeHtml).join(' + ') + '</div>'
+        + '<button onclick="_rerunExamGroupMerge(\''+g.id+'\',this)" style="padding:5px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;">🔄 새로 합치기 (새로 채점된 학생 반영)</button>'
+        + '<span id="exam-merge-group-result-'+g.id+'" style="font-size:11px;color:var(--green);margin-left:8px;"></span>'
+        + '</div>';
+    }).join('');
+    document.getElementById('exam-merge-groups-body').innerHTML = html;
+  }).catch(function(e){
+    document.getElementById('exam-merge-groups-body').innerHTML = '<div style="color:var(--red);font-size:12px;">불러오기 실패: '+e.message+'</div>';
+  });
+};
+
+window._rerunExamGroupMerge = function(groupId, btnEl){
+  btnEl.disabled = true; btnEl.textContent = '합치는 중...';
+  runExamGroupGradeMerge(groupId).then(function(count){
+    btnEl.disabled = false; btnEl.textContent = '🔄 새로 합치기 (새로 채점된 학생 반영)';
+    var resultEl = document.getElementById('exam-merge-group-result-'+groupId);
+    if (resultEl) resultEl.textContent = '✓ '+count+'명 합쳐짐';
+    invalidateTeacherTabCache(2);
+  }).catch(function(e){
+    btnEl.disabled = false; btnEl.textContent = '🔄 새로 합치기 (새로 채점된 학생 반영)';
+    alert('합치기 실패: ' + e.message);
+  });
+};
+
 window.openExamFullRanking = function(examId, examTitle){
   document.getElementById('exam-ranking-title').textContent = '🏆 '+examTitle+' 전체 순위';
   document.getElementById('exam-ranking-body').innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--tx3);">불러오는 중...</div>';
