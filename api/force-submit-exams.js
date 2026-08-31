@@ -55,6 +55,15 @@ function ensureAdminInitialized() {
 let db; // 핸들러 첫 호출 시 지연 초기화됨
 const DEFAULT_SUBJECT_NAMES = { ko: '국어', en: '영어', ma: '수학', hi: '한국사', sc: '과학탐구', so: '사회탐구' };
 
+// 선택과목별로 문항/정답이 따로 설정되어 있으면(questionsByElective), 학생이 실제로
+// 고른 선택과목 기준으로 문항을 바꿔치기해서 채점 대상 subj를 만들어줌.
+function resolveSubjForGrading(subj, electiveChoice) {
+  if (subj && subj.questionsByElective && electiveChoice && subj.questionsByElective[electiveChoice] && subj.questionsByElective[electiveChoice].length) {
+    return Object.assign({}, subj, { questions: subj.questionsByElective[electiveChoice] });
+  }
+  return subj;
+}
+
 function gradeExamAnswers(subj, answers) {
   var details = [];
   var score = 0, totalScore = 0, correctCount = 0;
@@ -138,25 +147,21 @@ function computeGradeFromCutoffs(cutoffs, score) {
 
 var GRADE_REWARD_START_DATE = '2026-08-22';
 
-async function getPrevSubjectScores(studentUid, gradeType) {
+async function getPrevSubjectScores(studentUid, gradeType, examSource) {
   try {
     var snap = await db.collection('grades').where('uid', '==', studentUid).get();
     var docs = snap.docs.map(function (d) { return d.data(); })
-      .filter(function (g) { return (g.type || 'mock') === (gradeType || 'mock'); })
-      .sort(function (a, b) {
-        var at = a.createdAt ? a.createdAt.toMillis() : 0, bt = b.createdAt ? b.createdAt.toMillis() : 0;
-        return bt - at;
-      });
-    var prevBySubj = {};
+      .filter(function (g) { return (g.type || 'mock') === (gradeType || 'mock') && (g.examSource || '') === (examSource || ''); });
+    var maxBySubj = {};
     docs.forEach(function (g) {
       if (!g.scores) return;
       Object.keys(g.scores).forEach(function (key) {
-        if (prevBySubj[key] === undefined && g.scores[key] && g.scores[key].score != null) {
-          prevBySubj[key] = parseInt(g.scores[key].score, 10);
-        }
+        var s = (g.scores[key] && g.scores[key].score != null) ? parseInt(g.scores[key].score, 10) : null;
+        if (s == null) return;
+        if (maxBySubj[key] === undefined || s > maxBySubj[key]) maxBySubj[key] = s;
       });
     });
-    return prevBySubj;
+    return maxBySubj;
   } catch (e) { return {}; }
 }
 
@@ -199,23 +204,40 @@ async function awardExamRewards(studentUid, branch, exam, results, prevScores, s
       }).catch(function () {});
     }
 
-    if (subjDef && subjDef.gradeCutoffs) {
+    if (subjDef && subjDef.gradeCutoffsEnabled && subjDef.gradeCutoffs) {
       var grade = computeGradeFromCutoffs(subjDef.gradeCutoffs, r.score);
       await awardGradeLevelReward(studentUid, branch, subjName, grade, exam.title, todayStr);
     }
   }
 }
 
-async function writeExamResultToGrades(studentUid, sessionId, examId, exam, results, subjectNameCache) {
+async function writeExamResultToGrades(studentUid, sessionId, examId, exam, results, subjectNameCache, electiveChoices) {
   var scores = {}, wrongBySubj = {};
+  var usedExploreKeys = [];
   for (var i = 0; i < results.length; i++) {
     var r = results[i];
     if (!r) continue;
-    var label = await getSubjectLabel(studentUid, r.subject, subjectNameCache);
     var subjDef = (exam.subjects && exam.subjects[r.subjectIndex]) || null;
-    var grade = (subjDef && subjDef.gradeCutoffs) ? computeGradeFromCutoffs(subjDef.gradeCutoffs, r.score) : '';
-    scores[r.subject] = { score: r.score, grade: grade, label: label, group: r.subject };
-    if (r.wrongNumbers && r.wrongNumbers.length) wrongBySubj[r.subject] = r.wrongNumbers.join(', ');
+    var isExplore = subjDef && (subjDef.subject === 'ex1' || subjDef.subject === 'ex2');
+    var chosenElective = electiveChoices && electiveChoices[r.subjectIndex];
+    var grade = (subjDef && subjDef.gradeCutoffsEnabled && subjDef.gradeCutoffs) ? computeGradeFromCutoffs(subjDef.gradeCutoffs, r.score) : '';
+
+    var key, label, group, option;
+    if (isExplore) {
+      group = (subjDef && subjDef.exCategory) || 'sc';
+      var n = usedExploreKeys.filter(function (g) { return g === group; }).length;
+      key = group + (n === 0 ? '1' : '3');
+      usedExploreKeys.push(group);
+      label = chosenElective || (group === 'sc' ? '과학탐구' : '사회탐구');
+    } else {
+      key = r.subject; group = key;
+      label = await getSubjectLabel(studentUid, r.subject, subjectNameCache);
+      if (chosenElective) { option = chosenElective; label = label + ' (' + chosenElective + ')'; }
+    }
+
+    scores[key] = { score: r.score, grade: grade, label: label, group: group };
+    if (option) scores[key].option = option;
+    if (r.wrongNumbers && r.wrongNumbers.length) wrongBySubj[key] = r.wrongNumbers.join(', ');
   }
   return db.collection('grades').add({
     uid: studentUid,
@@ -304,10 +326,12 @@ module.exports = async function handler(req, res) {
         if (!examDoc.exists) continue;
         var exam = examDoc.data();
         var subjIdx = sess.currentSubjectIndex || 0;
+        // 항상 "현재" 시험 설정으로 채점 - 선생님이 배점/정답을 고치면 이미 응시중이던
+        // 학생에게도 그대로 반영되도록 함 (요청사항)
         var subj = exam.subjects[subjIdx];
         if (!subj) continue;
 
-        var graded = gradeExamAnswers(subj, sess.currentAnswers || {});
+        var graded = gradeExamAnswers(resolveSubjForGrading(subj, sess.electiveChoices && sess.electiveChoices[subjIdx]), sess.currentAnswers || {});
         var subjectResult = {
           subject: subj.subject,
           subjectIndex: subjIdx,
@@ -335,8 +359,11 @@ module.exports = async function handler(req, res) {
             subjectResults: results,
             currentAnswers: {}
           });
-          await writeExamResultToGrades(sess.studentUid, sessDoc.id, sess.examId, exam, results, subjectNameCache);
-          var prevScores = await getPrevSubjectScores(sess.studentUid, exam.gradeType);
+          // "직전 최고점" 조회는 반드시 이번 성적을 저장하기 전에 해야 함 - 순서가 바뀌면
+          // 방금 막 저장한 이번 점수 자신이 최고점 비교 대상에 섞여 들어가서, 진짜 신기록을
+          // 세워도 "자기 자신보다 높지 않다"고 판정되어 상점이 안 나가는 버그가 생김
+          var prevScores = await getPrevSubjectScores(sess.studentUid, exam.gradeType, examSourceLabel(exam.examSource));
+          await writeExamResultToGrades(sess.studentUid, sessDoc.id, sess.examId, exam, results, subjectNameCache, sess.electiveChoices);
           await awardExamRewards(sess.studentUid, exam.branch, exam, results, prevScores, subjectNameCache);
           fullyCompleted++;
         } else {
