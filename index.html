@@ -1486,8 +1486,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .omr-sheet-textrow{display:flex;align-items:center;gap:10px;font-size:12px;padding:5px 0;border-bottom:1px dashed #ddd;}
 
 .omr-sheet-zoom-hint{font-size:11px;color:var(--tx4);text-align:center;margin-bottom:8px;}
-.omr-sheet-zoomed{transform:scale(1.7);transform-origin:top center;margin-top:40px;margin-bottom:60px;width:588px;}
-@media(max-width:600px){ .omr-sheet-zoomed{transform:scale(1.3);width:500px;} }
+.omr-sheet-zoomed{margin-top:40px;margin-bottom:20px;}
+
+.exam-ranking-subj-block{margin-bottom:18px;}
+.exam-ranking-subj-title{font-size:13px;font-weight:800;color:var(--burg);margin-bottom:6px;padding-bottom:4px;border-bottom:2px solid var(--burg-l2);}
+.exam-ranking-table{width:100%;border-collapse:collapse;font-size:13px;}
+.exam-ranking-table th{text-align:left;padding:6px 8px;background:var(--surface2);color:var(--tx3);font-size:11px;font-weight:700;}
+.exam-ranking-table td{padding:6px 8px;border-bottom:1px solid var(--border2);}
+.exam-ranking-rank{font-weight:800;color:var(--tx2);width:44px;}
+.exam-ranking-table tr:nth-child(1) .exam-ranking-rank{color:#d4a017;}
+.exam-ranking-table tr:nth-child(2) .exam-ranking-rank{color:#8c8c8c;}
+.exam-ranking-table tr:nth-child(3) .exam-ranking-rank{color:#b5651d;}
+.exam-ranking-score{font-weight:700;color:var(--burg);text-align:right;}
 .exam-report-total-label{font-size:11px;color:var(--tx3);font-weight:700;letter-spacing:2px;margin-bottom:6px;}
 .exam-report-total-score{font-size:42px;font-weight:800;color:var(--burg);}
 .exam-report-total-score span{font-size:15px;color:var(--tx3);font-weight:600;margin-left:4px;}
@@ -2134,6 +2144,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 </div>
 
 <!-- 성적 합치기 -->
+<!-- 시험별 전체 순위 -->
+<div class="modal-overlay" id="modal-exam-ranking"><div class="modal" style="max-width:480px;max-height:85vh;overflow-y:auto;">
+  <div class="modal-title" id="exam-ranking-title">🏆 전체 순위</div>
+  <div id="exam-ranking-body"></div>
+  <button class="modal-btn cancel" onclick="closeModal('modal-exam-ranking')" style="margin-top:14px;">닫기</button>
+</div></div>
+
 <div class="modal-overlay" id="modal-merge-grades"><div class="modal" style="max-width:440px;">
   <div class="modal-title">🔗 성적 합치기</div>
   <div class="modal-label">합칠 성적</div>
@@ -3381,6 +3398,7 @@ function examCardHtml(ex){
     +'<button onclick="openAssignExamModal(\''+ex.id+'\')" class="btn-secondary" style="font-size:11px;padding:6px 10px;">배정</button>'
     +'<button onclick="openExamMonitor(\''+ex.id+'\')" class="btn-primary" style="font-size:11px;padding:6px 10px;">현황</button>'
     +'<button onclick="openEditExamModal(\''+ex.id+'\')" style="font-size:11px;padding:6px 10px;background:#eef7ff;border:1px solid rgba(59,130,246,0.25);border-radius:6px;color:#2563eb;cursor:pointer;">✏️ 설정 수정</button>'
+    +'<button onclick="openExamFullRanking(\''+ex.id+'\',\''+escapeHtml(ex.title).replace(/'/g,"\\'")+'\')" style="font-size:11px;padding:6px 10px;background:#fff7ed;border:1px solid rgba(234,88,12,0.25);border-radius:6px;color:#c2410c;cursor:pointer;">🏆 전체 순위</button>'
     +'<button onclick="reGradeExamSessions(\''+ex.id+'\',\''+escapeHtml(ex.title).replace(/'/g,"\\'")+'\')" style="font-size:11px;padding:6px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);cursor:pointer;">🔄 다시 채점하기</button>'
     +'<button onclick="openExamReflections(\''+ex.id+'\',\''+escapeHtml(ex.title)+'\')" style="font-size:11px;padding:6px 10px;background:#eef2ff;border:1px solid rgba(79,70,229,0.2);border-radius:6px;color:#4338ca;cursor:pointer;">🌱 다음 걸음을 위하여</button>'
     +'<button onclick="deleteExamConfirm(\''+ex.id+'\',\''+escapeHtml(ex.title)+'\')" style="font-size:11px;padding:6px 10px;background:var(--red-l);border:1px solid rgba(185,28,28,0.2);border-radius:6px;color:var(--red);cursor:pointer;">삭제</button>'
@@ -6353,6 +6371,56 @@ function _reconstructAnswersFromResult(subjectResult){
 // 시험 설정(배점/정답/등급컷)을 고친 뒤, 이미 채점 완료된 학생들의 성적에도 새 설정을
 // 반영하고 싶을 때 쓰는 기능. 학생이 실제로 낸 답은 그대로 두고, 그 답을 새 배점/정답
 // 기준으로 다시 채점해서 세션과 성적탭 데이터를 함께 업데이트한다.
+// 시험별 전체 순위 - 학생명/점수/순위를 한 화면에서 한꺼번에 확인 (선생님/마스터 전용).
+// 과목이 여러 개인 시험(예: 국어+수학 같이 치는 시험)은 과목별로 각각 순위표를 따로 보여줌.
+window.openExamFullRanking = function(examId, examTitle){
+  document.getElementById('exam-ranking-title').textContent = '🏆 '+examTitle+' 전체 순위';
+  document.getElementById('exam-ranking-body').innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--tx3);">불러오는 중...</div>';
+  openModal('modal-exam-ranking');
+
+  getDocs(query(collection(db,'grades'), where('examId','==',examId))).then(function(snap){
+    if (snap.empty) {
+      document.getElementById('exam-ranking-body').innerHTML = '<div style="color:var(--tx3);padding:20px;">아직 이 시험으로 채점된 성적이 없습니다.</div>';
+      return;
+    }
+    var grades = snap.docs.map(function(d){ return d.data(); });
+    var uids = Array.from(new Set(grades.map(function(g){return g.uid;})));
+
+    // 과목 키별로 {uid, score} 목록을 모음
+    var bySubj = {}; // key -> [{uid, score, label}]
+    grades.forEach(function(g){
+      Object.keys(g.scores||{}).forEach(function(k){
+        if (!bySubj[k]) bySubj[k] = [];
+        var sc = g.scores[k];
+        bySubj[k].push({ uid: g.uid, score: parseInt(sc.score,10)||0, label: sc.label || subjectNames[k] || k });
+      });
+    });
+
+    // 학생 이름을 한 번에 조회
+    return Promise.all(uids.map(function(uid){ return getDoc(doc(db,'users',uid)); })).then(function(userDocs){
+      var nameByUid = {};
+      userDocs.forEach(function(ud){ nameByUid[ud.id] = ud.exists() ? (ud.data().name||'?') : '?'; });
+
+      var subjKeys = Object.keys(bySubj);
+      var tablesHtml = subjKeys.map(function(k){
+        var list = bySubj[k].slice().sort(function(a,b){ return b.score - a.score; });
+        var subjLabel = list[0] ? list[0].label : (subjectNames[k]||k);
+        var rows = list.map(function(r, i){
+          return '<tr><td class="exam-ranking-rank">'+(i+1)+'위</td><td>'+escapeHtml(nameByUid[r.uid]||'?')+'</td><td class="exam-ranking-score">'+r.score+'점</td></tr>';
+        }).join('');
+        return '<div class="exam-ranking-subj-block">'
+          + '<div class="exam-ranking-subj-title">'+escapeHtml(subjLabel)+' <span style="color:var(--tx4);font-weight:400;">('+list.length+'명 응시)</span></div>'
+          + '<table class="exam-ranking-table"><thead><tr><th>순위</th><th>학생</th><th>점수</th></tr></thead><tbody>'+rows+'</tbody></table>'
+          + '</div>';
+      }).join('');
+
+      document.getElementById('exam-ranking-body').innerHTML = tablesHtml || '<div style="color:var(--tx3);padding:20px;">표시할 데이터가 없습니다.</div>';
+    });
+  }).catch(function(e){
+    document.getElementById('exam-ranking-body').innerHTML = '<div style="color:var(--red);padding:20px;">불러오기 실패: '+e.message+'</div>';
+  });
+};
+
 window.reGradeExamSessions = function(examId, examTitle){
   if (!confirm('"'+examTitle+'" 시험을 새 설정(배점/정답/등급컷)으로 다시 채점하시겠습니까?\n\n이미 채점 완료된 학생들의 성적이 새 설정 기준으로 갱신됩니다.\n(학생이 낸 답 자체는 그대로 유지되고, 채점 결과만 다시 계산됩니다)')) return;
 
@@ -6782,8 +6850,25 @@ window.openExamOmrReplay = function(sessionId){
 // 눌렀을 때 전체화면에 가깝게 크게 띄워줌
 window.openOmrZoomView = function(){
   if (!window._lastOmrReplayHtml) return;
-  document.getElementById('omr-zoom-body').innerHTML = window._lastOmrReplayHtml;
+  var body = document.getElementById('omr-zoom-body');
+  body.style.transform = 'none'; // 실제(확대 전) 크기부터 먼저 재야 함
+  body.style.width = 'auto';
+  body.innerHTML = window._lastOmrReplayHtml;
   openModal('modal-omr-zoom');
+  // transform:scale()는 화면에 보이는 크기만 키우고 레이아웃/스크롤 계산에는 원래 크기로
+  // 잡히기 때문에, 확대한 만큼 잘려 보이는 문제가 있었음. 실제 크기를 측정한 뒤 그 배율만큼
+  // 부모가 정확히 그 공간을 확보하도록 폭/높이를 직접 지정해줌.
+  requestAnimationFrame(function(){
+    var rect = body.getBoundingClientRect();
+    var scale = window.innerWidth <= 600 ? 1.3 : 1.7;
+    body.style.width = rect.width + 'px';
+    body.style.height = rect.height + 'px';
+    var wrapper = body.parentElement;
+    wrapper.style.width = (rect.width*scale) + 'px';
+    wrapper.style.maxWidth = '96vw';
+    body.style.transform = 'scale('+scale+')';
+    body.style.transformOrigin = 'top left';
+  });
 };
 
 function _renderExamReportCard(sess, exam){
