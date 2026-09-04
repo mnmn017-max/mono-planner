@@ -6374,22 +6374,18 @@ function _writeExamResultToGrades(studentUid, sessionId, exam, results, elective
     // 전부 다 냈는지 바로 확인해서 자동으로 합쳐줌 - 예전엔 "묶기"를 누른 그 순간에
     // 이미 채점된 사람만 합쳐지고, 그 이후에 채점된 사람은 선생님이 "새로 합치기"를
     // 다시 눌러야만 반영되던 문제가 있었음.
-    // 예전엔 이 합치기를 기다리지 않고(fire-and-forget) 그냥 넘어갔는데, 그러면
-    // 호출한 쪽에서 "방금 만든 문서가 잘 저장됐는지" 확인하려는 시점과 실제 합쳐져서
-    // 원본 문서가 사라지는 시점이 경쟁 상태(race condition)에 놓여, 정상 처리됐는데도
-    // "저장 실패"로 잘못 보이는 문제가 있었음. 이제는 합치기까지 다 끝난 뒤에 반환함.
-    if (!exam.id) return docRef;
-    return _autoMergeIfPartOfGroup(exam.id, studentUid).then(function(){ return docRef; });
+    if (exam.id) _autoMergeIfPartOfGroup(exam.id, studentUid);
+    return docRef;
   });
 }
 
 // 방금 채점된 시험(examId)이 속한 묶음이 있으면, 그 학생 기준으로 즉시 합치기를 시도함.
 // 묶음이 없거나 아직 다른 시험을 안 냈으면 조용히 아무 일도 안 하고 넘어감.
 function _autoMergeIfPartOfGroup(examId, uid){
-  return getDocs(query(collection(db,'examMergeGroups'), where('examIds','array-contains',examId))).then(function(snap){
-    return Promise.all(snap.docs.map(function(d){
-      return runExamGroupGradeMergeForStudent(d.id, uid).catch(function(e){ console.warn('[자동 성적 합치기 실패]', e); });
-    }));
+  getDocs(query(collection(db,'examMergeGroups'), where('examIds','array-contains',examId))).then(function(snap){
+    snap.docs.forEach(function(d){
+      runExamGroupGradeMergeForStudent(d.id, uid).catch(function(e){ console.warn('[자동 성적 합치기 실패]', e); });
+    });
   }).catch(function(){});
 }
 
@@ -6951,15 +6947,13 @@ function _tryMergeGradesForUid(groupId, group, examIds, gradesForUid, uid){
     var mergedWrong = Object.assign({}, existingMerged.wrongBySubj);
     var newMergedFrom = (existingMerged.mergedFrom||[]).slice();
     var newSourceExamIds = (existingMerged.sourceExamIds||[]).slice();
-    var newSourceSessionIds = (existingMerged.sourceExamSessionIds||[]).slice();
     newOnes.forEach(function(g){
       Object.keys(g.scores||{}).forEach(function(k){ if (mergedScores[k]===undefined) mergedScores[k] = g.scores[k]; });
       Object.keys(g.wrongBySubj||{}).forEach(function(k){ if (mergedWrong[k]===undefined) mergedWrong[k] = g.wrongBySubj[k]; });
       newMergedFrom.push(g._id);
       if (g.examId && newSourceExamIds.indexOf(g.examId) === -1) newSourceExamIds.push(g.examId);
-      if (g.examSessionId && newSourceSessionIds.indexOf(g.examSessionId) === -1) newSourceSessionIds.push(g.examSessionId);
     });
-    var p1 = updateDoc(doc(db,'grades',existingMerged._id), { scores: mergedScores, wrongBySubj: mergedWrong, mergedFrom: newMergedFrom, sourceExamIds: newSourceExamIds, sourceExamSessionIds: newSourceSessionIds })
+    var p1 = updateDoc(doc(db,'grades',existingMerged._id), { scores: mergedScores, wrongBySubj: mergedWrong, mergedFrom: newMergedFrom, sourceExamIds: newSourceExamIds })
       .then(function(){ return Promise.all(newOnes.map(function(g){ return deleteDoc(doc(db,'grades',g._id)); })); });
     _pendingMergeTasks.push(p1);
     return true;
@@ -6971,12 +6965,10 @@ function _tryMergeGradesForUid(groupId, group, examIds, gradesForUid, uid){
 
   var mergedScores2 = {}, mergedWrong2 = {};
   var sourceExamIds2 = [];
-  var sourceSessionIds2 = [];
   newOnes.forEach(function(g){
     Object.keys(g.scores||{}).forEach(function(k){ if (mergedScores2[k]===undefined) mergedScores2[k] = g.scores[k]; });
     Object.keys(g.wrongBySubj||{}).forEach(function(k){ if (mergedWrong2[k]===undefined) mergedWrong2[k] = g.wrongBySubj[k]; });
     if (g.examId && sourceExamIds2.indexOf(g.examId) === -1) sourceExamIds2.push(g.examId);
-    if (g.examSessionId && sourceSessionIds2.indexOf(g.examSessionId) === -1) sourceSessionIds2.push(g.examSessionId);
   });
   var earliestDate = newOnes.map(function(g){return g.examDate;}).sort()[0];
   var base = newOnes[0];
@@ -6989,10 +6981,6 @@ function _tryMergeGradesForUid(groupId, group, examIds, gradesForUid, uid){
     // 이 합쳐진 성적도 같이 찾아서 업데이트할 수 있게 하기 위함 (합쳐지면 examId 필드
     // 자체가 없어져서, 이게 없으면 분류 변경이 반영이 안 되는 문제가 있었음)
     sourceExamIds: sourceExamIds2,
-    // 원본 세션ID들도 같이 기록 - "누락 성적 검사"가 examId/examSessionId로 찾는데,
-    // 합쳐지는 순간 이 연결고리가 사라져서 "복구했는데 다시 누락으로 뜨는" 문제가
-    // 있었음. 이 필드로 합쳐진 성적 안에도 원래 어떤 세션들이 커버됐는지 추적 가능해짐.
-    sourceExamSessionIds: sourceSessionIds2,
     createdAt: serverTimestamp()
   }).then(function(){
     return Promise.all(newOnes.map(function(g){ return deleteDoc(doc(db,'grades',g._id)); }));
@@ -7402,26 +7390,9 @@ window.openMissingGradesRecoveryModal = function(){
         var sessions = sessSnap.docs.map(function(d){ return Object.assign({}, d.data(), {_id:d.id}); });
         if (!sessions.length) return [];
         // 이 시험에 연결된 성적(grades) 중 examSessionId가 있는 것들을 조회해서
-        // "채점된 세션인데 성적 기록이 없는" 세션만 골라냄. 다만 "시험 묶기"로 합쳐진
-        // 성적은 examId 필드 자체가 사라지고 sourceExamSessionIds로만 추적되므로,
-        // 그것도 같이 조회해서 합쳐야 놓치지 않음 (안 그러면 복구 직후 자동합치기로
-        // 흡수된 성적을 다시 "누락"으로 잘못 판정하는 문제가 있었음).
-        // array-contains-any는 최대 10개까지만 허용되어, 세션이 많으면 10개씩 나눠서 조회함.
-        var sessionIdChunks = [];
-        var allSessionIds = sessions.map(function(s){return s._id;});
-        for (var i=0;i<allSessionIds.length;i+=10) sessionIdChunks.push(allSessionIds.slice(i,i+10));
-
-        return Promise.all([
-          getDocs(query(collection(db,'grades'), where('examId','==',exam.id))),
-          Promise.all(sessionIdChunks.map(function(chunk){
-            return getDocs(query(collection(db,'grades'), where('sourceExamSessionIds','array-contains-any', chunk)));
-          }))
-        ]).then(function(gradeResults){
-          var recordedSessionIds = new Set();
-          gradeResults[0].docs.forEach(function(d){ var v=d.data().examSessionId; if(v) recordedSessionIds.add(v); });
-          gradeResults[1].forEach(function(snap){
-            snap.docs.forEach(function(d){ (d.data().sourceExamSessionIds||[]).forEach(function(sid){ recordedSessionIds.add(sid); }); });
-          });
+        // "채점된 세션인데 성적 기록이 없는" 세션만 골라냄
+        return getDocs(query(collection(db,'grades'), where('examId','==',exam.id))).then(function(gradeSnap){
+          var recordedSessionIds = new Set(gradeSnap.docs.map(function(d){ return d.data().examSessionId; }).filter(Boolean));
           console.log('[누락성적검사] 시험:', exam.title, '| graded 세션:', sessions.map(function(s){return s._id;}), '| grades에 기록된 examSessionId:', Array.from(recordedSessionIds));
           var missing = sessions.filter(function(s){ return !recordedSessionIds.has(s._id); });
           return missing.map(function(s){ return { exam: exam, session: s }; });
@@ -7459,21 +7430,6 @@ function _renderMissingGradesList(){
     + '<button onclick="_recoverAllMissingGrades()" style="width:100%;padding:10px;background:var(--burg);border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;margin-top:8px;">전체 한번에 복구 ('+list.length+'건)</button>';
 }
 
-// 특정 시험(examId)의 특정 세션(sessionId)이, 원본 형태로든 합쳐진 형태로든 지금
-// 성적탭에 정상적으로 반영되어 있는지 확인함. "복구했는데 다시 누락으로 뜨는" 문제의
-// 원인이 "합쳐지면 examSessionId 연결고리가 원본 문서와 함께 사라지는 것"이었어서,
-// 원본(examSessionId 직접 매칭) + 합쳐진 성적(sourceExamSessionIds 안에 포함) 둘 다 확인함.
-function _isSessionCoveredByGrades(examId, sessionId){
-  return Promise.all([
-    getDocs(query(collection(db,'grades'), where('examId','==',examId))),
-    getDocs(query(collection(db,'grades'), where('sourceExamSessionIds','array-contains',sessionId)))
-  ]).then(function(results){
-    var direct = results[0].docs.some(function(d){ return d.data().examSessionId === sessionId; });
-    var merged = results[1].docs.length > 0;
-    return direct || merged;
-  });
-}
-
 window._recoverMissingGrade = function(idx, btnEl){
   var m = window._missingGradesList[idx];
   if (!m) return;
@@ -7489,12 +7445,19 @@ window._recoverMissingGrade = function(idx, btnEl){
       _awardExamRewards(m.session.studentUid, m.exam, results, prevScores);
       return docRef;
     });
-  }).then(function(){
-    // 저장 직후(합쳐졌을 수도 있는 상태 그대로) 다시 확인해서, 원본이든 합쳐진 형태든
-    // 이 세션이 실제로 커버되고 있는지 검증한 뒤에만 "복구 완료"로 처리함
-    return _isSessionCoveredByGrades(m.exam.id, m.session._id).then(function(covered){
-      console.log('[성적복구] 완료 확인 - 커버됨:', covered);
-      if (!covered) throw new Error('저장 확인 실패 - 서버에 실제로 반영되지 않았습니다 (권한 문제일 수 있습니다)');
+  }).then(function(docRef){
+    // Firestore는 로컬에서 먼저 "성공"으로 응답하고 실제 서버 반영은 뒤따라오는 구조라,
+    // 만약 권한 등의 이유로 서버에 진짜로는 안 남았다면 화면엔 성공으로 보이고도 나중에
+    // 다시 사라지는 문제가 생길 수 있음. 저장 직후 그 문서를 다시 읽어와서, 실제로
+    // 서버에 반영됐는지, 그리고 examSessionId가 정확히 기록됐는지까지 확인한 뒤에만
+    // "복구 완료"로 처리함.
+    return getDoc(docRef).then(function(check){
+      if (!check.exists()) throw new Error('저장 확인 실패 - 서버에 실제로 반영되지 않았습니다 (권한 문제일 수 있습니다)');
+      var written = check.data();
+      console.log('[성적복구] 완료 - 새 문서ID:', docRef.id, '기록된 examSessionId:', written.examSessionId, '(원래 세션ID와 일치해야 함:', m.session._id, ')');
+      if (written.examSessionId !== m.session._id) {
+        throw new Error('저장은 됐지만 세션 연결이 어긋났습니다(examSessionId 불일치). 새로고침 후 다시 검사해주세요.');
+      }
       window._missingGradesList = window._missingGradesList.filter(function(x){ return x !== m; });
       _renderMissingGradesList();
     });
@@ -7517,9 +7480,9 @@ window._recoverAllMissingGrades = function(){
       return _getPrevSubjectScores(m.session.studentUid, m.exam.gradeType, examSourceLabel(m.exam.examSource)).then(function(prevScores){
         return _writeExamResultToGrades(m.session.studentUid, m.session._id, m.exam, results, m.session.electiveChoices).then(function(docRef){
           _awardExamRewards(m.session.studentUid, m.exam, results, prevScores);
-          // 개별 복구와 마찬가지로, 원본이든 합쳐진 형태든 실제로 커버되고 있는지 재확인함
-          return _isSessionCoveredByGrades(m.exam.id, m.session._id).then(function(covered){
-            if (!covered) throw new Error('저장 확인 실패');
+          // 개별 복구와 마찬가지로, 실제 서버에 반영됐는지 재확인한 뒤에만 성공으로 침
+          return getDoc(docRef).then(function(check){
+            if (!check.exists()) throw new Error('저장 확인 실패');
             done++;
             succeededItems.push(m);
           });
