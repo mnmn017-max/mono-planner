@@ -7344,12 +7344,20 @@ window._recoverMissingGrade = function(idx, btnEl){
   if (btnEl) { btnEl.disabled = true; btnEl.textContent = '복구 중...'; }
   var results = m.session.subjectResults || [];
   _getPrevSubjectScores(m.session.studentUid, m.exam.gradeType, examSourceLabel(m.exam.examSource)).then(function(prevScores){
-    return _writeExamResultToGrades(m.session.studentUid, m.session._id, m.exam, results, m.session.electiveChoices).then(function(){
+    return _writeExamResultToGrades(m.session.studentUid, m.session._id, m.exam, results, m.session.electiveChoices).then(function(docRef){
       _awardExamRewards(m.session.studentUid, m.exam, results, prevScores);
+      return docRef;
     });
-  }).then(function(){
-    window._missingGradesList = window._missingGradesList.filter(function(x){ return x !== m; });
-    _renderMissingGradesList();
+  }).then(function(docRef){
+    // Firestore는 로컬에서 먼저 "성공"으로 응답하고 실제 서버 반영은 뒤따라오는 구조라,
+    // 만약 권한 등의 이유로 서버에 진짜로는 안 남았다면 화면엔 성공으로 보이고도 나중에
+    // 다시 사라지는 문제가 생길 수 있음. 저장 직후 그 문서를 다시 읽어와서, 실제로
+    // 서버에 반영됐는지 확인한 뒤에만 "복구 완료"로 처리함.
+    return getDoc(docRef).then(function(check){
+      if (!check.exists()) throw new Error('저장 확인 실패 - 서버에 실제로 반영되지 않았습니다 (권한 문제일 수 있습니다)');
+      window._missingGradesList = window._missingGradesList.filter(function(x){ return x !== m; });
+      _renderMissingGradesList();
+    });
   }).catch(function(e){
     alert('복구 실패: ' + e.message);
     if (btnEl) { btnEl.disabled = false; btnEl.textContent = '복구'; }
@@ -7362,20 +7370,28 @@ window._recoverAllMissingGrades = function(){
   if (!confirm(list.length+'건을 전체 복구하시겠습니까?')) return;
   var chain = Promise.resolve();
   var done = 0, failed = 0;
+  var succeededItems = [];
   list.forEach(function(m){
     chain = chain.then(function(){
       var results = m.session.subjectResults || [];
       return _getPrevSubjectScores(m.session.studentUid, m.exam.gradeType, examSourceLabel(m.exam.examSource)).then(function(prevScores){
-        return _writeExamResultToGrades(m.session.studentUid, m.session._id, m.exam, results, m.session.electiveChoices).then(function(){
+        return _writeExamResultToGrades(m.session.studentUid, m.session._id, m.exam, results, m.session.electiveChoices).then(function(docRef){
           _awardExamRewards(m.session.studentUid, m.exam, results, prevScores);
-          done++;
+          // 개별 복구와 마찬가지로, 실제 서버에 반영됐는지 재확인한 뒤에만 성공으로 침
+          return getDoc(docRef).then(function(check){
+            if (!check.exists()) throw new Error('저장 확인 실패');
+            done++;
+            succeededItems.push(m);
+          });
         });
       }).catch(function(){ failed++; });
     });
   });
   chain.then(function(){
-    alert('복구 완료: '+done+'건 성공'+(failed?', '+failed+'건 실패':''));
-    window._missingGradesList = [];
+    alert('복구 완료: '+done+'건 성공'+(failed?', '+failed+'건 실패(권한 문제 등으로 실제 반영 안 됨 - 목록에 남겨둠)':''));
+    // 실패한 항목은 목록에서 지우지 않고 남겨둬서, 다시 시도하거나 원인을 확인할 수 있게 함
+    // (예전엔 성공/실패 상관없이 전부 지워버려서, 실패한 것도 사라진 것처럼 보이는 문제가 있었음)
+    window._missingGradesList = (window._missingGradesList||[]).filter(function(m){ return succeededItems.indexOf(m) === -1; });
     _renderMissingGradesList();
     invalidateTeacherTabCache(2);
   });
