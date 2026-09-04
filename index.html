@@ -6698,21 +6698,30 @@ window.runExamGroupGradeMerge = function(groupId){
   return getDoc(doc(db,'examMergeGroups',groupId)).then(function(groupDoc){
     var group = groupDoc.data();
     var examIds = group.examIds;
-    return getDocs(query(collection(db,'grades'), where('examId','in',examIds))).then(function(snap){
-      var byUid = {};
-      snap.docs.forEach(function(d){
-        var g = Object.assign({_id:d.id}, d.data());
-        if (g.mergedFrom) return; // 이미 다른 묶음으로 합쳐진 성적은 건드리지 않음
-        if (!byUid[g.uid]) byUid[g.uid] = [];
-        byUid[g.uid].push(g);
-      });
+    return getDocs(query(collection(db,'grades'), where('examId','in',examIds))).then(function(snap1){
+      // 이 묶음으로 이미 합쳐진 기록(mergeGroupId===groupId)은 examId가 없어서 위 쿼리로는
+      // 안 잡힘 - 새로 들어온 시험을 "기존 합쳐진 기록 위에 이어붙이기" 위해 따로 조회
+      return getDocs(query(collection(db,'grades'), where('mergeGroupId','==',groupId))).then(function(snap2){
+        var byUid = {};
+        snap1.docs.forEach(function(d){
+          var g = Object.assign({_id:d.id}, d.data());
+          if (g.mergedFrom) return; // 다른 묶음으로 이미 합쳐진 성적은 건드리지 않음
+          if (!byUid[g.uid]) byUid[g.uid] = [];
+          byUid[g.uid].push(g);
+        });
+        snap2.docs.forEach(function(d){
+          var g = Object.assign({_id:d.id}, d.data());
+          if (!byUid[g.uid]) byUid[g.uid] = [];
+          byUid[g.uid].push(g);
+        });
 
-      var tasks = [];
-      var mergedCount = 0;
-      Object.keys(byUid).forEach(function(uid){
-        if (_tryMergeGradesForUid(groupId, group, examIds, byUid[uid], uid)) mergedCount++;
+        var tasks = [];
+        var mergedCount = 0;
+        Object.keys(byUid).forEach(function(uid){
+          if (_tryMergeGradesForUid(groupId, group, examIds, byUid[uid], uid)) mergedCount++;
+        });
+        return Promise.all(_pendingMergeTasks.splice(0)).then(function(){ return mergedCount; });
       });
-      return Promise.all(_pendingMergeTasks.splice(0)).then(function(){ return mergedCount; });
     });
   });
 };
@@ -6724,40 +6733,65 @@ window.runExamGroupGradeMergeForStudent = function(groupId, uid){
     if (!groupDoc.exists()) return 0;
     var group = groupDoc.data();
     var examIds = group.examIds;
-    return getDocs(query(collection(db,'grades'), where('examId','in',examIds), where('uid','==',uid))).then(function(snap){
-      var gradesForUid = snap.docs.map(function(d){ return Object.assign({_id:d.id}, d.data()); }).filter(function(g){ return !g.mergedFrom; });
-      var merged = _tryMergeGradesForUid(groupId, group, examIds, gradesForUid, uid);
-      return Promise.all(_pendingMergeTasks.splice(0)).then(function(){ return merged ? 1 : 0; });
+    return getDocs(query(collection(db,'grades'), where('examId','in',examIds), where('uid','==',uid))).then(function(snap1){
+      return getDocs(query(collection(db,'grades'), where('mergeGroupId','==',groupId), where('uid','==',uid))).then(function(snap2){
+        var gradesForUid = snap1.docs.map(function(d){ return Object.assign({_id:d.id}, d.data()); }).filter(function(g){ return !g.mergedFrom; });
+        gradesForUid = gradesForUid.concat(snap2.docs.map(function(d){ return Object.assign({_id:d.id}, d.data()); }));
+        var merged = _tryMergeGradesForUid(groupId, group, examIds, gradesForUid, uid);
+        return Promise.all(_pendingMergeTasks.splice(0)).then(function(){ return merged ? 1 : 0; });
+      });
     });
   });
 };
 
-// 한 학생의 성적 목록이 묶음 안의 시험을 전부 커버하면 합쳐서 저장하고, 원본은 삭제 예약함
-// (실제 Promise는 _pendingMergeTasks에 쌓아두고 호출부에서 한꺼번에 기다림)
+// 한 학생의 성적 목록을 확인해서, 이미 이 묶음으로 합쳐진 기록이 있으면 새로 들어온
+// 시험 성적을 그 위에 이어붙이고(업데이트), 없으면 지금 있는 것만으로(전부 안 모여도,
+// 2개 이상이면) 새로 합쳐서 만듦. 이렇게 하면 "아직 하나가 안 끝났어도 나머지 먼저
+// 합치고, 나중에 그 하나가 끝나면 자동으로 마저 합쳐지는" 방식이 됨.
 var _pendingMergeTasks = [];
 function _tryMergeGradesForUid(groupId, group, examIds, gradesForUid, uid){
-  if (!gradesForUid || gradesForUid.length < 2) return false;
-  var examIdsCovered = new Set(gradesForUid.map(function(g){return g.examId;}));
-  var coversAll = examIds.every(function(eid){ return examIdsCovered.has(eid); });
-  if (!coversAll) return false;
+  if (!gradesForUid || !gradesForUid.length) return false;
+  var existingMerged = gradesForUid.find(function(g){ return g.mergeGroupId === groupId; });
+  var newOnes = gradesForUid.filter(function(g){ return g.mergeGroupId !== groupId; });
+  if (!newOnes.length) return false; // 새로 합칠 게 없으면 아무 것도 안 함
 
-  var mergedScores = {}, mergedWrong = {};
-  gradesForUid.forEach(function(g){
-    Object.keys(g.scores||{}).forEach(function(k){ if (mergedScores[k]===undefined) mergedScores[k] = g.scores[k]; });
-    Object.keys(g.wrongBySubj||{}).forEach(function(k){ if (mergedWrong[k]===undefined) mergedWrong[k] = g.wrongBySubj[k]; });
+  if (existingMerged) {
+    // 이미 합쳐진 기록이 있으면, 새로 들어온 시험만 그 위에 이어붙임
+    var mergedScores = Object.assign({}, existingMerged.scores);
+    var mergedWrong = Object.assign({}, existingMerged.wrongBySubj);
+    var newMergedFrom = (existingMerged.mergedFrom||[]).slice();
+    newOnes.forEach(function(g){
+      Object.keys(g.scores||{}).forEach(function(k){ if (mergedScores[k]===undefined) mergedScores[k] = g.scores[k]; });
+      Object.keys(g.wrongBySubj||{}).forEach(function(k){ if (mergedWrong[k]===undefined) mergedWrong[k] = g.wrongBySubj[k]; });
+      newMergedFrom.push(g._id);
+    });
+    var p1 = updateDoc(doc(db,'grades',existingMerged._id), { scores: mergedScores, wrongBySubj: mergedWrong, mergedFrom: newMergedFrom })
+      .then(function(){ return Promise.all(newOnes.map(function(g){ return deleteDoc(doc(db,'grades',g._id)); })); });
+    _pendingMergeTasks.push(p1);
+    return true;
+  }
+
+  // 아직 합쳐진 기록이 없는 경우 - 최소 2개는 모여야 "합치는 의미"가 있음 (1개뿐이면
+  // 그냥 그 성적 그대로 두고 다음 시험이 나올 때까지 기다림)
+  if (newOnes.length < 2) return false;
+
+  var mergedScores2 = {}, mergedWrong2 = {};
+  newOnes.forEach(function(g){
+    Object.keys(g.scores||{}).forEach(function(k){ if (mergedScores2[k]===undefined) mergedScores2[k] = g.scores[k]; });
+    Object.keys(g.wrongBySubj||{}).forEach(function(k){ if (mergedWrong2[k]===undefined) mergedWrong2[k] = g.wrongBySubj[k]; });
   });
-  var earliestDate = gradesForUid.map(function(g){return g.examDate;}).sort()[0];
-  var base = gradesForUid[0];
+  var earliestDate = newOnes.map(function(g){return g.examDate;}).sort()[0];
+  var base = newOnes[0];
 
-  var p = addDoc(collection(db,'grades'), {
+  var p2 = addDoc(collection(db,'grades'), {
     uid: uid, type: base.type||'mock', examName: group.mergedTitle, examDate: earliestDate,
-    scores: mergedScores, wrongBySubj: mergedWrong, examSource: base.examSource||null,
-    source: 'merged_group', mergedFrom: gradesForUid.map(function(g){return g._id;}), mergeGroupId: groupId,
+    scores: mergedScores2, wrongBySubj: mergedWrong2, examSource: base.examSource||null,
+    source: 'merged_group', mergedFrom: newOnes.map(function(g){return g._id;}), mergeGroupId: groupId,
     createdAt: serverTimestamp()
   }).then(function(){
-    return Promise.all(gradesForUid.map(function(g){ return deleteDoc(doc(db,'grades',g._id)); }));
+    return Promise.all(newOnes.map(function(g){ return deleteDoc(doc(db,'grades',g._id)); }));
   });
-  _pendingMergeTasks.push(p);
+  _pendingMergeTasks.push(p2);
   return true;
 }
 
@@ -7189,11 +7223,18 @@ window._diagnoseExamGroupMerge = function(groupId){
     var titleByExamId = {}; examIds.forEach(function(eid, i){ titleByExamId[eid] = examTitles[i] || eid; });
 
     return getDocs(query(collection(db,'grades'), where('examId','in',examIds))).then(function(snap){
+      return getDocs(query(collection(db,'grades'), where('mergeGroupId','==',groupId))).then(function(mergedSnap){
       var byUid = {};
       snap.docs.forEach(function(d){
         var g = d.data();
         if (!byUid[g.uid]) byUid[g.uid] = [];
         byUid[g.uid].push(g);
+      });
+      var mergedByUid = {};
+      mergedSnap.docs.forEach(function(d){
+        var g = d.data();
+        mergedByUid[g.uid] = g; // 학생당 이 묶음에 대한 합쳐진 기록은 최대 1개
+        if (!byUid[g.uid]) byUid[g.uid] = [];
       });
       var uids = Object.keys(byUid);
 
@@ -7201,6 +7242,7 @@ window._diagnoseExamGroupMerge = function(groupId){
       // 잘못 묶여있는 시험일 가능성이 높음
       var countByExamId = {}; examIds.forEach(function(eid){ countByExamId[eid] = 0; });
       snap.docs.forEach(function(d){ var eid = d.data().examId; if (countByExamId[eid]!==undefined) countByExamId[eid]++; });
+      // 이미 합쳐진 기록도 원래 어떤 시험들이었는지 mergedFrom 개수로 어림잡아 카운트에 반영은 생략(표시만 목적)
 
       return loadStudentList().then(function(students){
         var nameByUid = {}; students.forEach(function(s){ nameByUid[s.uid]=s.name; });
@@ -7213,14 +7255,16 @@ window._diagnoseExamGroupMerge = function(groupId){
         }).join('');
 
         var studentListHtml = uids.length ? uids.map(function(uid){
-          var g = byUid[uid];
+          var g = byUid[uid] || [];
           var covered = g.map(function(x){return x.examId;});
           var missing = examIds.filter(function(eid){ return covered.indexOf(eid) === -1; });
-          var alreadyMerged = g.some(function(x){ return !!x.mergedFrom; });
-          var status = missing.length
-            ? ('❌ 아직 안 낸 시험: ' + missing.map(function(eid){return titleByExamId[eid];}).join(', '))
-            : (alreadyMerged ? '이미 합쳐진 기록임' : '✅ 조건 충족');
-          return '<div style="font-size:12px;padding:6px 0;border-bottom:1px dashed var(--border2);">'+escapeHtml(nameByUid[uid]||uid)+' - '+g.length+'건 - '+status+'</div>';
+          var hasMerged = !!mergedByUid[uid];
+          var status;
+          if (!missing.length && hasMerged) status = '✅ 모든 시험 합쳐짐 완료';
+          else if (hasMerged && missing.length) status = '🔶 일부 합쳐짐 (아직 안 낸 시험: '+missing.map(function(eid){return titleByExamId[eid];}).join(', ')+' - 나중에 내면 자동으로 이어붙음)';
+          else if (missing.length) status = '❌ 아직 안 낸 시험: ' + missing.map(function(eid){return titleByExamId[eid];}).join(', ');
+          else status = '✅ 조건 충족 (곧 합쳐짐)';
+          return '<div style="font-size:12px;padding:6px 0;border-bottom:1px dashed var(--border2);">'+escapeHtml(nameByUid[uid]||uid)+' - '+status+'</div>';
         }).join('') : '<div style="color:var(--tx4);font-size:12px;">연결된 성적이 없습니다.</div>';
 
         document.getElementById('exam-merge-diag-body').innerHTML =
@@ -7228,7 +7272,8 @@ window._diagnoseExamGroupMerge = function(groupId){
           + examListHtml
           + '<div class="modal-label" style="margin-top:14px;">학생별 현황</div>'
           + studentListHtml
-          + (!snap.docs.length ? '<div style="margin-top:12px;padding:10px 12px;background:var(--gold-l);border-radius:8px;font-size:12px;color:var(--tx2);">⚠️ 연결된 성적이 0건이에요. 수동으로 입력한 성적이거나 examId 연결이 없는 경우일 수 있어요.</div>' : '');
+          + (!snap.docs.length && !mergedSnap.docs.length ? '<div style="margin-top:12px;padding:10px 12px;background:var(--gold-l);border-radius:8px;font-size:12px;color:var(--tx2);">⚠️ 연결된 성적이 0건이에요. 수동으로 입력한 성적이거나 examId 연결이 없는 경우일 수 있어요.</div>' : '');
+      });
       });
     });
   }).catch(function(e){ document.getElementById('exam-merge-diag-body').innerHTML = '<div style="color:var(--red);font-size:12px;">진단 실패: '+e.message+'</div>'; });
