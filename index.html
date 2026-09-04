@@ -1851,6 +1851,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <button class="modal-btn cancel" onclick="closeModal('modal-grade-memo')">닫기</button>
 </div></div>
 
+<!-- 학생 플래너 제출 현황 -->
+<div class="modal-overlay" id="modal-planner-submit-history"><div class="modal" style="max-width:460px;max-height:85vh;overflow-y:auto;">
+  <div class="modal-title" id="planner-submit-history-title">📅 플래너 제출 현황</div>
+  <div style="font-size:11px;color:var(--tx4);margin-bottom:10px;">최근 30일 · 🟢 제출완료 · 🟡 지연제출 · 🔴 활동은 했지만 제출 안 함 · — 활동 없음</div>
+  <div id="planner-submit-history-body"></div>
+  <button class="modal-btn cancel" onclick="closeModal('modal-planner-submit-history')" style="margin-top:14px;">닫기</button>
+</div></div>
+
 <div class="modal-overlay" id="modal-student-point-history"><div class="modal" style="max-width:480px;max-height:85vh;overflow-y:auto;">
   <div class="modal-title" id="student-point-history-title">📋 상벌점 내역</div>
   <div id="student-point-history-summary" style="background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;"></div>
@@ -3391,9 +3399,11 @@ var EXAM_GROUP_COLOR_PALETTE = [
   {name:'모브', hex:'#8B5A7A'}, {name:'테라코타', hex:'#C17A52'}, {name:'딥틸', hex:'#3F7A72'},
   {name:'플럼', hex:'#6B4A7A'}, {name:'슬레이트', hex:'#5A6478'}
 ];
-// 그룹 생성 순서(문서ID 해시)로 팔레트를 순환 배정 - 매번 같은 그룹은 항상 같은 색이 나오게
-function _autoAssignGroupColor(existingGroupCount){
-  return EXAM_GROUP_COLOR_PALETTE[existingGroupCount % EXAM_GROUP_COLOR_PALETTE.length].hex;
+// 이미 다른 묶음이 쓰고 있는 색은 피해서, 아직 안 쓰인 색 중 첫 번째를 배정함
+// (색상당 그룹 1개 원칙 - 팔레트를 다 써버린 극히 드문 경우에만 어쩔 수 없이 겹치게 순환)
+function _autoAssignGroupColor(usedColors){
+  var unused = EXAM_GROUP_COLOR_PALETTE.find(function(c){ return usedColors.indexOf(c.hex) === -1; });
+  return unused ? unused.hex : EXAM_GROUP_COLOR_PALETTE[usedColors.length % EXAM_GROUP_COLOR_PALETTE.length].hex;
 }
 
 function buildTExamManage(){
@@ -3627,7 +3637,11 @@ function _buildExamGroupContainerHtml(group, memberExams){
     +   '<button onclick="_openExamGroupColorPicker(\''+group.id+'\')" title="묶음 색상 변경" style="position:absolute;right:2px;top:-4px;width:20px;height:20px;border-radius:50%;background:'+color+';border:2px solid #fff;box-shadow:0 0 0 1px rgba('+colorRgb+',0.4);cursor:pointer;padding:0;"></button>'
     + '</div>'
     + cardsHtml
-    + '<div style="height:5px;border-radius:3px;background:'+color+';margin-top:14px;"></div>'
+    + '<div style="display:flex;align-items:center;justify-content:center;margin-top:16px;">'
+    +   '<div style="width:6px;height:6px;border-radius:50%;background:'+color+';"></div>'
+    +   '<div style="width:36px;height:2px;background:'+color+';margin:0 8px;border-radius:2px;"></div>'
+    +   '<div style="width:6px;height:6px;border-radius:50%;background:'+color+';"></div>'
+    + '</div>'
     + '</div>';
 }
 function _hexToRgbStr(hex){
@@ -3637,11 +3651,23 @@ function _hexToRgbStr(hex){
 }
 
 window._openExamGroupColorPicker = function(groupId){
-  var swatches = EXAM_GROUP_COLOR_PALETTE.map(function(c){
-    return '<button onclick="_setExamGroupColor(\''+groupId+'\',\''+c.hex+'\')" title="'+c.name+'" style="width:32px;height:32px;border-radius:50%;background:'+c.hex+';border:2px solid #fff;box-shadow:0 0 0 1px var(--border);cursor:pointer;"></button>';
-  }).join('');
-  document.getElementById('exam-group-color-swatches').innerHTML = swatches;
+  document.getElementById('exam-group-color-swatches').innerHTML = '<div style="color:var(--tx3);font-size:12px;">불러오는 중...</div>';
   openModal('modal-exam-group-color');
+  getDocs(query(collection(db,'examMergeGroups'), where('branch','==',getBranch()))).then(function(snap){
+    // 지금 이 묶음(groupId) 자신이 쓰고 있는 색은 계속 선택 가능해야 하니 제외하고,
+    // 다른 묶음이 쓰고 있는 색만 "사용중"으로 비활성화함 (색상당 그룹 1개 원칙)
+    var usedByOthers = snap.docs.filter(function(d){ return d.id !== groupId; }).map(function(d){ return d.data().color; }).filter(Boolean);
+    var swatches = EXAM_GROUP_COLOR_PALETTE.map(function(c){
+      var taken = usedByOthers.indexOf(c.hex) !== -1;
+      if (taken) {
+        return '<button disabled title="'+c.name+' - 다른 묶음에서 이미 사용 중" style="width:32px;height:32px;border-radius:50%;background:'+c.hex+';border:2px solid #fff;box-shadow:0 0 0 1px var(--border);opacity:0.25;cursor:not-allowed;position:relative;">'
+          + '<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;">✕</span></button>';
+      }
+      return '<button onclick="_setExamGroupColor(\''+groupId+'\',\''+c.hex+'\')" title="'+c.name+'" style="width:32px;height:32px;border-radius:50%;background:'+c.hex+';border:2px solid #fff;box-shadow:0 0 0 1px var(--border);cursor:pointer;"></button>';
+    }).join('');
+    document.getElementById('exam-group-color-swatches').innerHTML = swatches
+      + '<div style="width:100%;font-size:11px;color:var(--tx4);text-align:center;margin-top:8px;">✕ 표시는 다른 묶음에서 이미 쓰고 있는 색이에요</div>';
+  });
 };
 
 window._setExamGroupColor = function(groupId, hex){
@@ -6805,7 +6831,8 @@ window.confirmMergeExams = function(){
   if (!exams || exams.length < 2) return;
 
   getDocs(query(collection(db,'examMergeGroups'), where('branch','==',getBranch()))).then(function(existingSnap){
-    var color = _autoAssignGroupColor(existingSnap.size !== undefined ? existingSnap.size : existingSnap.docs.length);
+    var usedColors = existingSnap.docs.map(function(d){ return d.data().color; }).filter(Boolean);
+    var color = _autoAssignGroupColor(usedColors);
     return addDoc(collection(db,'examMergeGroups'), {
       branch: getBranch(),
       mergedTitle: mergedTitle,
@@ -9169,11 +9196,25 @@ window.confirmDeleteTodo = function() {
   }
   deleteDoc(doc(db,'todos',id)).then(function(){closeModal('modal-edit-todo');loadTodos();});
 };
+// 학생이 "제출" 버튼을 안 눌러도, 실제로 플래너에서 할 일을 추가하거나 완료하는 등
+// 진짜 활동을 하면 그 흔적이 남도록 함. submittedAt(공식 제출 시각)과는 별개로
+// lastActivityAt만 살짝 갱신 - 연속제출 스트릭/보너스에는 영향 없고, 순수하게
+// "이 날 이 학생이 플래너를 실제로 만졌다"는 기록만 남김 (선생님이 확인할 때 씀).
+function _touchPlannerActivity(){
+  if (!currentUser || !currentProfile) return;
+  var today = getPlannerDate();
+  var planKey = currentUser.uid+'_'+today;
+  setDoc(doc(db,'planners',planKey), {
+    uid: currentUser.uid, name: currentProfile.name, date: today, branch: getBranch(),
+    lastActivityAt: serverTimestamp()
+  }, {merge:true}).catch(function(e){ console.warn('[플래너 활동 기록 실패]', e); });
+}
+
 window.addTodo = function() {
   var title=document.getElementById('todo-title-input').value.trim();
   if(!title) return;
   var today=getPlannerDate();
-  addDoc(collection(db,'todos'),{uid:currentUser.uid,title:title,subject:document.getElementById('todo-subject').value,status:'none',studyTime:null,certified:false,date:today,branch:getBranch(),createdAt:serverTimestamp()}).then(function(){closeModal('modal-todo');document.getElementById('todo-title-input').value='';loadTodos();});
+  addDoc(collection(db,'todos'),{uid:currentUser.uid,title:title,subject:document.getElementById('todo-subject').value,status:'none',studyTime:null,certified:false,date:today,branch:getBranch(),createdAt:serverTimestamp()}).then(function(){closeModal('modal-todo');document.getElementById('todo-title-input').value='';loadTodos();_touchPlannerActivity();});
 };
 window.doSubmitPlanner = function() {
   var today=getPlannerDate();
@@ -9183,6 +9224,8 @@ window.doSubmitPlanner = function() {
       // 이미 오늘 제출한 기록이 있으면 스트릭 재계산 없이 갱신만
       setDoc(doc(db,'planners',planKey),{uid:currentUser.uid,name:currentProfile.name,date:today,branch:getBranch(),submittedAt:serverTimestamp()},{merge:true}).then(function(){
         closeModal('modal-submit-planner');alert('플래너가 제출되었습니다!');
+      }).catch(function(e){
+        alert('⚠️ 제출 중 오류가 발생했습니다. 다시 시도해주세요.\n('+e.message+')');
       });
       return;
     }
@@ -9200,7 +9243,14 @@ window.doSubmitPlanner = function() {
       alert('플래너가 제출되었습니다!' + (isLate ? '\n(오후 2시 이후 제출 - 제출 지연으로 처리되어 연속제출 기록에는 반영되지 않습니다)' : ''));
       _updatePlannerStreakAfterSubmit(today, isLate);
       _awardPlannerGoalBonus(today);
+    }).catch(function(e){
+      // 예전엔 여기서 실패해도 아무 표시 없이 조용히 넘어가서, 학생은 제출했다고 생각했는데
+      // 실제로는 저장이 안 된 채로 남는 문제가 있었음. 이제는 실패를 명확히 알리고
+      // 모달도 닫지 않아서 다시 시도할 수 있게 함.
+      alert('⚠️ 제출에 실패했습니다. 인터넷 연결을 확인하고 다시 눌러주세요.\n('+e.message+')');
     });
+  }).catch(function(e){
+    alert('⚠️ 제출 처리 중 오류가 발생했습니다. 다시 시도해주세요.\n('+e.message+')');
   });
 };
 
@@ -9267,24 +9317,39 @@ var _rankingsCache = null;
 var _rankingsCacheTime = 0;
 var _rankingsCacheMonth = '';
 
-function loadStudyRankings(containerId) {
+// 순공시간 TOP5의 이전달/다음달 이동 - 미래 달로는 못 넘어가게 막음
+window._navigateStudyRankingsMonth = function(containerId, currentMonth, direction){
+  var parts = currentMonth.split('-');
+  var d = new Date(parseInt(parts[0],10), parseInt(parts[1],10)-1+direction, 1);
+  var now = new Date();
+  var kstNow = new Date(now.getTime() + (9*60 + now.getTimezoneOffset())*60000);
+  var thisMonth = kstNow.getFullYear()+'-'+String(kstNow.getMonth()+1).padStart(2,'0');
+  var target = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  if (target > thisMonth) return; // 미래로는 이동 불가
+  loadStudyRankings(containerId, target);
+};
+
+function loadStudyRankings(containerId, monthOverride) {
   var el = document.getElementById(containerId);
   if (!el) return;
 
   var now = new Date();
   var kstNow = new Date(now.getTime() + (9*60 + now.getTimezoneOffset())*60000);
-  var month = kstNow.getFullYear()+'-'+String(kstNow.getMonth()+1).padStart(2,'0');
+  var month = monthOverride || (kstNow.getFullYear()+'-'+String(kstNow.getMonth()+1).padStart(2,'0'));
+  var isCurrentMonth = month === (kstNow.getFullYear()+'-'+String(kstNow.getMonth()+1).padStart(2,'0'));
 
-  // 10분 캐시 (지점별 분리)
+  // 10분 캐시 (지점별 분리) - 과거 달 조회는 캐시 안 씀(자주 안 쓰이고, 매번 최신 상태 볼 필요는 없어서 단순화)
   var cacheKey = month + '_' + getBranch();
-  if (_rankingsCache && _rankingsCacheMonth === cacheKey && Date.now() - _rankingsCacheTime < 600000) {
+  if (isCurrentMonth && _rankingsCache && _rankingsCacheMonth === cacheKey && Date.now() - _rankingsCacheTime < 600000) {
     el.innerHTML = _rankingsCache;
     return;
   }
 
   el.innerHTML = '<div style="color:var(--tx3);font-size:13px">불러오는 중...</div>';
 
-  var lastDay = new Date(kstNow.getFullYear(), kstNow.getMonth()+1, 0).getDate();
+  var monthParts = month.split('-');
+  var y = parseInt(monthParts[0],10), m = parseInt(monthParts[1],10);
+  var lastDay = new Date(y, m, 0).getDate();
   var startDate = month + '-01';
   var endDate = month + '-' + String(lastDay).padStart(2,'0');
 
@@ -9337,9 +9402,15 @@ function loadStudyRankings(containerId) {
     }
 
     var medals = ['🥇','🥈','🥉','4️⃣','5️⃣'];
+    var monthNavHtml = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'
+      + '<button onclick="_navigateStudyRankingsMonth(\''+containerId+'\',\''+month+'\',-1)" style="background:none;border:none;color:var(--tx3);font-size:13px;cursor:pointer;padding:2px 6px;">◀</button>'
+      + '<span style="font-size:11px;font-weight:700;color:var(--tx3);letter-spacing:1px;">'+month+' 순공시간 TOP5</span>'
+      + (isCurrentMonth ? '<span style="width:20px;"></span>' : '<button onclick="_navigateStudyRankingsMonth(\''+containerId+'\',\''+month+'\',1)" style="background:none;border:none;color:var(--tx3);font-size:13px;cursor:pointer;padding:2px 6px;">▶</button>')
+      + '</div>';
+
     var top5Html = '';
     if (sorted.length) {
-      top5Html = '<div style="font-size:11px;font-weight:700;color:var(--tx3);letter-spacing:1px;margin-bottom:8px">'+month+' 순공시간 TOP5</div>'
+      top5Html = monthNavHtml
         + sorted.map(function(uid, i){
           var secs = timeMap[uid];
           var pct = sorted[0] ? Math.round(secs/timeMap[sorted[0]]*100) : 0;
@@ -9356,17 +9427,19 @@ function loadStudyRankings(containerId) {
             +'</div></div></div>';
         }).join('');
     } else {
-      top5Html = '<div style="color:var(--tx3);font-size:12px;padding:8px 0">이번달 학습 기록이 없습니다</div>';
+      top5Html = monthNavHtml + '<div style="color:var(--tx3);font-size:12px;padding:8px 0">이 달의 학습 기록이 없습니다</div>';
     }
 
     var html = scholarHtml
       + '<div style="background:var(--surface2);border:1px solid var(--border2);border-radius:12px;padding:12px 14px">'
       + top5Html + '</div>';
 
-    // 캐시 저장
-    _rankingsCache = html;
-    _rankingsCacheTime = Date.now();
-    _rankingsCacheMonth = cacheKey;
+    // 캐시 저장 - 과거 달 조회는 캐시하지 않음(자주 안 쓰이는 경로라 단순하게 매번 새로 조회)
+    if (isCurrentMonth) {
+      _rankingsCache = html;
+      _rankingsCacheTime = Date.now();
+      _rankingsCacheMonth = cacheKey;
+    }
 
     el.innerHTML = html;
   }).catch(function(e){
@@ -9756,6 +9829,7 @@ async function finalizeTimer(certified, totalMsOverride, timeTextOverride) {
       alert('완료 저장에 실패했습니다. 다시 시도해주세요.');
       return;
     }
+    _touchPlannerActivity();
   }
   resetTimerMemory();
   _renderTimerBanner(false);
@@ -11803,7 +11877,10 @@ window.updateLecture=function(){
 function buildTGrades(){
   return loadStudentList().then(function(students){
     return '<div class="section-label">학생 성적 조회</div>'
-      +'<select class="modal-select" id="t-grade-student" onchange="loadStudentGrades(this.value)" style="margin-bottom:8px"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select>'
+      +'<div style="display:flex;gap:6px;margin-bottom:8px;">'
+      +'<select class="modal-select" id="t-grade-student" onchange="loadStudentGrades(this.value)" style="margin-bottom:0;flex:1;"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select>'
+      +'<button onclick="_openPlannerSubmitHistoryFromSelect()" style="padding:0 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--tx2);font-size:12px;cursor:pointer;white-space:nowrap;">📅 제출현황</button>'
+      +'</div>'
       +'<div style="position:relative;margin-bottom:8px">'
       +'<input class="modal-input" id="t-grade-search" placeholder="🔍 시험명 검색..." oninput="filterGradeSearch(this.value)" style="margin-bottom:0;padding-right:36px"/>'
       +'<button onclick="filterGradeSearch(\'\');document.getElementById(\'t-grade-search\').value=\'\'" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--tx3);font-size:14px;cursor:pointer">✕</button>'
@@ -12575,6 +12652,70 @@ window._offsetTargetName = null;
 // ═══════════════════════════════════════
 var _studentPointHistoryAll = [];
 var _studentPointHistoryFilter = 'all';
+
+// 선생님/마스터가 학생별 플래너 제출 현황(언제 냈고 언제 안 냈는지, 활동은 있었는지)을
+// 확인. 성적탭에서 학생 골라둔 상태로 "📅 제출현황" 누르면 바로 그 학생 걸로 열림.
+window._openPlannerSubmitHistoryFromSelect = function(){
+  var sel = document.getElementById('t-grade-student');
+  var uid = sel ? sel.value : '';
+  if (!uid) { alert('먼저 학생을 선택해주세요'); return; }
+  var name = sel.options[sel.selectedIndex].text;
+  openPlannerSubmitHistoryModal(uid, name);
+};
+
+window.openPlannerSubmitHistoryModal = function(uid, name){
+  document.getElementById('planner-submit-history-title').textContent = '📅 '+name+' 학생 플래너 제출 현황';
+  document.getElementById('planner-submit-history-body').innerHTML = '<div style="color:var(--tx3);font-size:12px;padding:10px 0;">불러오는 중...</div>';
+  openModal('modal-planner-submit-history');
+
+  // 최근 30일 범위로 날짜 목록을 만들고, todos(실제 활동 흔적)와 planners(공식 제출 기록)를
+  // 둘 다 조회해서 하루하루 상태를 정확히 구분해서 보여줌:
+  // - 제출완료(정상/지연) - planners에 submittedAt 있음
+  // - 활동만 있고 미제출 - todos는 있는데 planners에 submittedAt이 없음 (제출 버튼을 깜빡했거나 실패한 경우)
+  // - 활동 없음 - 그 날 todos 자체가 없음
+  var days = [];
+  for (var i=0;i<30;i++){
+    var d = new Date(); d.setDate(d.getDate()-i);
+    days.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));
+  }
+
+  Promise.all([
+    getDocs(query(collection(db,'todos'), where('uid','==',uid), limit(400))),
+    getDocs(query(collection(db,'planners'), where('uid','==',uid)))
+  ]).then(function(results){
+    var todoDates = new Set();
+    results[0].docs.forEach(function(d){ var dt=d.data().date; if(dt) todoDates.add(dt); });
+    var plannerByDate = {};
+    results[1].docs.forEach(function(d){ plannerByDate[d.data().date] = d.data(); });
+
+    var rows = days.map(function(dt){
+      var p = plannerByDate[dt];
+      var hasActivity = todoDates.has(dt);
+      var fmtTime = function(ts){ if(!ts||!ts.toMillis) return ''; var d=new Date(ts.toMillis()); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
+
+      var statusHtml, dotColor;
+      if (p && p.submittedAt) {
+        dotColor = p.late ? 'var(--gold)' : 'var(--green)';
+        statusHtml = (p.late ? '🟡 제출 지연' : '🟢 제출 완료') + ' · ' + fmtTime(p.submittedAt);
+      } else if (hasActivity) {
+        dotColor = 'var(--red)';
+        statusHtml = '🔴 활동은 있었지만 제출 안 함' + (p && p.lastActivityAt ? ' (마지막 활동 '+fmtTime(p.lastActivityAt)+')' : '');
+      } else {
+        dotColor = 'var(--tx4)';
+        statusHtml = '— 활동 없음';
+      }
+      return '<div style="display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px dashed var(--border2);font-size:12px;">'
+        + '<span style="width:8px;height:8px;border-radius:50%;background:'+dotColor+';flex-shrink:0;"></span>'
+        + '<span style="width:76px;color:var(--tx2);font-weight:600;flex-shrink:0;">'+dt+'</span>'
+        + '<span style="color:var(--tx3);">'+statusHtml+'</span>'
+        + '</div>';
+    }).join('');
+
+    document.getElementById('planner-submit-history-body').innerHTML = rows;
+  }).catch(function(e){
+    document.getElementById('planner-submit-history-body').innerHTML = '<div style="color:var(--red);font-size:12px;">불러오기 실패: '+e.message+'</div>';
+  });
+};
 
 window.openStudentPointHistoryModal = function(uid, name){
   document.getElementById('student-point-history-title').textContent = '📋 ' + name + '님 상벌점 내역';
