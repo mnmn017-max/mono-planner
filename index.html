@@ -2234,6 +2234,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 
 <!-- 시험 묶음 목록 -->
 <!-- 실시간 응시 현황 -->
+<!-- 누락 성적 검사/복구 -->
+<div class="modal-overlay" id="modal-missing-grades"><div class="modal" style="max-width:480px;max-height:85vh;overflow-y:auto;">
+  <div class="modal-title">🔧 누락 성적 검사</div>
+  <div style="font-size:11px;color:var(--tx4);margin-bottom:10px;">채점은 완료됐는데 성적탭에 안 옮겨진 기록이 있는지 지점 전체를 검사합니다.</div>
+  <div id="missing-grades-body"></div>
+  <button class="modal-btn cancel" onclick="closeModal('modal-missing-grades')" style="margin-top:14px;">닫기</button>
+</div></div>
+
 <div class="modal-overlay" id="modal-live-exam-status"><div class="modal" style="max-width:480px;max-height:85vh;overflow-y:auto;">
   <div class="modal-title">🔴 실시간 응시 현황</div>
   <div id="live-exam-status-body"></div>
@@ -3455,7 +3463,7 @@ function buildTExamManage(){
       return '<button onclick="switchExamMgmtCategory(\''+escapeHtml(c).replace(/'/g,"\\'")+'\')" class="exam-mgmt-cat-btn'+(active?' active':'')+'">'+escapeHtml(c)+'</button>';
     }).join('') + '<button onclick="openAddExamSourceOption()" class="exam-mgmt-cat-btn exam-mgmt-cat-add">+ 분류 추가</button>' + '<button onclick="openManageExamSourceOptions()" class="exam-mgmt-cat-btn" style="color:var(--tx3);">🔧 관리</button>';
     return safetyCard + '<div class="card">'
-      +'<div class="card-h"><div class="card-title">📝 시험 관리</div><div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;background:#fef2f2;color:#dc2626;" onclick="openLiveExamStatusModal()">🔴 실시간 응시 현황</button><button id="exam-merge-toggle-btn" class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="_toggleExamMergeMode()">🔗 시험 묶기</button><button id="exam-merge-confirm-btn" class="modal-btn primary" style="display:none;margin:0;width:auto;padding:8px 16px;font-size:12px;background:var(--gold);" onclick="openMergeExamsModal()">선택한 시험 묶기</button><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openExamMergeGroupsModal()">📋 묶음 목록</button><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openElectiveManageModal()">🔧 선택과목 관리</button><button class="modal-btn primary" style="margin:0;width:auto;padding:8px 16px;font-size:12px;" onclick="openCreateExamModal()">+ 새 시험 만들기</button></div></div>'
+      +'<div class="card-h"><div class="card-title">📝 시험 관리</div><div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;background:#fef2f2;color:#dc2626;" onclick="openLiveExamStatusModal()">🔴 실시간 응시 현황</button><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;background:var(--gold-l);color:var(--gold);" onclick="openMissingGradesRecoveryModal()">🔧 누락 성적 검사</button><button id="exam-merge-toggle-btn" class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="_toggleExamMergeMode()">🔗 시험 묶기</button><button id="exam-merge-confirm-btn" class="modal-btn primary" style="display:none;margin:0;width:auto;padding:8px 16px;font-size:12px;background:var(--gold);" onclick="openMergeExamsModal()">선택한 시험 묶기</button><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openExamMergeGroupsModal()">📋 묶음 목록</button><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openElectiveManageModal()">🔧 선택과목 관리</button><button class="modal-btn primary" style="margin:0;width:auto;padding:8px 16px;font-size:12px;" onclick="openCreateExamModal()">+ 새 시험 만들기</button></div></div>'
       +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px;" id="exam-mgmt-cat-tabs">'+catTabs+'</div>'
       +'<div id="exam-list-area">'+listHtml+'</div>'
       +'</div>';
@@ -5143,10 +5151,19 @@ window.saveExam = function(){
     updateDoc(doc(db,'exams',editingExamId), examData).then(function(){
       // 시험 구분(연습용/정규 등)이 바뀌었을 수 있으니, 이미 이 시험으로 채점되어
       // 성적탭에 저장된 기록들도 같은 값으로 맞춰줌 - 안 그러면 시험 설정은 "정규"로
-      // 바꿨는데 예전에 채점된 성적은 계속 "연습용"으로 남아있는 불일치가 생김
+      // 바꿨는데 예전에 채점된 성적은 계속 "연습용"으로 남아있는 불일치가 생김.
+      // "시험 묶기"로 합쳐진 성적은 examId 필드 자체가 없어져서(대신 sourceExamIds로
+      // 원본 시험들을 추적함) 두 조건을 각각 조회해서 합쳐야 빠짐없이 찾을 수 있음.
       var newExamSourceLabel = examSourceLabel(examData.examSource) || null;
-      return getDocs(query(collection(db,'grades'), where('examId','==',editingExamId))).then(function(snap){
-        var updates = snap.docs
+      return Promise.all([
+        getDocs(query(collection(db,'grades'), where('examId','==',editingExamId))),
+        getDocs(query(collection(db,'grades'), where('sourceExamIds','array-contains',editingExamId)))
+      ]).then(function(results){
+        var seen = {};
+        var allDocs = results[0].docs.concat(results[1].docs).filter(function(d){
+          if (seen[d.id]) return false; seen[d.id] = true; return true;
+        });
+        var updates = allDocs
           .filter(function(d){ return (d.data().examSource||null) !== newExamSourceLabel; })
           .map(function(d){ return updateDoc(doc(db,'grades',d.id), { examSource: newExamSourceLabel }); });
         return Promise.all(updates);
@@ -6921,12 +6938,14 @@ function _tryMergeGradesForUid(groupId, group, examIds, gradesForUid, uid){
     var mergedScores = Object.assign({}, existingMerged.scores);
     var mergedWrong = Object.assign({}, existingMerged.wrongBySubj);
     var newMergedFrom = (existingMerged.mergedFrom||[]).slice();
+    var newSourceExamIds = (existingMerged.sourceExamIds||[]).slice();
     newOnes.forEach(function(g){
       Object.keys(g.scores||{}).forEach(function(k){ if (mergedScores[k]===undefined) mergedScores[k] = g.scores[k]; });
       Object.keys(g.wrongBySubj||{}).forEach(function(k){ if (mergedWrong[k]===undefined) mergedWrong[k] = g.wrongBySubj[k]; });
       newMergedFrom.push(g._id);
+      if (g.examId && newSourceExamIds.indexOf(g.examId) === -1) newSourceExamIds.push(g.examId);
     });
-    var p1 = updateDoc(doc(db,'grades',existingMerged._id), { scores: mergedScores, wrongBySubj: mergedWrong, mergedFrom: newMergedFrom })
+    var p1 = updateDoc(doc(db,'grades',existingMerged._id), { scores: mergedScores, wrongBySubj: mergedWrong, mergedFrom: newMergedFrom, sourceExamIds: newSourceExamIds })
       .then(function(){ return Promise.all(newOnes.map(function(g){ return deleteDoc(doc(db,'grades',g._id)); })); });
     _pendingMergeTasks.push(p1);
     return true;
@@ -6937,9 +6956,11 @@ function _tryMergeGradesForUid(groupId, group, examIds, gradesForUid, uid){
   if (newOnes.length < 2) return false;
 
   var mergedScores2 = {}, mergedWrong2 = {};
+  var sourceExamIds2 = [];
   newOnes.forEach(function(g){
     Object.keys(g.scores||{}).forEach(function(k){ if (mergedScores2[k]===undefined) mergedScores2[k] = g.scores[k]; });
     Object.keys(g.wrongBySubj||{}).forEach(function(k){ if (mergedWrong2[k]===undefined) mergedWrong2[k] = g.wrongBySubj[k]; });
+    if (g.examId && sourceExamIds2.indexOf(g.examId) === -1) sourceExamIds2.push(g.examId);
   });
   var earliestDate = newOnes.map(function(g){return g.examDate;}).sort()[0];
   var base = newOnes[0];
@@ -6948,6 +6969,10 @@ function _tryMergeGradesForUid(groupId, group, examIds, gradesForUid, uid){
     uid: uid, type: base.type||'mock', examName: group.mergedTitle, examDate: earliestDate,
     scores: mergedScores2, wrongBySubj: mergedWrong2, examSource: base.examSource||null,
     source: 'merged_group', mergedFrom: newOnes.map(function(g){return g._id;}), mergeGroupId: groupId,
+    // 원본 시험 ID들을 따로 기록해둠 - 나중에 그중 한 시험의 분류(examSource)가 바뀌었을 때
+    // 이 합쳐진 성적도 같이 찾아서 업데이트할 수 있게 하기 위함 (합쳐지면 examId 필드
+    // 자체가 없어져서, 이게 없으면 분류 변경이 반영이 안 되는 문제가 있었음)
+    sourceExamIds: sourceExamIds2,
     createdAt: serverTimestamp()
   }).then(function(){
     return Promise.all(newOnes.map(function(g){ return deleteDoc(doc(db,'grades',g._id)); }));
@@ -7256,6 +7281,105 @@ function _renderExamDisplayWaitingRoom(now){
       + '</div>';
   });
 }
+
+// 성적 복구 도구 - 시험은 "채점 완료(graded)" 상태인데, 실제로 grades 컬렉션에
+// 그 시험 성적이 없는 경우를 찾아서 복구함. 원인: 채점 자체는 세션에 저장된 뒤, 성적탭에
+// 실제로 옮겨 적는 단계가 별도로 한 번 더 있는데, 이 단계가 중간에 실패해도(네트워크 등)
+// 세션은 이미 "완료"로 표시돼버려서 학생/선생님 모두 눈치채기 어려운 구조였음.
+// subjectResults는 세션에 이미 저장되어 있으므로, 그걸 그대로 다시 성적탭에 옮겨 적음.
+window.openMissingGradesRecoveryModal = function(){
+  document.getElementById('missing-grades-body').innerHTML = '<div style="color:var(--tx3);font-size:12px;padding:10px 0;">지점 전체 시험을 검사하는 중... (시험이 많으면 시간이 걸릴 수 있어요)</div>';
+  openModal('modal-missing-grades');
+
+  getDocs(query(collection(db,'exams'), where('branch','==',getBranch()))).then(function(examSnap){
+    var exams = examSnap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
+
+    return Promise.all(exams.map(function(exam){
+      return getDocs(query(collection(db,'examSessions'), where('examId','==',exam.id), where('status','==','graded'))).then(function(sessSnap){
+        var sessions = sessSnap.docs.map(function(d){ return Object.assign({_id:d.id}, d.data()); });
+        if (!sessions.length) return [];
+        // 이 시험에 연결된 성적(grades) 중 examSessionId가 있는 것들을 조회해서
+        // "채점된 세션인데 성적 기록이 없는" 세션만 골라냄
+        return getDocs(query(collection(db,'grades'), where('examId','==',exam.id))).then(function(gradeSnap){
+          var recordedSessionIds = new Set(gradeSnap.docs.map(function(d){ return d.data().examSessionId; }).filter(Boolean));
+          var missing = sessions.filter(function(s){ return !recordedSessionIds.has(s._id); });
+          return missing.map(function(s){ return { exam: exam, session: s }; });
+        });
+      });
+    })).then(function(results){
+      var missingList = [].concat.apply([], results);
+      return loadStudentList().then(function(students){
+        var nameByUid = {}; students.forEach(function(s){ nameByUid[s.uid]=s.name; });
+        window._missingGradesList = missingList.map(function(m){
+          return Object.assign(m, { studentName: nameByUid[m.session.studentUid] || m.session.studentUid });
+        });
+        _renderMissingGradesList();
+      });
+    });
+  }).catch(function(e){
+    document.getElementById('missing-grades-body').innerHTML = '<div style="color:var(--red);font-size:12px;">검사 실패: '+e.message+'</div>';
+  });
+};
+
+function _renderMissingGradesList(){
+  var list = window._missingGradesList || [];
+  var body = document.getElementById('missing-grades-body');
+  if (!list.length) {
+    body.innerHTML = '<div style="color:var(--green);font-size:13px;font-weight:600;padding:10px 0;">✅ 누락된 성적이 없습니다. 모두 정상적으로 성적탭에 반영되어 있어요.</div>';
+    return;
+  }
+  body.innerHTML = '<div style="font-size:12px;color:var(--red);font-weight:700;margin-bottom:10px;">⚠️ 채점은 완료됐지만 성적탭에 안 옮겨진 기록 '+list.length+'건 발견</div>'
+    + list.map(function(m, i){
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:var(--surface2);border-radius:8px;margin-bottom:6px;">'
+        + '<span style="font-size:12px;"><b>'+escapeHtml(m.studentName)+'</b> · '+escapeHtml(m.exam.title)+'</span>'
+        + '<button onclick="_recoverMissingGrade('+i+',this)" style="padding:4px 9px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;">복구</button>'
+        + '</div>';
+    }).join('')
+    + '<button onclick="_recoverAllMissingGrades()" style="width:100%;padding:10px;background:var(--burg);border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;margin-top:8px;">전체 한번에 복구 ('+list.length+'건)</button>';
+}
+
+window._recoverMissingGrade = function(idx, btnEl){
+  var m = window._missingGradesList[idx];
+  if (!m) return;
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = '복구 중...'; }
+  var results = m.session.subjectResults || [];
+  _getPrevSubjectScores(m.session.studentUid, m.exam.gradeType, examSourceLabel(m.exam.examSource)).then(function(prevScores){
+    return _writeExamResultToGrades(m.session.studentUid, m.session._id, m.exam, results, m.session.electiveChoices).then(function(){
+      _awardExamRewards(m.session.studentUid, m.exam, results, prevScores);
+    });
+  }).then(function(){
+    window._missingGradesList = window._missingGradesList.filter(function(x){ return x !== m; });
+    _renderMissingGradesList();
+  }).catch(function(e){
+    alert('복구 실패: ' + e.message);
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = '복구'; }
+  });
+};
+
+window._recoverAllMissingGrades = function(){
+  var list = (window._missingGradesList||[]).slice();
+  if (!list.length) return;
+  if (!confirm(list.length+'건을 전체 복구하시겠습니까?')) return;
+  var chain = Promise.resolve();
+  var done = 0, failed = 0;
+  list.forEach(function(m){
+    chain = chain.then(function(){
+      var results = m.session.subjectResults || [];
+      return _getPrevSubjectScores(m.session.studentUid, m.exam.gradeType, examSourceLabel(m.exam.examSource)).then(function(prevScores){
+        return _writeExamResultToGrades(m.session.studentUid, m.session._id, m.exam, results, m.session.electiveChoices).then(function(){
+          _awardExamRewards(m.session.studentUid, m.exam, results, prevScores);
+          done++;
+        });
+      }).catch(function(){ failed++; });
+    });
+  });
+  chain.then(function(){
+    alert('복구 완료: '+done+'건 성공'+(failed?', '+failed+'건 실패':''));
+    window._missingGradesList = [];
+    _renderMissingGradesList();
+    invalidateTeacherTabCache(2);
+  });
+};
 
 window.openLiveExamStatusModal = function(){
   document.getElementById('live-exam-status-body').innerHTML = '<div style="color:var(--tx3);font-size:12px;padding:10px 0;">불러오는 중...</div>';
