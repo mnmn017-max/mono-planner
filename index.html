@@ -2466,7 +2466,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <div class="modal-label">학습 내용</div><input class="modal-input" id="todo-title-input" placeholder="학습 내용 입력"/>
   <div class="modal-label">과목</div>
   <select class="modal-select" id="todo-subject"><option value="ko">국어</option><option value="en">영어</option><option value="ma">수학</option><option value="hi">한국사</option><option value="sc">과학탐구</option><option value="so">사회탐구</option></select>
-  <button class="modal-btn primary" onclick="addTodo()">추가하기</button>
+  <button class="modal-btn primary" id="todo-add-confirm-btn" onclick="addTodo()">추가하기</button>
   <button class="modal-btn cancel" onclick="closeModal('modal-todo')">취소</button>
 </div></div>
 
@@ -9214,43 +9214,73 @@ window.addTodo = function() {
   var title=document.getElementById('todo-title-input').value.trim();
   if(!title) return;
   var today=getPlannerDate();
-  addDoc(collection(db,'todos'),{uid:currentUser.uid,title:title,subject:document.getElementById('todo-subject').value,status:'none',studyTime:null,certified:false,date:today,branch:getBranch(),createdAt:serverTimestamp()}).then(function(){closeModal('modal-todo');document.getElementById('todo-title-input').value='';loadTodos();_touchPlannerActivity();});
+  var btn = document.getElementById('todo-add-confirm-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '추가 중...'; }
+  addDoc(collection(db,'todos'),{uid:currentUser.uid,title:title,subject:document.getElementById('todo-subject').value,status:'none',studyTime:null,certified:false,date:today,branch:getBranch(),createdAt:serverTimestamp()}).then(function(){
+    closeModal('modal-todo');document.getElementById('todo-title-input').value='';loadTodos();_touchPlannerActivity();
+  }).catch(function(e){
+    // 예전엔 여기서 실패해도 아무 표시 없이 조용히 넘어가서, 학생은 할 일을 추가했다고
+    // 생각했는데 실제로는 저장이 안 된 채로 남는 문제가 있었음(제출 버튼과 같은 종류의 버그).
+    // 이제는 실패를 명확히 알리고, 모달도 안 닫혀서 바로 다시 시도할 수 있게 함.
+    alert('⚠️ 할 일 추가에 실패했습니다. 인터넷 연결을 확인하고 다시 눌러주세요.\n('+e.message+')');
+  }).finally(function(){
+    if (btn) { btn.disabled = false; btn.textContent = '추가하기'; }
+  });
 };
 window.doSubmitPlanner = function() {
   var today=getPlannerDate();
   var planKey = currentUser.uid+'_'+today;
-  getDoc(doc(db,'planners',planKey)).then(function(existing){
-    if (existing.exists()) {
-      // 이미 오늘 제출한 기록이 있으면 스트릭 재계산 없이 갱신만
-      setDoc(doc(db,'planners',planKey),{uid:currentUser.uid,name:currentProfile.name,date:today,branch:getBranch(),submittedAt:serverTimestamp()},{merge:true}).then(function(){
-        closeModal('modal-submit-planner');alert('플래너가 제출되었습니다!');
-      }).catch(function(e){
-        alert('⚠️ 제출 중 오류가 발생했습니다. 다시 시도해주세요.\n('+e.message+')');
-      });
+
+  // 제출 전에 오늘 할 일 목록을 먼저 조회함 - 1) 하나도 없으면 제출 자체를 막고,
+  // 2) 있으면 그 순간의 목록을 스냅샷으로 같이 저장해서, 나중에 todos 원본이 무슨
+  // 이유로든 사라지거나 날짜가 어긋나도 "제출 당시엔 이런 할 일이 있었다"는 기록이
+  // 영구히 남도록 함 (예전엔 이 기록이 없어서, 제출은 됐는데 할 일 목록은 안 보이는
+  // 상황이 생기면 원인 파악이 불가능했음).
+  getDocs(query(collection(db,'todos'), where('uid','==',currentUser.uid), where('date','==',today))).then(function(todoSnap){
+    if (todoSnap.empty) {
+      alert('오늘 등록된 할 일이 없습니다.\n할 일을 먼저 추가한 뒤 제출해주세요.');
       return;
     }
+    var todosSnapshot = todoSnap.docs.map(function(d){
+      var t = d.data();
+      return { title:t.title||'', subject:t.subject||'', status:t.status||'none', studyTime:t.studyTime||null };
+    });
 
-    // KST 기준 오후 2시(14:00) 이후 제출이면 "제출 지연"으로 기록 (출입 지각과는 무관 - 순수 제출 시각 기준)
-    var now=new Date();
-    var kst=new Date(now.getTime()+(9*60+now.getTimezoneOffset())*60000);
-    var isLate = kst.getHours() >= 14;
+    getDoc(doc(db,'planners',planKey)).then(function(existing){
+      if (existing.exists()) {
+        // 이미 오늘 제출한 기록이 있으면 스트릭 재계산 없이 갱신만
+        setDoc(doc(db,'planners',planKey),{uid:currentUser.uid,name:currentProfile.name,date:today,branch:getBranch(),submittedAt:serverTimestamp(),todosSnapshot:todosSnapshot},{merge:true}).then(function(){
+          closeModal('modal-submit-planner');alert('플래너가 제출되었습니다!');
+        }).catch(function(e){
+          alert('⚠️ 제출 중 오류가 발생했습니다. 다시 시도해주세요.\n('+e.message+')');
+        });
+        return;
+      }
 
-    setDoc(doc(db,'planners',planKey),{
-      uid:currentUser.uid,name:currentProfile.name,date:today,branch:getBranch(),
-      submittedAt:serverTimestamp(), late:isLate
-    }).then(function(){
-      closeModal('modal-submit-planner');
-      alert('플래너가 제출되었습니다!' + (isLate ? '\n(오후 2시 이후 제출 - 제출 지연으로 처리되어 연속제출 기록에는 반영되지 않습니다)' : ''));
-      _updatePlannerStreakAfterSubmit(today, isLate);
-      _awardPlannerGoalBonus(today);
+      // KST 기준 오후 2시(14:00) 이후 제출이면 "제출 지연"으로 기록 (출입 지각과는 무관 - 순수 제출 시각 기준)
+      var now=new Date();
+      var kst=new Date(now.getTime()+(9*60+now.getTimezoneOffset())*60000);
+      var isLate = kst.getHours() >= 14;
+
+      setDoc(doc(db,'planners',planKey),{
+        uid:currentUser.uid,name:currentProfile.name,date:today,branch:getBranch(),
+        submittedAt:serverTimestamp(), late:isLate, todosSnapshot:todosSnapshot
+      }).then(function(){
+        closeModal('modal-submit-planner');
+        alert('플래너가 제출되었습니다!' + (isLate ? '\n(오후 2시 이후 제출 - 제출 지연으로 처리되어 연속제출 기록에는 반영되지 않습니다)' : ''));
+        _updatePlannerStreakAfterSubmit(today, isLate);
+        _awardPlannerGoalBonus(today);
+      }).catch(function(e){
+        // 예전엔 여기서 실패해도 아무 표시 없이 조용히 넘어가서, 학생은 제출했다고 생각했는데
+        // 실제로는 저장이 안 된 채로 남는 문제가 있었음. 이제는 실패를 명확히 알리고
+        // 모달도 닫지 않아서 다시 시도할 수 있게 함.
+        alert('⚠️ 제출에 실패했습니다. 인터넷 연결을 확인하고 다시 눌러주세요.\n('+e.message+')');
+      });
     }).catch(function(e){
-      // 예전엔 여기서 실패해도 아무 표시 없이 조용히 넘어가서, 학생은 제출했다고 생각했는데
-      // 실제로는 저장이 안 된 채로 남는 문제가 있었음. 이제는 실패를 명확히 알리고
-      // 모달도 닫지 않아서 다시 시도할 수 있게 함.
-      alert('⚠️ 제출에 실패했습니다. 인터넷 연결을 확인하고 다시 눌러주세요.\n('+e.message+')');
+      alert('⚠️ 제출 처리 중 오류가 발생했습니다. 다시 시도해주세요.\n('+e.message+')');
     });
   }).catch(function(e){
-    alert('⚠️ 제출 처리 중 오류가 발생했습니다. 다시 시도해주세요.\n('+e.message+')');
+    alert('⚠️ 할 일 목록을 불러오는 중 오류가 발생했습니다. 다시 시도해주세요.\n('+e.message+')');
   });
 };
 
@@ -12671,16 +12701,32 @@ window._showPlannerSubmitDayDetail = function(date, uid, name){
   body.innerHTML = '<button onclick="openPlannerSubmitHistoryModal(\''+uid+'\',\''+escapeHtml(name).replace(/'/g,"\\'")+'\')" style="display:flex;align-items:center;gap:6px;background:none;border:none;color:var(--burg);font-size:13px;cursor:pointer;padding:0;margin-bottom:12px;">← 날짜 목록으로</button>'
     + '<div id="planner-submit-day-items"><div style="color:var(--tx3);font-size:12px;">불러오는 중...</div></div>';
 
-  getDocs(query(collection(db,'todos'), where('uid','==',uid), where('date','==',date))).then(function(snap){
+  Promise.all([
+    getDocs(query(collection(db,'todos'), where('uid','==',uid), where('date','==',date))),
+    getDoc(doc(db,'planners', uid+'_'+date))
+  ]).then(function(results){
+    var snap = results[0], plannerDoc = results[1];
     var el = document.getElementById('planner-submit-day-items');
     if (!el) return;
-    if (snap.empty) { el.innerHTML = '<div style="color:var(--tx3);font-size:12px;">기록 없음</div>'; return; }
-    var todos = snap.docs.map(function(d){return d.data();}).sort(function(a,b){
-      var at=a.createdAt?a.createdAt.toMillis():0, bt=b.createdAt?b.createdAt.toMillis():0; return at-bt;
-    });
+
+    var todos, fromSnapshot = false;
+    if (!snap.empty) {
+      todos = snap.docs.map(function(d){return d.data();}).sort(function(a,b){
+        var at=a.createdAt?a.createdAt.toMillis():0, bt=b.createdAt?b.createdAt.toMillis():0; return at-bt;
+      });
+    } else if (plannerDoc.exists() && plannerDoc.data().todosSnapshot && plannerDoc.data().todosSnapshot.length) {
+      // 실시간 todos가 지금은 없지만, 제출 당시 저장해둔 스냅샷이 있으면 그걸로 보여줌
+      // (원본이 나중에 어떤 이유로 지워지거나 날짜가 바뀌어도, 제출 시점 기록은 보존됨)
+      todos = plannerDoc.data().todosSnapshot;
+      fromSnapshot = true;
+    } else {
+      el.innerHTML = '<div style="color:var(--tx3);font-size:12px;">기록 없음</div>'; return;
+    }
+
     var statusMap = {'none':'⬜','progressing':'🔄','done':'✅'};
     var done = todos.filter(function(t){return t.status==='done';}).length;
-    el.innerHTML = '<div style="background:var(--surface2);border-radius:10px;padding:10px 12px;margin-bottom:12px;display:flex;gap:16px;">'
+    el.innerHTML = (fromSnapshot ? '<div style="font-size:11px;color:var(--gold);background:var(--gold-l);border-radius:8px;padding:8px 12px;margin-bottom:10px;">📌 지금은 원본 할 일 목록이 없어서, 제출 당시 저장해둔 기록을 보여드려요.</div>' : '')
+      + '<div style="background:var(--surface2);border-radius:10px;padding:10px 12px;margin-bottom:12px;display:flex;gap:16px;">'
       + '<div style="text-align:center;"><div style="font-size:20px;font-weight:700;color:var(--burg);">'+todos.length+'</div><div style="font-size:10px;color:var(--tx3);">전체</div></div>'
       + '<div style="text-align:center;"><div style="font-size:20px;font-weight:700;color:var(--green);">'+done+'</div><div style="font-size:10px;color:var(--tx3);">완료</div></div>'
       + '<div style="text-align:center;"><div style="font-size:20px;font-weight:700;color:var(--red);">'+(todos.length-done)+'</div><div style="font-size:10px;color:var(--tx3);">미완료</div></div>'
@@ -12741,8 +12787,10 @@ window.openPlannerSubmitHistoryModal = function(uid, name){
         statusHtml = '— 활동 없음';
       }
       // 활동이 있었던 날은(제출했든 안 했든) 눌러서 그날 실제 할 일 목록을 볼 수 있게 함 -
-      // 제출을 안 했어도 그날 뭘 했는지는 todos 자체에 남아있어서 확인 가능함
-      var clickable = hasActivity;
+      // 제출을 안 했어도 그날 뭘 했는지는 todos 자체에 남아있어서 확인 가능함. 실시간
+      // todos가 지금은 없어도, 제출 당시 스냅샷이 저장되어 있으면 그것도 볼 수 있게 함.
+      var hasSnapshot = p && p.todosSnapshot && p.todosSnapshot.length;
+      var clickable = hasActivity || hasSnapshot;
       return '<div '+(clickable ? 'onclick="_showPlannerSubmitDayDetail(\''+dt+'\',\''+uid+'\',\''+escapeHtml(name).replace(/'/g,"\\'")+'\')" style="cursor:pointer;"' : '')+' style="display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px dashed var(--border2);font-size:12px;'+(clickable?'cursor:pointer;':'')+'">'
         + '<span style="width:8px;height:8px;border-radius:50%;background:'+dotColor+';flex-shrink:0;"></span>'
         + '<span style="width:76px;color:var(--tx2);font-weight:600;flex-shrink:0;">'+dt+'</span>'
