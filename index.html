@@ -2236,6 +2236,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 </div></div>
 
 <!-- 시험 묶기 진단 -->
+<!-- 시험 분류 관리 -->
+<div class="modal-overlay" id="modal-manage-exam-source"><div class="modal" style="max-width:420px;max-height:80vh;overflow-y:auto;">
+  <div class="modal-title">🔧 시험 분류 관리</div>
+  <div id="manage-exam-source-body"></div>
+  <button class="modal-btn cancel" onclick="closeModal('modal-manage-exam-source')" style="margin-top:14px;">닫기</button>
+</div></div>
+
 <div class="modal-overlay" id="modal-exam-merge-diag"><div class="modal" style="max-width:480px;max-height:85vh;overflow-y:auto;">
   <div class="modal-title">🔍 합치기 진단</div>
   <div id="exam-merge-diag-body"></div>
@@ -3278,6 +3285,21 @@ function addExamSourceOption(label){
   });
 }
 
+// 분류 삭제 - 기본 제공 분류(DEFAULT_EXAM_SOURCE_OPTIONS)는 loadExamSourceOptions에서
+// 항상 다시 합쳐지도록 되어 있어서 지워도 곧바로 되살아나므로, 직접 추가한 분류만
+// 삭제 가능하게 함. 이미 그 분류로 저장된 시험/성적은 그대로 남고(글자로 저장되어 있어서
+// 안 깨짐), 앞으로 선택할 수 있는 목록에서만 빠짐.
+function removeExamSourceOption(label){
+  var branch = getBranch();
+  return loadExamSourceOptions().then(function(opts){
+    var updated = opts.filter(function(o){ return o !== label; });
+    return setDoc(doc(db,'examSourceOptions',branch), {options: updated}, {merge:true}).then(function(){
+      _examSourceOptionsCache = updated;
+      return updated;
+    });
+  });
+}
+
 var EXAM_SOURCE_LABELS = {
   practice:'연습용', daesung:'대성', megastudy:'메가스터디', etoos:'이투스',
   pyeongga:'평가원', office:'교육청', etc:'기타'
@@ -3306,6 +3328,38 @@ window.openAddExamSourceOption = function(selectIdToRestore){
     populateExamSourceSelect(name.trim());
     if (typeof renderGradeCategoryTabs === 'function') renderGradeCategoryTabs();
   });
+};
+
+// 분류 관리 모달 - 직접 추가한 분류들을 목록으로 보여주고 하나씩 삭제할 수 있게 함
+window.openManageExamSourceOptions = function(){
+  document.getElementById('manage-exam-source-body').innerHTML = '<div style="color:var(--tx3);font-size:12px;">불러오는 중...</div>';
+  openModal('modal-manage-exam-source');
+  _examSourceOptionsCache = null; // 최신 상태로 다시 불러오기
+  loadExamSourceOptions().then(function(opts){
+    var custom = opts.filter(function(o){ return DEFAULT_EXAM_SOURCE_OPTIONS.indexOf(o) === -1; });
+    var defaultHtml = DEFAULT_EXAM_SOURCE_OPTIONS.map(function(o){
+      return '<span style="display:inline-block;padding:5px 10px;background:var(--surface2);border-radius:6px;color:var(--tx4);font-size:12px;margin:0 5px 5px 0;">'+escapeHtml(o)+'</span>';
+    }).join('');
+    var customHtml = custom.length ? custom.map(function(o){
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--surface2);border-radius:8px;margin-bottom:6px;">'
+        + '<span style="font-size:13px;color:var(--tx1);">'+escapeHtml(o)+'</span>'
+        + '<button onclick="_confirmRemoveExamSourceOption(\''+escapeHtml(o).replace(/'/g,"\\'")+'\')" style="padding:4px 9px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:5px;color:var(--red);font-size:11px;cursor:pointer;">삭제</button>'
+        + '</div>';
+    }).join('') : '<div style="color:var(--tx4);font-size:12px;">직접 추가한 분류가 없습니다.</div>';
+    document.getElementById('manage-exam-source-body').innerHTML =
+      '<div class="modal-label">기본 제공 분류 (삭제 불가)</div>'
+      + '<div style="margin-bottom:14px;">'+defaultHtml+'</div>'
+      + '<div class="modal-label">직접 추가한 분류</div>'
+      + customHtml;
+  });
+};
+
+window._confirmRemoveExamSourceOption = function(label){
+  if (!confirm('"'+label+'" 분류를 삭제하시겠습니까?\n\n이미 이 분류로 저장된 시험/성적은 그대로 유지되고, 앞으로 새로 고를 수 있는 목록에서만 빠집니다.')) return;
+  removeExamSourceOption(label).then(function(){
+    openManageExamSourceOptions();
+    if (typeof renderGradeCategoryTabs === 'function') renderGradeCategoryTabs();
+  }).catch(function(e){ alert('삭제 실패: ' + e.message); });
 };
 
 
@@ -3352,7 +3406,7 @@ function buildTExamManage(){
     var catTabs = ['전체'].concat(sourceOpts).map(function(c,i){
       var active = c === (_currentExamMgmtCategory||'전체');
       return '<button onclick="switchExamMgmtCategory(\''+escapeHtml(c).replace(/'/g,"\\'")+'\')" class="exam-mgmt-cat-btn'+(active?' active':'')+'">'+escapeHtml(c)+'</button>';
-    }).join('') + '<button onclick="openAddExamSourceOption()" class="exam-mgmt-cat-btn exam-mgmt-cat-add">+ 분류 추가</button>';
+    }).join('') + '<button onclick="openAddExamSourceOption()" class="exam-mgmt-cat-btn exam-mgmt-cat-add">+ 분류 추가</button>' + '<button onclick="openManageExamSourceOptions()" class="exam-mgmt-cat-btn" style="color:var(--tx3);">🔧 관리</button>';
     return safetyCard + '<div class="card">'
       +'<div class="card-h"><div class="card-title">📝 시험 관리</div><div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;background:#fef2f2;color:#dc2626;" onclick="openLiveExamStatusModal()">🔴 실시간 응시 현황</button><button id="exam-merge-toggle-btn" class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="_toggleExamMergeMode()">🔗 시험 묶기</button><button id="exam-merge-confirm-btn" class="modal-btn primary" style="display:none;margin:0;width:auto;padding:8px 16px;font-size:12px;background:var(--gold);" onclick="openMergeExamsModal()">선택한 시험 묶기</button><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openExamMergeGroupsModal()">📋 묶음 목록</button><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openElectiveManageModal()">🔧 선택과목 관리</button><button class="modal-btn primary" style="margin:0;width:auto;padding:8px 16px;font-size:12px;" onclick="openCreateExamModal()">+ 새 시험 만들기</button></div></div>'
       +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px;" id="exam-mgmt-cat-tabs">'+catTabs+'</div>'
@@ -11701,7 +11755,8 @@ function renderGradeCategoryTabs(){
       return '<button onclick="switchGradeCategory(\''+escapeHtml(c).replace(/'/g,"\\'")+'\')" id="tg-cat-'+i+'" '
         + 'style="padding:6px 10px;background:'+(active?'var(--blue-l)':'var(--surface2)')+';border:1px solid '+(active?'rgba(29,78,216,0.2)':'var(--border)')+';border-radius:6px;color:'+(active?'#7aa8ff':'var(--tx3)')+';font-size:12px;cursor:pointer;">'+escapeHtml(c)+'</button>';
     }).join('')
-    + '<button onclick="openAddExamSourceOption()" style="padding:6px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:12px;cursor:pointer;">+ 분류 추가</button>';
+    + '<button onclick="openAddExamSourceOption()" style="padding:6px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:12px;cursor:pointer;">+ 분류 추가</button>'
+    + '<button onclick="openManageExamSourceOptions()" style="padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--tx3);font-size:12px;cursor:pointer;">🔧 관리</button>';
   });
 }
 var _currentGradeCategory='전체';
