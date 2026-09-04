@@ -2237,6 +2237,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 
 <!-- 시험 묶기 진단 -->
 <!-- 시험 분류 관리 -->
+<!-- 묶음 색상 변경 -->
+<div class="modal-overlay" id="modal-exam-group-color"><div class="modal" style="max-width:340px;">
+  <div class="modal-title">🎨 묶음 색상 변경</div>
+  <div id="exam-group-color-swatches" style="display:flex;flex-wrap:wrap;gap:12px;padding:10px 4px 4px;justify-content:center;"></div>
+  <button class="modal-btn cancel" onclick="closeModal('modal-exam-group-color')" style="margin-top:16px;">닫기</button>
+</div></div>
+
 <div class="modal-overlay" id="modal-manage-exam-source"><div class="modal" style="max-width:420px;max-height:80vh;overflow-y:auto;">
   <div class="modal-title">🔧 시험 분류 관리</div>
   <div id="manage-exam-source-body"></div>
@@ -3378,18 +3385,48 @@ function escapeHtml(value) {
 // 시험 관리 기능 (선생님/마스터) - Phase 1: 1과목 시험
 // ══════════════════════════════════════════════════════════
 
+// 묶음마다 자동으로 배정할 색상 팔레트 - 앱의 따뜻한 톤에 맞는 차분한 색들
+var EXAM_GROUP_COLOR_PALETTE = [
+  {name:'골드', hex:'#B8841A'}, {name:'세이지', hex:'#6B8068'}, {name:'더스티블루', hex:'#5B7B9A'},
+  {name:'모브', hex:'#8B5A7A'}, {name:'테라코타', hex:'#C17A52'}, {name:'딥틸', hex:'#3F7A72'},
+  {name:'플럼', hex:'#6B4A7A'}, {name:'슬레이트', hex:'#5A6478'}
+];
+// 그룹 생성 순서(문서ID 해시)로 팔레트를 순환 배정 - 매번 같은 그룹은 항상 같은 색이 나오게
+function _autoAssignGroupColor(existingGroupCount){
+  return EXAM_GROUP_COLOR_PALETTE[existingGroupCount % EXAM_GROUP_COLOR_PALETTE.length].hex;
+}
+
 function buildTExamManage(){
   return Promise.all([
     getDocs(query(collection(db,'exams'), where('branch','==',getBranch()))),
-    loadExamSourceOptions()
+    loadExamSourceOptions(),
+    getDocs(query(collection(db,'examMergeGroups'), where('branch','==',getBranch())))
   ]).then(function(results){
-    var snap = results[0], sourceOpts = results[1];
+    var snap = results[0], sourceOpts = results[1], groupSnap = results[2];
     var exams = snap.docs.map(function(d){return Object.assign({id:d.id}, d.data());})
       .sort(function(a,b){
         var at=a.createdAt?a.createdAt.toMillis():0, bt=b.createdAt?b.createdAt.toMillis():0;
         return bt-at;
       });
-    var listHtml = exams.length ? exams.map(examCardHtml).join('') : '<div style="color:var(--tx3);font-size:13px;text-align:center;padding:30px 0;">아직 만든 시험이 없습니다</div>';
+
+    // examId -> 그룹 정보 매핑 (한 시험은 최대 하나의 묶음에만 속함)
+    var groups = groupSnap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
+    var groupByExamId = {};
+    groups.forEach(function(g){ (g.examIds||[]).forEach(function(eid){ groupByExamId[eid] = g; }); });
+
+    // 시험 목록을 순서대로 훑으면서, 묶인 시험은 그룹 컨테이너로 한 번에 묶어서 렌더링
+    // (같은 그룹의 시험이 여러 개 흩어져 있어도, 처음 만나는 자리에서 그 묶음 전체를 렌더링하고
+    // 나머지는 건너뜀 - 정렬 순서상 흩어져 있어도 묶음 상자 하나로 합쳐 보이게 하기 위함)
+    var renderedGroupIds = {};
+    var listParts = exams.map(function(ex){
+      var group = groupByExamId[ex.id];
+      if (!group) return examCardHtml(ex);
+      if (renderedGroupIds[group.id]) return ''; // 이미 이 묶음을 렌더링했음
+      renderedGroupIds[group.id] = true;
+      var memberExams = exams.filter(function(e){ return (group.examIds||[]).indexOf(e.id) !== -1; });
+      return _buildExamGroupContainerHtml(group, memberExams);
+    });
+    var listHtml = exams.length ? listParts.join('') : '<div style="color:var(--tx3);font-size:13px;text-align:center;padding:30px 0;">아직 만든 시험이 없습니다</div>';
     var isMaster = currentProfile && currentProfile.role === 'master';
     var safetyCard = isMaster ? (
       '<div class="card">'
@@ -3574,6 +3611,44 @@ window.runExamForceSubmitNow = function(filterExamId, filterUid){
     if (statusEl) statusEl.textContent = '✗ 오류: ' + e.message;
     alert('강제제출 처리 실패: ' + e.message);
   });
+};
+
+// 디자인 A: 묶음 전체를 얇은 색 헤어라인으로 감싸고, 상단에 세리프체로 그룹명 + 색상 변경 버튼
+function _buildExamGroupContainerHtml(group, memberExams){
+  var color = group.color || '#B8841A';
+  var colorRgb = _hexToRgbStr(color);
+  var cardsHtml = memberExams.map(examCardHtml).join('<div style="height:8px;"></div>');
+  return '<div class="exam-group-container" style="border:1px solid rgba('+colorRgb+',0.35);border-radius:18px;padding:22px 16px 14px;margin-bottom:14px;position:relative;background:linear-gradient(180deg,rgba('+colorRgb+',0.05),transparent 46%);">'
+    + '<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:16px;position:relative;">'
+    +   '<div style="text-align:center;">'
+    +     '<div style="font-family:Georgia,\'Nanum Myeongjo\',serif;font-size:13px;font-weight:700;color:'+color+';letter-spacing:0.5px;">🔗 '+escapeHtml(group.mergedTitle)+'</div>'
+    +     '<div style="width:36px;height:1px;background:'+color+';opacity:0.5;margin:6px auto 0;"></div>'
+    +   '</div>'
+    +   '<button onclick="_openExamGroupColorPicker(\''+group.id+'\')" title="묶음 색상 변경" style="position:absolute;right:2px;top:-4px;width:20px;height:20px;border-radius:50%;background:'+color+';border:2px solid #fff;box-shadow:0 0 0 1px rgba('+colorRgb+',0.4);cursor:pointer;padding:0;"></button>'
+    + '</div>'
+    + cardsHtml
+    + '</div>';
+}
+function _hexToRgbStr(hex){
+  hex = hex.replace('#','');
+  var r = parseInt(hex.substring(0,2),16), g = parseInt(hex.substring(2,4),16), b = parseInt(hex.substring(4,6),16);
+  return r+','+g+','+b;
+}
+
+window._openExamGroupColorPicker = function(groupId){
+  var swatches = EXAM_GROUP_COLOR_PALETTE.map(function(c){
+    return '<button onclick="_setExamGroupColor(\''+groupId+'\',\''+c.hex+'\')" title="'+c.name+'" style="width:32px;height:32px;border-radius:50%;background:'+c.hex+';border:2px solid #fff;box-shadow:0 0 0 1px var(--border);cursor:pointer;"></button>';
+  }).join('');
+  document.getElementById('exam-group-color-swatches').innerHTML = swatches;
+  openModal('modal-exam-group-color');
+};
+
+window._setExamGroupColor = function(groupId, hex){
+  updateDoc(doc(db,'examMergeGroups',groupId), { color: hex }).then(function(){
+    closeModal('modal-exam-group-color');
+    invalidateTeacherTabCache(7);
+    renderTeacher(7);
+  }).catch(function(e){ alert('색상 변경 실패: ' + e.message); });
 };
 
 function examCardHtml(ex){
@@ -6728,12 +6803,16 @@ window.confirmMergeExams = function(){
   var exams = window._mergeExamSources;
   if (!exams || exams.length < 2) return;
 
-  addDoc(collection(db,'examMergeGroups'), {
-    branch: getBranch(),
-    mergedTitle: mergedTitle,
-    examIds: exams.map(function(e){return e.id;}),
-    examTitles: exams.map(function(e){return e.title;}),
-    createdAt: serverTimestamp()
+  getDocs(query(collection(db,'examMergeGroups'), where('branch','==',getBranch()))).then(function(existingSnap){
+    var color = _autoAssignGroupColor(existingSnap.size !== undefined ? existingSnap.size : existingSnap.docs.length);
+    return addDoc(collection(db,'examMergeGroups'), {
+      branch: getBranch(),
+      mergedTitle: mergedTitle,
+      examIds: exams.map(function(e){return e.id;}),
+      examTitles: exams.map(function(e){return e.title;}),
+      color: color,
+      createdAt: serverTimestamp()
+    });
   }).then(function(groupDoc){
     closeModal('modal-merge-exams');
     window._examMergeMode = false;
