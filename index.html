@@ -7292,16 +7292,19 @@ window.openMissingGradesRecoveryModal = function(){
   openModal('modal-missing-grades');
 
   getDocs(query(collection(db,'exams'), where('branch','==',getBranch()))).then(function(examSnap){
-    var exams = examSnap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
+    var exams = examSnap.docs.map(function(d){ return Object.assign({}, d.data(), {id:d.id}); });
 
     return Promise.all(exams.map(function(exam){
       return getDocs(query(collection(db,'examSessions'), where('examId','==',exam.id), where('status','==','graded'))).then(function(sessSnap){
-        var sessions = sessSnap.docs.map(function(d){ return Object.assign({_id:d.id}, d.data()); });
+        // _id는 반드시 문서 데이터보다 나중에 덮어써서, 혹시라도 데이터 안에 우연히 같은
+        // 이름의 필드가 있어도 진짜 문서ID가 항상 우선하도록 함(안전장치)
+        var sessions = sessSnap.docs.map(function(d){ return Object.assign({}, d.data(), {_id:d.id}); });
         if (!sessions.length) return [];
         // 이 시험에 연결된 성적(grades) 중 examSessionId가 있는 것들을 조회해서
         // "채점된 세션인데 성적 기록이 없는" 세션만 골라냄
         return getDocs(query(collection(db,'grades'), where('examId','==',exam.id))).then(function(gradeSnap){
           var recordedSessionIds = new Set(gradeSnap.docs.map(function(d){ return d.data().examSessionId; }).filter(Boolean));
+          console.log('[누락성적검사] 시험:', exam.title, '| graded 세션:', sessions.map(function(s){return s._id;}), '| grades에 기록된 examSessionId:', Array.from(recordedSessionIds));
           var missing = sessions.filter(function(s){ return !recordedSessionIds.has(s._id); });
           return missing.map(function(s){ return { exam: exam, session: s }; });
         });
@@ -7331,7 +7334,7 @@ function _renderMissingGradesList(){
   body.innerHTML = '<div style="font-size:12px;color:var(--red);font-weight:700;margin-bottom:10px;">⚠️ 채점은 완료됐지만 성적탭에 안 옮겨진 기록 '+list.length+'건 발견</div>'
     + list.map(function(m, i){
       return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:var(--surface2);border-radius:8px;margin-bottom:6px;">'
-        + '<span style="font-size:12px;"><b>'+escapeHtml(m.studentName)+'</b> · '+escapeHtml(m.exam.title)+'</span>'
+        + '<span style="font-size:12px;"><b>'+escapeHtml(m.studentName)+'</b> · '+escapeHtml(m.exam.title)+'<br><span style="font-size:9px;color:var(--tx4);">세션ID: '+escapeHtml(m.session._id||'없음!')+'</span></span>'
         + '<button onclick="_recoverMissingGrade('+i+',this)" style="padding:4px 9px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;">복구</button>'
         + '</div>';
     }).join('')
@@ -7341,8 +7344,13 @@ function _renderMissingGradesList(){
 window._recoverMissingGrade = function(idx, btnEl){
   var m = window._missingGradesList[idx];
   if (!m) return;
+  if (!m.session._id) {
+    alert('⚠️ 이 항목은 세션 ID를 찾을 수 없어 복구할 수 없습니다. 개발자에게 문의해주세요.');
+    return;
+  }
   if (btnEl) { btnEl.disabled = true; btnEl.textContent = '복구 중...'; }
   var results = m.session.subjectResults || [];
+  console.log('[성적복구] 시작 - 학생:', m.studentName, '시험:', m.exam.title, '세션ID:', m.session._id);
   _getPrevSubjectScores(m.session.studentUid, m.exam.gradeType, examSourceLabel(m.exam.examSource)).then(function(prevScores){
     return _writeExamResultToGrades(m.session.studentUid, m.session._id, m.exam, results, m.session.electiveChoices).then(function(docRef){
       _awardExamRewards(m.session.studentUid, m.exam, results, prevScores);
@@ -7352,9 +7360,15 @@ window._recoverMissingGrade = function(idx, btnEl){
     // Firestore는 로컬에서 먼저 "성공"으로 응답하고 실제 서버 반영은 뒤따라오는 구조라,
     // 만약 권한 등의 이유로 서버에 진짜로는 안 남았다면 화면엔 성공으로 보이고도 나중에
     // 다시 사라지는 문제가 생길 수 있음. 저장 직후 그 문서를 다시 읽어와서, 실제로
-    // 서버에 반영됐는지 확인한 뒤에만 "복구 완료"로 처리함.
+    // 서버에 반영됐는지, 그리고 examSessionId가 정확히 기록됐는지까지 확인한 뒤에만
+    // "복구 완료"로 처리함.
     return getDoc(docRef).then(function(check){
       if (!check.exists()) throw new Error('저장 확인 실패 - 서버에 실제로 반영되지 않았습니다 (권한 문제일 수 있습니다)');
+      var written = check.data();
+      console.log('[성적복구] 완료 - 새 문서ID:', docRef.id, '기록된 examSessionId:', written.examSessionId, '(원래 세션ID와 일치해야 함:', m.session._id, ')');
+      if (written.examSessionId !== m.session._id) {
+        throw new Error('저장은 됐지만 세션 연결이 어긋났습니다(examSessionId 불일치). 새로고침 후 다시 검사해주세요.');
+      }
       window._missingGradesList = window._missingGradesList.filter(function(x){ return x !== m; });
       _renderMissingGradesList();
     });
