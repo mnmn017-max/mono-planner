@@ -2235,6 +2235,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   </div>
 </div></div>
 
+<!-- 시험 묶기 진단 -->
+<div class="modal-overlay" id="modal-exam-merge-diag"><div class="modal" style="max-width:480px;max-height:85vh;overflow-y:auto;">
+  <div class="modal-title">🔍 합치기 진단</div>
+  <div id="exam-merge-diag-body"></div>
+  <button class="modal-btn cancel" onclick="closeModal('modal-exam-merge-diag')" style="margin-top:14px;">닫기</button>
+</div></div>
+
 <div class="modal-overlay" id="modal-exam-merge-groups"><div class="modal" style="max-width:460px;max-height:80vh;overflow-y:auto;">
   <div class="modal-title">📋 시험 묶음 목록</div>
   <div id="exam-merge-groups-body"></div>
@@ -7171,9 +7178,16 @@ window._rerunExamGroupMerge = function(groupId, btnEl){
 // 안 맞는지 학생별로 자세히 보여줌 (examId 연결이 안 돼있는 경우, 시험을 하나만 낸
 // 경우 등 원인을 눈으로 바로 확인할 수 있게)
 window._diagnoseExamGroupMerge = function(groupId){
+  document.getElementById('exam-merge-diag-body').innerHTML = '<div style="color:var(--tx3);font-size:12px;padding:10px 0;">진단 중...</div>';
+  openModal('modal-exam-merge-diag');
+  window._diagExamGroupId = groupId;
+
   getDoc(doc(db,'examMergeGroups',groupId)).then(function(groupDoc){
     var group = groupDoc.data();
     var examIds = group.examIds || [];
+    var examTitles = group.examTitles || [];
+    var titleByExamId = {}; examIds.forEach(function(eid, i){ titleByExamId[eid] = examTitles[i] || eid; });
+
     return getDocs(query(collection(db,'grades'), where('examId','in',examIds))).then(function(snap){
       var byUid = {};
       snap.docs.forEach(function(d){
@@ -7182,32 +7196,62 @@ window._diagnoseExamGroupMerge = function(groupId){
         byUid[g.uid].push(g);
       });
       var uids = Object.keys(byUid);
-      var lines = ['이 묶음의 시험 ID: ' + examIds.join(', ')];
-      lines.push('examId로 연결된 성적: 총 ' + snap.docs.length + '건, 학생 ' + uids.length + '명');
-      if (!snap.docs.length) {
-        lines.push('');
-        lines.push('⚠️ 연결된 성적이 0건이에요. 이 시험들로 채점된 성적이 examId 없이 저장됐을 가능성이 높습니다');
-        lines.push('(예: 수동으로 입력한 성적이거나, 이 시험이 만들어지기 전에 이미 있던 성적)');
-      } else {
-        uids.forEach(function(uid){
+
+      // 시험별로 "이 시험을 낸 학생 수"를 계산 - 유독 적은 시험이 있으면 그게
+      // 잘못 묶여있는 시험일 가능성이 높음
+      var countByExamId = {}; examIds.forEach(function(eid){ countByExamId[eid] = 0; });
+      snap.docs.forEach(function(d){ var eid = d.data().examId; if (countByExamId[eid]!==undefined) countByExamId[eid]++; });
+
+      return loadStudentList().then(function(students){
+        var nameByUid = {}; students.forEach(function(s){ nameByUid[s.uid]=s.name; });
+
+        var examListHtml = examIds.map(function(eid){
+          return '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;background:var(--surface);border-radius:7px;margin-bottom:5px;font-size:12px;">'
+            + '<span>'+escapeHtml(titleByExamId[eid])+' <span style="color:var(--tx4);">('+countByExamId[eid]+'명 응시완료)</span></span>'
+            + '<button onclick="_removeExamFromMergeGroup(\''+groupId+'\',\''+eid+'\')" style="padding:3px 8px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:5px;color:var(--red);font-size:11px;cursor:pointer;">이 시험 묶음에서 빼기</button>'
+            + '</div>';
+        }).join('');
+
+        var studentListHtml = uids.length ? uids.map(function(uid){
           var g = byUid[uid];
           var covered = g.map(function(x){return x.examId;});
           var missing = examIds.filter(function(eid){ return covered.indexOf(eid) === -1; });
           var alreadyMerged = g.some(function(x){ return !!x.mergedFrom; });
-          var status = missing.length ? ('시험 '+missing.length+'개 아직 안 냄') : (alreadyMerged ? '이미 합쳐진 기록임' : '조건 충족 (합쳐졌어야 함)');
-          lines.push('- ' + uid + ': ' + g.length + '건 (' + status + ')');
-        });
-      }
-      loadStudentList().then(function(students){
-        var nameByUid = {}; students.forEach(function(s){ nameByUid[s.uid]=s.name; });
-        var readableLines = lines.map(function(l){
-          uids.forEach(function(uid){ l = l.replace(uid, (nameByUid[uid]||uid)); });
-          return l;
-        });
-        alert('🔍 합치기 진단 결과\n\n' + readableLines.join('\n'));
+          var status = missing.length
+            ? ('❌ 아직 안 낸 시험: ' + missing.map(function(eid){return titleByExamId[eid];}).join(', '))
+            : (alreadyMerged ? '이미 합쳐진 기록임' : '✅ 조건 충족');
+          return '<div style="font-size:12px;padding:6px 0;border-bottom:1px dashed var(--border2);">'+escapeHtml(nameByUid[uid]||uid)+' - '+g.length+'건 - '+status+'</div>';
+        }).join('') : '<div style="color:var(--tx4);font-size:12px;">연결된 성적이 없습니다.</div>';
+
+        document.getElementById('exam-merge-diag-body').innerHTML =
+          '<div class="modal-label">묶음에 포함된 시험 ('+examIds.length+'개)</div>'
+          + examListHtml
+          + '<div class="modal-label" style="margin-top:14px;">학생별 현황</div>'
+          + studentListHtml
+          + (!snap.docs.length ? '<div style="margin-top:12px;padding:10px 12px;background:var(--gold-l);border-radius:8px;font-size:12px;color:var(--tx2);">⚠️ 연결된 성적이 0건이에요. 수동으로 입력한 성적이거나 examId 연결이 없는 경우일 수 있어요.</div>' : '');
       });
     });
-  }).catch(function(e){ alert('진단 실패: ' + e.message); });
+  }).catch(function(e){ document.getElementById('exam-merge-diag-body').innerHTML = '<div style="color:var(--red);font-size:12px;">진단 실패: '+e.message+'</div>'; });
+};
+
+// 진단 화면에서 "이 시험 묶음에서 빼기"를 누르면, 그 시험만 묶음 목록에서 제외하고
+// 바로 다시 합치기를 시도함 (예: 실수로 더 들어가있던 시험, 또는 아직 아무도 안 본 시험)
+window._removeExamFromMergeGroup = function(groupId, examId){
+  if (!confirm('이 시험을 묶음에서 빼시겠습니까?\n(이미 낸 학생들의 성적은 이 묶음과 상관없이 그대로 남아있습니다)')) return;
+  getDoc(doc(db,'examMergeGroups',groupId)).then(function(d){
+    var group = d.data();
+    var idx = (group.examIds||[]).indexOf(examId);
+    if (idx === -1) return;
+    var newExamIds = group.examIds.slice(); newExamIds.splice(idx,1);
+    var newExamTitles = group.examTitles.slice(); newExamTitles.splice(idx,1);
+    return updateDoc(doc(db,'examMergeGroups',groupId), { examIds: newExamIds, examTitles: newExamTitles });
+  }).then(function(){
+    return runExamGroupGradeMerge(groupId);
+  }).then(function(count){
+    alert('시험을 뺐습니다.\n\n지금 바로 합쳐진 학생: '+(count||0)+'명');
+    _diagnoseExamGroupMerge(groupId);
+    invalidateTeacherTabCache(2);
+  }).catch(function(e){ alert('실패: ' + e.message); });
 };
 
 window.openExamFullRanking = function(examId, examTitle){
