@@ -4976,7 +4976,19 @@ window.saveExam = function(){
 
   if (_editingExamId) {
     // 수정 모드 - branch/createdBy/createdAt/assignedTo는 원래 값을 그대로 유지하고 나머지만 갱신
-    updateDoc(doc(db,'exams',_editingExamId), examData).then(function(){
+    var editingExamId = _editingExamId;
+    updateDoc(doc(db,'exams',editingExamId), examData).then(function(){
+      // 시험 구분(연습용/정규 등)이 바뀌었을 수 있으니, 이미 이 시험으로 채점되어
+      // 성적탭에 저장된 기록들도 같은 값으로 맞춰줌 - 안 그러면 시험 설정은 "정규"로
+      // 바꿨는데 예전에 채점된 성적은 계속 "연습용"으로 남아있는 불일치가 생김
+      var newExamSourceLabel = examSourceLabel(examData.examSource) || null;
+      return getDocs(query(collection(db,'grades'), where('examId','==',editingExamId))).then(function(snap){
+        var updates = snap.docs
+          .filter(function(d){ return (d.data().examSource||null) !== newExamSourceLabel; })
+          .map(function(d){ return updateDoc(doc(db,'grades',d.id), { examSource: newExamSourceLabel }); });
+        return Promise.all(updates);
+      });
+    }).then(function(){
       closeModal('modal-create-exam');
       alert('시험 설정이 수정되었습니다.');
       _editingExamId = null;
@@ -6169,7 +6181,24 @@ function _writeExamResultToGrades(studentUid, sessionId, exam, results, elective
     examSource: examSourceLabel(exam.examSource) || null,
     source: 'exam_auto',
     createdAt: serverTimestamp()
+  }).then(function(docRef){
+    // 이 시험이 "시험 묶기"로 다른 시험과 묶여있는 경우, 이 학생이 묶음 안의 시험을
+    // 전부 다 냈는지 바로 확인해서 자동으로 합쳐줌 - 예전엔 "묶기"를 누른 그 순간에
+    // 이미 채점된 사람만 합쳐지고, 그 이후에 채점된 사람은 선생님이 "새로 합치기"를
+    // 다시 눌러야만 반영되던 문제가 있었음.
+    if (exam.id) _autoMergeIfPartOfGroup(exam.id, studentUid);
+    return docRef;
   });
+}
+
+// 방금 채점된 시험(examId)이 속한 묶음이 있으면, 그 학생 기준으로 즉시 합치기를 시도함.
+// 묶음이 없거나 아직 다른 시험을 안 냈으면 조용히 아무 일도 안 하고 넘어감.
+function _autoMergeIfPartOfGroup(examId, uid){
+  getDocs(query(collection(db,'examMergeGroups'), where('examIds','array-contains',examId))).then(function(snap){
+    snap.docs.forEach(function(d){
+      runExamGroupGradeMergeForStudent(d.id, uid).catch(function(e){ console.warn('[자동 성적 합치기 실패]', e); });
+    });
+  }).catch(function(){});
 }
 
 // 같은 유형(모의고사/내신)의 과목별 "직전" 점수를 조회 (성적 향상 판정용)
@@ -6674,36 +6703,56 @@ window.runExamGroupGradeMerge = function(groupId){
       var tasks = [];
       var mergedCount = 0;
       Object.keys(byUid).forEach(function(uid){
-        var gradesForUid = byUid[uid];
-        // 이 학생이 묶음 안의 시험을 "전부" 낸 경우에만 합침 (일부만 낸 사람은 대상 아님)
-        var examIdsCovered = new Set(gradesForUid.map(function(g){return g.examId;}));
-        var coversAll = examIds.every(function(eid){ return examIdsCovered.has(eid); });
-        if (!coversAll || gradesForUid.length < 2) return;
-
-        var mergedScores = {}, mergedWrong = {};
-        gradesForUid.forEach(function(g){
-          Object.keys(g.scores||{}).forEach(function(k){ if (mergedScores[k]===undefined) mergedScores[k] = g.scores[k]; });
-          Object.keys(g.wrongBySubj||{}).forEach(function(k){ if (mergedWrong[k]===undefined) mergedWrong[k] = g.wrongBySubj[k]; });
-        });
-        var earliestDate = gradesForUid.map(function(g){return g.examDate;}).sort()[0];
-        var base = gradesForUid[0];
-
-        var p = addDoc(collection(db,'grades'), {
-          uid: uid, type: base.type||'mock', examName: group.mergedTitle, examDate: earliestDate,
-          scores: mergedScores, wrongBySubj: mergedWrong, examSource: base.examSource||null,
-          source: 'merged_group', mergedFrom: gradesForUid.map(function(g){return g._id;}), mergeGroupId: groupId,
-          createdAt: serverTimestamp()
-        }).then(function(){
-          return Promise.all(gradesForUid.map(function(g){ return deleteDoc(doc(db,'grades',g._id)); }));
-        });
-        tasks.push(p);
-        mergedCount++;
+        if (_tryMergeGradesForUid(groupId, group, examIds, byUid[uid], uid)) mergedCount++;
       });
-
-      return Promise.all(tasks).then(function(){ return mergedCount; });
+      return Promise.all(_pendingMergeTasks.splice(0)).then(function(){ return mergedCount; });
     });
   });
 };
+
+// 특정 학생 한 명만 대상으로 묶음 합치기를 시도함 (채점 직후 자동 트리거용) - 위 전체
+// 버전과 완전히 같은 조건/로직을 재사용해서, 어느 경로로 실행되든 결과가 일관되게 함
+window.runExamGroupGradeMergeForStudent = function(groupId, uid){
+  return getDoc(doc(db,'examMergeGroups',groupId)).then(function(groupDoc){
+    if (!groupDoc.exists()) return 0;
+    var group = groupDoc.data();
+    var examIds = group.examIds;
+    return getDocs(query(collection(db,'grades'), where('examId','in',examIds), where('uid','==',uid))).then(function(snap){
+      var gradesForUid = snap.docs.map(function(d){ return Object.assign({_id:d.id}, d.data()); }).filter(function(g){ return !g.mergedFrom; });
+      var merged = _tryMergeGradesForUid(groupId, group, examIds, gradesForUid, uid);
+      return Promise.all(_pendingMergeTasks.splice(0)).then(function(){ return merged ? 1 : 0; });
+    });
+  });
+};
+
+// 한 학생의 성적 목록이 묶음 안의 시험을 전부 커버하면 합쳐서 저장하고, 원본은 삭제 예약함
+// (실제 Promise는 _pendingMergeTasks에 쌓아두고 호출부에서 한꺼번에 기다림)
+var _pendingMergeTasks = [];
+function _tryMergeGradesForUid(groupId, group, examIds, gradesForUid, uid){
+  if (!gradesForUid || gradesForUid.length < 2) return false;
+  var examIdsCovered = new Set(gradesForUid.map(function(g){return g.examId;}));
+  var coversAll = examIds.every(function(eid){ return examIdsCovered.has(eid); });
+  if (!coversAll) return false;
+
+  var mergedScores = {}, mergedWrong = {};
+  gradesForUid.forEach(function(g){
+    Object.keys(g.scores||{}).forEach(function(k){ if (mergedScores[k]===undefined) mergedScores[k] = g.scores[k]; });
+    Object.keys(g.wrongBySubj||{}).forEach(function(k){ if (mergedWrong[k]===undefined) mergedWrong[k] = g.wrongBySubj[k]; });
+  });
+  var earliestDate = gradesForUid.map(function(g){return g.examDate;}).sort()[0];
+  var base = gradesForUid[0];
+
+  var p = addDoc(collection(db,'grades'), {
+    uid: uid, type: base.type||'mock', examName: group.mergedTitle, examDate: earliestDate,
+    scores: mergedScores, wrongBySubj: mergedWrong, examSource: base.examSource||null,
+    source: 'merged_group', mergedFrom: gradesForUid.map(function(g){return g._id;}), mergeGroupId: groupId,
+    createdAt: serverTimestamp()
+  }).then(function(){
+    return Promise.all(gradesForUid.map(function(g){ return deleteDoc(doc(db,'grades',g._id)); }));
+  });
+  _pendingMergeTasks.push(p);
+  return true;
+}
 
 // 지금까지 만들어둔 시험 묶음 목록을 보여주고, 각각 "새로 합치기"로 재실행할 수 있게 함
 // 실시간 응시 현황 - 지점 전체에서 지금 이 순간 응시 중/대기 중인 학생을 한 화면에서 확인
