@@ -3618,15 +3618,16 @@ function _buildExamGroupContainerHtml(group, memberExams){
   var color = group.color || '#B8841A';
   var colorRgb = _hexToRgbStr(color);
   var cardsHtml = memberExams.map(examCardHtml).join('<div style="height:8px;"></div>');
-  return '<div class="exam-group-container" style="border:1px solid rgba('+colorRgb+',0.35);border-radius:18px;padding:22px 16px 14px;margin-bottom:14px;position:relative;background:linear-gradient(180deg,rgba('+colorRgb+',0.05),transparent 46%);">'
+  return '<div class="exam-group-container" style="border:2px solid '+color+';border-radius:18px;padding:22px 16px 18px;margin-bottom:14px;position:relative;background:rgba('+colorRgb+',0.09);">'
     + '<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:16px;position:relative;">'
     +   '<div style="text-align:center;">'
-    +     '<div style="font-family:Georgia,\'Nanum Myeongjo\',serif;font-size:13px;font-weight:700;color:'+color+';letter-spacing:0.5px;">🔗 '+escapeHtml(group.mergedTitle)+'</div>'
-    +     '<div style="width:36px;height:1px;background:'+color+';opacity:0.5;margin:6px auto 0;"></div>'
+    +     '<div style="font-family:Georgia,\'Nanum Myeongjo\',serif;font-size:13px;font-weight:800;color:'+color+';letter-spacing:0.5px;">🔗 '+escapeHtml(group.mergedTitle)+'</div>'
+    +     '<div style="width:36px;height:2px;background:'+color+';margin:6px auto 0;border-radius:2px;"></div>'
     +   '</div>'
     +   '<button onclick="_openExamGroupColorPicker(\''+group.id+'\')" title="묶음 색상 변경" style="position:absolute;right:2px;top:-4px;width:20px;height:20px;border-radius:50%;background:'+color+';border:2px solid #fff;box-shadow:0 0 0 1px rgba('+colorRgb+',0.4);cursor:pointer;padding:0;"></button>'
     + '</div>'
     + cardsHtml
+    + '<div style="height:5px;border-radius:3px;background:'+color+';margin-top:14px;"></div>'
     + '</div>';
 }
 function _hexToRgbStr(hex){
