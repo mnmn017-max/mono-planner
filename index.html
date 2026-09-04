@@ -9869,7 +9869,7 @@ window.showPlannerHistory=function(){
     // 제출 여부도 확인
     getDocs(query(collection(db,'planners'),where('uid','==',uid))).then(function(pSnap){
       var submitted={};
-      pSnap.docs.forEach(function(d){submitted[d.data().date]=true;});
+      pSnap.docs.forEach(function(d){ if(d.data().submittedAt) submitted[d.data().date]=true; }); // planners 문서가 있어도 submittedAt이 없으면(활동만 기록된 것) 제출로 안 침
       dateList.innerHTML=dates.map(function(dt){
         var info=dateMap[dt];
         var pct=info.count?Math.round(info.done/info.count*100):0;
@@ -9963,7 +9963,7 @@ window.teacherSelectStudent=function(uid,name){
     if(!dates.length){dateList.innerHTML='<div style="color:var(--tx3);font-size:13px">'+name+' 기록 없음</div>';return;}
     getDocs(query(collection(db,'planners'),where('uid','==',uid))).then(function(pSnap){
       var submitted={};
-      pSnap.docs.forEach(function(d){submitted[d.data().date]=true;});
+      pSnap.docs.forEach(function(d){ if(d.data().submittedAt) submitted[d.data().date]=true; }); // planners 문서가 있어도 submittedAt이 없으면(활동만 기록된 것) 제출로 안 침
       dateList.innerHTML='<div style="font-size:13px;font-weight:700;color:var(--burg);margin-bottom:8px">'+name+' · 날짜 선택</div>'
         +dates.map(function(dt){
           var info=dateMap[dt];
@@ -11459,7 +11459,7 @@ function buildTDashboard(){
       getDocs(query(collection(db,'comments'), where('branch','==',_myBP)))
     ]).then(function(dashResults){
       var plannerSnap = dashResults[0], allCommentsSnap = dashResults[1];
-      var submittedToday=plannerSnap.docs.filter(function(d){var b=d.data().branch;return !b||b===_myBP;}).map(function(d){return d.data().name;});
+      var submittedToday=plannerSnap.docs.filter(function(d){var b=d.data().branch;return (!b||b===_myBP) && !!d.data().submittedAt;}).map(function(d){return d.data().name;});
       // 상담 알림 데이터 수집 - 예전에는 학생 한 명당 조회를 따로따로 날려서(N+1) 학생 수만큼
       // 네트워크 요청이 생겨 느렸음. 지점 전체 코멘트를 한 번에 불러온 뒤 학생별로 묶는 방식으로 변경.
       var commentsByUid = {};
@@ -11585,7 +11585,7 @@ function buildTPlanner(){
     return Promise.resolve(_prefetchToday).then(function(plannerSnap){
       var myBranchP=getBranch();
       var todayPlanners=plannerSnap.docs
-        .filter(function(d){var b=d.data().branch;return !b||b===myBranchP;})
+        .filter(function(d){var b=d.data().branch;return (!b||b===myBranchP) && !!d.data().submittedAt;})
         .map(function(d){return d.data();});
       var submittedUids = {};
       todayPlanners.forEach(function(p){ submittedUids[p.uid]=true; });
@@ -11593,7 +11593,7 @@ function buildTPlanner(){
 
       // 최근 30일 제출 기록 (제출률/제출지연 횟수 계산용) - 이미 병렬로 받아둔 결과 사용
       var histPromise = Promise.resolve(_prefetchHist).then(function(snap){
-        var rows = snap.docs.filter(function(d){var b=d.data().branch;return !b||b===myBranchP;}).map(function(d){return d.data();});
+        var rows = snap.docs.filter(function(d){var b=d.data().branch;return (!b||b===myBranchP) && !!d.data().submittedAt;}).map(function(d){return d.data();});
         var byUid = {};
         rows.forEach(function(r){
           if(!byUid[r.uid]) byUid[r.uid] = {total:0, late:0};
@@ -12663,6 +12663,42 @@ window._openPlannerSubmitHistoryFromSelect = function(){
   openPlannerSubmitHistoryModal(uid, name);
 };
 
+// 제출 여부와 상관없이, 그날 실제로 한 할 일 목록을 보여줌 (todos는 제출 버튼과
+// 무관하게 학생이 직접 추가/완료한 즉시 저장되므로, 제출 안 한 날도 확인 가능함)
+window._showPlannerSubmitDayDetail = function(date, uid, name){
+  document.getElementById('planner-submit-history-title').textContent = '📅 '+name+' · '+date;
+  var body = document.getElementById('planner-submit-history-body');
+  body.innerHTML = '<button onclick="openPlannerSubmitHistoryModal(\''+uid+'\',\''+escapeHtml(name).replace(/'/g,"\\'")+'\')" style="display:flex;align-items:center;gap:6px;background:none;border:none;color:var(--burg);font-size:13px;cursor:pointer;padding:0;margin-bottom:12px;">← 날짜 목록으로</button>'
+    + '<div id="planner-submit-day-items"><div style="color:var(--tx3);font-size:12px;">불러오는 중...</div></div>';
+
+  getDocs(query(collection(db,'todos'), where('uid','==',uid), where('date','==',date))).then(function(snap){
+    var el = document.getElementById('planner-submit-day-items');
+    if (!el) return;
+    if (snap.empty) { el.innerHTML = '<div style="color:var(--tx3);font-size:12px;">기록 없음</div>'; return; }
+    var todos = snap.docs.map(function(d){return d.data();}).sort(function(a,b){
+      var at=a.createdAt?a.createdAt.toMillis():0, bt=b.createdAt?b.createdAt.toMillis():0; return at-bt;
+    });
+    var statusMap = {'none':'⬜','progressing':'🔄','done':'✅'};
+    var done = todos.filter(function(t){return t.status==='done';}).length;
+    el.innerHTML = '<div style="background:var(--surface2);border-radius:10px;padding:10px 12px;margin-bottom:12px;display:flex;gap:16px;">'
+      + '<div style="text-align:center;"><div style="font-size:20px;font-weight:700;color:var(--burg);">'+todos.length+'</div><div style="font-size:10px;color:var(--tx3);">전체</div></div>'
+      + '<div style="text-align:center;"><div style="font-size:20px;font-weight:700;color:var(--green);">'+done+'</div><div style="font-size:10px;color:var(--tx3);">완료</div></div>'
+      + '<div style="text-align:center;"><div style="font-size:20px;font-weight:700;color:var(--red);">'+(todos.length-done)+'</div><div style="font-size:10px;color:var(--tx3);">미완료</div></div>'
+      + '</div>'
+      + todos.map(function(t){
+        return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border2);">'
+          + '<span style="font-size:16px;">'+(statusMap[t.status]||'⬜')+'</span>'
+          + '<span class="subject-tag subj-'+(t.subject||'ko')+'" style="font-size:10px;flex-shrink:0;">'+(subjectNames[t.subject]||t.subject||'')+'</span>'
+          + '<span style="flex:1;font-size:13px;'+(t.status==='done'?'text-decoration:line-through;color:var(--tx3);':'')+'">'+escapeHtml(t.title)+'</span>'
+          + (t.studyTime ? '<span style="font-size:11px;color:var(--burg);">⏱'+t.studyTime+'</span>' : '')
+          + '</div>';
+      }).join('');
+  }).catch(function(e){
+    var el = document.getElementById('planner-submit-day-items');
+    if (el) el.innerHTML = '<div style="color:var(--red);font-size:12px;">불러오기 실패: '+e.message+'</div>';
+  });
+};
+
 window.openPlannerSubmitHistoryModal = function(uid, name){
   document.getElementById('planner-submit-history-title').textContent = '📅 '+name+' 학생 플래너 제출 현황';
   document.getElementById('planner-submit-history-body').innerHTML = '<div style="color:var(--tx3);font-size:12px;padding:10px 0;">불러오는 중...</div>';
@@ -12704,10 +12740,14 @@ window.openPlannerSubmitHistoryModal = function(uid, name){
         dotColor = 'var(--tx4)';
         statusHtml = '— 활동 없음';
       }
-      return '<div style="display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px dashed var(--border2);font-size:12px;">'
+      // 활동이 있었던 날은(제출했든 안 했든) 눌러서 그날 실제 할 일 목록을 볼 수 있게 함 -
+      // 제출을 안 했어도 그날 뭘 했는지는 todos 자체에 남아있어서 확인 가능함
+      var clickable = hasActivity;
+      return '<div '+(clickable ? 'onclick="_showPlannerSubmitDayDetail(\''+dt+'\',\''+uid+'\',\''+escapeHtml(name).replace(/'/g,"\\'")+'\')" style="cursor:pointer;"' : '')+' style="display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px dashed var(--border2);font-size:12px;'+(clickable?'cursor:pointer;':'')+'">'
         + '<span style="width:8px;height:8px;border-radius:50%;background:'+dotColor+';flex-shrink:0;"></span>'
         + '<span style="width:76px;color:var(--tx2);font-weight:600;flex-shrink:0;">'+dt+'</span>'
-        + '<span style="color:var(--tx3);">'+statusHtml+'</span>'
+        + '<span style="color:var(--tx3);flex:1;">'+statusHtml+'</span>'
+        + (clickable ? '<span style="color:var(--tx4);font-size:11px;">기록 보기 ›</span>' : '')
         + '</div>';
     }).join('');
 
