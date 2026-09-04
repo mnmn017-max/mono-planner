@@ -2225,6 +2225,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <div class="modal-title">🔗 시험 묶기</div>
   <div class="modal-label">묶을 시험</div>
   <div id="merge-exams-source-list" style="background:var(--surface2);border-radius:10px;padding:10px 14px;margin-bottom:14px;"></div>
+  <div id="merge-exams-warning" style="display:none;font-size:12px;color:#dc2626;background:#fef2f2;border:1px solid rgba(220,38,38,0.25);border-radius:10px;padding:10px 12px;margin-bottom:14px;line-height:1.6;"></div>
   <div class="modal-label">묶음(합쳐질 성적) 이름</div>
   <input class="modal-input" id="merge-exams-name-input" placeholder="예: 8월 대성 모의고사"/>
   <div style="font-size:11px;color:var(--tx4);margin-bottom:14px;line-height:1.6;">시험 자체(문항/응시)는 각자 그대로 유지되고, 이 시험들의 성적을 다 낸 학생들의 성적탭 기록만 하나로 합쳐집니다. 지금 이미 채점된 학생은 바로 합쳐지고, 앞으로 새로 채점되는 학생은 "묶음 목록"에서 "새로 합치기"를 눌러 반영하시면 됩니다.</div>
@@ -6849,6 +6850,20 @@ window.openMergeExamsModal = function(){
     var listHtml = exams.map(function(ex){ return '<div style="font-size:12px;color:var(--tx2);padding:4px 0;">· '+escapeHtml(ex.title)+'</div>'; }).join('');
     document.getElementById('merge-exams-source-list').innerHTML = listHtml;
     document.getElementById('merge-exams-name-input').value = exams[0].title;
+
+    // "시험 묶기"는 국어+수학처럼 서로 다른 과목을 하나로 합치기 위한 기능임. 만약 선택한
+    // 시험들이 전부 같은 과목(예: 국어 여러 회차)이면, 합치는 순간 한 회차만 남고 나머지
+    // 회차 점수가 사라지는 사고가 날 수 있어서 미리 강하게 경고함.
+    var subjects = exams.map(function(ex){ return ex.subjects && ex.subjects[0] ? ex.subjects[0].subject : null; }).filter(Boolean);
+    var uniqueSubjects = Array.from(new Set(subjects));
+    var warnEl = document.getElementById('merge-exams-warning');
+    if (uniqueSubjects.length === 1 && subjects.length === exams.length) {
+      warnEl.style.display = 'block';
+      warnEl.innerHTML = '⚠️ 선택한 시험들이 전부 같은 과목("'+(subjectNames[uniqueSubjects[0]]||uniqueSubjects[0])+'")이에요. "시험 묶기"는 국어+수학처럼 <b>서로 다른 과목</b>을 하나로 합치는 기능이라, 같은 과목 여러 회차를 묶으면 한 회차만 남고 나머지 점수가 사라집니다. 여러 회차 성적은 묶지 말고 각각 따로 두시는 걸 권장해요.';
+    } else {
+      warnEl.style.display = 'none';
+    }
+
     openModal('modal-merge-exams');
   });
 };
@@ -7614,6 +7629,7 @@ window.openExamMergeGroupsModal = function(){
         + '<button onclick="_rerunExamGroupMerge(\''+g.id+'\',this)" style="padding:5px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;">🔄 새로 합치기</button>'
         + '<button onclick="_diagnoseExamGroupMerge(\''+g.id+'\')" style="padding:5px 10px;background:rgba(74,127,255,0.1);border:1px solid rgba(74,127,255,0.2);border-radius:6px;color:var(--blue);font-size:11px;cursor:pointer;">🔍 진단</button>'
         + '<button onclick="_ungroupExamMergeGroup(\''+g.id+'\')" style="padding:5px 10px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:6px;color:var(--red);font-size:11px;cursor:pointer;">묶음 해제</button>'
+        + '<button onclick="_ungroupAndCleanupMerged(\''+g.id+'\')" style="padding:5px 10px;background:#fef2f2;border:1px solid rgba(220,38,38,0.3);border-radius:6px;color:#dc2626;font-size:11px;cursor:pointer;font-weight:700;">⚠️ 해제+합쳐진 성적 삭제</button>'
         + '<span id="exam-merge-group-result-'+g.id+'" style="font-size:11px;color:var(--green);"></span>'
         + '</div>'
         + '</div>';
@@ -7632,6 +7648,24 @@ window._ungroupExamMergeGroup = function(groupId){
     alert('묶음을 해제했습니다.');
     openExamMergeGroupsModal();
   }).catch(function(e){ alert('해제 실패: ' + e.message); });
+};
+
+// 묶음 해제 + 합쳐진 성적까지 완전히 정리 - "같은 과목 여러 회차"처럼 애초에 묶으면
+// 안 됐던 경우를 위한 복구용. 묶음 기록 삭제 + 이미 합쳐진 성적(merged_group) 삭제까지
+// 한 번에 하고, 그 뒤 "누락 성적 검사"로 원본 세션들에서 개별 성적을 다시 만들 수 있게 함
+// (세션 자체는 지워진 적이 없어서 원본 점수 복구가 가능함).
+window._ungroupAndCleanupMerged = function(groupId){
+  if (!confirm('⚠️ 묶음 해제 + 합쳐진 성적 완전 정리\n\n묶음 연결을 없애고, 지금까지 합쳐져서 저장된 성적 기록도 전부 삭제합니다.\n(응시 세션 자체는 안 지워지니, 이후 "누락 성적 검사"로 각 회차 점수를 다시 개별로 만들어낼 수 있어요.)\n\n계속하시겠습니까?')) return;
+  getDocs(query(collection(db,'grades'), where('mergeGroupId','==',groupId))).then(function(snap){
+    return Promise.all(snap.docs.map(function(d){ return deleteDoc(doc(db,'grades',d.id)); })).then(function(){
+      return snap.docs.length;
+    });
+  }).then(function(deletedCount){
+    return deleteDoc(doc(db,'examMergeGroups',groupId)).then(function(){ return deletedCount; });
+  }).then(function(deletedCount){
+    alert('묶음을 해제하고, 합쳐져 있던 성적 '+deletedCount+'건을 삭제했습니다.\n\n이제 "🔧 누락 성적 검사"를 실행하시면, 각 회차의 응시 세션에서 개별 성적을 다시 만들어낼 수 있어요.');
+    openExamMergeGroupsModal();
+  }).catch(function(e){ alert('정리 실패: ' + e.message); });
 };
 
 window._rerunExamGroupMerge = function(groupId, btnEl){
