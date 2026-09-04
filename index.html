@@ -2822,7 +2822,7 @@ showScreen('screen-loading');
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, collection, query, where, orderBy, onSnapshot, serverTimestamp, getDocs, limit, arrayUnion, increment } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, deleteField, collection, query, where, orderBy, onSnapshot, serverTimestamp, getDocs, limit, arrayUnion, increment } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
 
 const firebaseConfig = {
@@ -7459,7 +7459,7 @@ function _renderGradeMemoList(memos){
     return '<div style="background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:8px;">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
       +   '<div style="font-size:12px;font-weight:700;color:var(--tx2);">'+escapeHtml(m.name||'')+' <span style="font-weight:400;color:var(--tx4);">('+  (roleLabel[m.role]||m.role) +')</span></div>'
-      +   (canEdit ? '<button onclick="_editGradeMemoInline(\''+m.uid+'\')" style="font-size:11px;padding:3px 9px;background:var(--surface);border:1px solid var(--border);border-radius:5px;cursor:pointer;color:var(--tx2);">수정</button>' : '')
+      +   (canEdit ? '<div style="display:flex;gap:5px;"><button onclick="_editGradeMemoInline(\''+m.uid+'\')" style="font-size:11px;padding:3px 9px;background:var(--surface);border:1px solid var(--border);border-radius:5px;cursor:pointer;color:var(--tx2);">수정</button><button onclick="_deleteGradeMemoInline(\''+m.uid+'\')" style="font-size:11px;padding:3px 9px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:5px;cursor:pointer;color:var(--red);">삭제</button></div>' : '')
       + '</div>'
       + '<div id="grade-memo-content-'+m.uid+'" style="font-size:13px;color:var(--tx1);white-space:pre-wrap;word-break:break-word;">'+escapeHtml(m.content||'')+'</div>'
       + (updatedStr ? '<div style="font-size:10px;color:var(--tx4);margin-top:6px;">'+updatedStr+' 수정</div>' : '')
@@ -7494,6 +7494,23 @@ window._editGradeMemoInline = function(targetUid){
     }).catch(function(e){ alert('저장 실패: ' + e.message); });
   });
 };
+
+// 메모 삭제 - 수정과 같은 권한 규칙(마스터는 전체, 본인은 자기 것만)
+window._deleteGradeMemoInline = function(targetUid){
+  var isMe = targetUid === currentUser.uid;
+  var isMaster = currentProfile && currentProfile.role === 'master';
+  if (!isMe && !isMaster) { alert('본인 메모만 삭제할 수 있습니다.'); return; }
+  if (!confirm('이 메모를 삭제하시겠습니까?')) return;
+
+  var field = {};
+  field['memos.'+targetUid] = deleteField();
+  updateDoc(doc(db,'grades',window._gradeMemoTargetId), field).then(function(){
+    getDoc(doc(db,'grades',window._gradeMemoTargetId)).then(function(d2){
+      _renderGradeMemoList((d2.exists() && d2.data().memos) || {});
+    });
+  }).catch(function(e){ alert('삭제 실패: ' + e.message); });
+};
+
 
 window.viewExamResult = function(sessionId){
   openModal('modal-exam-result');
