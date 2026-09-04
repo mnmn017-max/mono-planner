@@ -9774,7 +9774,7 @@ function loadGrades(type) {
   if(!el||!currentUser) return;
   getDocs(query(collection(db,'grades'),where('uid','==',currentUser.uid),where('type','==',type))).then(function(snap){
     if(snap.empty){el.innerHTML='<div style="color:var(--tx3);font-size:13px;padding:10px 0">입력된 성적이 없습니다</div>';return;}
-    var grades=snap.docs.map(function(d){return d.data();}).sort(function(a,b){
+    var grades=snap.docs.map(function(d){return Object.assign({_id:d.id},d.data());}).sort(function(a,b){
       return (b.examDate||'').localeCompare(a.examDate||'');
     });
     el.innerHTML=grades.map(function(g){
