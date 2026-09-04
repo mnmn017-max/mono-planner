@@ -11675,7 +11675,7 @@ function buildTPlanner(){
         var absentHtml = !absentStudents.length
           ? '<div style="color:var(--green);font-size:13px;padding:8px 0;font-weight:600;">🎉 전원 제출 완료!</div>'
           : '<div class="planner-thumb-grid">'+absentStudents.map(function(s){
-              return '<div class="planner-thumb" style="opacity:0.85;border-color:rgba(224,82,82,0.3);"><div style="display:flex;align-items:center;justify-content:space-between"><div><div class="planner-thumb-name">'+escapeHtml(s.name)+'</div><div class="planner-thumb-status" style="color:var(--red);">❌ 미제출</div></div></div></div>';
+              return '<div class="planner-thumb" onclick="openPlannerSubmitHistoryModal(\''+s.uid+'\',\''+escapeHtml(s.name).replace(/'/g,"\\'")+'\')" style="opacity:0.85;border-color:rgba(224,82,82,0.3);cursor:pointer;"><div style="display:flex;align-items:center;justify-content:space-between"><div><div class="planner-thumb-name">'+escapeHtml(s.name)+'</div><div class="planner-thumb-status" style="color:var(--red);">❌ 미제출 · 탭하여 현황 보기</div></div></div></div>';
             }).join('')+'</div>';
 
         var statRows = students.slice().sort(function(a,b){return (a.name||'').localeCompare(b.name||'','ko');}).map(function(s){
@@ -11683,7 +11683,10 @@ function buildTPlanner(){
           var streak = s.plannerStreak || 0;
           var pct = Math.round(h.total/30*100);
           return '<div class="planner-stat-card">'
+            +'<div style="display:flex;justify-content:space-between;align-items:center;">'
             +'<div class="planner-stat-name">'+escapeHtml(s.name)+'</div>'
+            +'<button onclick="openPlannerSubmitHistoryModal(\''+s.uid+'\',\''+escapeHtml(s.name).replace(/'/g,"\\'")+'\')" style="padding:3px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--tx3);font-size:10px;cursor:pointer;">📅 30일 현황</button>'
+            +'</div>'
             +'<div class="planner-stat-row"><span class="planner-stat-icon">🔥</span><span class="planner-stat-val" style="color:var(--burg);">'+streak+'일 연속</span></div>'
             +'<div class="planner-stat-row"><span class="planner-stat-icon">📅</span><span class="planner-stat-val">최근30일 '+h.total+'/30 ('+pct+'%)</span></div>'
             +'<div class="planner-stat-row"><span class="planner-stat-icon">⏰</span><span class="planner-stat-val" style="color:'+(h.late>0?'var(--gold)':'var(--tx4)')+';">'+(h.late>0?('제출지연 '+h.late+'회'):'제출지연 없음')+'</span></div>'
@@ -11907,10 +11910,7 @@ window.updateLecture=function(){
 function buildTGrades(){
   return loadStudentList().then(function(students){
     return '<div class="section-label">학생 성적 조회</div>'
-      +'<div style="display:flex;gap:6px;margin-bottom:8px;">'
-      +'<select class="modal-select" id="t-grade-student" onchange="loadStudentGrades(this.value)" style="margin-bottom:0;flex:1;"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select>'
-      +'<button onclick="_openPlannerSubmitHistoryFromSelect()" style="padding:0 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--tx2);font-size:12px;cursor:pointer;white-space:nowrap;">📅 제출현황</button>'
-      +'</div>'
+      +'<select class="modal-select" id="t-grade-student" onchange="loadStudentGrades(this.value)" style="margin-bottom:8px;"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select>'
       +'<div style="position:relative;margin-bottom:8px">'
       +'<input class="modal-input" id="t-grade-search" placeholder="🔍 시험명 검색..." oninput="filterGradeSearch(this.value)" style="margin-bottom:0;padding-right:36px"/>'
       +'<button onclick="filterGradeSearch(\'\');document.getElementById(\'t-grade-search\').value=\'\'" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--tx3);font-size:14px;cursor:pointer">✕</button>'
@@ -12684,14 +12684,7 @@ var _studentPointHistoryAll = [];
 var _studentPointHistoryFilter = 'all';
 
 // 선생님/마스터가 학생별 플래너 제출 현황(언제 냈고 언제 안 냈는지, 활동은 있었는지)을
-// 확인. 성적탭에서 학생 골라둔 상태로 "📅 제출현황" 누르면 바로 그 학생 걸로 열림.
-window._openPlannerSubmitHistoryFromSelect = function(){
-  var sel = document.getElementById('t-grade-student');
-  var uid = sel ? sel.value : '';
-  if (!uid) { alert('먼저 학생을 선택해주세요'); return; }
-  var name = sel.options[sel.selectedIndex].text;
-  openPlannerSubmitHistoryModal(uid, name);
-};
+// 확인 - 플래너 탭의 학생별 통계 카드 "📅 30일 현황" 버튼, 또는 미제출자 카드를 눌러서 옴.
 
 // 제출 여부와 상관없이, 그날 실제로 한 할 일 목록을 보여줌 (todos는 제출 버튼과
 // 무관하게 학생이 직접 추가/완료한 즉시 저장되므로, 제출 안 한 날도 확인 가능함)
