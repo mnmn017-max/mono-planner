@@ -7128,14 +7128,28 @@ window.openExamMergeGroupsModal = function(){
       return '<div style="background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:8px;">'
         + '<div style="font-size:13px;font-weight:700;color:var(--tx1);margin-bottom:4px;">'+escapeHtml(g.mergedTitle)+'</div>'
         + '<div style="font-size:11px;color:var(--tx3);margin-bottom:8px;">'+ (g.examTitles||[]).map(escapeHtml).join(' + ') + '</div>'
-        + '<button onclick="_rerunExamGroupMerge(\''+g.id+'\',this)" style="padding:5px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;">🔄 새로 합치기 (새로 채점된 학생 반영)</button>'
-        + '<span id="exam-merge-group-result-'+g.id+'" style="font-size:11px;color:var(--green);margin-left:8px;"></span>'
+        + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">'
+        + '<button onclick="_rerunExamGroupMerge(\''+g.id+'\',this)" style="padding:5px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;">🔄 새로 합치기</button>'
+        + '<button onclick="_diagnoseExamGroupMerge(\''+g.id+'\')" style="padding:5px 10px;background:rgba(74,127,255,0.1);border:1px solid rgba(74,127,255,0.2);border-radius:6px;color:var(--blue);font-size:11px;cursor:pointer;">🔍 진단</button>'
+        + '<button onclick="_ungroupExamMergeGroup(\''+g.id+'\')" style="padding:5px 10px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:6px;color:var(--red);font-size:11px;cursor:pointer;">묶음 해제</button>'
+        + '<span id="exam-merge-group-result-'+g.id+'" style="font-size:11px;color:var(--green);"></span>'
+        + '</div>'
         + '</div>';
     }).join('');
     document.getElementById('exam-merge-groups-body').innerHTML = html;
   }).catch(function(e){
     document.getElementById('exam-merge-groups-body').innerHTML = '<div style="color:var(--red);font-size:12px;">불러오기 실패: '+e.message+'</div>';
   });
+};
+
+// 묶음 해제 - 묶음 "기록"만 지우는 것이고, 이미 합쳐진 성적(merged_group)은 그대로 둠.
+// 해제하고 다시 "시험 묶기"로 새로 만들면 처음부터 다시 시도할 수 있음.
+window._ungroupExamMergeGroup = function(groupId){
+  if (!confirm('이 묶음을 해제하시겠습니까?\n\n이미 합쳐져서 저장된 성적은 그대로 남고, "묶음"이라는 연결 정보만 삭제됩니다. 해제 후 다시 "시험 묶기"로 새로 만들 수 있어요.')) return;
+  deleteDoc(doc(db,'examMergeGroups',groupId)).then(function(){
+    alert('묶음을 해제했습니다.');
+    openExamMergeGroupsModal();
+  }).catch(function(e){ alert('해제 실패: ' + e.message); });
 };
 
 window._rerunExamGroupMerge = function(groupId, btnEl){
@@ -7145,10 +7159,55 @@ window._rerunExamGroupMerge = function(groupId, btnEl){
     var resultEl = document.getElementById('exam-merge-group-result-'+groupId);
     if (resultEl) resultEl.textContent = '✓ '+count+'명 합쳐짐';
     invalidateTeacherTabCache(2);
+    // 0명 합쳐졌으면 왜 안 됐는지 바로 진단해서 보여줌
+    if (!count) _diagnoseExamGroupMerge(groupId);
   }).catch(function(e){
     btnEl.disabled = false; btnEl.textContent = '🔄 새로 합치기 (새로 채점된 학생 반영)';
     alert('합치기 실패: ' + e.message);
   });
+};
+
+// "새로 합치기"를 눌러도 0명이 합쳐졌을 때, 실제로 어떤 성적이 조회됐고 왜 조건에
+// 안 맞는지 학생별로 자세히 보여줌 (examId 연결이 안 돼있는 경우, 시험을 하나만 낸
+// 경우 등 원인을 눈으로 바로 확인할 수 있게)
+window._diagnoseExamGroupMerge = function(groupId){
+  getDoc(doc(db,'examMergeGroups',groupId)).then(function(groupDoc){
+    var group = groupDoc.data();
+    var examIds = group.examIds || [];
+    return getDocs(query(collection(db,'grades'), where('examId','in',examIds))).then(function(snap){
+      var byUid = {};
+      snap.docs.forEach(function(d){
+        var g = d.data();
+        if (!byUid[g.uid]) byUid[g.uid] = [];
+        byUid[g.uid].push(g);
+      });
+      var uids = Object.keys(byUid);
+      var lines = ['이 묶음의 시험 ID: ' + examIds.join(', ')];
+      lines.push('examId로 연결된 성적: 총 ' + snap.docs.length + '건, 학생 ' + uids.length + '명');
+      if (!snap.docs.length) {
+        lines.push('');
+        lines.push('⚠️ 연결된 성적이 0건이에요. 이 시험들로 채점된 성적이 examId 없이 저장됐을 가능성이 높습니다');
+        lines.push('(예: 수동으로 입력한 성적이거나, 이 시험이 만들어지기 전에 이미 있던 성적)');
+      } else {
+        uids.forEach(function(uid){
+          var g = byUid[uid];
+          var covered = g.map(function(x){return x.examId;});
+          var missing = examIds.filter(function(eid){ return covered.indexOf(eid) === -1; });
+          var alreadyMerged = g.some(function(x){ return !!x.mergedFrom; });
+          var status = missing.length ? ('시험 '+missing.length+'개 아직 안 냄') : (alreadyMerged ? '이미 합쳐진 기록임' : '조건 충족 (합쳐졌어야 함)');
+          lines.push('- ' + uid + ': ' + g.length + '건 (' + status + ')');
+        });
+      }
+      loadStudentList().then(function(students){
+        var nameByUid = {}; students.forEach(function(s){ nameByUid[s.uid]=s.name; });
+        var readableLines = lines.map(function(l){
+          uids.forEach(function(uid){ l = l.replace(uid, (nameByUid[uid]||uid)); });
+          return l;
+        });
+        alert('🔍 합치기 진단 결과\n\n' + readableLines.join('\n'));
+      });
+    });
+  }).catch(function(e){ alert('진단 실패: ' + e.message); });
 };
 
 window.openExamFullRanking = function(examId, examTitle){
