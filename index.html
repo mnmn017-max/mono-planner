@@ -2888,6 +2888,52 @@ const MONO_WATERMARK_DATAURI = '/mono-watermark.png';
 const LIGHTHOUSE_LOGO_DATAURI = '/lighthouse-logo.png';
 
 const CLOUDINARY_PRESET = 'Preset';
+
+// 채팅 파일 업로드/열람 공용 헬퍼 - PPT/DOCX 등 오피스 문서는 브라우저가 화면에 바로
+// 못 띄우는 형식이라, 그냥 링크로 열면 "안 열림"처럼 보임(빈 화면/오류). fl_attachment를
+// 붙여서 무조건 다운로드되게 만들면 어떤 파일이든 확실하게 받아서 열 수 있음.
+function _cloudinaryDownloadUrl(url){
+  if (!url) return url;
+  return url.replace('/upload/', '/upload/fl_attachment/');
+}
+function _chatFileIcon(fileName){
+  var ext = (fileName||'').split('.').pop().toLowerCase();
+  var map = { pdf:'📕', ppt:'📊', pptx:'📊', doc:'📘', docx:'📘', xls:'📗', xlsx:'📗', zip:'🗜️', hwp:'📄' };
+  return map[ext] || '📎';
+}
+// 실제 파일 업로드 - Cloudinary 응답에 secure_url이 없으면(업로드 프리셋이 그 파일
+// 형식을 막아둔 경우 등) 조용히 깨진 메시지를 만들지 않고 명확히 실패를 알림
+function _uploadChatFileAndSend(file, roomId, onDone){
+  // Cloudinary 무서명(unsigned) 업로드는 일반적으로 raw 파일 10MB 제한이 있어서,
+  // PPT처럼 큰 파일은 업로드 시도 전에 미리 걸러서 명확히 안내함 (그냥 시도했다가
+  // 서버에서 거절당하면 "왜 안 되는지" 알기 어려움)
+  if (file.size > 10*1024*1024) {
+    alert('⚠️ 파일 용량이 너무 큽니다 (10MB 초과: '+(file.size/1024/1024).toFixed(1)+'MB)\n10MB 이하로 압축하거나 나눠서 보내주세요.');
+    return;
+  }
+  var fd = new FormData();
+  fd.append('file', file);
+  fd.append('upload_preset', CLOUDINARY_PRESET);
+  fd.append('resource_type', 'auto');
+  var fname = file.name;
+  fetch('https://api.cloudinary.com/v1_1/'+CLOUDINARY_CLOUD+'/auto/upload', {method:'POST', body:fd})
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if (!data || !data.secure_url) {
+        var reason = (data && data.error && data.error.message) ? data.error.message : '알 수 없는 오류';
+        alert('⚠️ 파일 업로드에 실패했습니다: ' + reason + '\n(파일 형식이 지원되지 않거나 용량이 클 수 있습니다)');
+        return;
+      }
+      addDoc(collection(db,'chats',roomId,'messages'), {
+        fileUrl: data.secure_url, fileName: fname,
+        senderUid: currentUser.uid, senderName: currentProfile.name, createdAt: serverTimestamp()
+      });
+      if (onDone) onDone();
+    }).catch(function(e){
+      alert('⚠️ 파일 업로드 실패: ' + e.message);
+    });
+}
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -11436,9 +11482,7 @@ window.sendChatMsg=function(){
   if(!chatTargetUid){alert('\ub300\ud654 \uc0c1\ub300\ub97c \uba3c\uc800 \uc120\ud0dd\ud574\uc8fc\uc138\uc694.');return;}
   var roomId=_chatRoomId(currentUser.uid, chatTargetUid);
   if(selectedFile){
-    var fd=new FormData();fd.append('file',selectedFile);fd.append('upload_preset',CLOUDINARY_PRESET);fd.append('resource_type','auto');
-    var fname=selectedFile.name;
-    fetch('https://api.cloudinary.com/v1_1/'+CLOUDINARY_CLOUD+'/auto/upload',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(data){addDoc(collection(db,'chats',roomId,'messages'),{fileUrl:data.secure_url,fileName:fname,senderUid:currentUser.uid,senderName:currentProfile.name,createdAt:serverTimestamp()});}).catch(function(e){alert('\ud30c\uc77c \uc5c5\ub85c\ub4dc \uc2e4\ud328: '+e.message);});
+    _uploadChatFileAndSend(selectedFile, roomId);
     cancelFile();
   }
   var input=document.getElementById('chat-text-input');
@@ -13876,6 +13920,10 @@ window.sendKChatMsg = function() {
   }
 
   if (_selectedFileForChat) {
+    if (_selectedFileForChat.size > 10*1024*1024) {
+      alert('⚠️ 파일 용량이 너무 큽니다 (10MB 초과: '+(_selectedFileForChat.size/1024/1024).toFixed(1)+'MB)\n10MB 이하로 압축하거나 나눠서 보내주세요.');
+      return;
+    }
     var fd = new FormData(); fd.append('file', _selectedFileForChat); fd.append('upload_preset', CLOUDINARY_PRESET); fd.append('resource_type','auto');
     var fname = _selectedFileForChat.name;
 
@@ -13917,6 +13965,17 @@ window.sendKChatMsg = function() {
       console.log('[파일업로드] 응답 수신, status=', xhr.status);
       if (xhr.status >= 200 && xhr.status < 300) {
         var data = JSON.parse(xhr.responseText);
+        if (!data.secure_url) {
+          // HTTP 상태는 200이어도, 업로드 프리셋이 그 파일 형식을 막아둔 경우 등에는
+          // secure_url 없이 에러 정보만 오는 경우가 있어서, 이것도 실패로 처리해야 함
+          // (예전엔 이 경우를 체크 안 해서, fileUrl이 undefined인 깨진 채팅 메시지가
+          // 그냥 만들어져서 "파일이 안 열림" 문제가 생겼음)
+          var reason = (data.error && data.error.message) ? data.error.message : '지원되지 않는 파일 형식일 수 있습니다';
+          console.error('[파일업로드] secure_url 없음:', data);
+          alert('⚠️ 파일 업로드에 실패했습니다: ' + reason);
+          resetKChatFileUploadUI();
+          return;
+        }
         var msg = {fileUrl:data.secure_url, fileName:fname, senderUid:currentUser.uid, senderName:currentProfile.name, senderAvatar:currentProfile.avatar||null, readBy:[currentUser.uid], createdAt:serverTimestamp()};
         addDoc(collection(db, 'chatRooms', _curChatRoomId, 'messages'), msg).then(function(){ _afterSend(msg); });
         cancelKChatFile();
@@ -13997,7 +14056,7 @@ function renderKChatMessages(msgs) {
     var nameLine = (isMe || continued) ? '' : '<div class="kchat-name">'+escapeHtml(m.senderName||'')+'</div>';
     var bubble;
     if (m.fileUrl) {
-      bubble = '<a href="'+m.fileUrl+'" target="_blank" rel="noopener" download="'+escapeHtml(m.fileName||'file')+'" class="kchat-file">📎 '+escapeHtml(m.fileName||'파일')+'</a>';
+      bubble = '<a href="'+_cloudinaryDownloadUrl(m.fileUrl)+'" target="_blank" rel="noopener" download="'+escapeHtml(m.fileName||'file')+'" class="kchat-file">'+_chatFileIcon(m.fileName)+' '+escapeHtml(m.fileName||'파일')+'</a>';
     } else {
       var safeText = escapeHtml(m.text||'');
       bubble = '<div class="kchat-bubble">'+safeText+'</div>';
@@ -14241,7 +14300,7 @@ function _renderKakaoMessages(msgs, myUid) {
     var nameLine = isMe || continued ? '' : '<div class="kchat-name">'+(m.senderName||'')+'</div>';
     var bubbleContent;
     if (m.fileUrl) {
-      bubbleContent = '<a href="'+m.fileUrl+'" target="_blank" class="kchat-file">📎 '+(m.fileName||'파일')+'</a>';
+      bubbleContent = '<a href="'+_cloudinaryDownloadUrl(m.fileUrl)+'" target="_blank" rel="noopener" download="'+escapeHtml(m.fileName||'file')+'" class="kchat-file">'+_chatFileIcon(m.fileName)+' '+(m.fileName||'파일')+'</a>';
     } else {
       bubbleContent = '<div class="kchat-bubble">'+(m.text||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</div>';
     }
@@ -14338,9 +14397,7 @@ window.sendTeacherMsg=function(){
   if(!teacherChatUid){alert('학생을 먼저 선택해주세요.');return;}
   var roomId=_chatRoomId(teacherChatUid, currentUser.uid);
   if(teacherSelectedFile){
-    var fd=new FormData();fd.append('file',teacherSelectedFile);fd.append('upload_preset',CLOUDINARY_PRESET);fd.append('resource_type','auto');
-    var fname=teacherSelectedFile.name;
-    fetch('https://api.cloudinary.com/v1_1/'+CLOUDINARY_CLOUD+'/auto/upload',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(data){addDoc(collection(db,'chats',roomId,'messages'),{fileUrl:data.secure_url,fileName:fname,senderUid:currentUser.uid,senderName:currentProfile.name,createdAt:serverTimestamp()});}).catch(function(){alert('파일 업로드 실패');});
+    _uploadChatFileAndSend(teacherSelectedFile, roomId);
     teacherSelectedFile=null;var fi=document.getElementById('teacher-file-input');if(fi)fi.value='';
   }
   var input=document.getElementById('teacher-chat-input');
@@ -15003,7 +15060,7 @@ function renderMasterMessages(msgs, highlight) {
     } else {
       text = text.replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
-    var bubble = m.fileUrl ? '<a href="'+m.fileUrl+'" target="_blank" class="kchat-file">📎 '+(m.fileName||'파일')+'</a>' : '<div class="kchat-bubble">'+text+'</div>';
+    var bubble = m.fileUrl ? '<a href="'+_cloudinaryDownloadUrl(m.fileUrl)+'" target="_blank" rel="noopener" download="'+escapeHtml(m.fileName||'file')+'" class="kchat-file">'+_chatFileIcon(m.fileName)+' '+(m.fileName||'파일')+'</a>' : '<div class="kchat-bubble">'+text+'</div>';
     var readCount = (m.readBy||[]).length;
     out += '<div class="kchat-row theirs'+(continued?' continued':'')+'">'
       + avatar
