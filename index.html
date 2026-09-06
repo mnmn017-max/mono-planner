@@ -9345,14 +9345,14 @@ function buildDashboard() {
     + (_univDeptText ? '<span style="display:flex;align-items:center;gap:4px;">'+_univBadge+'<span>'+_univDeptText+'</span></span>' : '')
     + '</div></div></div>';
   var content = ''
-    +'<div class="card"><div class="card-h"><div class="card-title">🎯 합격 플래너</div></div>'
+    +'<div style="grid-column:1/-1;"><div class="card"><div class="card-h"><div class="card-title">🎯 합격 플래너</div></div>'
     +'<div style="display:flex;gap:6px;margin-bottom:12px;">'
     +'<button id="admplan-tab-susi" onclick="switchAdmissionPlanTab(\'susi\')" style="flex:1;padding:9px;background:var(--burg-l2);border:1px solid rgba(201,168,76,0.4);border-radius:8px;color:var(--burg);font-size:13px;font-weight:700;cursor:pointer;">수시 합격 플래너</button>'
     +'<button id="admplan-tab-jeongsi" onclick="switchAdmissionPlanTab(\'jeongsi\')" style="flex:1;padding:9px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--tx3);font-size:13px;cursor:pointer;">정시 합격 플래너</button>'
     +'</div>'
     +'<div id="admission-plan-list"><div style="color:var(--tx3);font-size:12px;text-align:center;padding:8px;">불러오는 중...</div></div>'
     +'<button class="add-btn" onclick="openAdmissionPlanModal()">+ 지원 계획 추가</button>'
-    +'</div>'
+    +'</div></div>'
     +'<div class="card card-gold mentor-card-host"><div id="mentor-comment-area"><div style="color:var(--tx3);font-size:12px;text-align:center;padding:8px;">멘토 코멘트 로딩 중...</div></div></div>'
     +'<div id="lecture-dashboard"></div>'
     +'<div class="card" id="daily-memo-card"><div class="card-h"><div class="card-title">📮 내일의 나에게</div><span id="daily-memo-save-status" style="font-size:10px;color:var(--tx4);"></span></div>'
