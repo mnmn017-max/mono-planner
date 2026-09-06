@@ -2504,6 +2504,48 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <button class="modal-btn cancel" onclick="closeModal('modal-submit-planner')">취소</button>
 </div></div>
 
+<!-- 합격 플래너: 지원 계획 추가/수정 -->
+<div class="modal-overlay" id="modal-admission-plan"><div class="modal" style="max-width:440px;max-height:88vh;overflow-y:auto;">
+  <div class="modal-title" id="admplan-modal-title">지원 계획 추가</div>
+  <div class="modal-label">지원 학교</div>
+  <input class="modal-input" id="admplan-school" placeholder="예: 서울대학교"/>
+  <div class="modal-label">지원 학과</div>
+  <input class="modal-input" id="admplan-department" placeholder="예: 국어국문학과"/>
+  <div class="modal-label">지원 전형</div>
+  <input class="modal-input" id="admplan-type" placeholder="예: 학생부종합전형"/>
+  <label style="display:flex;align-items:center;gap:8px;margin:6px 0 16px;font-size:13px;color:var(--tx2);cursor:pointer;">
+    <input type="checkbox" id="admplan-interview" style="width:18px;height:18px;"/> 면접 있음
+  </label>
+
+  <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;font-weight:700;color:var(--tx1);cursor:pointer;">
+    <input type="checkbox" id="admplan-minreq-toggle" onchange="_toggleAdmissionMinReqFields()" style="width:18px;height:18px;"/> 수능최저기준 있음
+  </label>
+  <div id="admplan-minreq-fields" style="display:none;background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:16px;">
+    <div class="modal-label" style="margin-top:0;">탐구 반영 방식</div>
+    <div style="display:flex;gap:14px;margin-bottom:12px;">
+      <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;"><input type="radio" name="admplan-tamgu-mode" id="admplan-tamgu-best1" value="best1" checked/> 1과목 반영 (2과목 중 높은 등급)</label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;"><input type="radio" name="admplan-tamgu-mode" id="admplan-tamgu-avg2" value="avg2"/> 2과목 평균 반영</label>
+    </div>
+    <div style="font-size:11px;color:var(--tx3);margin-bottom:10px;">국어/영어/수학/탐구 중 반드시 포함할 과목을 체크하세요 (선택 안 해도 됨)</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+      <label style="display:flex;align-items:center;gap:4px;font-size:12px;"><input type="checkbox" id="admplan-must-ko"/> 국어</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:12px;"><input type="checkbox" id="admplan-must-en"/> 영어</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:12px;"><input type="checkbox" id="admplan-must-ma"/> 수학</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:12px;"><input type="checkbox" id="admplan-must-tan"/> 탐구</label>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <span style="font-size:12px;color:var(--tx2);">총</span>
+      <input type="number" id="admplan-minreq-count" min="1" max="4" value="3" class="modal-input" style="width:56px;margin:0;text-align:center;"/>
+      <span style="font-size:12px;color:var(--tx2);">개 합</span>
+      <input type="number" id="admplan-minreq-sum" min="2" max="20" value="6" class="modal-input" style="width:56px;margin:0;text-align:center;"/>
+      <span style="font-size:12px;color:var(--tx2);">등급 이내</span>
+    </div>
+  </div>
+
+  <button class="modal-btn primary" onclick="saveAdmissionPlan()">저장</button>
+  <button class="modal-btn cancel" onclick="closeModal('modal-admission-plan')">취소</button>
+</div></div>
+
 <div class="modal-overlay" id="modal-add-grade"><div class="modal">
   <div class="modal-title">성적 입력</div>
   <input type="hidden" id="grade-target-uid"/>
@@ -9223,6 +9265,76 @@ function updateDesktopRightPanel(tab) {
   }
 };
 
+// ═══════════════════════════════════════
+// 합격 플래너 - 수시/정시 지원 계획표 (학교/학과/전형/면접/수능최저)
+// ═══════════════════════════════════════
+
+// 국어/영어/수학/탐구1/탐구2 다섯 과목을 전부 응시한 시험 성적(등급 있는 것)만 골라냄.
+// 여러 시험 날짜의 과목을 섞어서 가져오지 않고, "한 시험에서 5과목을 다 봤을 때"만
+// 수능최저 판정에 쓸 수 있게 하기 위함 (실제 수능최저는 같은 회차 응시 기준이라서).
+function _extractFullMockScores(grade){
+  var s = grade.scores || {};
+  if (!s.ko || !s.ko.grade || !s.en || !s.en.grade || !s.ma || !s.ma.grade) return null;
+  var tanKeys = Object.keys(s).filter(function(k){ return /^(sc|so)\d+$/.test(k) && s[k] && s[k].grade; }).sort();
+  if (tanKeys.length < 2) return null;
+  var picked = tanKeys.slice(0,2);
+  var g = function(k){ return parseInt(s[k].grade,10); };
+  if ([g('ko'),g('en'),g('ma'),g(picked[0]),g(picked[1])].some(function(v){return isNaN(v);})) return null;
+  return {
+    ko: g('ko'), en: g('en'), ma: g('ma'), tan1: g(picked[0]), tan2: g(picked[1]),
+    examName: grade.examName, examDate: grade.examDate
+  };
+}
+
+// 탐구를 어떻게 반영할지에 따라 "탐구 점수 하나"를 계산함.
+// best1(1과목 반영) - 2과목 중 더 좋은(숫자가 작은) 등급 하나만 사용
+// avg2(2과목 평균 반영) - 두 과목 평균을 반올림해서 사용 (수능최저 실무 관행)
+function _computeTamguValue(fullScores, tamguMode){
+  if (tamguMode === 'avg2') return Math.round((fullScores.tan1 + fullScores.tan2) / 2);
+  return Math.min(fullScores.tan1, fullScores.tan2);
+}
+
+// 수능최저 조건 하나를 특정 "5과목 완주 시험 성적"에 대입해서 만족 여부 계산.
+// req = { targetCount: N, mustInclude: ['ko','ma','tan',...], thresholdSum: M, tamguMode: 'best1'|'avg2' }
+// 탐구는 반영 방식에 따라 국어/영어/수학과 같은 "과목 하나"로 취급됨(탐구1/탐구2를
+// 따로따로 고르는 게 아니라, 탐구라는 슬롯 하나로 합쳐서 계산).
+// 필수 포함 과목의 등급은 무조건 다 넣고, 나머지 필요한 개수만큼은 남은 과목 중
+// 등급이 좋은(숫자가 작은) 순으로 채워서 목표 과목수를 맞춤.
+function _evaluateMinReq(fullScores, req){
+  var tamguValue = _computeTamguValue(fullScores, req.tamguMode);
+  var values = { ko: fullScores.ko, en: fullScores.en, ma: fullScores.ma, tan: tamguValue };
+  var ALL = ['ko','en','ma','tan'];
+  var must = req.mustInclude || [];
+  var needMore = req.targetCount - must.length;
+  if (needMore < 0) return null; // 잘못된 설정(필수 과목이 목표 개수보다 많음)
+  var remaining = ALL.filter(function(k){ return must.indexOf(k) === -1; })
+    .map(function(k){ return {key:k, grade:values[k]}; })
+    .sort(function(a,b){ return a.grade - b.grade; });
+  var chosenKeys = must.slice();
+  remaining.slice(0, needMore).forEach(function(r){ chosenKeys.push(r.key); });
+  var sum = chosenKeys.reduce(function(acc,k){ return acc + values[k]; }, 0);
+  return { sum: sum, satisfied: sum <= req.thresholdSum, chosenKeys: chosenKeys };
+}
+
+var MIN_REQ_SUBJECT_LABELS = {ko:'국어', en:'영어', ma:'수학', tan:'탐구'};
+
+// 이 학생의 수능최저 조건 하나가, 실제로 만족되고 있는지 판정. 5과목을 다 본 시험
+// 성적들 중에서 "가장 최근 것" 기준으로 판정하되(수능최저는 보통 최근 실력이 중요),
+// 5과목 다 본 시험이 하나도 없으면 "판정불가"로 처리함.
+function _computeMinReqStatus(allGrades, req){
+  var fullSittings = allGrades.map(_extractFullMockScores).filter(Boolean)
+    .sort(function(a,b){ return (b.examDate||'').localeCompare(a.examDate||''); });
+  if (!fullSittings.length) return { status:'no_data' };
+  var latest = fullSittings[0];
+  var result = _evaluateMinReq(latest, req);
+  if (!result) return { status:'invalid_config' };
+  return {
+    status: result.satisfied ? 'satisfied' : 'not_satisfied',
+    sum: result.sum, examName: latest.examName, examDate: latest.examDate,
+    chosenKeys: result.chosenKeys
+  };
+}
+
 function buildDashboard() {
   var p = currentProfile || {};
   var p_name = p.name||'학생';
@@ -9241,6 +9353,14 @@ function buildDashboard() {
     +'<textarea id="daily-memo-input" placeholder="예: 영어 단어 30개 못 외움 → 내일 아침에 마저 하기" oninput="saveDailyMemoDebounced()" style="width:100%;min-height:64px;border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;resize:vertical;background:var(--surface2);color:var(--tx1);box-sizing:border-box;"></textarea>'
     +'</div>'
     +'<div class="card"><div class="card-h"><div class="card-title">오늘의 플래너</div><div style="display:flex;gap:6px;align-items:center;"><span id="planner-progress-text" style="font-size:10px;color:var(--tx3);"></span><button class="btn-secondary" onclick="showPlannerHistory()" style="padding:5px 9px;font-size:10px;">📅 기록</button><button class="btn-primary" onclick="openModal(\'modal-submit-planner\')" style="padding:5px 11px;font-size:10px;">제출</button></div></div><div class="planner-progress"><div class="planner-progress-fill" id="planner-progress-fill" style="width:0%"></div></div><div id="todo-list" class="planner-list"><div style="color:var(--tx3);font-size:12px;padding:8px;text-align:center;">불러오는 중...</div></div><button class="add-btn" onclick="openModal(\'modal-todo\')">+ 할 일 추가</button></div>'
+    +'<div class="card"><div class="card-h"><div class="card-title">🎯 합격 플래너</div></div>'
+    +'<div style="display:flex;gap:6px;margin-bottom:12px;">'
+    +'<button id="admplan-tab-susi" onclick="switchAdmissionPlanTab(\'susi\')" style="flex:1;padding:9px;background:var(--burg-l2);border:1px solid rgba(201,168,76,0.4);border-radius:8px;color:var(--burg);font-size:13px;font-weight:700;cursor:pointer;">수시 합격 플래너</button>'
+    +'<button id="admplan-tab-jeongsi" onclick="switchAdmissionPlanTab(\'jeongsi\')" style="flex:1;padding:9px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--tx3);font-size:13px;cursor:pointer;">정시 합격 플래너</button>'
+    +'</div>'
+    +'<div id="admission-plan-list"><div style="color:var(--tx3);font-size:12px;text-align:center;padding:8px;">불러오는 중...</div></div>'
+    +'<button class="add-btn" onclick="openAdmissionPlanModal()">+ 지원 계획 추가</button>'
+    +'</div>'
     +'<div class="card"><div class="card-h"><div class="card-title">오늘 학습 요약</div></div><div id="study-report"><div style="color:var(--tx3);font-size:12px;text-align:center;padding:8px;">불러오는 중...</div></div></div>'
     +'<div class="card"><div class="card-h"><div class="card-title">주간 과목 몰입도</div></div><div id="weekly-report"><div style="color:var(--tx3);font-size:12px;text-align:center;padding:8px;">불러오는 중...</div></div></div>'
     +'<div class="card"><div class="card-h"><div class="card-title">🏅 이달의 우수학생 & 순공 TOP5</div></div><div id="study-rankings-student"><div style="color:var(--tx3);font-size:12px;text-align:center;padding:8px;">불러오는 중...</div></div></div>';
@@ -9254,12 +9374,151 @@ function listenTodos() {
   // 타이머 배너 상태 동기화
   _renderTimerBanner(!!TimerEngine.todoId);
   if (TimerEngine.todoId) _tickDisplay();
-  loadMentorComment(); renderWeeklyReport(); loadLectureDashboard(); loadStudyRankings('study-rankings-student'); loadDailyMemo();
+  loadMentorComment(); renderWeeklyReport(); loadLectureDashboard(); loadStudyRankings('study-rankings-student'); loadDailyMemo(); loadAdmissionPlans();
 }
 
 // "내일의 나에게" - 오늘 날짜로 메모를 남기면, 다음날 접속했을 때(플래너 쓰기 전) 어제
 // 남긴 메모를 다시 보여줌. 하루에 하나씩(uid+날짜로 문서 식별), 입력하는 대로 자동저장.
 var _dailyMemoSaveTimer = null;
+var _currentAdmissionTab = 'susi';
+window.switchAdmissionPlanTab = function(tab){
+  _currentAdmissionTab = tab;
+  var susiTab = document.getElementById('admplan-tab-susi'), jsTab = document.getElementById('admplan-tab-jeongsi');
+  if (susiTab) { susiTab.style.background = tab==='susi' ? 'var(--burg-l2)' : 'var(--surface2)'; susiTab.style.color = tab==='susi' ? 'var(--burg)' : 'var(--tx3)'; susiTab.style.fontWeight = tab==='susi' ? '700' : '400'; susiTab.style.borderColor = tab==='susi' ? 'rgba(201,168,76,0.4)' : 'var(--border)'; }
+  if (jsTab) { jsTab.style.background = tab==='jeongsi' ? 'var(--burg-l2)' : 'var(--surface2)'; jsTab.style.color = tab==='jeongsi' ? 'var(--burg)' : 'var(--tx3)'; jsTab.style.fontWeight = tab==='jeongsi' ? '700' : '400'; jsTab.style.borderColor = tab==='jeongsi' ? 'rgba(201,168,76,0.4)' : 'var(--border)'; }
+  renderAdmissionPlanList();
+};
+
+var _admissionPlansCache = null, _admissionGradesCache = null;
+function loadAdmissionPlans(){
+  if (!currentUser) return;
+  Promise.all([
+    getDoc(doc(db,'admissionPlans',currentUser.uid)),
+    getDocs(query(collection(db,'grades'), where('uid','==',currentUser.uid)))
+  ]).then(function(results){
+    var planDoc = results[0];
+    _admissionPlansCache = planDoc.exists() ? planDoc.data() : {susi:[], jeongsi:[]};
+    _admissionGradesCache = results[1].docs.map(function(d){ return d.data(); });
+    renderAdmissionPlanList();
+  }).catch(function(e){
+    var el = document.getElementById('admission-plan-list');
+    if (el) el.innerHTML = '<div style="color:var(--red);font-size:12px;">불러오기 실패: '+e.message+'</div>';
+  });
+}
+
+function renderAdmissionPlanList(){
+  var el = document.getElementById('admission-plan-list');
+  if (!el || !_admissionPlansCache) return;
+  var list = _admissionPlansCache[_currentAdmissionTab] || [];
+  if (!list.length) {
+    el.innerHTML = '<div style="color:var(--tx4);font-size:12px;text-align:center;padding:16px 0;">아직 등록된 '+(_currentAdmissionTab==='susi'?'수시':'정시')+' 지원 계획이 없습니다.</div>';
+    return;
+  }
+  el.innerHTML = list.map(function(plan, idx){
+    var interviewBadge = plan.hasInterview ? '<span style="font-size:10px;font-weight:700;color:var(--gold);background:var(--gold-l);padding:2px 8px;border-radius:5px;margin-left:6px;">🗣 면접</span>' : '';
+    var minReqHtml = '';
+    if (plan.minReq) {
+      var mustLabel = (plan.minReq.mustInclude||[]).map(function(k){return MIN_REQ_SUBJECT_LABELS[k];}).join('+');
+      var tamguModeLabel = plan.minReq.tamguMode === 'avg2' ? '탐구 2과목 평균' : '탐구 1과목(높은 등급)';
+      var reqText = (mustLabel?mustLabel+' 포함 ':'') + plan.minReq.targetCount+'개 합 '+plan.minReq.thresholdSum+'등급 이내 · '+tamguModeLabel;
+      var status = _computeMinReqStatus(_admissionGradesCache||[], plan.minReq);
+      var statusHtml;
+      if (status.status === 'no_data') statusHtml = '<span style="color:var(--tx4);">— 5과목 다 응시한 성적이 아직 없어요</span>';
+      else if (status.status === 'invalid_config') statusHtml = '<span style="color:var(--red);">⚠️ 조건 설정 오류</span>';
+      else if (status.status === 'satisfied') statusHtml = '<span style="color:var(--green);font-weight:700;">✅ 충족 (현재 '+status.sum+'등급 · '+escapeHtml(status.examName||'')+')</span>';
+      else statusHtml = '<span style="color:var(--red);font-weight:700;">❌ 미충족 (현재 '+status.sum+'등급 · '+escapeHtml(status.examName||'')+')</span>';
+      minReqHtml = '<div style="margin-top:8px;padding:8px 10px;background:var(--surface2);border-radius:8px;font-size:11px;">'
+        + '<div style="color:var(--tx3);margin-bottom:3px;">수능최저: '+escapeHtml(reqText)+'</div>'
+        + '<div>'+statusHtml+'</div>'
+        + '</div>';
+    }
+    return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:10px;">'
+      + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+      +   '<div>'
+      +     '<div style="font-size:15px;font-weight:700;color:var(--tx1);">'+escapeHtml(plan.school)+interviewBadge+'</div>'
+      +     '<div style="font-size:12px;color:var(--tx3);margin-top:3px;">'+escapeHtml(plan.department)+' · '+escapeHtml(plan.admissionType)+'</div>'
+      +   '</div>'
+      +   '<div style="display:flex;gap:5px;flex-shrink:0;">'
+      +     '<button onclick="openAdmissionPlanModal(\''+_currentAdmissionTab+'\','+idx+')" style="padding:4px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--tx2);font-size:11px;cursor:pointer;">수정</button>'
+      +     '<button onclick="deleteAdmissionPlan(\''+_currentAdmissionTab+'\','+idx+')" style="padding:4px 9px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:6px;color:var(--red);font-size:11px;cursor:pointer;">삭제</button>'
+      +   '</div>'
+      + '</div>'
+      + minReqHtml
+      + '</div>';
+  }).join('');
+}
+
+window.openAdmissionPlanModal = function(tab, idx){
+  var editing = (tab !== undefined && idx !== undefined);
+  var plan = editing ? (_admissionPlansCache[tab]||[])[idx] : null;
+  window._editingAdmissionPlan = editing ? {tab:tab, idx:idx} : {tab:_currentAdmissionTab, idx:null};
+
+  document.getElementById('admplan-modal-title').textContent = editing ? '지원 계획 수정' : '지원 계획 추가';
+  document.getElementById('admplan-school').value = plan ? plan.school : '';
+  document.getElementById('admplan-department').value = plan ? plan.department : '';
+  document.getElementById('admplan-type').value = plan ? plan.admissionType : '';
+  document.getElementById('admplan-interview').checked = plan ? !!plan.hasInterview : false;
+
+  var hasMinReq = plan && plan.minReq;
+  document.getElementById('admplan-minreq-toggle').checked = !!hasMinReq;
+  document.getElementById('admplan-minreq-count').value = hasMinReq ? plan.minReq.targetCount : 3;
+  document.getElementById('admplan-minreq-sum').value = hasMinReq ? plan.minReq.thresholdSum : 6;
+  var tamguMode = hasMinReq ? (plan.minReq.tamguMode || 'best1') : 'best1';
+  document.getElementById('admplan-tamgu-best1').checked = tamguMode === 'best1';
+  document.getElementById('admplan-tamgu-avg2').checked = tamguMode === 'avg2';
+  ['ko','en','ma','tan'].forEach(function(k){
+    var cb = document.getElementById('admplan-must-'+k);
+    if (cb) cb.checked = hasMinReq ? (plan.minReq.mustInclude||[]).indexOf(k) !== -1 : false;
+  });
+  _toggleAdmissionMinReqFields();
+  openModal('modal-admission-plan');
+};
+
+window._toggleAdmissionMinReqFields = function(){
+  var on = document.getElementById('admplan-minreq-toggle').checked;
+  document.getElementById('admplan-minreq-fields').style.display = on ? 'block' : 'none';
+};
+
+window.saveAdmissionPlan = function(){
+  var school = document.getElementById('admplan-school').value.trim();
+  var department = document.getElementById('admplan-department').value.trim();
+  var admissionType = document.getElementById('admplan-type').value.trim();
+  if (!school || !department || !admissionType) { alert('지원 학교, 학과, 전형을 모두 입력해주세요'); return; }
+  var hasInterview = document.getElementById('admplan-interview').checked;
+
+  var minReq = null;
+  if (document.getElementById('admplan-minreq-toggle').checked) {
+    var targetCount = parseInt(document.getElementById('admplan-minreq-count').value,10);
+    var thresholdSum = parseInt(document.getElementById('admplan-minreq-sum').value,10);
+    var tamguMode = document.getElementById('admplan-tamgu-avg2').checked ? 'avg2' : 'best1';
+    var mustInclude = ['ko','en','ma','tan'].filter(function(k){ var cb=document.getElementById('admplan-must-'+k); return cb && cb.checked; });
+    if (!targetCount || !thresholdSum) { alert('수능최저 과목수/등급합을 입력해주세요'); return; }
+    if (mustInclude.length > targetCount) { alert('필수 포함 과목 수가 목표 과목수보다 많을 수 없습니다'); return; }
+    minReq = { targetCount: targetCount, thresholdSum: thresholdSum, mustInclude: mustInclude, tamguMode: tamguMode };
+  }
+
+  var plan = { school: school, department: department, admissionType: admissionType, hasInterview: hasInterview, minReq: minReq };
+  var target = window._editingAdmissionPlan;
+  var list = (_admissionPlansCache[target.tab] || []).slice();
+  if (target.idx !== null) list[target.idx] = plan; else list.push(plan);
+  _admissionPlansCache[target.tab] = list;
+
+  setDoc(doc(db,'admissionPlans',currentUser.uid), _admissionPlansCache, {merge:true}).then(function(){
+    closeModal('modal-admission-plan');
+    renderAdmissionPlanList();
+  }).catch(function(e){ alert('저장 실패: ' + e.message); });
+};
+
+window.deleteAdmissionPlan = function(tab, idx){
+  if (!confirm('이 지원 계획을 삭제하시겠습니까?')) return;
+  var list = (_admissionPlansCache[tab] || []).slice();
+  list.splice(idx, 1);
+  _admissionPlansCache[tab] = list;
+  setDoc(doc(db,'admissionPlans',currentUser.uid), _admissionPlansCache, {merge:true}).then(function(){
+    renderAdmissionPlanList();
+  }).catch(function(e){ alert('삭제 실패: ' + e.message); });
+};
+
 function loadDailyMemo(){
   if (!currentUser) return;
   var today = getPlannerDate();
