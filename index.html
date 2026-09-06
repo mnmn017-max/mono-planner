@@ -9489,6 +9489,63 @@ function _computeAllMinReqForExam(grade, admissionPlansDoc){
   });
 }
 
+// ═══════════════════════════════════════
+// 수능 D-Day 배너 - 모든 계정(학생/선생님/마스터)에서 공용으로 씀
+// ═══════════════════════════════════════
+// 확정된 수능 날짜(교육부/평가원 공식 발표분)를 연도별로 기록해둠. 목록에 없는
+// 미래 연도는 실제 수능 시행 관례(11월 셋째주 목요일)로 자동 계산해서 대체함 -
+// 그래야 올해 수능이 지나도 안내판이 계속 "지난 시험"만 보여주지 않고 자동으로
+// 다음 해로 넘어감.
+var CSAT_CONFIRMED_DATES = {
+  2026: '2026-11-19' // 2027학년도 대학수학능력시험
+};
+function _getCsatDateForYear(year){
+  if (CSAT_CONFIRMED_DATES[year]) return CSAT_CONFIRMED_DATES[year];
+  // 11월 1일의 요일을 구해서, 그 달의 첫 목요일 + 2주 = 셋째주 목요일을 계산
+  var nov1 = new Date(year, 10, 1);
+  var firstThursdayDate = 1 + ((4 - nov1.getDay() + 7) % 7);
+  var thirdThursdayDate = firstThursdayDate + 14;
+  return year+'-11-'+String(thirdThursdayDate).padStart(2,'0');
+}
+// 오늘 기준으로 "다음에 다가오는 수능"을 찾음 - 올해 걸 이미 지났으면 자동으로
+// 내년 걸로 넘어감 (그 해의 대입 기준 "OOOO학년도"는 응시 다음해이므로 +1)
+function _getUpcomingCsat(todayStr){
+  var todayYear = parseInt(todayStr.substring(0,4),10);
+  for (var y = todayYear; y <= todayYear+1; y++){
+    var dateStr = _getCsatDateForYear(y);
+    if (dateStr >= todayStr) return { dateStr: dateStr, admissionYear: y+1 };
+  }
+  // 이론상 여기 안 옴(위 루프가 항상 하나는 찾음)이지만 안전장치
+  var fallback = _getCsatDateForYear(todayYear+1);
+  return { dateStr: fallback, admissionYear: todayYear+2 };
+}
+
+function _buildDdayBannerHtml(){
+  var now = new Date();
+  var kst = new Date(now.getTime() + (9*60 + now.getTimezoneOffset())*60000);
+  var todayStr = kst.getFullYear()+'-'+String(kst.getMonth()+1).padStart(2,'0')+'-'+String(kst.getDate()).padStart(2,'0');
+  var upcoming = _getUpcomingCsat(todayStr);
+  var csat = new Date(upcoming.dateStr+'T00:00:00+09:00');
+  var today0 = new Date(todayStr+'T00:00:00+09:00');
+  var diffDays = Math.round((csat - today0) / (1000*60*60*24));
+  var examLabel = upcoming.admissionYear+'학년도 대학수학능력시험';
+  var dObj = new Date(upcoming.dateStr+'T00:00:00+09:00');
+  var weekdayNames = ['일','월','화','수','목','금','토'];
+  var dateDisplay = dObj.getFullYear()+'년 '+(dObj.getMonth()+1)+'월 '+dObj.getDate()+'일 ('+weekdayNames[dObj.getDay()]+')';
+
+  var dLabel, subLabel;
+  if (diffDays > 0) { dLabel = 'D-'+diffDays; subLabel = examLabel+'까지'; }
+  else { dLabel = 'D-DAY'; subLabel = '오늘은 '+examLabel+'일입니다'; }
+
+  return '<div style="background:linear-gradient(135deg,var(--burg),var(--burg2));border-radius:16px;padding:18px 22px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 6px 20px rgba(123,29,29,0.18);">'
+    + '<div>'
+    + '<div style="font-size:11px;color:rgba(255,255,255,0.85);font-weight:600;letter-spacing:.04em;margin-bottom:4px;">'+subLabel+'</div>'
+    + '<div style="font-size:15px;color:#fff;font-weight:600;">'+dateDisplay+'</div>'
+    + '</div>'
+    + '<div style="font-family:Georgia,\'Nanum Myeongjo\',serif;font-size:38px;font-weight:800;color:#fff;letter-spacing:.02em;text-shadow:0 2px 8px rgba(0,0,0,0.15);">'+dLabel+'</div>'
+    + '</div>';
+}
+
 function buildDashboard() {
   var p = currentProfile || {};
   var p_name = p.name||'학생';
@@ -9499,6 +9556,7 @@ function buildDashboard() {
     + (_univDeptText ? '<span style="display:flex;align-items:center;gap:4px;">'+_univBadge+'<span>'+_univDeptText+'</span></span>' : '')
     + '</div></div></div>';
   var content = ''
+    +_buildDdayBannerHtml()
     +'<div class="card card-gold mentor-card-host"><div id="mentor-comment-area"><div style="color:var(--tx3);font-size:12px;text-align:center;padding:8px;">멘토 코멘트 로딩 중...</div></div></div>'
     +'<div id="lecture-dashboard"></div>'
     +'<div class="card" id="daily-memo-card"><div class="card-h"><div class="card-title">📮 내일의 나에게</div><span id="daily-memo-save-status" style="font-size:10px;color:var(--tx4);"></span></div>'
@@ -12424,6 +12482,7 @@ function buildTDashboard(){
         // 데스크탑 헤더 + 그리드 wrapper
         var html = '<div class="dt-header dt-only"><div><div class="dt-header-title">학생현황</div><div class="dt-header-sub">'+new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric',weekday:'long'})+'</div></div></div>'
           +'<div class="dt-main-grid">'
+          +'<div style="grid-column:1/-1;">'+_buildDdayBannerHtml()+'</div>'
           +'<div style="grid-column:1/-1;">'+kpis+'</div>'
           +'<div style="grid-column:1/2;">'+studentGrid+'</div>'
           +'<div style="grid-column:2/3;">'
@@ -13419,13 +13478,14 @@ function buildTRewards(){
       var rules=rulesSnap.docs[0]?rulesSnap.docs[0].data().content:defaultRules;
       var points=pointsSnap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
 
-      // 1. 상벌점 부여 카드
+      // 1. 상벌점 부여 카드 - 여러 학생을 한 번에 선택해서 같은 사유/점수로 동시에
+      // 부여할 수 있게 함 (기존엔 학생 1명만 고르는 드롭다운이었음)
       var giveCard = '<div class="card">'
-        +'<div class="card-h"><div class="card-title">상벌점 부여</div></div>'
-        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">'
-        +'<select class="modal-select" id="reward-student-select" style="margin:0;"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select>'
-        +'<select class="modal-select" id="reward-type-select" style="margin:0;"><option value="plus">상점</option><option value="minus">벌점</option></select>'
+        +'<div class="card-h"><div class="card-title">상벌점 부여</div><button onclick="_toggleRewardStudentAll()" style="padding:4px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--tx2);font-size:11px;cursor:pointer;">전체 선택/해제</button></div>'
+        +'<div id="reward-student-checklist" style="display:flex;flex-wrap:wrap;gap:6px;max-height:150px;overflow-y:auto;padding:8px;background:var(--surface2);border-radius:8px;margin-bottom:8px;">'
+        +students.map(function(s){return '<label style="display:flex;align-items:center;gap:4px;font-size:12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;white-space:nowrap;"><input type="checkbox" class="reward-student-cb" value="'+s.uid+'" style="width:14px;height:14px;"/>'+escapeHtml(s.name)+'</label>';}).join('')
         +'</div>'
+        +'<select class="modal-select" id="reward-type-select" style="margin-bottom:8px;"><option value="plus">상점</option><option value="minus">벌점</option></select>'
         +'<input class="modal-input" id="reward-reason-input" placeholder="사유 입력" style="margin-bottom:8px;"/>'
         +'<input class="modal-input" id="reward-points-input" type="number" placeholder="점수 입력 (1~5)" style="margin-bottom:10px;"/>'
         +'<button class="modal-btn primary" onclick="givePoints()" style="margin:0;">상벌점 부여하기</button>'
@@ -13781,13 +13841,24 @@ window.submitOffsetPoints = function(){
   }).catch(function(e){ alert('처리 실패: '+e.message); });
 };
 
+window._toggleRewardStudentAll = function(){
+  var boxes = document.querySelectorAll('.reward-student-cb');
+  var allChecked = Array.from(boxes).every(function(cb){ return cb.checked; });
+  boxes.forEach(function(cb){ cb.checked = !allChecked; });
+};
+
 window.givePoints=function(){
-  var uid=document.getElementById('reward-student-select').value;
+  var uids = Array.from(document.querySelectorAll('.reward-student-cb:checked')).map(function(cb){return cb.value;});
   var type=document.getElementById('reward-type-select').value;
   var reason=document.getElementById('reward-reason-input').value.trim();
   var points=parseInt(document.getElementById('reward-points-input').value);
-  if(!uid||!reason||!points){alert('모든 항목을 입력해주세요.');return;}
-  addDoc(collection(db,'points'),{branch:getBranch(),studentUid:uid,type:type,reason:reason,points:points,givenBy:currentUser.uid,givenByName:currentProfile.name,createdAt:serverTimestamp()}).then(function(){alert('상벌점이 부여되었습니다!');renderTeacher(3);});
+  if(!uids.length||!reason||!points){alert('학생을 1명 이상 선택하고, 사유/점수를 모두 입력해주세요.');return;}
+  Promise.all(uids.map(function(uid){
+    return addDoc(collection(db,'points'),{branch:getBranch(),studentUid:uid,type:type,reason:reason,points:points,givenBy:currentUser.uid,givenByName:currentProfile.name,createdAt:serverTimestamp()});
+  })).then(function(){
+    alert(uids.length+'명에게 상벌점이 부여되었습니다!');
+    renderTeacher(3);
+  }).catch(function(e){ alert('부여 실패: ' + e.message); });
 };
 
 window.togglePlannerDetail=function(elId,studentUid){
