@@ -2244,6 +2244,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 <!-- 실시간 응시 현황 -->
 <!-- 누락 성적 검사/복구 -->
 <!-- 학생-시험 정밀진단 -->
+<!-- 선생님/마스터용 학생 합격 플래너 조회 (읽기전용) -->
+<div class="modal-overlay" id="modal-teacher-admission-plan"><div class="modal" style="max-width:480px;max-height:85vh;overflow-y:auto;">
+  <div class="modal-title" id="t-admplan-title">🎯 합격 플래너</div>
+  <div id="t-admplan-body"></div>
+  <button class="modal-btn cancel" onclick="closeModal('modal-teacher-admission-plan')" style="margin-top:14px;">닫기</button>
+</div></div>
+
 <div class="modal-overlay" id="modal-student-exam-diag"><div class="modal" style="max-width:480px;max-height:85vh;overflow-y:auto;">
   <div class="modal-title">🔍 학생-시험 정밀진단</div>
   <div style="font-size:11px;color:var(--tx4);margin-bottom:10px;">배정/응시세션/성적 기록을 전부 다 확인합니다. "누락 성적 검사"가 못 잡아내는 경우(응시 자체가 이상하게 처리된 경우 등)까지 볼 수 있어요.</div>
@@ -7428,6 +7435,85 @@ function _renderExamDisplayWaitingRoom(now){
 // 있는지 전부 다 보여줌. "누락 성적 검사"는 status가 정확히 'graded'인 세션만 훑기
 // 때문에, 세션이 다른 상태(응시중/제출만 됨/아예 배정만 되고 시작 안 함 등)에 멈춰있는
 // 경우는 못 잡아냄 - 이 도구는 그런 경우까지 포함해서 전체 그림을 보여줌.
+// 선생님/마스터가 특정 학생의 수시/정시 합격 플래너를 조회 (읽기 전용) - 수능최저 충족
+// 여부는 학생용과 완전히 같은 로직(_computeMinReqStatus)으로 계산해서 동일하게 보여줌
+window._openAdmissionPlanFromSelect = function(){
+  var sel = document.getElementById('t-grade-student');
+  var uid = sel ? sel.value : '';
+  if (!uid) { alert('먼저 학생을 선택해주세요'); return; }
+  var name = sel.options[sel.selectedIndex].text;
+  openStudentAdmissionPlanModal(uid, name);
+};
+
+var _teacherAdmissionTab = 'susi', _teacherAdmissionPlansCache = null, _teacherAdmissionGradesCache = null, _teacherAdmissionUid = null;
+
+window.openStudentAdmissionPlanModal = function(uid, name){
+  _teacherAdmissionUid = uid;
+  _teacherAdmissionTab = 'susi';
+  document.getElementById('t-admplan-title').textContent = '🎯 '+name+' 학생 합격 플래너';
+  document.getElementById('t-admplan-body').innerHTML = '<div style="color:var(--tx3);font-size:12px;padding:10px 0;">불러오는 중...</div>';
+  openModal('modal-teacher-admission-plan');
+
+  Promise.all([
+    getDoc(doc(db,'admissionPlans',uid)),
+    getDocs(query(collection(db,'grades'), where('uid','==',uid)))
+  ]).then(function(results){
+    var planDoc = results[0];
+    _teacherAdmissionPlansCache = planDoc.exists() ? planDoc.data() : {susi:[], jeongsi:[]};
+    _teacherAdmissionGradesCache = results[1].docs.map(function(d){ return d.data(); });
+    _renderTeacherAdmissionPlanBody();
+  }).catch(function(e){
+    document.getElementById('t-admplan-body').innerHTML = '<div style="color:var(--red);font-size:12px;">불러오기 실패: '+e.message+'</div>';
+  });
+};
+
+window._switchTeacherAdmissionTab = function(tab){
+  _teacherAdmissionTab = tab;
+  _renderTeacherAdmissionPlanBody();
+};
+
+function _renderTeacherAdmissionPlanBody(){
+  var body = document.getElementById('t-admplan-body');
+  if (!body || !_teacherAdmissionPlansCache) return;
+
+  var tabsHtml = '<div style="display:flex;gap:6px;margin-bottom:14px;">'
+    + '<button onclick="_switchTeacherAdmissionTab(\'susi\')" style="flex:1;padding:9px;background:'+(_teacherAdmissionTab==='susi'?'var(--burg-l2)':'var(--surface2)')+';border:1px solid '+(_teacherAdmissionTab==='susi'?'rgba(201,168,76,0.4)':'var(--border)')+';border-radius:8px;color:'+(_teacherAdmissionTab==='susi'?'var(--burg)':'var(--tx3)')+';font-size:13px;font-weight:'+(_teacherAdmissionTab==='susi'?'700':'400')+';cursor:pointer;">수시 합격 플래너</button>'
+    + '<button onclick="_switchTeacherAdmissionTab(\'jeongsi\')" style="flex:1;padding:9px;background:'+(_teacherAdmissionTab==='jeongsi'?'var(--burg-l2)':'var(--surface2)')+';border:1px solid '+(_teacherAdmissionTab==='jeongsi'?'rgba(201,168,76,0.4)':'var(--border)')+';border-radius:8px;color:'+(_teacherAdmissionTab==='jeongsi'?'var(--burg)':'var(--tx3)')+';font-size:13px;font-weight:'+(_teacherAdmissionTab==='jeongsi'?'700':'400')+';cursor:pointer;">정시 합격 플래너</button>'
+    + '</div>';
+
+  var list = _teacherAdmissionPlansCache[_teacherAdmissionTab] || [];
+  var listHtml;
+  if (!list.length) {
+    listHtml = '<div style="color:var(--tx4);font-size:12px;text-align:center;padding:16px 0;">등록된 '+(_teacherAdmissionTab==='susi'?'수시':'정시')+' 지원 계획이 없습니다.</div>';
+  } else {
+    listHtml = list.map(function(plan){
+      var interviewBadge = plan.hasInterview ? '<span style="font-size:10px;font-weight:700;color:var(--gold);background:var(--gold-l);padding:2px 8px;border-radius:5px;margin-left:6px;">🗣 면접</span>' : '';
+      var minReqHtml = '';
+      if (plan.minReq) {
+        var mustLabel = (plan.minReq.mustInclude||[]).map(function(k){return MIN_REQ_SUBJECT_LABELS[k];}).join('+');
+        var tamguModeLabel = plan.minReq.tamguMode === 'avg2' ? '탐구 2과목 평균' : '탐구 1과목(높은 등급)';
+        var reqText = (mustLabel?mustLabel+' 포함 ':'') + plan.minReq.targetCount+'개 합 '+plan.minReq.thresholdSum+'등급 이내 · '+tamguModeLabel;
+        var status = _computeMinReqStatus(_teacherAdmissionGradesCache||[], plan.minReq);
+        var statusHtml;
+        if (status.status === 'no_data') statusHtml = '<span style="color:var(--tx4);">— 5과목 다 응시한 성적이 아직 없어요</span>';
+        else if (status.status === 'invalid_config') statusHtml = '<span style="color:var(--red);">⚠️ 조건 설정 오류</span>';
+        else if (status.status === 'satisfied') statusHtml = '<span style="color:var(--green);font-weight:700;">✅ 충족 (현재 '+status.sum+'등급 · '+escapeHtml(status.examName||'')+')</span>';
+        else statusHtml = '<span style="color:var(--red);font-weight:700;">❌ 미충족 (현재 '+status.sum+'등급 · '+escapeHtml(status.examName||'')+')</span>';
+        minReqHtml = '<div style="margin-top:8px;padding:8px 10px;background:var(--surface2);border-radius:8px;font-size:11px;">'
+          + '<div style="color:var(--tx3);margin-bottom:3px;">수능최저: '+escapeHtml(reqText)+'</div>'
+          + '<div>'+statusHtml+'</div>'
+          + '</div>';
+      }
+      return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:10px;">'
+        + '<div style="font-size:15px;font-weight:700;color:var(--tx1);">'+escapeHtml(plan.school)+interviewBadge+'</div>'
+        + '<div style="font-size:12px;color:var(--tx3);margin-top:3px;">'+escapeHtml(plan.department)+' · '+escapeHtml(plan.admissionType)+'</div>'
+        + minReqHtml
+        + '</div>';
+    }).join('');
+  }
+  body.innerHTML = tabsHtml + listHtml;
+}
+
 window.openStudentExamDiagnosisModal = function(){
   document.getElementById('student-exam-diag-body').innerHTML =
     '<div class="modal-label">학생</div>'
@@ -12551,6 +12637,7 @@ function buildTGrades(){
     return '<div class="section-label">학생 성적 조회</div>'
       +'<div style="display:flex;gap:6px;margin-bottom:8px;">'
       +'<select class="modal-select" id="t-grade-student" onchange="loadStudentGrades(this.value)" style="margin-bottom:0;flex:1;"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select>'
+      +'<button onclick="_openAdmissionPlanFromSelect()" style="padding:0 12px;background:var(--burg-l);border:1px solid rgba(123,29,29,0.2);border-radius:8px;color:var(--burg);font-size:12px;cursor:pointer;white-space:nowrap;">🎯 합격 플래너</button>'
       +'<button onclick="openStudentExamDiagnosisModal()" style="padding:0 12px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:8px;color:var(--gold);font-size:12px;cursor:pointer;white-space:nowrap;">🔍 정밀진단</button>'
       +'</div>'
       +'<div style="position:relative;margin-bottom:8px">'
