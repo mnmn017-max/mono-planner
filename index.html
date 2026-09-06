@@ -13479,11 +13479,18 @@ function buildTRewards(){
       var points=pointsSnap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
 
       // 1. 상벌점 부여 카드 - 여러 학생을 한 번에 선택해서 같은 사유/점수로 동시에
-      // 부여할 수 있게 함 (기존엔 학생 1명만 고르는 드롭다운이었음)
+      // 부여할 수 있게 함 (기존엔 학생 1명만 고르는 드롭다운이었음). 학생이 많으면
+      // 체크박스만으로는 찾기 힘들어서 이름 검색으로 걸러볼 수 있게 함 - 검색해서
+      // 안 보이게 된 학생도 이미 체크해둔 건 그대로 유지됨(검색은 "보이기"만 바꿈).
       var giveCard = '<div class="card">'
         +'<div class="card-h"><div class="card-title">상벌점 부여</div><button onclick="_toggleRewardStudentAll()" style="padding:4px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--tx2);font-size:11px;cursor:pointer;">전체 선택/해제</button></div>'
+        +'<div style="position:relative;margin-bottom:6px;">'
+        +'<input class="modal-input" id="reward-student-search" placeholder="🔍 학생 이름 검색..." oninput="_filterRewardStudentList(this.value)" style="margin-bottom:0;padding-right:36px;"/>'
+        +'<button onclick="document.getElementById(\'reward-student-search\').value=\'\';_filterRewardStudentList(\'\')" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--tx3);font-size:14px;cursor:pointer;">✕</button>'
+        +'</div>'
+        +'<div id="reward-student-selected-count" style="font-size:11px;color:var(--tx3);margin-bottom:6px;">선택된 학생: 0명</div>'
         +'<div id="reward-student-checklist" style="display:flex;flex-wrap:wrap;gap:6px;max-height:150px;overflow-y:auto;padding:8px;background:var(--surface2);border-radius:8px;margin-bottom:8px;">'
-        +students.map(function(s){return '<label style="display:flex;align-items:center;gap:4px;font-size:12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;white-space:nowrap;"><input type="checkbox" class="reward-student-cb" value="'+s.uid+'" style="width:14px;height:14px;"/>'+escapeHtml(s.name)+'</label>';}).join('')
+        +students.map(function(s){return '<label class="reward-student-label" data-name="'+escapeHtml(s.name).toLowerCase()+'" style="display:flex;align-items:center;gap:4px;font-size:12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;white-space:nowrap;"><input type="checkbox" class="reward-student-cb" value="'+s.uid+'" onchange="_updateRewardSelectedCount()" style="width:14px;height:14px;"/>'+escapeHtml(s.name)+'</label>';}).join('')
         +'</div>'
         +'<select class="modal-select" id="reward-type-select" style="margin-bottom:8px;"><option value="plus">상점</option><option value="minus">벌점</option></select>'
         +'<input class="modal-input" id="reward-reason-input" placeholder="사유 입력" style="margin-bottom:8px;"/>'
@@ -13841,10 +13848,30 @@ window.submitOffsetPoints = function(){
   }).catch(function(e){ alert('처리 실패: '+e.message); });
 };
 
+// "전체 선택/해제"는 검색으로 걸러서 지금 화면에 보이는 학생들만 대상으로 함 -
+// 검색 안 하고 눌렀을 땐 원래처럼 전체 학생이 대상이 됨
 window._toggleRewardStudentAll = function(){
-  var boxes = document.querySelectorAll('.reward-student-cb');
-  var allChecked = Array.from(boxes).every(function(cb){ return cb.checked; });
-  boxes.forEach(function(cb){ cb.checked = !allChecked; });
+  var visibleBoxes = Array.from(document.querySelectorAll('.reward-student-label'))
+    .filter(function(label){ return label.style.display !== 'none'; })
+    .map(function(label){ return label.querySelector('.reward-student-cb'); });
+  var allChecked = visibleBoxes.every(function(cb){ return cb.checked; });
+  visibleBoxes.forEach(function(cb){ cb.checked = !allChecked; });
+  window._updateRewardSelectedCount();
+};
+
+// 이름 검색 - 안 보이게 된 학생의 체크 상태는 그대로 유지됨(display만 바꿈, checked는 안 건드림)
+window._filterRewardStudentList = function(keyword){
+  var kw = keyword.trim().toLowerCase();
+  document.querySelectorAll('.reward-student-label').forEach(function(label){
+    var match = !kw || label.dataset.name.indexOf(kw) !== -1;
+    label.style.display = match ? '' : 'none';
+  });
+};
+
+window._updateRewardSelectedCount = function(){
+  var count = document.querySelectorAll('.reward-student-cb:checked').length;
+  var el = document.getElementById('reward-student-selected-count');
+  if (el) el.textContent = '선택된 학생: '+count+'명';
 };
 
 window.givePoints=function(){
