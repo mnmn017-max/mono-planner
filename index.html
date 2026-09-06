@@ -3540,6 +3540,13 @@ window.switchExamMgmtCategory = function(cat){
     var src = card.dataset.examSource || '';
     card.style.display = (cat === '전체' || src === cat) ? '' : 'none';
   });
+  // 묶음 컨테이너는 그 자체에 분류가 없고, 안에 든 시험 카드들의 분류만 있음. 안에 든
+  // 카드가 전부 필터에 안 걸리면(전부 숨겨지면) 빈 껍데기 상자만 남아 보이던 문제가
+  // 있었어서, 컨테이너 안에 "보이는" 카드가 하나라도 있을 때만 컨테이너 자체를 보여줌.
+  document.querySelectorAll('#exam-list-area .exam-group-container').forEach(function(container){
+    var visibleInside = Array.from(container.querySelectorAll('.exam-card')).some(function(c){ return c.style.display !== 'none'; });
+    container.style.display = visibleInside ? '' : 'none';
+  });
 };
 
 // 특정 학생 한 명만 강제제출 - 시험 현황/모니터 화면에서 사용
