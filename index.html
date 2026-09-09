@@ -1275,11 +1275,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .exam-add-subject-btn:hover{background:var(--burg-l);}
 
 /* 쉬는시간 화면 */
-.exam-break-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;background:var(--bg);text-align:center;padding:20px;}
-.exam-break-icon{font-size:52px;margin-bottom:16px;}
-.exam-break-title{font-size:22px;font-weight:800;color:var(--tx1);margin-bottom:8px;}
-.exam-break-sub{font-size:14px;color:var(--tx3);margin-bottom:24px;}
-.exam-break-timer{font-size:44px;font-weight:800;color:var(--burg);letter-spacing:2px;}
+.exam-break-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;background:radial-gradient(ellipse at 50% 0%,#F3E9D2,var(--bg) 65%);text-align:center;padding:20px;}
+.exam-break-card{background:#fff;border-radius:24px;padding:44px 40px;box-shadow:0 16px 44px rgba(123,29,29,0.12);max-width:420px;width:100%;border:1px solid var(--border2);}
+.exam-break-scored{display:inline-block;font-size:12px;font-weight:700;color:var(--green);background:var(--green-l);padding:6px 16px;border-radius:20px;margin-bottom:18px;}
+.exam-break-icon{font-size:48px;margin-bottom:14px;filter:drop-shadow(0 4px 10px rgba(184,132,26,0.25));}
+.exam-break-title{font-family:Georgia,'Nanum Myeongjo',serif;font-size:24px;font-weight:700;color:var(--burg);margin-bottom:8px;}
+.exam-break-sub{font-size:14px;color:var(--tx3);margin-bottom:26px;}
+.exam-break-timer{font-size:52px;font-weight:800;color:var(--burg);letter-spacing:3px;font-family:'Courier New',monospace;text-shadow:0 2px 10px rgba(123,29,29,0.1);}
+.exam-break-scheduled{margin-top:18px;font-size:12px;color:var(--tx4);background:var(--surface2);border-radius:10px;padding:8px 14px;display:inline-block;}
 
 /* 일괄 시작 대기 화면 */
 .exam-wait-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;background:var(--bg);text-align:center;padding:20px;}
@@ -3824,7 +3827,7 @@ window._setExamGroupColor = function(groupId, hex){
 
 function examCardHtml(ex){
   var subj = ex.subjects && ex.subjects[0];
-  var subjName = subj ? (subjectNames[subj.subject]||subj.subject) : '';
+  var subjName = subj ? _resolveSubjDisplayName(subj) : '';
   var multiLabel = (ex.subjects && ex.subjects.length > 1) ? (ex.subjects.length+'과목') : '';
   var qCount = subj && subj.questions ? subj.questions.length : 0;
   var totalScore = subj && subj.questions ? subj.questions.reduce(function(s,q){return s+(q.point||0);},0) : 0;
@@ -4305,7 +4308,7 @@ window.renderEditGradeCutoffBody = function(){
   var el = document.getElementById('egc-body');
   if (!el || !_egcSubjects) return;
   el.innerHTML = _egcSubjects.map(function(subj, si){
-    var subjName = subjectNames[subj.subject] || subj.subject;
+    var subjName = _resolveSubjDisplayName(subj);
     var sorted = subj.gradeCutoffs.slice().sort(function(a,b){return a.grade-b.grade;});
     var rows = sorted.map(function(c){
       var realIdx = subj.gradeCutoffs.indexOf(c);
@@ -5717,6 +5720,13 @@ var ExamEngine = {
 };
 
 window.startExam = function(sessionId){
+  // 기기마다 시스템 시계가 조금씩 다를 수 있어서(선생님 기기, 학생 기기 각자 몇 초씩
+  // 오차가 날 수 있음), 시험 응시를 시작하는 이 시점에 서버 시각을 확인해서 보정값을
+  // 구해둠. 이후 이 시험 안에서 일어나는 모든 시간 계산(과목 시작/종료, 쉬는시간 등)이
+  // 전부 이 보정된 시각(_nowSynced())을 기준으로 이뤄져서, 기기 시계가 어긋나 있어도
+  // 실제 서버 기준 정확한 시각으로 동작함.
+  _syncServerTimeOffset();
+
   // 이 함수는 학생이 "응시하기"를 직접 클릭할 때 호출되는, 진짜 사용자 조작(user gesture) 시점.
   // 브라우저 정책상 음성(speechSynthesis)은 사용자가 직접 조작한 시점에서 한 번 "잠금 해제"돼야
   // 나중에 타이머 등으로 자동 재생되는 음성도 정상 작동하는 경우가 있다. 단, 빈 문자열로
@@ -5753,28 +5763,34 @@ window.startExam = function(sessionId){
       if (!subj) { alert('과목 정보를 찾을 수 없습니다'); return; }
 
       if (sess.status === 'not_started') {
-        // 일괄 시작 시간이 설정되어 있고 아직 도달 전이면 대기화면으로
-        if (exam.startAtMs && Date.now() < exam.startAtMs) {
-          updateDoc(doc(db,'examSessions',sessionId), {
-            status: 'waiting',
-            waitingSince: serverTimestamp()
-          }).then(function(){
-            _enterWaitingScreen(sessionId, exam, subj, subjIdx);
-          });
-        } else {
-          _beginSubjectNow(sessionId, exam, subj, subjIdx);
-        }
+        // 여러 과목을 응시하는 시험에서, 탐구 선택과목 고르기 같은 걸 "그 과목 시작
+        // 직전"에 하나씩 물어보면 매번 응시 시간이 뒤로 밀리는 문제가 있었음. 그래서
+        // 이제는 시험 전체가 시작되기 전에(첫 진입 시 딱 한 번) 모든 과목의 선택과목을
+        // 한꺼번에 다 골라두고, 그 다음에야 대기화면/시험시작으로 넘어가도록 함.
+        _enterExamPrepScreen(sessionId, exam, function(){
+          // 일괄 시작 시간이 설정되어 있고 아직 도달 전이면 대기화면으로
+          if (exam.startAtMs && _nowSynced() < exam.startAtMs) {
+            updateDoc(doc(db,'examSessions',sessionId), {
+              status: 'waiting',
+              waitingSince: serverTimestamp()
+            }).then(function(){
+              _enterWaitingScreen(sessionId, exam, subj, subjIdx);
+            });
+          } else {
+            _beginSubjectNow(sessionId, exam, subj, subjIdx);
+          }
+        });
       } else if (sess.status === 'waiting') {
         _enterWaitingScreen(sessionId, exam, subj, subjIdx);
       } else if (sess.status === 'in_progress') {
-        var remaining = sess.deadlineMs - Date.now();
+        var remaining = sess.deadlineMs - _nowSynced();
         if (remaining <= 0) {
           _forceSubmitSession(sessionId, exam, subj, subjIdx, sess.currentAnswers||{});
         } else {
           _enterExamScreen(sessionId, exam, subj, subjIdx, sess.deadlineMs, sess.currentAnswers||{}, sess.listeningPlayed);
         }
       } else if (sess.status === 'break') {
-        var breakRemaining = sess.breakDeadlineMs - Date.now();
+        var breakRemaining = sess.breakDeadlineMs - _nowSynced();
         if (breakRemaining <= 0) {
           _startNextSubject(sessionId, exam, subjIdx);
         } else {
@@ -5787,11 +5803,56 @@ window.startExam = function(sessionId){
   });
 };
 
-function _beginSubjectNow(sessionId, exam, subj, subjIdx){
-  _maybeShowElectiveThenStart(sessionId, exam, subj, subjIdx, function(){
-    _maybeShowStrategyThenStart(sessionId, exam, subj, subjIdx, function(){
-      _actuallyStartSubjectTimer(sessionId, exam, subj, subjIdx);
+// 과목 표시명 공용 헬퍼 - 탐구 선택과목(ex1/ex2)은 subjectNames에 항목이 없어서
+// 그냥 두면 "ex1" 같은 원본 코드가 그대로 보이거나(제목), undefined가 되는(알림)
+// 문제가 있었음. 학생이 선택과목을 고른 뒤에는 그 실제 과목명(_electiveLabel)을
+// 최우선으로 쓰고, 아직 안 골랐으면 "과학탐구"/"사회탐구" 같은 큰 분류명을 보여줌.
+function _resolveSubjDisplayName(subj){
+  if (!subj) return '';
+  if (subj._electiveLabel) return subj._electiveLabel;
+  if (subj.subject && /^ex\d+$/.test(subj.subject)) {
+    return subj.exCategory === 'sc' ? '과학탐구' : (subj.exCategory === 'so' ? '사회탐구' : '탐구');
+  }
+  return subjectNames[subj.subject] || subj.subject;
+}
+
+// 시험 전체 시작 전, 딱 한 번만 - 이 시험에 포함된 모든 과목 중 선택과목(탐구 등)이
+// 필요한 게 있으면 전부 순서대로 골라두게 함. 예전엔 "그 과목 시작 직전"에 하나씩
+// 물어봐서 응시 시각이 매번 밀렸는데, 이제는 시험 전체가 시작되기도 전에 다 끝내둠.
+function _enterExamPrepScreen(sessionId, exam, allDoneFn){
+  getDoc(doc(db,'examSessions',sessionId)).then(function(sd){
+    var existingChoices = (sd.exists() && sd.data().electiveChoices) || {};
+    var pending = [];
+    (exam.subjects||[]).forEach(function(subj, idx){
+      if (subj.electiveOptions && subj.electiveOptions.length && !existingChoices[idx]) {
+        pending.push({subj:subj, idx:idx});
+      } else if (existingChoices[idx]) {
+        // 이미 골라둔 적 있으면(새로고침 등으로 재진입) subj 객체에도 표시해서
+        // 제목 등에 바로 실제 과목명이 보이게 함
+        subj._electiveLabel = existingChoices[idx];
+        if (subj.questionsByElective && subj.questionsByElective[existingChoices[idx]] && subj.questionsByElective[existingChoices[idx]].length) {
+          subj.questions = subj.questionsByElective[existingChoices[idx]];
+        }
+      }
     });
+    _runExamPrepQueue(sessionId, exam, pending, 0, allDoneFn);
+  }).catch(function(){ allDoneFn(); });
+}
+
+function _runExamPrepQueue(sessionId, exam, pending, i, allDoneFn){
+  if (i >= pending.length) { allDoneFn(); return; }
+  var item = pending[i];
+  _enterElectiveChoiceScreen(sessionId, exam, item.subj, item.idx, function(){
+    _runExamPrepQueue(sessionId, exam, pending, i+1, allDoneFn);
+  });
+}
+
+function _beginSubjectNow(sessionId, exam, subj, subjIdx){
+  // 전략노트("다음 걸음을 위하여")는 이제 시험 시작 전 준비화면(_enterExamPrepScreen)
+  // 단계에서 미리 다 처리되므로, 여기서는 더 이상 블로킹으로 물어보지 않고 바로 시작함
+  // (예전엔 여기서도 한 번 더 물어봐서 시작 시각이 밀리는 문제가 있었음)
+  _maybeShowElectiveThenStart(sessionId, exam, subj, subjIdx, function(){
+    _actuallyStartSubjectTimer(sessionId, exam, subj, subjIdx);
   });
 }
 
@@ -5838,8 +5899,10 @@ window._submitElectiveChoice = function(name){
     window._electiveProceedCtx = null;
     ExamEngine.electiveChoice = name; // 채점 시점에 비동기 재조회 없이 바로 쓸 수 있도록 동기적으로도 세팅
     // ctx.subj는 이후 이어지는 화면 진입/채점 로직들이 전부 같은 객체를 참조하고 있어서,
-    // 여기서 questions를 선택과목에 맞게 직접 바꿔치기해두면(참조 공유) 학생이 실제로
-    // 보는 문제 화면도, 나중 채점도 전부 자동으로 이 선택과목 문항을 쓰게 됨
+    // 여기서 실제 과목명(_electiveLabel)과 questions를 직접 바꿔치기해두면(참조 공유)
+    // 제목/알림 등 어디서든 "ex1" 같은 코드가 아니라 실제 이름이 바로 보이고, 학생이
+    // 실제로 보는 문제 화면도, 나중 채점도 전부 자동으로 이 선택과목 문항을 쓰게 됨
+    ctx.subj._electiveLabel = name;
     if (ctx.subj.questionsByElective && ctx.subj.questionsByElective[name] && ctx.subj.questionsByElective[name].length) {
       ctx.subj.questions = ctx.subj.questionsByElective[name];
     }
@@ -5847,9 +5910,36 @@ window._submitElectiveChoice = function(name){
   }).catch(function(e){ alert('저장 실패: ' + e.message); });
 };
 
+// 예정 시각(exam.startAtMs)이 있는 시험은, 학생이 일찍 제출하든 늦게 들어오든 상관없이
+// "그 과목이 원래 끝나야 할 시각"에 정확히 맞춰서 마감시각을 정해야 함(전원이 같은
+// 시각에 시작/종료). 그래서 상대시간(now+진행시간)이 아니라, 시험 전체 스케줄에서
+// 이 과목의 절대 종료시각을 그대로 가져다 씀. 예정 시각이 없는(개인 응시) 시험은
+// 원래처럼 지금부터 진행시간만큼으로 계산함.
+function _getSubjectDeadline(exam, subjIdx, now){
+  if (exam.startAtMs) {
+    var schedule = _computeExamDisplaySchedule(exam);
+    var phase = schedule.find(function(p){ return p.type==='subject' && p.idx===subjIdx; });
+    if (phase) return phase.endMs;
+  }
+  return now + exam.subjects[subjIdx].durationMin*60000;
+}
+// 쉬는시간도 마찬가지 - 예정된 시험이면 "학생이 언제 제출했든" 상관없이 원래 정해진
+// 다음 과목 시작 시각까지 기다리게 함 (일찍 냈다고 다음 과목이 일찍 시작되면 안 됨).
+function _getBreakDeadline(exam, finishedSubjIdx, now){
+  if (exam.startAtMs) {
+    var schedule = _computeExamDisplaySchedule(exam);
+    var breakPhase = schedule.find(function(p){ return p.type==='break' && p.afterIdx===finishedSubjIdx; });
+    if (breakPhase) return breakPhase.endMs;
+    var nextPhase = schedule.find(function(p){ return p.type==='subject' && p.idx===finishedSubjIdx+1; });
+    if (nextPhase) return nextPhase.startMs;
+  }
+  var breakMin = exam.subjects[finishedSubjIdx].breakAfterMin || 0;
+  return now + breakMin*60000;
+}
+
 function _actuallyStartSubjectTimer(sessionId, exam, subj, subjIdx){
-  var now = Date.now();
-  var deadline = now + subj.durationMin*60000;
+  var now = _nowSynced();
+  var deadline = _getSubjectDeadline(exam, subjIdx, now);
   updateDoc(doc(db,'examSessions',sessionId), {
     status: 'in_progress',
     startedAtMs: now,
@@ -5888,7 +5978,7 @@ function _enterWaitingScreen(sessionId, exam, subj, subjIdx){
     if (!prior.length) return;
     var slot = document.getElementById('exam-wait-strategy-slot');
     if (!slot) return;
-    var subjName = subjectNames[subj.subject]||subj.subject;
+    var subjName = _resolveSubjDisplayName(subj);
     slot.innerHTML = '<div class="exam-wait-strategy-box">'
       + '<div class="refl-prior-box" style="margin-bottom:14px;">'
       +   '<div class="refl-prior-label">📖 지난 "'+escapeHtml(prior[0].examTitle||'')+'" - 다음 걸음을 위하여</div>'
@@ -5907,7 +5997,7 @@ function _enterWaitingScreen(sessionId, exam, subj, subjIdx){
 
   if (ExamEngine.clockInterval) clearInterval(ExamEngine.clockInterval);
   ExamEngine.clockInterval = setInterval(function(){
-    var remaining = (exam.startAtMs || Date.now()) - Date.now();
+    var remaining = (exam.startAtMs || _nowSynced()) - _nowSynced();
     if (remaining <= 0) {
       clearInterval(ExamEngine.clockInterval);
       // 전략 작성 여부와 무관하게, 지정된 시각에 정확히 전원 동시 시작 (대기/작성으로 인한 지연 없음)
@@ -5940,10 +6030,10 @@ window._saveStrategyDuringWait = function(examId, subject, subjIdx, sessionId){
 
 function _startNextSubject(sessionId, exam, subjIdx){
   var subj = exam.subjects[subjIdx];
+  // 전략노트는 이제 시작 전 준비화면에서만 처리하므로 여기선 더 이상 안 물어봄
   _maybeShowElectiveThenStart(sessionId, exam, subj, subjIdx, function(){
-  _maybeShowStrategyThenStart(sessionId, exam, subj, subjIdx, function(){
-    var now = Date.now();
-    var deadline = now + subj.durationMin*60000;
+    var now = _nowSynced();
+    var deadline = _getSubjectDeadline(exam, subjIdx, now);
     updateDoc(doc(db,'examSessions',sessionId), {
       status: 'in_progress',
       currentSubjectIndex: subjIdx,
@@ -5955,24 +6045,32 @@ function _startNextSubject(sessionId, exam, subjIdx){
       _enterExamScreen(sessionId, exam, subj, subjIdx, deadline, {});
     });
   });
-  });
 }
 
-function _enterBreakScreen(sessionId, exam, finishedSubjIdx, breakDeadlineMs){
+function _enterBreakScreen(sessionId, exam, finishedSubjIdx, breakDeadlineMs, justScoredPoints){
+  var finishedSubj = exam.subjects[finishedSubjIdx];
   var nextSubj = exam.subjects[finishedSubjIdx+1];
-  var nextSubjName = subjectNames[nextSubj.subject] || nextSubj.subject;
+  var finishedSubjName = _resolveSubjDisplayName(finishedSubj);
+  var nextSubjName = _resolveSubjDisplayName(nextSubj);
+  var isScheduled = !!exam.startAtMs;
+  var fmt = function(ms){ var d = new Date(ms); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
+
   showScreen('screen-exam');
   var screenEl = document.getElementById('screen-exam');
   screenEl.innerHTML = '<div class="exam-break-wrap">'
-    + '<div class="exam-break-icon">☕</div>'
-    + '<div class="exam-break-title">쉬는 시간</div>'
-    + '<div class="exam-break-sub">잠시 후 <b>'+escapeHtml(nextSubjName)+'</b> 시험이 자동으로 시작됩니다</div>'
-    + '<div id="exam-break-timer" class="exam-break-timer">--:--</div>'
+    + '<div class="exam-break-card">'
+    +   (justScoredPoints!==undefined && justScoredPoints!==null ? '<div class="exam-break-scored">✓ '+escapeHtml(finishedSubjName)+' 제출 완료 · <b>'+justScoredPoints+'점</b></div>' : '')
+    +   '<div class="exam-break-icon">☕</div>'
+    +   '<div class="exam-break-title">쉬는 시간</div>'
+    +   '<div class="exam-break-sub">잠시 후 <b>'+escapeHtml(nextSubjName)+'</b> 시험이 시작됩니다</div>'
+    +   '<div id="exam-break-timer" class="exam-break-timer">--:--</div>'
+    +   (isScheduled ? '<div class="exam-break-scheduled">'+escapeHtml(nextSubjName)+' 시작 시각: '+fmt(breakDeadlineMs)+'</div>' : '')
+    + '</div>'
     + '</div>';
 
   if (ExamEngine.clockInterval) clearInterval(ExamEngine.clockInterval);
   ExamEngine.clockInterval = setInterval(function(){
-    var remaining = breakDeadlineMs - Date.now();
+    var remaining = breakDeadlineMs - _nowSynced();
     if (remaining <= 0) {
       clearInterval(ExamEngine.clockInterval);
       _startNextSubject(sessionId, exam, finishedSubjIdx+1);
@@ -6047,6 +6145,10 @@ function _enterExamScreen(sessionId, exam, subj, subjIdx, deadlineMs, savedAnswe
     var choices = sd.exists() ? sd.data().electiveChoices : null;
     if (choices && choices[subjIdx]) {
       ExamEngine.electiveChoice = choices[subjIdx];
+      subj._electiveLabel = choices[subjIdx]; // 새로고침 후 재진입 등으로 subj 객체가
+      // 새로 만들어진 경우에도(라이브 흐름 중 태그해둔 게 없는 경우) 여기서 다시 채워줌
+      var titleEl = document.querySelector('.exam-taking-title');
+      if (titleEl) titleEl.textContent = exam.title + ' · ' + _resolveSubjDisplayName(subj);
       _updateExamTimeRangeLabel(); // 이미 그려진 화면이면 라벨을 다시 갱신
     }
   }).catch(function(){});
@@ -6084,7 +6186,7 @@ function _enterExamScreen(sessionId, exam, subj, subjIdx, deadlineMs, savedAnswe
 }
 
 function buildExamTakingHtml(exam, subj, deadlineMs){
-  var subjName = subjectNames[subj.subject]||subj.subject;
+  var subjName = _resolveSubjDisplayName(subj);
   var startEndLabel = '';
   if (deadlineMs) {
     var startMs = deadlineMs - subj.durationMin*60000;
@@ -6327,7 +6429,7 @@ function _updateExamTimeRangeLabel(){
 }
 
 function _examClockTick(){
-  var remaining = ExamEngine.deadlineMs - Date.now();
+  var remaining = ExamEngine.deadlineMs - _nowSynced();
   if (remaining <= 0) {
     clearInterval(ExamEngine.clockInterval);
     _forceSubmitSession(ExamEngine.sessionId, ExamEngine.exam, ExamEngine.subject, ExamEngine.subjectIndex, ExamEngine.answers);
@@ -6342,7 +6444,7 @@ function _examClockTick(){
   if (_examClockMode === 'csat' && CSAT_TIMETABLE[ExamEngine.subject.subject]) {
     var base = CSAT_TIMETABLE[ExamEngine.subject.subject];
     var examStartMs = ExamEngine.deadlineMs - ExamEngine.subject.durationMin*60000;
-    var elapsedMs = Date.now() - examStartMs; // 실제로 시험 시작한 뒤 지금까지 흐른 시간(ms)
+    var elapsedMs = _nowSynced() - examStartMs; // 실제로 시험 시작한 뒤 지금까지 흐른 시간(ms)
     var baseMs = new Date(); baseMs.setHours(base.h, base.m, 0, 0);
     var displayDate = new Date(baseMs.getTime() + elapsedMs);
     h = displayDate.getHours()%12; m = displayDate.getMinutes(); s = displayDate.getSeconds();
@@ -6612,7 +6714,7 @@ function _finalizeExamSubmit(sessionId, exam, subj, subjIdx, answers, autoSubmit
     subject: subj.subject,
     subjectIndex: subjIdx,
     startedAtMs: ExamEngine.deadlineMs - subj.durationMin*60000,
-    submittedAtMs: Date.now(),
+    submittedAtMs: _nowSynced(),
     autoSubmitted: !!autoSubmitted,
     score: graded.score,
     totalScore: graded.totalScore,
@@ -6657,9 +6759,10 @@ function _finalizeExamSubmit(sessionId, exam, subj, subjIdx, answers, autoSubmit
         });
       });
     } else {
-      // 다음 과목 있음 - 쉬는시간으로 전환
-      var breakMin = subj.breakAfterMin || 0;
-      var breakDeadline = Date.now() + breakMin*60000;
+      // 다음 과목 있음 - 쉬는시간으로 전환. 예정 시각이 있는 시험은 일찍 제출해도
+      // 원래 정해진 다음 과목 시작 시각까지 그대로 기다리게 함(_getBreakDeadline이 처리).
+      var now2 = _nowSynced();
+      var breakDeadline = _getBreakDeadline(exam, subjIdx, now2);
       return updateDoc(doc(db,'examSessions',sessionId), {
         status: 'break',
         subjectResults: results,
@@ -6667,9 +6770,12 @@ function _finalizeExamSubmit(sessionId, exam, subj, subjIdx, answers, autoSubmit
         currentSubjectIndex: subjIdx+1,
         breakDeadlineMs: breakDeadline
       }).then(function(){
-        alert(subjectNames[subj.subject]+' 과목 제출 완료! (' + graded.score + '점)\n쉬는 시간 후 다음 과목이 시작됩니다.');
-        if (breakMin > 0) {
-          _enterBreakScreen(sessionId, exam, subjIdx, breakDeadline);
+        // 예전엔 여기서 alert()를 띄웠는데, alert는 사용자가 확인을 누를 때까지 화면
+        // 전체를 멈춰버려서, 그 몇 초~몇십 초가 그대로 쉬는시간에서 깎여나가는 문제가
+        // 있었음(2분 설정해놓고 실제로는 1분 40초만 도는 등). 이제는 alert 없이 바로
+        // 쉬는시간 화면으로 넘어가고, 제출 결과는 그 화면 안에 표시함.
+        if (breakDeadline > _nowSynced()) {
+          _enterBreakScreen(sessionId, exam, subjIdx, breakDeadline, graded.score);
         } else {
           _startNextSubject(sessionId, exam, subjIdx+1);
         }
@@ -6714,7 +6820,7 @@ function _maybeShowStrategyThenStart(sessionId, exam, subj, subjIdx, proceedFn){
 
 function _enterStrategyScreen(sessionId, exam, subj, subjIdx, priorReflection, proceedFn){
   showScreen('screen-exam');
-  var subjName = subjectNames[subj.subject] || subj.subject;
+  var subjName = _resolveSubjDisplayName(subj);
   var el = document.getElementById('screen-exam');
   el.innerHTML = '<div class="refl-wrap">'
     + '<div class="refl-card">'
@@ -7211,7 +7317,7 @@ window.closeExamDisplayScreen = function(){
 function _computeExamDisplaySchedule(exam){
   var subjects = exam.subjects || [];
   var phases = [];
-  var cursor = exam.startAtMs || Date.now();
+  var cursor = exam.startAtMs || _nowSynced();
   subjects.forEach(function(subj, i){
     var startMs = cursor;
     var endMs = startMs + (subj.durationMin||0)*60000;
@@ -7275,7 +7381,7 @@ function _tickExamDisplay(){
 
   // 4) 과목 진행중 - 시계 + 시작/종료 시각 (학생 화면과 완전히 동일한 시계 디자인)
   var subj = current.subj;
-  var subjName = subjectNames[subj.subject] || subj.subject;
+  var subjName = _resolveSubjDisplayName(subj);
   if (!document.getElementById('exdisp-clock')) {
     body.innerHTML = _buildExamDisplayLiveHtml(subjName, current);
   }
@@ -7792,7 +7898,7 @@ window._loadLiveExamStatus = function(){
         var subjIdx = sess.currentSubjectIndex || 0;
         var subj = exam && exam.subjects ? exam.subjects[subjIdx] : null;
         var startMs = sess.deadlineMs && subj ? sess.deadlineMs - subj.durationMin*60000 : null;
-        var remainMin = sess.deadlineMs ? Math.max(0, Math.round((sess.deadlineMs - Date.now())/60000)) : null;
+        var remainMin = sess.deadlineMs ? Math.max(0, Math.round((sess.deadlineMs - _nowSynced())/60000)) : null;
         return {
           name: nameMap[sess.studentUid]||'?', examTitle: exam ? exam.title : '(삭제된 시험)',
           status: statusLabel[sess.status]||sess.status, startMs: startMs, endMs: sess.deadlineMs,
