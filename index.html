@@ -3728,7 +3728,7 @@ window.runExamForceSubmitNow = function(filterExamId, filterUid){
                 .then(function(){ return _getPrevSubjectScores(sess.studentUid, exam.gradeType, examSourceLabel(exam.examSource)); })
                 .then(function(prevScores){
                   return _writeExamResultToGrades(sess.studentUid, s.id, exam, results, sess.electiveChoices).then(function(){
-                    _awardExamRewards(sess.studentUid, exam, results, prevScores);
+                    _awardExamRewards(sess.studentUid, exam, results, prevScores, sess.electiveChoices);
                   });
                 })
                 .then(function(){ fullyCompleted++; forceSubmittedSubjects++; })
@@ -3947,7 +3947,18 @@ window.openEditExamModal = function(examId){
           // 이 필드가 아예 없는 예전 시험은(등급을 켜고 끄는 개념 자체가 없던 때 만들어진 것이라)
           // 원래 동작대로 계속 등급이 보이게 두고, 새로 만드는 시험만 기본이 "꺼짐"이 되게 함
           gradeCutoffsEnabled: s.gradeCutoffsEnabled !== undefined ? s.gradeCutoffsEnabled : true,
-          gradeCutoffs: s.gradeCutoffs ? s.gradeCutoffs.map(function(c){return Object.assign({},c);}) : _defaultGradeCutoffs()
+          gradeCutoffs: s.gradeCutoffs ? s.gradeCutoffs.map(function(c){return Object.assign({},c);}) : _defaultGradeCutoffs(),
+          // 선택과목별 등급컷 복원 - 예전 시험(이 필드가 없던 시험)을 불러왔을 때는
+          // 비워두면 _syncExamActiveQuestionsPointer가 열 때 자동으로 기본값을 채워줌
+          gradeCutoffsByElective: (function(){
+            var out = {};
+            if (s.gradeCutoffsByElective) {
+              Object.keys(s.gradeCutoffsByElective).forEach(function(name){
+                out[name] = (s.gradeCutoffsByElective[name]||[]).map(function(c){ return Object.assign({}, c); });
+              });
+            }
+            return out;
+          })()
         };
       });
       if (!_examSubjectBlocks.length) _examSubjectBlocks = [ _newExamSubjectBlock() ];
@@ -4360,7 +4371,7 @@ window.saveEditedGradeCutoff = function(){
         // 없으면 등급 기능을 꺼둔 과목도 등급표 수정 화면을 한 번 저장하는 순간
         // 등급이 실수로 붙어버리는 문제가 있었음
         if (subjDef && subjDef.gradeCutoffsEnabled && subjDef.gradeCutoffs) {
-          scores[key] = Object.assign({}, scores[key], { grade: computeGradeFromCutoffs(subjDef.gradeCutoffs, scores[key].score) });
+          scores[key] = Object.assign({}, scores[key], { grade: computeGradeFromCutoffs(_getCutoffsForScoreEntry(subjDef, scores[key]), scores[key].score) });
         }
       });
       return updateDoc(doc(db,'grades',gDoc.id), { scores: scores });
@@ -4460,7 +4471,9 @@ window.toggleExamElectiveOption = function(idx, name, isChecked){
 // block.questions를 "지금 편집 중인 선택과목의 문항 배열"을 가리키는 포인터로 유지함.
 // 이렇게 하면 문항 추가/삭제/일괄생성 등 기존 로직을 하나도 안 건드리고도, 그 로직들이
 // 자동으로 "지금 선택된 과목"의 문항을 다루게 됨 (배열은 참조 타입이라 questionsByElective
-// 안의 배열과 block.questions가 항상 같은 실체를 가리키게 유지)
+// 안의 배열과 block.questions가 항상 같은 실체를 가리키게 유지).
+// 등급컷(gradeCutoffs)도 완전히 같은 방식으로 선택과목별로 분리함 - 예전엔 국어에
+// "언어와 매체"/"화법과 작문"을 둘 다 골라도 등급컷을 하나만 공유해서 설정할 수 있었음.
 function _syncExamActiveQuestionsPointer(idx){
   var block = _examSubjectBlocks[idx];
   if (!block) return;
@@ -4469,6 +4482,9 @@ function _syncExamActiveQuestionsPointer(idx){
     // 있었다면(직전까지 선택과목이 있었던 경우) 공용 문항 배열로 되돌림
     if (!block._ownQuestions) block._ownQuestions = block.questions && block.questions.length && !block._fromElective ? block.questions : [];
     block.questions = block._ownQuestions;
+    if (!block._ownGradeCutoffs) block._ownGradeCutoffs = block.gradeCutoffs && !block._cutoffsFromElective ? block.gradeCutoffs : _defaultGradeCutoffs();
+    block.gradeCutoffs = block._ownGradeCutoffs;
+    block._cutoffsFromElective = false;
     return;
   }
   if (!block._currentElective || block.electiveOptions.indexOf(block._currentElective) === -1) {
@@ -4477,6 +4493,11 @@ function _syncExamActiveQuestionsPointer(idx){
   if (!block.questionsByElective[block._currentElective]) block.questionsByElective[block._currentElective] = [];
   block.questions = block.questionsByElective[block._currentElective];
   block._fromElective = true;
+
+  if (!block.gradeCutoffsByElective) block.gradeCutoffsByElective = {};
+  if (!block.gradeCutoffsByElective[block._currentElective]) block.gradeCutoffsByElective[block._currentElective] = _defaultGradeCutoffs();
+  block.gradeCutoffs = block.gradeCutoffsByElective[block._currentElective];
+  block._cutoffsFromElective = true;
 }
 
 window.switchExamQuestionElective = function(blockIdx, electiveName){
@@ -4485,6 +4506,10 @@ window.switchExamQuestionElective = function(blockIdx, electiveName){
   block._currentElective = electiveName;
   _syncExamActiveQuestionsPointer(blockIdx);
   renderExamQuestionBuilder(blockIdx);
+  // 등급컷 패널도 지금 보고 있는 중이면 같이 새로고침 (선택과목 바꾸면 그 과목의
+  // 등급컷으로 화면이 바로 갱신되도록)
+  var cutoffPanel = document.getElementById('exam-cutoff-panel-'+blockIdx);
+  if (cutoffPanel && cutoffPanel.style.display !== 'none') renderGradeCutoffRows(blockIdx);
 };
 
 window.renderExamSubjectBlocks = function(){
@@ -4539,6 +4564,7 @@ window.renderExamSubjectBlocks = function(){
       +   (block.gradeCutoffsEnabled ? '' : '<div style="font-size:11px;color:var(--tx4);margin-bottom:6px;">지금은 꺼져있어서 이 과목은 등급 없이 원점수만 기록됩니다.</div>')
       +   '<div id="exam-cutoff-panel-'+idx+'" class="exam-cutoff-panel" style="display:none;'+(block.gradeCutoffsEnabled?'':'opacity:0.4;pointer-events:none;')+'">'
       +     '<div style="font-size:11px;color:var(--tx3);margin-bottom:8px;">원점수가 아래 최소점수 이상이면 해당 등급으로 자동 반영됩니다 (100점 만점 기준)</div>'
+      +     (block.electiveOptions && block.electiveOptions.length ? '<div style="font-size:12px;font-weight:700;color:var(--gold);background:var(--gold-l);border-radius:8px;padding:6px 10px;margin-bottom:10px;">📌 지금 "'+escapeHtml(block._currentElective||block.electiveOptions[0])+'"의 등급컷을 편집 중이에요. 위에서 문항 탭을 바꾸면 그 선택과목의 등급컷으로 전환됩니다.</div>' : '')
       +     '<div id="exam-cutoff-rows-'+idx+'"></div>'
       +     '<div style="display:flex;gap:8px;margin-top:8px;">'
       +       '<button type="button" onclick="addGradeCutoffRow('+idx+')" class="exam-add-chip-btn">+ 등급 추가</button>'
@@ -5241,11 +5267,15 @@ window.saveExam = function(){
   var normalizedSubjects = _examSubjectBlocks.map(function(block, i){
     var normalizedQuestions = normalizeQuestionList(block.questions);
     // 선택과목이 있으면, 지금 편집 중인 것만이 아니라 questionsByElective에 있는
-    // 모든 선택과목의 문항을 다 정규화해서 저장 (안 그러면 다른 선택과목 문항이 날아감)
+    // 모든 선택과목의 문항을 다 정규화해서 저장 (안 그러면 다른 선택과목 문항이 날아감).
+    // 등급컷도 마찬가지 - 지금 보고 있는 선택과목 것만이 아니라 전체를 다 저장해야
+    // "언어와 매체" 것만 저장되고 "화법과 작문" 것이 날아가는 일이 없음.
     var normalizedByElective = {};
-    if (block.electiveOptions && block.electiveOptions.length && block.questionsByElective) {
+    var cutoffsByElective = {};
+    if (block.electiveOptions && block.electiveOptions.length) {
       block.electiveOptions.forEach(function(name){
-        normalizedByElective[name] = normalizeQuestionList(block.questionsByElective[name]);
+        if (block.questionsByElective) normalizedByElective[name] = normalizeQuestionList(block.questionsByElective[name]);
+        cutoffsByElective[name] = (block.gradeCutoffsByElective && block.gradeCutoffsByElective[name]) ? block.gradeCutoffsByElective[name] : _defaultGradeCutoffs();
       });
     }
     return {
@@ -5260,6 +5290,7 @@ window.saveExam = function(){
       listeningDurationSec: block.listeningDurationSec || null,
       gradeCutoffsEnabled: !!block.gradeCutoffsEnabled,
       gradeCutoffs: block.gradeCutoffs || null,
+      gradeCutoffsByElective: (block.electiveOptions && block.electiveOptions.length) ? cutoffsByElective : null,
       questions: normalizedQuestions
     };
   });
@@ -6560,7 +6591,10 @@ function _buildGradesScoresFromResults(exam, results, electiveChoices){
     var subjDef = (exam.subjects && exam.subjects[r.subjectIndex]) || null;
     var isExplore = subjDef && (subjDef.subject === 'ex1' || subjDef.subject === 'ex2');
     var chosenElective = electiveChoices && electiveChoices[r.subjectIndex];
-    var cutoffs = (subjDef && subjDef.gradeCutoffsEnabled) ? subjDef.gradeCutoffs : null;
+    // 선택과목별 등급컷이 있으면 그걸 우선 쓰고, 없으면(선택과목이 없거나 그 선택과목에
+    // 대한 등급컷이 따로 없는 예전 시험) 공용 등급컷으로 폴백함
+    var cutoffsSource = (subjDef && chosenElective && subjDef.gradeCutoffsByElective && subjDef.gradeCutoffsByElective[chosenElective]) ? subjDef.gradeCutoffsByElective[chosenElective] : (subjDef ? subjDef.gradeCutoffs : null);
+    var cutoffs = (subjDef && subjDef.gradeCutoffsEnabled) ? cutoffsSource : null;
     var grade = cutoffs ? computeGradeFromCutoffs(cutoffs, r.score) : '';
 
     var key, label, group, option;
@@ -6667,7 +6701,7 @@ function _awardGradeLevelReward(studentUid, branch, subjectLabel, gradeValue, ex
   }).catch(function(){});
 }
 
-function _awardExamRewards(studentUid, exam, results, prevScores){
+function _awardExamRewards(studentUid, exam, results, prevScores, electiveChoices){
   var branch = getBranch();
   var examDateStr = _examTodayDateStr();
 
@@ -6694,9 +6728,11 @@ function _awardExamRewards(studentUid, exam, results, prevScores){
       }).catch(function(){});
     }
 
-    // 3) 등급 기반 상점 - 1등급 +10, 2등급 +5
+    // 3) 등급 기반 상점 - 1등급 +10, 2등급 +5 (선택과목별 등급컷이 있으면 그걸 우선 씀)
     if (subjDef && subjDef.gradeCutoffsEnabled && subjDef.gradeCutoffs) {
-      var grade = computeGradeFromCutoffs(subjDef.gradeCutoffs, r.score);
+      var chosenElectiveForReward = electiveChoices && electiveChoices[r.subjectIndex];
+      var cutoffsForReward = (chosenElectiveForReward && subjDef.gradeCutoffsByElective && subjDef.gradeCutoffsByElective[chosenElectiveForReward]) ? subjDef.gradeCutoffsByElective[chosenElectiveForReward] : subjDef.gradeCutoffs;
+      var grade = computeGradeFromCutoffs(cutoffsForReward, r.score);
       _awardGradeLevelReward(studentUid, branch, subjName, grade, exam.title, examDateStr);
     }
   });
@@ -6744,7 +6780,7 @@ function _finalizeExamSubmit(sessionId, exam, subj, subjIdx, answers, autoSubmit
         var studentUid = sess.studentUid || currentUser.uid;
         return _getPrevSubjectScores(studentUid, exam.gradeType, examSourceLabel(exam.examSource)).then(function(prevScores){
           return _writeExamResultToGrades(studentUid, sessionId, exam, results, sess.electiveChoices).then(function(){
-            _awardExamRewards(studentUid, exam, results, prevScores);
+            _awardExamRewards(studentUid, exam, results, prevScores, sess.electiveChoices);
           });
         });
       }).then(function(){
@@ -7814,7 +7850,7 @@ window._recoverMissingGrade = function(idx, btnEl){
   console.log('[성적복구] 시작 - 학생:', m.studentName, '시험:', m.exam.title, '세션ID:', m.session._id);
   _getPrevSubjectScores(m.session.studentUid, m.exam.gradeType, examSourceLabel(m.exam.examSource)).then(function(prevScores){
     return _writeExamResultToGrades(m.session.studentUid, m.session._id, m.exam, results, m.session.electiveChoices).then(function(docRef){
-      _awardExamRewards(m.session.studentUid, m.exam, results, prevScores);
+      _awardExamRewards(m.session.studentUid, m.exam, results, prevScores, m.session.electiveChoices);
       return docRef;
     });
   }).then(function(){
@@ -7844,7 +7880,7 @@ window._recoverAllMissingGrades = function(){
       var results = m.session.subjectResults || [];
       return _getPrevSubjectScores(m.session.studentUid, m.exam.gradeType, examSourceLabel(m.exam.examSource)).then(function(prevScores){
         return _writeExamResultToGrades(m.session.studentUid, m.session._id, m.exam, results, m.session.electiveChoices).then(function(docRef){
-          _awardExamRewards(m.session.studentUid, m.exam, results, prevScores);
+          _awardExamRewards(m.session.studentUid, m.exam, results, prevScores, m.session.electiveChoices);
           // 개별 복구와 마찬가지로, 원본이든 합쳐진 형태든 실제로 커버되고 있는지 재확인함
           return _isSessionCoveredByGrades(m.exam.id, m.session._id).then(function(covered){
             if (!covered) throw new Error('저장 확인 실패');
@@ -8190,11 +8226,31 @@ window.reGradeExamSessions = function(examId, examTitle){
 
 // 선택과목별로 문항/정답이 따로 설정되어 있으면(questionsByElective), 학생이 그 시험에서
 // 실제로 고른 선택과목 기준으로 문항을 바꿔치기해서 채점 대상 subj를 만들어줌.
-// 선택과목이 없거나, 그 선택과목에 대한 문항이 따로 없으면 원래 questions 그대로 씀.
-function _resolveSubjForGrading(subj, electiveChoice){
-  if (subj && subj.questionsByElective && electiveChoice && subj.questionsByElective[electiveChoice] && subj.questionsByElective[electiveChoice].length) {
-    return Object.assign({}, subj, { questions: subj.questionsByElective[electiveChoice] });
+// 등급컷도 마찬가지로 선택과목별(gradeCutoffsByElective)로 바꿔치기함 - 안 그러면
+// "언어와 매체"를 고른 학생도 "화법과 작문"용(또는 공용) 등급컷으로 채점되는 문제가 생김.
+// 선택과목이 없거나, 그 선택과목에 대한 설정이 따로 없으면 원래 subj 그대로 씀.
+// 등급 재계산 시(등급표 수정 후 다시 적용 등) 쓸 등급컷을 정확히 찾음. 선택과목이
+// 있는 과목은 scores[key].label에 실제로 어떤 선택과목이었는지 저장되어 있어서,
+// 그걸로 gradeCutoffsByElective에서 맞는 등급컷을 찾아옴. 못 찾으면(선택과목이 없거나
+// 예전 시험 데이터라 label이 없는 경우) 공용 gradeCutoffs로 폴백함.
+function _getCutoffsForScoreEntry(subjDef, scoreEntry){
+  if (!subjDef) return null;
+  if (subjDef.gradeCutoffsByElective && scoreEntry && scoreEntry.label && subjDef.gradeCutoffsByElective[scoreEntry.label]) {
+    return subjDef.gradeCutoffsByElective[scoreEntry.label];
   }
+  return subjDef.gradeCutoffs;
+}
+
+function _resolveSubjForGrading(subj, electiveChoice){
+  if (!subj) return subj;
+  var patch = {};
+  if (subj.questionsByElective && electiveChoice && subj.questionsByElective[electiveChoice] && subj.questionsByElective[electiveChoice].length) {
+    patch.questions = subj.questionsByElective[electiveChoice];
+  }
+  if (subj.gradeCutoffsByElective && electiveChoice && subj.gradeCutoffsByElective[electiveChoice] && subj.gradeCutoffsByElective[electiveChoice].length) {
+    patch.gradeCutoffs = subj.gradeCutoffsByElective[electiveChoice];
+  }
+  if (Object.keys(patch).length) return Object.assign({}, subj, patch);
   return subj;
 }
 
@@ -8395,7 +8451,11 @@ function _syncGradesAfterManualReview(sessionId, results){
       results.forEach(function(r){
         if (!r) return;
         var subjDef = (exam && exam.subjects && exam.subjects[r.subjectIndex]) || null;
-        var cutoffs = (subjDef && subjDef.gradeCutoffsEnabled) ? subjDef.gradeCutoffs : null;
+        // 기존에 저장돼 있던 이 과목의 label(원래 채점 때 어떤 선택과목이었는지)을 참고해서
+        // 선택과목별 등급컷이 있으면 그걸 우선 씀
+        var oldLabel = gData.scores && gData.scores[r.subject] && gData.scores[r.subject].label;
+        var cutoffsSource2 = (subjDef && oldLabel && subjDef.gradeCutoffsByElective && subjDef.gradeCutoffsByElective[oldLabel]) ? subjDef.gradeCutoffsByElective[oldLabel] : (subjDef ? subjDef.gradeCutoffs : null);
+        var cutoffs = (subjDef && subjDef.gradeCutoffsEnabled) ? cutoffsSource2 : null;
         var grade = cutoffs ? computeGradeFromCutoffs(cutoffs, r.score) : '';
         var subjName = subjectNames[r.subject]||r.subject;
         scores[r.subject] = { score: r.score, grade: grade, label: subjName, group:r.subject };
