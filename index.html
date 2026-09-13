@@ -365,6 +365,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   .dt-sb-item-label{font-size:11px;font-weight:600;letter-spacing:0;color:inherit;line-height:1.15;text-align:center;}
   .dt-sb-item.active{background:var(--burg-l);color:var(--burg);}
   .dt-sb-item.active::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:24px;background:var(--burg);border-radius:0 2px 2px 0;}
+
+  /* 교사/마스터 사이드바는 탭이 8~9개나 되어서 세로로 다 쌓으면 화면을 넘기기
+     쉬움(스크롤 없이 해결하고 싶어서). 태블릿 구간에서 이미 쓰던 "2열 그리드"를
+     데스크탑에서도 이 목록에만 적용해서, 세로 공간을 절반 가까이로 줄임.
+     사이드바 자체 폭도 2열이 들어가게 조금 더 넓혀줌(200px→248px). */
+  .dt-sidebar#teacher-sidebar{width:248px;}
+  .dt-sidebar#teacher-sidebar .dt-sb-logo{width:150px;height:80px;margin-bottom:10px;}
+  #teacher-sb-items{display:grid !important;grid-template-columns:repeat(2,1fr);gap:3px;width:100%;}
+  #teacher-sb-items .dt-sb-item{width:100%;min-height:48px;padding:6px 4px;gap:2px;}
+  #teacher-sb-items .dt-sb-item-label{font-size:10px;}
+  #teacher-sb-items .dt-sb-item svg{width:18px;height:18px;}
+  #teacher-sb-items .dt-sb-item.active::before{left:2px;}
+  .dt-sidebar#teacher-sidebar{padding-top:14px;padding-bottom:14px;}
 }
 /* 화면 자체가 좁은 게 아니라 세로로 짧아서(예: 노트북 작은 화면) 항목이 다 안 들어가는
    극히 드문 경우에만 스크롤이 뜨도록 - 높이가 넉넉하면 이 조건 자체가 안 걸려서
