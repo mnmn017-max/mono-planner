@@ -336,8 +336,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
      두꺼워져서 디자인이 깨져 보인다는 피드백이 있었음. 그래서 2열 대신, 기존처럼
      "아이콘 위 + 이름 아래" 세로 배치는 그대로 유지하되 크기만 촘촘하게 줄여서
      스크롤 없이 다 들어가게 함. */
-  .dt-sidebar{flex-direction:column;align-items:center;padding:10px 6px;gap:2px;width:92px;}
-  .dt-sb-logo{width:76px;height:38px;border-radius:8px;background:var(--burg);display:flex;align-items:center;justify-content:center;margin-bottom:6px;overflow:visible;flex-shrink:0;box-shadow:0 2px 8px rgba(123,29,29,0.3);padding:5px 7px;}
+  .dt-sidebar{flex-direction:column;align-items:center;padding:10px 6px;gap:2px;width:112px;}
+  .dt-sb-logo{width:100px;height:50px;border-radius:9px;background:var(--burg);display:flex;align-items:center;justify-content:center;margin-bottom:6px;overflow:visible;flex-shrink:0;box-shadow:0 2px 8px rgba(123,29,29,0.3);padding:6px 8px;}
   .dt-sb-nav-group{display:flex;flex-direction:column;gap:2px;width:100%;}
   #teacher-sb-items{display:flex !important;flex-direction:column;gap:2px;width:100%;}
   .dt-sb-item{display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;min-height:40px;padding:5px 2px;gap:1px;border-radius:8px;cursor:pointer;color:var(--tx3);}
@@ -499,7 +499,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
     overflow-y:auto;
     padding:16px 24px;
     display:grid;
-    grid-template-columns:1.8fr 1fr;
+    /* 1.8fr 1fr처럼 fr 단위만 쓰면 각 트랙에 암묵적으로 min-width:auto가 적용돼서,
+       그 트랙 안 콘텐츠(학생 카드 그리드, 우측 TOP5 목록 등)가 넓으면 트랙이 그만큼
+       넓어지려 하고, 그 여파로 grid-column:1/-1로 전체폭을 차지해야 할 D-Day 배너나
+       KPI 박스가 한쪽 트랙 폭만큼만 좁게 계산되는 문제가 있었음. minmax(0, Nfr)로
+       각 트랙의 최소폭을 0으로 명시하면 이 문제가 사라짐(잘 알려진 CSS Grid 함정). */
+    grid-template-columns:minmax(0,1.8fr) minmax(0,1fr);
     grid-auto-rows:min-content;
     gap:12px;
     align-content:start;
@@ -5787,7 +5792,7 @@ window.openExamMonitor = function(examId){
 
 function buildExamListPage(){
   var __dt_h = '<div class="dt-header dt-only"><div><div class="dt-header-title">나의 시험</div></div></div>';
-  return __dt_h+'<div class="dt-main-grid"><div style="grid-column:1/-1;"><div class="card"><div class="card-h"><div class="card-title">📝 나의 시험</div></div><div id="exam-list-student">불러오는 중...</div></div></div></div>';
+  return __dt_h+'<div class="dt-main-grid"><div style="grid-column:1/3;"><div class="card"><div class="card-h"><div class="card-title">📝 나의 시험</div></div><div id="exam-list-student">불러오는 중...</div></div></div></div>';
 }
 
 function loadExamList(){
@@ -11345,7 +11350,7 @@ window.addEventListener('online', function () {
 });
 function buildGradePage(){
   var __dt_h = '<div class="dt-header dt-only"><div><div class="dt-header-title">성적관리</div></div></div>';
-  return __dt_h+'<div class="dt-main-grid"><div style="grid-column:1/-1;"><div style="display:flex;gap:8px;margin-bottom:14px"><button class="grade-tab-btn active" id="gtab-0" onclick="gradeSubTab(0)">모의고사</button><button class="grade-tab-btn" id="gtab-1" onclick="gradeSubTab(1)">내신</button></div><button class="appeal-btn" id="grade-add-btn" onclick="openModal(\'modal-add-grade\')">+ 성적 입력하기</button><div id="grade-list"><div style="color:var(--tx3);font-size:13px;padding:10px 0">불러오는 중...</div></div>';
+  return __dt_h+'<div class="dt-main-grid"><div style="grid-column:1/3;"><div style="display:flex;gap:8px;margin-bottom:14px"><button class="grade-tab-btn active" id="gtab-0" onclick="gradeSubTab(0)">모의고사</button><button class="grade-tab-btn" id="gtab-1" onclick="gradeSubTab(1)">내신</button></div><button class="appeal-btn" id="grade-add-btn" onclick="openModal(\'modal-add-grade\')">+ 성적 입력하기</button><div id="grade-list"><div style="color:var(--tx3);font-size:13px;padding:10px 0">불러오는 중...</div></div>';
 }
 window.gradeSubTab=function(i){
   ['gtab-0','gtab-1'].forEach(function(id,j){var el=document.getElementById(id);if(el)el.classList.toggle('active',i===j);});
@@ -12207,7 +12212,7 @@ window.saveGrade=function(){
 // ── 리워드 ──
 function buildRewardPage(){
   var __dt_h = '<div class="dt-header dt-only"><div><div class="dt-header-title">리워드</div></div></div>';
-  return __dt_h+'<div class="dt-main-grid"><div style="grid-column:1/-1;"><div id="scholar-banner"></div><div id="points-summary"></div><button class="appeal-btn" onclick="openModal(\'modal-appeal\')">👍 칭찬 어필하기</button><div class="card"><div class="card-title">상벌점 규정</div><div id="rules-area"><div style="color:var(--tx3);font-size:13px">불러오는 중...</div></div></div><div class="card"><div class="card-title">상벌점 히스토리</div><div id="points-history"><div style="color:var(--tx3);font-size:13px">불러오는 중...</div></div></div>';
+  return __dt_h+'<div class="dt-main-grid"><div style="grid-column:1/3;"><div id="scholar-banner"></div><div id="points-summary"></div><button class="appeal-btn" onclick="openModal(\'modal-appeal\')">👍 칭찬 어필하기</button><div class="card"><div class="card-title">상벌점 규정</div><div id="rules-area"><div style="color:var(--tx3);font-size:13px">불러오는 중...</div></div></div><div class="card"><div class="card-title">상벌점 히스토리</div><div id="points-history"><div style="color:var(--tx3);font-size:13px">불러오는 중...</div></div></div>';
 }
 function loadRewardData(){
   if(!currentUser) return;
@@ -12744,8 +12749,8 @@ function buildTDashboard(){
         // 데스크탑 헤더 + 그리드 wrapper
         var html = '<div class="dt-header dt-only"><div><div class="dt-header-title">학생현황</div><div class="dt-header-sub">'+new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric',weekday:'long'})+'</div></div></div>'
           +'<div class="dt-main-grid">'
-          +'<div style="grid-column:1/-1;">'+_buildDdayBannerHtml()+'</div>'
-          +'<div style="grid-column:1/-1;">'+kpis+'</div>'
+          +'<div style="grid-column:1/3;">'+_buildDdayBannerHtml()+'</div>'
+          +'<div style="grid-column:1/3;">'+kpis+'</div>'
           +'<div style="grid-column:1/2;">'+studentGrid+'</div>'
           +'<div style="grid-column:2/3;">'
           +'<div class="card"><div class="card-h"><div class="card-title">🏅 우수학생 · TOP 5</div></div><div id="study-rankings-teacher"><div style="color:var(--tx3);font-size:12px;text-align:center;padding:8px;">불러오는 중...</div></div></div>'
