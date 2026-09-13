@@ -6047,23 +6047,28 @@ window._submitElectiveChoice = function(name){
 // 시각에 시작/종료). 그래서 상대시간(now+진행시간)이 아니라, 시험 전체 스케줄에서
 // 이 과목의 절대 종료시각을 그대로 가져다 씀. 예정 시각이 없는(개인 응시) 시험은
 // 원래처럼 지금부터 진행시간만큼으로 계산함.
+// 단, 그 예정 종료시각이 이미 "지금"보다도 과거라면(=라이브 진행 시간대가 완전히
+// 끝난 뒤, 결석했던 학생이 나중에 따로 응시하는 등의 경우) 옛날 스케줄에 묶어버리면
+// 시작하자마자 0초 남음으로 즉시 종료 처리되는 버그가 생기므로, 이 경우엔 그냥
+// 일반적인 개인 응시처럼 지금부터 정상적으로 진행시간을 준다.
 function _getSubjectDeadline(exam, subjIdx, now){
   if (exam.startAtMs) {
     var schedule = _computeExamDisplaySchedule(exam);
     var phase = schedule.find(function(p){ return p.type==='subject' && p.idx===subjIdx; });
-    if (phase) return phase.endMs;
+    if (phase && phase.endMs > now) return phase.endMs;
   }
   return now + exam.subjects[subjIdx].durationMin*60000;
 }
 // 쉬는시간도 마찬가지 - 예정된 시험이면 "학생이 언제 제출했든" 상관없이 원래 정해진
 // 다음 과목 시작 시각까지 기다리게 함 (일찍 냈다고 다음 과목이 일찍 시작되면 안 됨).
+// 이것도 그 시각이 이미 지난 과거면(라이브 시간대가 끝난 뒤) 정상적인 쉬는시간으로 폴백.
 function _getBreakDeadline(exam, finishedSubjIdx, now){
   if (exam.startAtMs) {
     var schedule = _computeExamDisplaySchedule(exam);
     var breakPhase = schedule.find(function(p){ return p.type==='break' && p.afterIdx===finishedSubjIdx; });
-    if (breakPhase) return breakPhase.endMs;
+    if (breakPhase && breakPhase.endMs > now) return breakPhase.endMs;
     var nextPhase = schedule.find(function(p){ return p.type==='subject' && p.idx===finishedSubjIdx+1; });
-    if (nextPhase) return nextPhase.startMs;
+    if (nextPhase && nextPhase.startMs > now) return nextPhase.startMs;
   }
   var breakMin = exam.subjects[finishedSubjIdx].breakAfterMin || 0;
   return now + breakMin*60000;
