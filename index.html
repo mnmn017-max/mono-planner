@@ -5792,8 +5792,24 @@ window.openExamMonitor = function(examId){
 
 function buildExamListPage(){
   var __dt_h = '<div class="dt-header dt-only"><div><div class="dt-header-title">나의 시험</div></div></div>';
-  return __dt_h+'<div class="dt-main-grid"><div style="grid-column:1/3;"><div class="card"><div class="card-h"><div class="card-title">📝 나의 시험</div></div><div id="exam-list-student">불러오는 중...</div></div></div></div>';
+  return __dt_h+'<div class="dt-main-grid"><div style="grid-column:1/3;"><div class="card"><div class="card-h"><div class="card-title">📝 나의 시험</div></div>'
+    +'<div id="exam-list-cat-tabs" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;"></div>'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;"><span style="font-size:12px;color:var(--tx3);">정렬</span><select class="modal-select" id="exam-list-sort-select" onchange="switchExamListSort(this.value)" style="margin:0;width:auto;padding:6px 10px;font-size:12px;"><option value="date_desc">최신순</option><option value="date_asc">오래된순</option><option value="name_asc">이름순</option></select></div>'
+    +'<div id="exam-list-student">불러오는 중...</div></div></div></div>';
 }
+
+var _currentExamListCategory = '전체', _currentExamListSort = 'date_desc';
+window.switchExamListCategory = function(cat){
+  _currentExamListCategory = cat;
+  document.querySelectorAll('.exam-list-cat-btn').forEach(function(btn){
+    btn.classList.toggle('active', btn.textContent === cat);
+  });
+  _renderExamListStudent();
+};
+window.switchExamListSort = function(sortKey){
+  _currentExamListSort = sortKey;
+  _renderExamListStudent();
+};
 
 function loadExamList(){
   if (!currentUser) return;
@@ -5801,12 +5817,61 @@ function loadExamList(){
     var sessions = snap.docs.map(function(d){return Object.assign({id:d.id}, d.data());});
     if (!sessions.length) {
       document.getElementById('exam-list-student').innerHTML = '<div style="color:var(--tx3);font-size:13px;text-align:center;padding:30px 0;">배정된 시험이 없습니다</div>';
+      var catTabsEl0 = document.getElementById('exam-list-cat-tabs');
+      if (catTabsEl0) catTabsEl0.innerHTML = '';
       return;
     }
     Promise.all(sessions.map(function(s){ return getDoc(doc(db,'exams',s.examId)); })).then(function(examDocs){
       var rows = sessions.map(function(sess, i){
         var exam = examDocs[i].exists() ? examDocs[i].data() : null;
-        if (!exam) return '';
+        return exam ? {sess: sess, exam: exam} : null;
+      }).filter(Boolean);
+      window._examListCache = rows;
+
+      // 분류 탭 - 이 학생에게 배정된 시험들의 분류만 보여줌(조회 전용, 추가/수정/삭제는
+      // 선생님/마스터만 가능)
+      var cats = Array.from(new Set(rows.map(function(r){return r.exam.examSource;}).filter(Boolean)));
+      var catTabsEl = document.getElementById('exam-list-cat-tabs');
+      if (catTabsEl) {
+        if (!cats.length) {
+          catTabsEl.innerHTML = '';
+        } else {
+          _currentExamListCategory = '전체';
+          catTabsEl.innerHTML = ['전체'].concat(cats).map(function(c){
+            return '<button class="exam-list-cat-btn'+(c==='전체'?' active':'')+'" onclick="switchExamListCategory(\''+escapeHtml(c).replace(/'/g,"\\'")+'\')" style="padding:6px 10px;background:'+(c==='전체'?'var(--blue-l)':'var(--surface2)')+';border:1px solid '+(c==='전체'?'rgba(29,78,216,0.2)':'var(--border)')+';border-radius:6px;color:'+(c==='전체'?'#7aa8ff':'var(--tx3)')+';font-size:12px;cursor:pointer;">'+escapeHtml(c)+'</button>';
+          }).join('');
+        }
+      }
+
+      _renderExamListStudent();
+    });
+  }).catch(function(e){
+    document.getElementById('exam-list-student').innerHTML = '<div style="color:var(--red);font-size:12px;">불러오기 실패</div>';
+  });
+}
+
+// 캐시된 시험 목록을 지금 선택된 분류/정렬 기준으로 걸러서 다시 그림
+function _renderExamListStudent(){
+  var el = document.getElementById('exam-list-student');
+  if (!el || !window._examListCache) return;
+  var rows = window._examListCache.slice();
+
+  if (_currentExamListCategory && _currentExamListCategory !== '전체') {
+    rows = rows.filter(function(r){ return r.exam.examSource === _currentExamListCategory; });
+  }
+
+  if (_currentExamListSort === 'date_asc') {
+    rows.sort(function(a,b){ return (a.exam.createdAt?a.exam.createdAt.toMillis():0) - (b.exam.createdAt?b.exam.createdAt.toMillis():0); });
+  } else if (_currentExamListSort === 'name_asc') {
+    rows.sort(function(a,b){ return (a.exam.title||'').localeCompare(b.exam.title||'', 'ko'); });
+  } else { // date_desc (기본값)
+    rows.sort(function(a,b){ return (b.exam.createdAt?b.exam.createdAt.toMillis():0) - (a.exam.createdAt?a.exam.createdAt.toMillis():0); });
+  }
+
+  if (!rows.length) { el.innerHTML = '<div style="color:var(--tx3);font-size:13px;text-align:center;padding:30px 0;">해당 분류의 시험이 없습니다</div>'; return; }
+
+  el.innerHTML = rows.map(function(r){
+        var sess = r.sess, exam = r.exam;
         var subj0 = exam.subjects && exam.subjects[0];
         var subjName = subj0 ? (subjectNames[subj0.subject]||subj0.subject) : '';
         var statusInfo = {
@@ -5829,12 +5894,7 @@ function loadExamList(){
           + '<div style="font-size:11px;color:'+statusInfo.color+';font-weight:700;margin-bottom:6px;">'+statusInfo.label+'</div>'
           + (statusInfo.btn ? '<button onclick="startExam(\''+sess.id+'\')" class="modal-btn primary" style="margin:0;width:auto;padding:8px 18px;font-size:12px;">'+statusInfo.btn+'</button>' : (score!=null?'<div style="display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;"><button onclick="viewExamResult(\''+sess.id+'\')" style="font-size:11px;padding:6px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;">결과보기</button><button onclick="openReflectionForPastExam(\''+sess.id+'\')" style="font-size:11px;padding:6px 12px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);cursor:pointer;">✍️ 다음 걸음을 위하여</button></div>':''))
           + '</div></div>';
-      }).join('');
-      document.getElementById('exam-list-student').innerHTML = rows;
-    });
-  }).catch(function(e){
-    document.getElementById('exam-list-student').innerHTML = '<div style="color:var(--red);font-size:12px;">불러오기 실패</div>';
-  });
+  }).join('');
 }
 
 // ── 시험 응시 상태 ──
@@ -11355,27 +11415,86 @@ window.addEventListener('online', function () {
 });
 function buildGradePage(){
   var __dt_h = '<div class="dt-header dt-only"><div><div class="dt-header-title">성적관리</div></div></div>';
-  return __dt_h+'<div class="dt-main-grid"><div style="grid-column:1/3;"><div style="display:flex;gap:8px;margin-bottom:14px"><button class="grade-tab-btn active" id="gtab-0" onclick="gradeSubTab(0)">모의고사</button><button class="grade-tab-btn" id="gtab-1" onclick="gradeSubTab(1)">내신</button></div><button class="appeal-btn" id="grade-add-btn" onclick="openModal(\'modal-add-grade\')">+ 성적 입력하기</button><div id="grade-list"><div style="color:var(--tx3);font-size:13px;padding:10px 0">불러오는 중...</div></div>';
+  return __dt_h+'<div class="dt-main-grid"><div style="grid-column:1/3;"><div style="display:flex;gap:8px;margin-bottom:14px"><button class="grade-tab-btn active" id="gtab-0" onclick="gradeSubTab(0)">모의고사</button><button class="grade-tab-btn" id="gtab-1" onclick="gradeSubTab(1)">내신</button></div><button class="appeal-btn" id="grade-add-btn" onclick="openModal(\'modal-add-grade\')">+ 성적 입력하기</button>'
+    +'<div id="grade-cat-tabs" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;"></div>'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;"><span style="font-size:12px;color:var(--tx3);">정렬</span><select class="modal-select" id="grade-sort-select" onchange="switchStudentGradeSort(this.value)" style="margin:0;width:auto;padding:6px 10px;font-size:12px;"><option value="date_desc">최신순</option><option value="date_asc">오래된순</option><option value="name_asc">이름순</option></select></div>'
+    +'<div id="grade-list"><div style="color:var(--tx3);font-size:13px;padding:10px 0">불러오는 중...</div></div>';
 }
 window.gradeSubTab=function(i){
   ['gtab-0','gtab-1'].forEach(function(id,j){var el=document.getElementById(id);if(el)el.classList.toggle('active',i===j);});
   loadGrades(i===0?'mock':'school');
 };
 
+var _currentStudentGradeCategory = '전체', _currentStudentGradeSort = 'date_desc';
+window.switchStudentGradeCategory = function(cat){
+  _currentStudentGradeCategory = cat;
+  document.querySelectorAll('.student-grade-cat-btn').forEach(function(btn){
+    btn.classList.toggle('active', btn.textContent === cat);
+  });
+  _renderGradeList();
+};
+window.switchStudentGradeSort = function(sortKey){
+  _currentStudentGradeSort = sortKey;
+  _renderGradeList();
+};
+
 function loadGrades(type) {
   var el=document.getElementById('grade-list');
   if(!el||!currentUser) return;
+  window._currentGradeType = type;
   Promise.all([
     getDocs(query(collection(db,'grades'),where('uid','==',currentUser.uid),where('type','==',type))),
     getDoc(doc(db,'admissionPlans',currentUser.uid))
   ]).then(function(results){
     var snap = results[0];
     var admissionPlansDoc = results[1].exists() ? results[1].data() : {susi:[], jeongsi:[]};
-    if(snap.empty){el.innerHTML='<div style="color:var(--tx3);font-size:13px;padding:10px 0">입력된 성적이 없습니다</div>';return;}
-    var grades=snap.docs.map(function(d){return Object.assign({_id:d.id},d.data());}).sort(function(a,b){
-      return (b.examDate||'').localeCompare(a.examDate||'');
-    });
-    el.innerHTML=grades.map(function(g){
+    var grades=snap.docs.map(function(d){return Object.assign({_id:d.id},d.data());});
+    window._gradesCache = grades;
+    window._gradesAdmissionPlansCache = admissionPlansDoc;
+
+    // 분류 탭 렌더링 - 이 학생의 성적에 실제로 쓰인 분류들만 보여줌 (선생님/마스터가
+    // 만드는 분류 관리와 달리, 학생은 조회 필터만 가능하고 추가/수정/삭제는 못 함)
+    var cats = Array.from(new Set(grades.map(function(g){return g.examSource;}).filter(Boolean)));
+    var catTabsEl = document.getElementById('grade-cat-tabs');
+    if (catTabsEl) {
+      if (!cats.length) {
+        catTabsEl.innerHTML = '';
+      } else {
+        _currentStudentGradeCategory = '전체';
+        catTabsEl.innerHTML = ['전체'].concat(cats).map(function(c){
+          return '<button class="student-grade-cat-btn'+(c==='전체'?' active':'')+'" onclick="switchStudentGradeCategory(\''+escapeHtml(c).replace(/'/g,"\\'")+'\')" style="padding:6px 10px;background:'+(c==='전체'?'var(--blue-l)':'var(--surface2)')+';border:1px solid '+(c==='전체'?'rgba(29,78,216,0.2)':'var(--border)')+';border-radius:6px;color:'+(c==='전체'?'#7aa8ff':'var(--tx3)')+';font-size:12px;cursor:pointer;">'+escapeHtml(c)+'</button>';
+        }).join('');
+      }
+    }
+
+    _renderGradeList();
+  }).catch(function(e){el.innerHTML='<div style="color:var(--tx3);font-size:13px">불러오기 실패: '+e.message+'</div>';});
+}
+
+// 캐시된 성적 목록을 지금 선택된 분류/정렬 기준으로 걸러서 다시 그림 - 분류나 정렬을
+// 바꿀 때마다 서버에서 새로 안 받아오고, 이미 받아둔 걸로 그냥 다시 그리기만 함
+function _renderGradeList(){
+  var el=document.getElementById('grade-list');
+  if(!el || !window._gradesCache) return;
+  var grades = window._gradesCache.slice();
+  var admissionPlansDoc = window._gradesAdmissionPlansCache || {susi:[], jeongsi:[]};
+
+  if (_currentStudentGradeCategory && _currentStudentGradeCategory !== '전체') {
+    grades = grades.filter(function(g){ return g.examSource === _currentStudentGradeCategory; });
+  }
+
+  if (_currentStudentGradeSort === 'date_asc') {
+    grades.sort(function(a,b){ return (a.examDate||'').localeCompare(b.examDate||''); });
+  } else if (_currentStudentGradeSort === 'name_asc') {
+    grades.sort(function(a,b){ return (a.examName||'').localeCompare(b.examName||'', 'ko'); });
+  } else { // date_desc (기본값)
+    grades.sort(function(a,b){ return (b.examDate||'').localeCompare(a.examDate||''); });
+  }
+
+  if(!grades.length){el.innerHTML='<div style="color:var(--tx3);font-size:13px;padding:10px 0">입력된 성적이 없습니다</div>';return;}
+
+  el.innerHTML=grades.map(function(g){
+
       var _sOrder=['ko','en','ma','hi'];
       var _sKeys=Object.keys(g.scores||{}).sort(function(a,b){
         var ai=_sOrder.indexOf(a.replace(/\d+$/,''));var bi=_sOrder.indexOf(b.replace(/\d+$/,''));
@@ -11451,9 +11570,9 @@ function loadGrades(type) {
           + '</div>';
       }
       return '<div class="score-card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-size:14px;font-weight:600">'+g.examName+(g.examSessionId?' <span style="font-size:9px;font-weight:700;color:var(--burg);background:var(--burg-l);padding:2px 6px;border-radius:4px;">자동채점</span>':'')+'</div><div style="font-size:11px;color:var(--tx3)">'+g.examDate+'</div></div><div class="score-subjects">'+subjHtml+'</div>'+wrongHtml+refHtml+minReqHtml+'<div style="margin-top:10px;display:flex;gap:6px;">'+(g.examSessionId?'<button onclick="viewExamResult(\''+g.examSessionId+'\')" style="padding:6px 12px;background:var(--burg-l);border:1px solid var(--burg-l2);border-radius:6px;color:var(--burg);font-size:11px;cursor:pointer;flex:1;">📄 문항별 결과 보기</button>':'')+'<button onclick="loadExamStats(\''+encodeURIComponent(g.examName)+'\',\'exam-stats-'+encodeURIComponent(g.examName)+'-'+g.examDate+'\')" style="padding:6px 12px;background:rgba(74,127,255,0.1);border:1px solid rgba(74,127,255,0.2);border-radius:6px;color:var(--blue);font-size:11px;cursor:pointer;flex:1;">📊 같은 시험 전체 통계 보기</button><button onclick="openGradeMemoModal(\''+g._id+'\')" style="padding:6px 12px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;flex:1;">📝 메모</button></div><div id="exam-stats-'+encodeURIComponent(g.examName)+'-'+g.examDate+'" style="display:none"></div></div>';
-    }).join('');
-  }).catch(function(e){el.innerHTML='<div style="color:var(--tx3);font-size:13px">불러오기 실패: '+e.message+'</div>';});
+  }).join('');
 }
+
 // ── 채팅 알림 ──
 var unsubChatNotif = null;
 var _chatNotifVersion = 0; // 중복 등록 방지용 버전
