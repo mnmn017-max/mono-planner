@@ -254,6 +254,47 @@ async function writeExamResultToGrades(studentUid, sessionId, examId, exam, resu
   });
 }
 
+
+// ── 모의고사 일정 연동: 서버가 시험을 강제 제출했을 때, 학생의 "오늘 할 일"에 자동 추가된
+// 시험 투두(sch_<일정ID>)도 완료로 맞춰 둠. 실패해도 기존 제출/채점 흐름에는 영향 없음(전부 try/catch).
+function fmtHMSServer(sec) {
+  sec = Math.max(0, Math.round(sec));
+  var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  return h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+}
+function examSecFromResultsServer(results, exam) {
+  var tot = 0;
+  (results || []).forEach(function (r, i) {
+    if (!r || typeof r.startedAtMs !== 'number' || typeof r.submittedAtMs !== 'number') return;
+    var sec = Math.max(0, (r.submittedAtMs - r.startedAtMs) / 1000);
+    var subj = exam && exam.subjects && exam.subjects[i];
+    var cap = subj && subj.durationMin ? subj.durationMin * 60 : 4 * 3600;
+    tot += Math.min(sec, cap);
+  });
+  return Math.round(tot);
+}
+async function syncScheduleTodoDone(studentUid, examId, exam, results) {
+  try {
+    var snap = await db.collection('examSchedules').where('studentUid', '==', studentUid).where('examId', '==', examId).get();
+    if (snap.empty) return;
+    var sec = examSecFromResultsServer(results, exam);
+    for (var k = 0; k < snap.docs.length; k++) {
+      var sch = snap.docs[k];
+      await sch.ref.set({ status: 'done', doneAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true }).catch(function () {});
+      var tRef = db.collection('todos').doc('sch_' + sch.id);
+      var tDoc = await tRef.get();
+      if (!tDoc.exists) continue; // 학생이 아직 앱을 안 열었으면 학생 앱이 열릴 때 알아서 만들고 완료 처리함
+      var td = tDoc.data();
+      if (td.examSec > 0) continue; // 이미 시험 시간이 반영됨(중복 방지)
+      var extra = td.extraSec || 0;
+      await tRef.update({
+        status: 'done', examSec: sec, extraSec: extra, studyTime: fmtHMSServer(sec + extra),
+        completedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+    }
+  } catch (e) { console.error('일정 투두 동기화 실패(무시)', studentUid, examId, e); }
+}
+
 module.exports = async function handler(req, res) {
   try {
     db = ensureAdminInitialized();
@@ -365,6 +406,7 @@ module.exports = async function handler(req, res) {
           var prevScores = await getPrevSubjectScores(sess.studentUid, exam.gradeType, examSourceLabel(exam.examSource));
           await writeExamResultToGrades(sess.studentUid, sessDoc.id, sess.examId, exam, results, subjectNameCache, sess.electiveChoices);
           await awardExamRewards(sess.studentUid, exam.branch, exam, results, prevScores, subjectNameCache);
+          await syncScheduleTodoDone(sess.studentUid, sess.examId, exam, results);
           fullyCompleted++;
         } else {
           var breakMin = subj.breakAfterMin || 0;
