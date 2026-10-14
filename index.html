@@ -18682,7 +18682,7 @@ function mpaStarted(uid,examId){ var se=_mpT.sess[mpSessKey(examId,uid)]; return
 window.mpOpenAuto=function(){
   if(!_mpT.exams||!_mpT.exams.length){ alert('먼저 시험을 만들어 주세요.'); return; }
   var n=mpNow();
-  _mpA={step:1,sel:{},q:'',start:n.today,end:MPC.addDays(n.today,28),excluded:[],schoolStart:'19:00',late:'22:30',maxPer:2,vacation:false,pace:'ramp',base:null,unplaced:[],ssel:{},sq:'',plans:null,lock:false,ov:null};
+  _mpA={step:1,sel:{},q:'',start:n.today,end:MPC.addDays(n.today,28),excluded:[],schoolStart:'19:00',late:'22:30',maxPer:2,vacation:false,pace:'ramp',base:null,unplaced:[],ssel:{},sq:'',fsrc:'',fsub:'',fsch:'',fgr:'',fsc:'',plans:null,lock:false,ov:null};
   var ov=mpSheet('<div id="mpa-root"></div>'); ov.firstChild.classList.add('mp-wide'); _mpA.ov=ov; mpaDraw();
 };
 var MPA_STEPS=['시험 선택','기간 설정','배정안 확인','학생 선택','조정·배정'];
@@ -18697,11 +18697,30 @@ function mpaDraw(){
 }
 window.mpaClose=function(){ mpCloseSheets(); };
 /* 1. 시험 선택 */
-function mpaVisibleExams(){ var q=(_mpA.q||'').trim().toLowerCase(); return _mpT.exams.filter(function(e){ return !q||(e.title||'').toLowerCase().indexOf(q)>=0; }); }
+function mpaVisibleExams(){
+  var A=_mpA, q=(A.q||'').trim().toLowerCase(), has={}; _mpT.sch.forEach(function(x){ has[x.examId]=1; });
+  return _mpT.exams.filter(function(e){
+    if(q&&(e.title||'').toLowerCase().indexOf(q)<0) return false;
+    if(A.fsrc&&(e.examSource||'')!==A.fsrc) return false;
+    if(A.fsub&&!(e.subjects||[]).some(function(x){return mpSubKey(x)===A.fsub;})) return false;
+    if(A.fsch==='none'&&has[e.id]) return false;
+    if(A.fsch==='has'&&!has[e.id]) return false;
+    return true; });
+}
+function mpaExFilterHtml(){
+  var A=_mpA, srcs={}, subs={}; _mpT.exams.forEach(function(e){ if(e.examSource) srcs[e.examSource]=1; (e.subjects||[]).forEach(function(x){ var k=mpSubKey(x); if(k) subs[k]=1; }); });
+  var op=function(v,l,cur){ return '<option value="'+mpE(v)+'"'+(cur===v?' selected':'')+'>'+mpE(l)+'</option>'; };
+  return '<div class="mp-filter-grid" style="margin-bottom:8px">'
+   +'<input class="mp-in sm mp-search" id="mpa-q" placeholder="시험 이름 검색" value="'+mpE(A.q)+'" oninput="mpaSearch(this.value)">'
+   +'<select class="mp-in sm" onchange="mpaFx(\'fsrc\',this.value)">'+op('','출처 전체',A.fsrc)+Object.keys(srcs).map(function(k){return op(k,mpSrcLabel(k),A.fsrc);}).join('')+'</select>'
+   +'<select class="mp-in sm" onchange="mpaFx(\'fsub\',this.value)">'+op('','과목 전체',A.fsub)+Object.keys(subs).map(function(k){return op(k,mpSubLabel(k),A.fsub);}).join('')+'</select>'
+   +'<select class="mp-in sm" onchange="mpaFx(\'fsch\',this.value)">'+op('','일정 전체',A.fsch)+op('none','일정 아직 없는 시험',A.fsch)+op('has','일정 있는 시험',A.fsch)+'</select></div>';
+}
+window.mpaFx=function(k,v){ _mpA[k]=v; var e=document.getElementById('mpa-exl'); if(e) e.innerHTML=mpaExRows(mpaVisibleExams()); var s=document.getElementById('mpa-stul'); if(s) s.innerHTML=mpaStuRows(mpaVisibleStu()); };
 function mpaS1(){
   var A=_mpA, list=mpaVisibleExams(), n=Object.keys(A.sel).filter(function(k){return A.sel[k];}).length;
   var h='<div class="mp-lblrow"><div class="mp-lbl">배정할 시험 <span class="mp-sub">(선택 '+n+'개)</span></div><div class="acts"><button type="button" class="mp-pill" onclick="mpaAllEx(true)"><i class="mpi mpi-check"></i>보이는 시험 전체</button><button type="button" class="mp-pill" onclick="mpaAllEx(false)">전체 해제</button></div></div>'
-   +'<input class="mp-in sm mp-search" id="mpa-q" placeholder="시험 이름 검색" value="'+mpE(A.q)+'" oninput="mpaSearch(this.value)" style="margin-bottom:8px">'
+   +mpaExFilterHtml()
    +'<div class="mp-exlist" id="mpa-exl">'+mpaExRows(list)+'</div>'
    +'<div class="mp-sub" style="margin-top:8px">같은 과목 시험은 제목의 회차 순서(01회 → 02회)를 지켜서 배정돼요.</div>';
   return mpaFrame(h,'<button class="mp-btn" onclick="mpaClose()">닫기</button><button class="mp-btn pri" onclick="mpaNext()">다음 · 기간 설정</button>');
@@ -18763,7 +18782,15 @@ window.mpaBaseSet=function(i,k,v){
 };
 window.mpaRegen=function(){ mpaMakeBase(); mpaDraw(); };
 /* 4. 학생 선택 */
-function mpaVisibleStu(){ var q=(_mpA.sq||'').trim().toLowerCase(); return _mpT.students.filter(function(s){return !q||(s.name||'').toLowerCase().indexOf(q)>=0;}); }
+function mpaGrKey(s){ var g=String(s.grade||''); if(g==='N수'||g==='성인') return g; if(g.indexOf('고등학교')===0) return '고'+g.replace(/[^0-9]/g,''); if(g.indexOf('중학교')===0) return '중'; return '기타'; }
+function mpaVisibleStu(){
+  var A=_mpA, q=(A.sq||'').trim().toLowerCase();
+  return _mpT.students.filter(function(s){
+    if(q&&(s.name||'').toLowerCase().indexOf(q)<0) return false;
+    if(A.fgr&&mpaGrKey(s)!==A.fgr) return false;
+    if(A.fsc){ var n=_mpT.sch.filter(function(x){return x.studentUid===s.uid&&x.date>=A.start&&x.date<=A.end;}).length; if(A.fsc==='has'&&!n) return false; if(A.fsc==='none'&&n) return false; }
+    return true; });
+}
 function mpaStuRows(list){
   var A=_mpA;
   return list.map(function(s){ var inRange=_mpT.sch.filter(function(x){return x.studentUid===s.uid&&x.date>=A.start&&x.date<=A.end;}).length;
@@ -18772,7 +18799,9 @@ function mpaStuRows(list){
 function mpaS4(){
   var A=_mpA, n=Object.keys(A.ssel).filter(function(k){return A.ssel[k];}).length;
   var h='<div class="mp-lblrow"><div class="mp-lbl">배정할 학생 <span class="mp-sub" id="mpa-scnt">(선택 '+n+'명)</span></div><div class="acts"><button type="button" class="mp-pill" onclick="mpaAllStu(true)"><i class="mpi mpi-check"></i>보이는 학생 전체</button><button type="button" class="mp-pill" onclick="mpaAllStu(false)">전체 해제</button></div></div>'
-   +'<input class="mp-in sm mp-search" placeholder="학생 이름 검색" value="'+mpE(A.sq)+'" oninput="mpaStuSearch(this.value)" style="margin-bottom:8px">'
+   +'<div class="mp-filter-grid" style="margin-bottom:8px"><input class="mp-in sm mp-search" placeholder="학생 이름 검색" value="'+mpE(A.sq)+'" oninput="mpaStuSearch(this.value)">'
+   +'<select class="mp-in sm" onchange="mpaFx(\'fgr\',this.value)">'+[['','학년 전체'],['고3','고3'],['고2','고2'],['고1','고1'],['중','중학생'],['N수','N수'],['성인','성인'],['기타','기타']].map(function(o){return '<option value="'+o[0]+'"'+(A.fgr===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select>'
+   +'<select class="mp-in sm" onchange="mpaFx(\'fsc\',this.value)"><option value="">기존 일정 전체</option><option value="has"'+(A.fsc==='has'?' selected':'')+'>기간 내 기존 일정 있는 학생</option><option value="none"'+(A.fsc==='none'?' selected':'')+'>기존 일정 없는 학생</option></select></div>'
    +'<div class="mp-chips" id="mpa-stul">'+mpaStuRows(mpaVisibleStu())+'</div>'
    +'<div class="mp-sub" style="margin-top:8px">중·고등학생은 평일 학교(하교 후 시간대만 사용), N수·성인은 평일도 자유롭게 사용해요. 선택한 학생의 기존 일정은 다음 단계에서 자동으로 피해서 배정돼요.</div>';
   return mpaFrame(h,'<button class="mp-btn" onclick="mpaPrev()">이전</button><button class="mp-btn pri" onclick="mpaNext()">학생별 조정안 만들기</button>');
