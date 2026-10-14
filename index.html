@@ -3773,7 +3773,7 @@ C.autoPlan = function(opt){
     var w=C.dow(d), weekend=(w===0||w===6), sch=schoolish&&!weekend;
     var wo=sch?schoolStart:openFree;
     if(d===today && opt.nowMin!=null) wo=Math.max(wo,ceil10(opt.nowMin+30));
-    info[d]={d:d,weekend:weekend,school:sch,wo:wo,wc:late,list:[],cap:sch?1:maxPer}; idxOf[d]=i;
+    info[d]={d:d,weekend:weekend,school:sch,wo:wo,wc:late,list:[],cap:sch?(opt.maxPerDaySchool||1):maxPer}; idxOf[d]=i;
   });
   (opt.existing||[]).forEach(function(s){ if(info[s.date]&&s.startMin!=null) info[s.date].list.push({s:s.startMin,e:s.startMin+(s.durationMin||60),dur:s.durationMin||60,subj:s.subj,ex:true}); });
   var all=(opt.existing||[]).filter(function(s){return s.subj;}).map(function(s){return {date:s.date,subj:s.subj};});
@@ -18682,7 +18682,7 @@ function mpaStarted(uid,examId){ var se=_mpT.sess[mpSessKey(examId,uid)]; return
 window.mpOpenAuto=function(){
   if(!_mpT.exams||!_mpT.exams.length){ alert('먼저 시험을 만들어 주세요.'); return; }
   var n=mpNow();
-  _mpA={step:1,sel:{},q:'',start:n.today,end:MPC.addDays(n.today,28),excluded:[],schoolStart:'19:00',late:'22:30',maxPer:2,vacation:false,pace:'ramp',base:null,unplaced:[],ssel:{},sq:'',fsrc:'',fsub:'',fsch:'',fgr:'',fsc:'',plans:null,lock:false,ov:null};
+  _mpA={step:1,sel:{},q:'',start:n.today,end:MPC.addDays(n.today,28),excluded:[],schoolStart:'19:00',late:'22:30',maxPer:2,maxSchool:1,vacation:false,pace:'ramp',base:null,unplaced:[],ssel:{},sq:'',fsrc:'',fsub:'',fsch:'',fgr:'',fsc:'',plans:null,lock:false,ov:null};
   var ov=mpSheet('<div id="mpa-root"></div>'); ov.firstChild.classList.add('mp-wide'); _mpA.ov=ov; mpaDraw();
 };
 var MPA_STEPS=['시험 선택','기간 설정','배정안 확인','학생 선택','조정·배정'];
@@ -18739,23 +18739,25 @@ function mpaS2(){
    +'<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><input type="date" class="mp-in sm" id="mpa-x" style="width:auto"><button type="button" class="mp-pill" onclick="mpaAddX()"><i class="mpi mpi-check"></i>추가</button></div>'
    +'<div class="mp-chips" id="mpa-xs">'+mpaXChips()+'</div>'
    +'<div class="mp-filter-grid" style="margin-top:12px"><div><div class="mp-lbl">중·고등학생 평일 시작 가능 시각</div><input type="time" step="600" class="mp-in sm" id="mpa-ss" value="'+A.schoolStart+'"></div><div><div class="mp-lbl">시험 종료 제한 시각</div><input type="time" step="600" class="mp-in sm" id="mpa-late" value="'+A.late+'"></div></div>'
-   +'<div class="mp-filter-grid" style="margin-top:12px"><div><div class="mp-lbl">하루 최대 시험 수 <span class="mp-sub">(학교 가는 평일은 1개)</span></div><select class="mp-in sm" id="mpa-mp"><option value="1"'+(A.maxPer==1?' selected':'')+'>1개</option><option value="2"'+(A.maxPer==2?' selected':'')+'>2개</option><option value="3"'+(A.maxPer==3?' selected':'')+'>3개</option></select></div>'
+   +'<div class="mp-filter-grid" style="margin-top:12px"><div><div class="mp-lbl">하루 최대 시험 수 <span class="mp-sub">(주말·N수·방학)</span></div><select class="mp-in sm" id="mpa-mp">'+mpaCapOpts(A.maxPer)+'</select></div>'
    +'<div><div class="mp-lbl">배치 방식</div><select class="mp-in sm" id="mpa-pace"><option value="ramp"'+(A.pace==='ramp'?' selected':'')+'>후반 집중형 (추천)</option><option value="even"'+(A.pace==='even'?' selected':'')+'>균등형</option></select></div></div>'
+   +'<div class="mp-filter-grid" style="margin-top:12px"><div><div class="mp-lbl">학교 가는 평일 하루 최대 <span class="mp-sub">(중·고등학생)</span></div><select class="mp-in sm" id="mpa-ms">'+mpaCapOpts(A.maxSchool)+'</select></div><div></div></div>'
    +'<label class="mp-chk" style="margin-top:10px"><input type="checkbox" id="mpa-vac" '+(A.vacation?'checked':'')+'>방학 기간이에요 (중·고등학생도 평일에 학교 안 감)</label>'
-   +'<div class="mp-sub" style="margin-top:10px;line-height:1.7"><b>배정 원칙</b> · 같은 과목은 서로 멀리, 과목은 번갈아 · 하루 1개(주말만 2개까지) · 시험 시각은 수능 시간대(국어 08:40, 수학 10:30, 영어 13:10, 한국사 14:50, 탐구 15:35) · 학교 가는 평일은 하교 후만 사용, 긴 시험은 주말 우선 · 마감일 당일은 복기용으로 비움 · 후반으로 갈수록 간격이 조금씩 촘촘해짐</div>';
+   +'<div class="mp-sub" style="margin-top:10px;line-height:1.7"><b>배정 원칙</b> · 같은 과목은 서로 멀리, 과목은 번갈아 · 하루 시험 수는 설정한 한도 안에서 가급적 적게 · 시험 시각은 수능 시간대(국어 08:40, 수학 10:30, 영어 13:10, 한국사 14:50, 탐구 15:35) · 학교 가는 평일은 하교 후만 사용, 긴 시험은 주말 우선 · 마감일 당일은 복기용으로 비움 · 후반으로 갈수록 간격이 조금씩 촘촘해짐</div>';
   return mpaFrame(h,'<button class="mp-btn" onclick="mpaPrev()">이전</button><button class="mp-btn pri" onclick="mpaNext()">자동 배정안 만들기</button>');
 }
+function mpaCapOpts(cur){ var o=''; for(var i=1;i<=6;i++) o+='<option value="'+i+'"'+(+cur===i?' selected':'')+'>'+i+'개</option>'; o+='<option value="9"'+(+cur===9?' selected':'')+'>제한 없음 (시간이 되는 만큼)</option>'; return o; }
 function mpaXChips(){ return _mpA.excluded.map(function(d){ return '<span class="mp-chip">'+mpE(mpDateLabel(d))+'<button type="button" onclick="mpaDelX(\''+d+'\')"><i class="mpi mpi-x"></i></button></span>'; }).join('')||'<span class="mp-sub">없음</span>'; }
 window.mpaAddX=function(){ var v=document.getElementById('mpa-x').value; if(v&&_mpA.excluded.indexOf(v)<0){ _mpA.excluded.push(v); _mpA.excluded.sort(); } document.getElementById('mpa-xs').innerHTML=mpaXChips(); document.getElementById('mpa-x').value=''; };
 window.mpaDelX=function(d){ _mpA.excluded=_mpA.excluded.filter(function(x){return x!==d;}); document.getElementById('mpa-xs').innerHTML=mpaXChips(); };
 function mpaReadS2(){
   var A=_mpA, g=function(i){var e=document.getElementById(i); return e?e.value:null;};
   A.start=g('mpa-s')||A.start; A.end=g('mpa-e')||A.end; A.schoolStart=g('mpa-ss')||A.schoolStart; A.late=g('mpa-late')||A.late;
-  A.maxPer=+g('mpa-mp')||2; A.pace=g('mpa-pace')||'ramp'; A.vacation=!!(document.getElementById('mpa-vac')||{}).checked;
+  A.maxPer=+g('mpa-mp')||2; A.maxSchool=+g('mpa-ms')||1; A.pace=g('mpa-pace')||'ramp'; A.vacation=!!(document.getElementById('mpa-vac')||{}).checked;
 }
 function mpaOpt(extra){
   var A=_mpA, n=mpNow(), exams=_mpT.exams.filter(function(e){return A.sel[e.id];}).map(mpaInfo);
-  return Object.assign({exams:exams,start:A.start,end:A.end,today:n.today,nowMin:n.nowMin>=1440?1439:n.nowMin,schoolStart:MPC.hhmmToMin(A.schoolStart),late:MPC.hhmmToMin(A.late),excluded:A.excluded,maxPerDay:A.maxPer,vacation:A.vacation,pace:A.pace,school:false,existing:[],prefer:null},extra||{});
+  return Object.assign({exams:exams,start:A.start,end:A.end,today:n.today,nowMin:n.nowMin>=1440?1439:n.nowMin,schoolStart:MPC.hhmmToMin(A.schoolStart),late:MPC.hhmmToMin(A.late),excluded:A.excluded,maxPerDay:A.maxPer,maxPerDaySchool:A.maxSchool,vacation:A.vacation,pace:A.pace,school:false,existing:[],prefer:null},extra||{});
 }
 function mpaMakeBase(){ var r=MPC.autoPlan(mpaOpt()); _mpA.base=r.items; _mpA.unplaced=r.unplaced; _mpA.days=r.days; }
 /* 3. 기본안 */
