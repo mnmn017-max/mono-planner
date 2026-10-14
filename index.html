@@ -1821,6 +1821,133 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .mp-bell{position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:9999;background:#7b1e1e;color:#fff;border-radius:14px;padding:12px 18px;min-width:240px;max-width:92vw;box-shadow:0 8px 28px rgba(0,0,0,.3);cursor:pointer;animation:mpBellIn .35s ease}
 .mp-bell .t{font-size:16px;font-weight:700}.mp-bell .s{font-size:12.5px;opacity:.9;margin-top:2px}
 @keyframes mpBellIn{from{opacity:0;transform:translate(-50%,-14px)}to{opacity:1;transform:translate(-50%,0)}}
+.mpi{display:inline-block;width:1.12em;height:1.12em;vertical-align:-.2em;background-color:currentColor;-webkit-mask:var(--i) center/contain no-repeat;mask:var(--i) center/contain no-repeat;flex:none}
+.mpi-clock{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%229%22/%3E%3Cpath%20d%3D%22M12%207v5l3%202%22/%3E%3C/svg%3E")}
+.mpi-bell{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M18%208a6%206%200%200%200-12%200c0%207-3%209-3%209h18s-3-2-3-9%22/%3E%3Cpath%20d%3D%22M13.7%2021a2%202%200%200%201-3.4%200%22/%3E%3C/svg%3E")}
+.mpi-bell-off{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M18%208a6%206%200%200%200-9.3-5M6.3%206.3C6.1%206.8%206%207.4%206%208c0%207-3%209-3%209h13.5%22/%3E%3Cpath%20d%3D%22M13.7%2021a2%202%200%200%201-3.4%200%22/%3E%3Cpath%20d%3D%22M3%203l18%2018%22/%3E%3C/svg%3E")}
+.mpi-vibrate{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%228%22%20y%3D%223%22%20width%3D%228%22%20height%3D%2218%22%20rx%3D%222%22/%3E%3Cpath%20d%3D%22M4%208v8M20%208v8M1.5%2010.5v3M22.5%2010.5v3%22/%3E%3C/svg%3E")}
+.mpi-calendar{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%223.5%22%20y%3D%225%22%20width%3D%2217%22%20height%3D%2215.5%22%20rx%3D%222.5%22/%3E%3Cpath%20d%3D%22M3.5%2010h17M8%203v4M16%203v4%22/%3E%3C/svg%3E")}
+.mpi-pin{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M12%2021.5s6.5-5.6%206.5-11a6.5%206.5%200%200%200-13%200c0%205.4%206.5%2011%206.5%2011z%22/%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2210.3%22%20r%3D%222.3%22/%3E%3C/svg%3E")}
+.mpi-clip{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M20.5%2011.5l-8.2%208.2a4.6%204.6%200%200%201-6.5-6.5l8.4-8.4a3.1%203.1%200%200%201%204.4%204.4l-8.4%208.4a1.5%201.5%200%200%201-2.2-2.2l7.7-7.7%22/%3E%3C/svg%3E")}
+.mpi-doc{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M14%203H7.5A2.5%202.5%200%200%200%205%205.5v13A2.5%202.5%200%200%200%207.5%2021h9a2.5%202.5%200%200%200%202.5-2.5V8z%22/%3E%3Cpath%20d%3D%22M14%203v5h5M9%2013h6M9%2017h4%22/%3E%3C/svg%3E")}
+.mpi-edit{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M12%2020h9%22/%3E%3Cpath%20d%3D%22M16.5%203.5a2.1%202.1%200%200%201%203%203L8%2018l-4%201%201-4z%22/%3E%3C/svg%3E")}
+.mpi-check-c{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%229%22/%3E%3Cpath%20d%3D%22M8%2012.3l2.8%202.8L16%209.5%22/%3E%3C/svg%3E")}
+.mpi-check{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M5%2012.5l4.5%204.5L19%207.5%22/%3E%3C/svg%3E")}
+.mpi-x{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%206l12%2012M18%206L6%2018%22/%3E%3C/svg%3E")}
+.mpi-x-c{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%229%22/%3E%3Cpath%20d%3D%22M9%209l6%206M15%209l-6%206%22/%3E%3C/svg%3E")}
+.mpi-warn{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M10.3%204L2.3%2018a2%202%200%200%200%201.7%203h16a2%202%200%200%200%201.7-3L13.7%204a2%202%200%200%200-3.4%200z%22/%3E%3Cpath%20d%3D%22M12%209.5v4M12%2017h.01%22/%3E%3C/svg%3E")}
+.mpi-lock{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%224.5%22%20y%3D%2210.5%22%20width%3D%2215%22%20height%3D%2210%22%20rx%3D%222.5%22/%3E%3Cpath%20d%3D%22M8%2010.5V7.5a4%204%200%200%201%208%200v3%22/%3E%3C/svg%3E")}
+.mpi-play{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M8%205l11%207-11%207z%22/%3E%3C/svg%3E")}
+.mpi-chev-l{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M15%205.5L8.5%2012l6.5%206.5%22/%3E%3C/svg%3E")}
+.mpi-chev-r{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M9%205.5l6.5%206.5L9%2018.5%22/%3E%3C/svg%3E")}
+.mpi-search{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2211%22%20cy%3D%2211%22%20r%3D%226.5%22/%3E%3Cpath%20d%3D%22M20%2020l-4.2-4.2%22/%3E%3C/svg%3E")}
+.mpi-refresh{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3.5%2012a8.5%208.5%200%200%201%2014.6-5.9L20.5%208.5M20.5%203.5v5h-5M20.5%2012a8.5%208.5%200%200%201-14.6%205.9L3.5%2015.5M3.5%2020.5v-5h5%22/%3E%3C/svg%3E")}
+.mpi-spark{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M12%203l2.1%205.9L20%2011l-5.9%202.1L12%2019l-2.1-5.9L4%2011l5.9-2.1z%22/%3E%3C/svg%3E")}
+.mpi-cap{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M22%209.5L12%205%202%209.5l10%204.5z%22/%3E%3Cpath%20d%3D%22M6%2011.8V16c3%202.4%209%202.4%2012%200v-4.2M22%209.5V15%22/%3E%3C/svg%3E")}
+.mpi-eye{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M1.5%2012S5.5%205%2012%205s10.5%207%2010.5%207-4%207-10.5%207S1.5%2012%201.5%2012z%22/%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%223%22/%3E%3C/svg%3E")}
+.mpi-msg{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M20.5%2015.5a2%202%200%200%201-2%202H7l-4%203.5V5.5a2%202%200%200%201%202-2h13.5a2%202%200%200%201%202%202z%22/%3E%3C/svg%3E")}
+.mpi-trash{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3.5%206.5h17M9%206.5V4h6v2.5M18.5%206.5l-.9%2013.1a1.5%201.5%200%200%201-1.5%201.4H7.9a1.5%201.5%200%200%201-1.5-1.4L5.5%206.5M10%2011v5.5M14%2011v5.5%22/%3E%3C/svg%3E")}
+.mpi-book{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M2.5%204.5h6A3.5%203.5%200%200%201%2012%208v12.5a2.5%202.5%200%200%200-2.5-2.5h-7z%22/%3E%3Cpath%20d%3D%22M21.5%204.5h-6A3.5%203.5%200%200%200%2012%208v12.5a2.5%202.5%200%200%201%202.5-2.5h7z%22/%3E%3C/svg%3E")}
+.mpi-chart{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3.5%203.5v17h17%22/%3E%3Cpath%20d%3D%22M7.5%2015l4-4.5%203%203%205-6%22/%3E%3C/svg%3E")}
+.mpi-sprout{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M12%2021.5V11%22/%3E%3Cpath%20d%3D%22M12%2011.5C12%207.5%209%205%204.5%205%204.5%209%207%2011.5%2012%2011.5z%22/%3E%3Cpath%20d%3D%22M12%2014c0-3%202.2-5.2%206.5-5.2%200%203.2-2.4%205.2-6.5%205.2z%22/%3E%3C/svg%3E")}
+.mpi-coffee{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M4%209h12v5a5%205%200%200%201-5%205H9a5%205%200%200%201-5-5z%22/%3E%3Cpath%20d%3D%22M16%2010.5h1.5a2.5%202.5%200%200%201%200%205H16M7.5%203v3M11%203v3%22/%3E%3C/svg%3E")}
+.mpi-utensils{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%203v7a2%202%200%200%200%202%202v9M10%203v7a2%202%200%200%201-2%202M8%203v7%22/%3E%3Cpath%20d%3D%22M17.5%2021V3c-2.8%201.6-4%204.2-4%207.5h4%22/%3E%3C/svg%3E")}
+.mpi-clipcheck{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%225%22%20y%3D%224.5%22%20width%3D%2214%22%20height%3D%2217%22%20rx%3D%222%22/%3E%3Cpath%20d%3D%22M9%204.5V3.5h6v1M9.2%2013.3l2%202%203.6-4%22/%3E%3C/svg%3E")}
+.mpi-speaker{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M11%205L6.5%209H3v6h3.5L11%2019z%22/%3E%3Cpath%20d%3D%22M15%209.5a3.8%203.8%200%200%201%200%205M18%206.8a7.5%207.5%200%200%201%200%2010.4%22/%3E%3C/svg%3E")}
+.mpi-headphones{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3.5%2015v-3a8.5%208.5%200%200%201%2017%200v3%22/%3E%3Crect%20x%3D%223%22%20y%3D%2214.5%22%20width%3D%224%22%20height%3D%226%22%20rx%3D%221.5%22/%3E%3Crect%20x%3D%2217%22%20y%3D%2214.5%22%20width%3D%224%22%20height%3D%226%22%20rx%3D%221.5%22/%3E%3C/svg%3E")}
+.mpi-user{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%228%22%20r%3D%224%22/%3E%3Cpath%20d%3D%22M4.5%2021c.6-4.2%203.6-6.5%207.5-6.5s6.9%202.3%207.5%206.5%22/%3E%3C/svg%3E")}
+.mpi-target{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%229%22/%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%225%22/%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%221.2%22/%3E%3C/svg%3E")}
+.mpi-image{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%223.5%22%20y%3D%224.5%22%20width%3D%2217%22%20height%3D%2215%22%20rx%3D%222%22/%3E%3Ccircle%20cx%3D%229%22%20cy%3D%2210%22%20r%3D%221.6%22/%3E%3Cpath%20d%3D%22M4%2018l5-5%204%204%203-3%204.5%204.5%22/%3E%3C/svg%3E")}
+.mpi-play{-webkit-mask-size:78%;mask-size:78%}
+.mpi-dot-r,.mpi-dot-y,.mpi-dot-g{width:.62em;height:.62em;border-radius:50%;-webkit-mask:none;mask:none;vertical-align:.02em;margin-right:.1em}
+.mpi-dot-r{background:#d64545}.mpi-dot-y{background:#e3a008}.mpi-dot-g{background:#2f9e63}
+.mp-in.mp-search{background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23a39485%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2211%22%20cy%3D%2211%22%20r%3D%226.5%22/%3E%3Cpath%20d%3D%22M20%2020l-4.2-4.2%22/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:10px center;background-size:15px;padding-left:32px}
+/* ===== MONO PLANNER 디자인 정리 (버튼·입력·시트·시간표·시험화면 아이콘) ===== */
+.mp-card{border-radius:16px;box-shadow:0 1px 2px rgba(60,20,20,.04),0 8px 24px rgba(60,20,20,.045)}
+.mp-title{display:flex;align-items:center;gap:7px;letter-spacing:-.01em}
+.mp-title .mpi{color:var(--gold);width:1.2em;height:1.2em}
+.mp-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:10px;background:#fff;border:1px solid var(--burg-l2);color:var(--burg);font-weight:600;line-height:1.2;transition:background .15s,box-shadow .15s,transform .1s}
+.mp-btn:hover{background:var(--burg-l)}
+.mp-btn:active{transform:scale(.97)}
+.mp-btn.pri{background:linear-gradient(180deg,#8c2626,var(--burg));color:#fff;border-color:var(--burg);box-shadow:0 2px 8px rgba(123,29,29,.22)}
+.mp-btn.pri:hover{background:linear-gradient(180deg,#962a2a,#822020)}
+.mp-btn.gold{background:linear-gradient(180deg,#fffaf0,var(--gold-l));color:var(--gold);border-color:rgba(184,132,26,.4)}
+.mp-btn.sm{padding:6px 12px;font-size:11.5px;border-radius:9px}
+.mp-btn:focus-visible,.mp-pill:focus-visible,.mp-seg button:focus-visible{outline:2px solid var(--gold2);outline-offset:2px}
+/* 글자 링크처럼 쓰던 보조 동작 → 알약 버튼 */
+.mp-pill{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 11px;border-radius:99px;border:1px solid rgba(123,29,29,.22);background:#fff;color:var(--burg);font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s}
+.mp-pill:hover{background:var(--burg-l);border-color:rgba(123,29,29,.4)}
+.mp-pill.ghost{border-color:transparent;background:var(--surface2);color:var(--tx2)}
+.mp-lblrow{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:14px 0 6px}
+.mp-lblrow .mp-lbl{margin:0}
+.mp-lblrow .acts{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.mp-lbl{letter-spacing:.02em}
+.mp-seg{gap:2px;padding:3px;background:var(--surface2);border:0;border-radius:11px}
+.mp-seg button{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;background:transparent;color:var(--tx3);font-weight:600;transition:background .15s,color .15s}
+.mp-seg button.on{background:#fff;color:var(--burg);box-shadow:0 1px 5px rgba(60,20,20,.14)}
+.mp-in{border-radius:10px;transition:border-color .15s,box-shadow .15s}
+.mp-in:focus{border-color:var(--burg);box-shadow:0 0 0 3px rgba(123,29,29,.1);background:#fff}
+.mp-chk input{accent-color:var(--burg);width:15px;height:15px;flex:none}
+.mp-cs-chip{border:1px solid var(--border);border-radius:99px;padding:5px 12px;background:#fff;transition:background .15s,border-color .15s}
+.mp-cs-chip:has(input:checked){background:var(--burg-l);border-color:rgba(123,29,29,.45);color:var(--burg);font-weight:700}
+#mp-bulk-exams .mp-chk,.mp-exlist .mp-chk{padding:8px 10px;border-radius:9px}
+#mp-bulk-exams .mp-chk:has(input:checked),.mp-exlist .mp-chk:has(input:checked){background:var(--burg-l)}
+.mp-sheet{border-radius:22px 22px 0 0;padding:22px 18px 24px;box-shadow:0 -12px 40px rgba(40,10,10,.18)}
+.mp-sheet::before{content:'';display:block;width:38px;height:4px;border-radius:4px;background:var(--burg-l2);margin:-10px auto 14px}
+.mp-sheet h3{font-family:Georgia,'Nanum Myeongjo',serif;font-size:19px;display:flex;align-items:center;gap:8px}
+.mp-sheet h3 .mpi{color:var(--gold)}
+.mp-toast{background:linear-gradient(135deg,#8c2626,#5f1414);border-radius:14px;border:1px solid rgba(212,160,74,.4)}
+.mp-warn{display:flex;gap:8px;align-items:flex-start}
+.mp-warn .mpi{margin-top:2px;flex:none}
+.mp-chip .mpi{width:1em;height:1em;vertical-align:-.15em}
+.mp-dday{border:1px solid rgba(212,160,74,.35)}
+/* 시간표 */
+.mp-tt-chip{background:#fff;border:1px solid rgba(184,132,26,.45);color:var(--burg);gap:6px;font-weight:700;box-shadow:0 1px 3px rgba(60,20,20,.06)}
+.mp-tt-chip .mpi{color:var(--gold);width:1.15em;height:1.15em}
+.mp-tt-hero{display:flex;gap:16px;align-items:center;padding:16px 18px;border-radius:20px;margin-bottom:14px;background:linear-gradient(145deg,#FFFEFA,#F6EFDC);border:1px solid rgba(184,132,26,.38);box-shadow:inset 0 0 0 4px rgba(255,255,255,.7),0 8px 24px rgba(123,29,29,.08)}
+.mp-tt-clock{flex:0 0 132px}.mp-tt-clock svg{width:132px;height:132px;display:block;filter:drop-shadow(0 6px 14px rgba(123,29,29,.18))}
+.mp-tt-info{min-width:0;flex:1}
+.mp-tt-info .eyebrow{display:flex;gap:8px;align-items:center;font-size:10.5px;letter-spacing:.16em;color:var(--gold);font-weight:800}
+.mp-tt-info .eyebrow b{font-weight:700;letter-spacing:.04em;color:var(--tx3);font-variant-numeric:tabular-nums;font-size:11.5px}
+.mp-tt-info .cur{font-family:Georgia,'Nanum Myeongjo',serif;font-size:23px;font-weight:700;color:var(--burg);line-height:1.25;margin:3px 0 1px;overflow-wrap:anywhere}
+.mp-tt-info .rng{font-size:12px;color:var(--tx3);font-variant-numeric:tabular-nums}
+.mp-tt-info .rem{font-size:15px;font-weight:800;color:var(--tx1);margin-top:6px;font-variant-numeric:tabular-nums}
+.mp-tt-info .bar{height:5px;border-radius:5px;background:rgba(123,29,29,.1);margin:9px 0 7px;overflow:hidden}
+.mp-tt-info .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--gold2),var(--burg));border-radius:5px;transition:width .9s linear}
+.mp-tt-info .nx{font-size:12px;color:var(--tx3)}
+.mp-tt-list{border-radius:14px;border:1px solid var(--border);background:#fff}
+.mp-tt-list .r{grid-template-columns:98px 1fr auto 46px;padding:10px 12px}
+.mp-tt-list .r .lb{display:flex;align-items:center;gap:7px;min-width:0}
+.mp-tt-list .r .lb .mpi{color:var(--tx4);flex:none}
+.mp-tt-list .r.t-class .lb .mpi{color:var(--burg)}
+.mp-tt-list .r.t-meal .lb .mpi{color:var(--gold)}
+.mp-tt-list .r.now{background:linear-gradient(90deg,rgba(184,132,26,.16),rgba(184,132,26,.04));box-shadow:inset 3px 0 0 var(--burg)}
+.mp-tt-list .r .nw{background:var(--burg);letter-spacing:.04em}
+@media(max-width:430px){.mp-tt-hero{padding:14px;gap:12px}.mp-tt-clock{flex-basis:108px}.mp-tt-clock svg{width:108px;height:108px}.mp-tt-info .cur{font-size:20px}.mp-tt-list .r{grid-template-columns:90px 1fr auto 40px;padding:10px 8px}}
+.mp-bell{display:flex;gap:12px;align-items:center;background:linear-gradient(135deg,#8c2626,#5a1414);border:1px solid rgba(212,160,74,.55)}
+.mp-bell .ic{flex:none;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(212,160,74,.18);color:#f4d58a;font-size:20px}
+.mp-bell .tx{min-width:0}
+/* 시험 진행 화면 아이콘 */
+.exam-break-icon,.exam-wait-icon{width:86px;height:86px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 18px;font-size:38px;color:var(--burg);background:radial-gradient(circle at 50% 35%,#FFFEFA,#F6EFDC);border:1px solid rgba(184,132,26,.4);box-shadow:inset 0 0 0 4px rgba(255,255,255,.7),0 8px 22px rgba(184,132,26,.18);filter:none}
+.exam-break-icon .mpi,.exam-wait-icon .mpi{width:1em;height:1em}
+.exdisp-done{display:flex;flex-direction:column;align-items:center;font-size:0}
+.exdisp-done .mpi{width:96px;height:96px;color:var(--gold);margin-bottom:6px}
+.exdisp-done-text{font-size:20px}
+.exam-warn-banner .mpi,.exdisp-warn-banner .mpi{color:#f4d58a;width:1.15em;height:1.15em;margin-right:8px;vertical-align:-.22em}
+.exam-clock-mode-btn{display:flex;align-items:center;justify-content:center;gap:6px;background:#fff;border:1px solid rgba(184,132,26,.45);color:var(--burg);border-radius:99px;padding:7px 16px}
+.exam-clock-mode-btn .mpi{color:var(--gold)}
+.exdisp-close-btn{display:inline-flex;align-items:center;gap:6px;border-radius:99px;border:1px solid rgba(123,29,29,.25);color:var(--burg);font-weight:600}
+.exdisp-listening-toggle .mpi{color:var(--gold)}
+#screen-exam .mpi,#screen-exam-display .mpi{vertical-align:-.2em}
+
+.mpi-img{display:inline-block;width:1.3em;height:1.3em;object-fit:contain;vertical-align:-.3em;flex:none;user-select:none;-webkit-user-drag:none}
+.mp-tt-list .r .lb .mpi-img{width:24px;height:24px;vertical-align:middle}
+.exam-break-icon,.exam-wait-icon{width:auto;height:auto;background:none;border:0;box-shadow:none;border-radius:0;margin:0 auto 12px}
+.exam-break-icon .mpi-img,.exam-wait-icon .mpi-img{width:104px;height:104px;filter:drop-shadow(0 8px 14px rgba(123,29,29,.18))}
+.exdisp-done .mpi-img{width:120px;height:120px;margin-bottom:6px}
+.exam-warn-banner .mpi-img,.exdisp-warn-banner .mpi-img,#exam-warn-banner .mpi-img{width:2.1em;height:2.1em;margin-right:6px;vertical-align:-.6em}
+.exam-clock-mode-btn .mpi-img{width:1.4em;height:1.4em;margin-right:4px}
+.exdisp-close-btn .mpi-img{width:1.3em;height:1.3em}
 
 .teacher-nav-scroll .teacher-nav-item{min-width:58px}
 </style>
@@ -1958,7 +2085,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
       <div class="topbar-logo-text">PLANNER</div>
     </div>
     <div class="topbar-right">
-      <div class="mp-tt-chip" id="mp-tt-chip" onclick="mpOpenTimetable()" style="display:none">⏰ <span id="mp-tt-chip-txt">시간표</span></div>
+      <div class="mp-tt-chip" id="mp-tt-chip" onclick="mpOpenTimetable()" style="display:none"><i class="mpi mpi-clock"></i><span id="mp-tt-chip-txt">시간표</span></div>
       <div class="notif-btn" onclick="toggleNotifPanel()">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
         <div class="notif-badge" id="notif-badge">0</div>
@@ -3559,8 +3686,8 @@ C.ttDue = function(blocks, nowSec, windowSec){
 };
 C.ttBellText = function(b, next){
   var d=C.ttDur(b), range=b.s+'~'+b.e;
-  var icon={class:'🔔',break:'☕',meal:'🍚',check:'✅',task:'📝'}[b.type]||'🔔';
-  var t={title:icon+' '+b.label+(b.type==='class'?' 시작':''), body:range+' · '+d+'분'};
+  var icon={class:'bell',break:'coffee',meal:'utensils',check:'clipcheck',task:'edit'}[b.type]||'bell';
+  var t={icon:icon,title:b.label+(b.type==='class'?' 시작':''), body:range+' · '+d+'분'};
   if(b.type==='break'||b.type==='meal'){ if(next) t.body+=' · '+next.s+'에 '+next.label+' 시작'; }
   return t;
 };
@@ -17185,7 +17312,7 @@ function mpMonthHtml(items,cursor,studentMode,navFn,clickFn){
   var n=mpNow(), ms=MPC.monthStart(cursor), me=MPC.monthEnd(cursor);
   var gs=MPC.weekStart(ms), ge=MPC.addDays(MPC.weekStart(me),6), days=MPC.rangeDates(gs,ge,50);
   var byDate={}; items.forEach(function(x){ (byDate[x.s.date]=byDate[x.s.date]||[]).push(x); });
-  var h='<div class="mp-h" style="margin-bottom:6px"><button class="mp-btn sm" onclick="'+navFn+'(-1)">◀</button><b>'+cursor.slice(0,4)+'년 '+(+cursor.slice(5,7))+'월</b><button class="mp-btn sm" onclick="'+navFn+'(1)">▶</button></div>'
+  var h='<div class="mp-h" style="margin-bottom:6px"><button class="mp-btn sm" onclick="'+navFn+'(-1)"><i class="mpi mpi-chev-l"></i></button><b>'+cursor.slice(0,4)+'년 '+(+cursor.slice(5,7))+'월</b><button class="mp-btn sm" onclick="'+navFn+'(1)"><i class="mpi mpi-chev-r"></i></button></div>'
     +'<div class="mp-mgrid">'+['월','화','수','목','금','토','일'].map(function(d){return '<div class="mp-mh">'+d+'</div>';}).join('');
   days.forEach(function(d){
     var evs=(byDate[d]||[]).sort(function(a,b){return (MPC.effStart(a.s)||0)-(MPC.effStart(b.s)||0);});
@@ -17198,7 +17325,7 @@ function mpMonthHtml(items,cursor,studentMode,navFn,clickFn){
 var MP_HOUR_PX=36, MP_H0=6, MP_H1=24;
 function mpStuWeek(items,n){
   var ws=MPC.weekStart(_mpStu.cursor), days=MPC.rangeDates(ws,MPC.addDays(ws,6));
-  var h='<div class="mp-h" style="margin-bottom:6px"><button class="mp-btn sm" onclick="mpStuNav(-1)">◀</button><b>'+mpDateLabel(ws)+' ~ '+mpDateLabel(days[6])+'</b><button class="mp-btn sm" onclick="mpStuNav(1)">▶</button></div>'
+  var h='<div class="mp-h" style="margin-bottom:6px"><button class="mp-btn sm" onclick="mpStuNav(-1)"><i class="mpi mpi-chev-l"></i></button><b>'+mpDateLabel(ws)+' ~ '+mpDateLabel(days[6])+'</b><button class="mp-btn sm" onclick="mpStuNav(1)"><i class="mpi mpi-chev-r"></i></button></div>'
     +'<div class="mp-sub" style="margin-bottom:6px">시험 칸을 위아래로 끌어서 시작 시간을 정해요 (날짜는 선생님이 정한 날로 고정)</div>';
   var totalH=(MP_H1-MP_H0)*MP_HOUR_PX;
   h+='<div class="mp-wk"><div class="hd"></div>'+days.map(function(d){return '<div class="hd'+(d===n.today?' today':'')+'">'+MPC.dowKo(d)+'<br>'+(+d.slice(8,10))+'</div>';}).join('');
@@ -17378,7 +17505,7 @@ function mpDrawTeacher(){
 }
 function mpTeacherWeek(items,n){
   var ws=MPC.weekStart(_mpT.cursor), days=MPC.rangeDates(ws,MPC.addDays(ws,6));
-  var h='<div class="mp-h"><button class="mp-btn sm" onclick="mpTNav(-1)">◀</button><b>'+mpDateLabel(ws)+' ~ '+mpDateLabel(days[6])+'</b><button class="mp-btn sm" onclick="mpTNav(1)">▶</button></div><div class="mp-scroll"><div style="display:grid;grid-template-columns:repeat(7,minmax(110px,1fr));gap:4px">';
+  var h='<div class="mp-h"><button class="mp-btn sm" onclick="mpTNav(-1)"><i class="mpi mpi-chev-l"></i></button><b>'+mpDateLabel(ws)+' ~ '+mpDateLabel(days[6])+'</b><button class="mp-btn sm" onclick="mpTNav(1)"><i class="mpi mpi-chev-r"></i></button></div><div class="mp-scroll"><div style="display:grid;grid-template-columns:repeat(7,minmax(110px,1fr));gap:4px">';
   days.forEach(function(d){
     var evs=items.filter(function(x){return x.s.date===d;}).sort(function(a,b){return (MPC.effStart(a.s)||0)-(MPC.effStart(b.s)||0);});
     h+='<div class="mp-mc'+(d===n.today?' today':'')+'" style="min-height:120px"><div class="dn">'+MPC.dowKo(d)+' '+(+d.slice(8,10))+'</div>'
@@ -17399,7 +17526,7 @@ window.mpEditSchedule=function(id){
   var h='<h3>일정 수정</h3><div style="font-weight:700">'+mpE(s.studentName||'')+' · '+mpE(s.examTitle)+'</div>'
     +'<div class="mp-lbl">날짜</div><input id="mp-e-date" type="date" class="mp-in" value="'+s.date+'">'
     +'<div class="mp-lbl">시작 시간</div><input id="mp-e-time" type="time" step="600" class="mp-in" value="'+(s.startMin!=null?MPC.minToHHMM(s.startMin):'')+'">'
-    +(s.studentStartMin!=null?'<div class="mp-sub" style="margin-top:4px">학생이 정한 시간: <b>'+MPC.minToHHMM(s.studentStartMin)+'</b> <a href="javascript:void(0)" onclick="mpClearStudentStart(\''+id+'\')">초기화</a></div>':'')
+    +(s.studentStartMin!=null?'<div class="mp-sub" style="margin-top:4px">학생이 정한 시간: <b>'+MPC.minToHHMM(s.studentStartMin)+'</b> <button type="button" class="mp-pill" onclick="mpClearStudentStart(\''+id+'\')">초기화</button></div>':'')
     +'<label class="mp-chk" style="margin-top:8px"><input id="mp-e-lock" type="checkbox" '+(s.timeLocked?'checked':'')+'>학생이 시간을 바꾸지 못하게 고정</label>'
     +'<button class="modal-btn primary" onclick="mpSaveEdit(\''+id+'\')">저장</button>'
     +'<button class="modal-btn danger" onclick="mpDeleteSchedule(\''+id+'\')">🗑 이 일정 삭제</button><button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>';
@@ -17434,16 +17561,16 @@ window.mpOpenBulk=function(){
   var srcs={}, subs={}; _mpT.exams.forEach(function(e){ if(e.examSource) srcs[e.examSource]=1; (e.subjects||[]).forEach(function(x){ var k=mpSubKey(x); if(k) subs[k]=1; }); });
   var SL={practice:'연습용',daesung:'대성',megastudy:'메가스터디',etoos:'이투스',pyeongga:'평가원',office:'교육청',etc:'기타'};
   var h='<h3>모의고사 일정 일괄 등록</h3>'
-    +'<div class="mp-lbl">1. 시험(회차) 선택 <a href="javascript:void(0)" onclick="mpBulkAllExams(true)">보이는 시험 전체</a> · <a href="javascript:void(0)" onclick="mpBulkAllExams(false)">전체 해제</a> <span class="mp-sub" id="mp-bulk-cnt"></span></div>'
+    +'<div class="mp-lblrow"><div class="mp-lbl">1. 시험(회차) 선택 <span class="mp-sub" id="mp-bulk-cnt"></span></div><div class="acts"><button type="button" class="mp-pill" onclick="mpBulkAllExams(true)"><i class="mpi mpi-check"></i>보이는 시험 전체</button><button type="button" class="mp-pill" onclick="mpBulkAllExams(false)">전체 해제</button></div></div>'
     +'<div class="mp-filter-grid" style="margin-bottom:6px">'
-    +'<input class="mp-in sm" id="mp-bf-q" placeholder="🔍 시험 이름 검색" oninput="mpBulkFilterExams()">'
+    +'<input class="mp-in sm mp-search" id="mp-bf-q" placeholder="시험 이름 검색" oninput="mpBulkFilterExams()">'
     +'<select class="mp-in sm" id="mp-bf-src" onchange="mpBulkFilterExams()"><option value="">출처 전체</option>'+Object.keys(srcs).map(function(k){return '<option value="'+mpE(k)+'">'+mpE(SL[k]||k)+'</option>';}).join('')+'</select>'
     +'<select class="mp-in sm" id="mp-bf-sub" onchange="mpBulkFilterExams()"><option value="">과목 전체</option>'+Object.keys(subs).map(function(k){return '<option value="'+mpE(k)+'">'+mpE(mpSubLabel(k))+'</option>';}).join('')+'</select>'
     +'<select class="mp-in sm" id="mp-bf-sch" onchange="mpBulkFilterExams()"><option value="">일정 전체</option><option value="none">일정 아직 없는 시험</option><option value="has">일정 있는 시험</option></select>'
     +'</div>'
     +'<div id="mp-bulk-exams" style="max-height:170px;overflow:auto;border:1px solid var(--border2);border-radius:8px;padding:6px"></div>'
-    +'<div class="mp-lbl">2. 학생 선택 <a href="javascript:void(0)" onclick="mpBulkAllStudents(true)">보이는 학생 전체</a> · <a href="javascript:void(0)" onclick="mpBulkAllStudents(false)">전체 해제</a> <span class="mp-sub" id="mp-bulk-scnt"></span></div>'
-    +'<input class="mp-in sm" id="mp-bf-sq" placeholder="🔍 학생 이름 검색" oninput="mpBulkDrawStudents()" style="margin-bottom:6px">'
+    +'<div class="mp-lblrow"><div class="mp-lbl">2. 학생 선택 <span class="mp-sub" id="mp-bulk-scnt"></span></div><div class="acts"><button type="button" class="mp-pill" onclick="mpBulkAllStudents(true)"><i class="mpi mpi-check"></i>보이는 학생 전체</button><button type="button" class="mp-pill" onclick="mpBulkAllStudents(false)">전체 해제</button></div></div>'
+    +'<input class="mp-in sm mp-search" id="mp-bf-sq" placeholder="학생 이름 검색" oninput="mpBulkDrawStudents()" style="margin-bottom:6px">'
     +'<div id="mp-bulk-students" style="display:flex;flex-wrap:wrap;gap:6px"></div>'
     +'<button class="modal-btn primary" style="margin-top:12px" onclick="mpBulkBuildTable()">3. 표 만들기</button>'
     +'<div id="mp-bulk-table" style="margin-top:12px"></div>';
@@ -17476,7 +17603,7 @@ window.mpBulkAllExams=function(on){ if(on){ document.querySelectorAll('.mp-be').
 window.mpBulkDrawStudents=function(){
   var el=document.getElementById('mp-bulk-students'); if(!el) return;
   var q=((document.getElementById('mp-bf-sq')||{}).value||'').trim().toLowerCase();
-  el.innerHTML=_mpT.students.filter(function(s){return !q||(s.name||'').toLowerCase().indexOf(q)>=0;}).map(function(s){return '<label class="mp-chk" style="border:1px solid var(--border);border-radius:99px;padding:4px 10px"><input type="checkbox" class="mp-bs" value="'+s.uid+'"'+(_mpBulk.ssel[s.uid]?' checked':'')+' onchange="mpBulkToggleStu(this.value,this.checked)">'+mpE(s.name)+'</label>';}).join('')||'<div class="mp-sub">학생이 없어요</div>';
+  el.innerHTML=_mpT.students.filter(function(s){return !q||(s.name||'').toLowerCase().indexOf(q)>=0;}).map(function(s){return '<label class="mp-chk mp-cs-chip"><input type="checkbox" class="mp-bs" value="'+s.uid+'"'+(_mpBulk.ssel[s.uid]?' checked':'')+' onchange="mpBulkToggleStu(this.value,this.checked)">'+mpE(s.name)+'</label>';}).join('')||'<div class="mp-sub">학생이 없어요</div>';
   mpBulkCounts();
 };
 window.mpBulkAllStudents=function(on){ document.querySelectorAll('.mp-bs').forEach(function(c){c.checked=on; mpBulkToggleStu(c.value,on);}); if(!on) {_mpBulk.ssel={}; mpBulkCounts();} };
@@ -17628,7 +17755,7 @@ function mpBoardDraw(){
   document.getElementById('mp-bsum').textContent=total+'개 시험 · 학생 '+studs.length+'명';
   document.getElementById('mp-bfl').innerHTML=fl.map(function(x){return '<button class="mp-btn sm'+(_mpB.filter===x[0]?' pri':'')+'" onclick="mpBoardFilter(\''+x[0]+'\')">'+x[1]+'</button>';}).join('');
   var h='<div class="mp-legend">'+[['green','응시 완료'],['yellow','응시 중/대기/오늘'],['orange','시간 지남'],['red','기한 지남'],['blue','일정 없이 배정'],['grey','예정']].map(function(x){return '<span class="mp-chip mp-c-'+x[0]+'">'+x[1]+'</span>';}).join('')+'</div>';
-  if(!cols.length){ body.innerHTML=h+'<div class="mp-sub" style="padding:18px;text-align:center">조건에 맞는 시험이 없어요. <a href="javascript:void(0)" onclick="mpBoardReset()">필터 초기화</a></div>'; return; }
+  if(!cols.length){ body.innerHTML=h+'<div class="mp-sub" style="padding:18px;text-align:center">조건에 맞는 시험이 없어요. <br><button type="button" class="mp-pill" style="margin-top:10px" onclick="mpBoardReset()"><i class="mpi mpi-refresh"></i>필터 초기화</button></div>'; return; }
   // 데스크탑 표
   h+='<div class="mp-board-desk mp-scroll"><table class="mp-bt"><tr><th style="position:sticky;left:0;z-index:2">학생</th>'
     +cols.map(function(c){
@@ -17655,8 +17782,8 @@ function mpBoardEnsureFilterBar(host){
   var stOpts=[['','상태 전체'],['green','응시 완료'],['yellow','응시 중/대기/오늘'],['orange','시간 지남'],['red','기한 지남'],['blue','일정 없이 배정'],['grey','예정']];
   host.innerHTML='<div class="mp-card" id="mp-bf"><div class="mp-h"><div class="mp-title">📊 시험 현황판</div><div class="mp-sub" id="mp-bsum"></div></div>'
     +'<div class="mp-filter-grid">'
-    +'<input class="mp-in sm" id="mp-bq" placeholder="🔍 시험 이름 검색" value="'+mpE(_mpB.q)+'" oninput="mpBoardSet(\'q\',this.value)">'
-    +'<input class="mp-in sm" id="mp-bsq" placeholder="🔍 학생 이름 검색" value="'+mpE(_mpB.sq)+'" oninput="mpBoardSet(\'sq\',this.value)">'
+    +'<input class="mp-in sm mp-search" id="mp-bq" placeholder="시험 이름 검색" value="'+mpE(_mpB.q)+'" oninput="mpBoardSet(\'q\',this.value)">'
+    +'<input class="mp-in sm mp-search" id="mp-bsq" placeholder="학생 이름 검색" value="'+mpE(_mpB.sq)+'" oninput="mpBoardSet(\'sq\',this.value)">'
     +'<select class="mp-in sm" onchange="mpBoardSet(\'src\',this.value)"><option value="">출처 전체</option>'+Object.keys(srcs).map(function(k){return '<option value="'+mpE(k)+'"'+(_mpB.src===k?' selected':'')+'>'+mpE(mpSrcLabel(k))+'</option>';}).join('')+'</select>'
     +'<select class="mp-in sm" onchange="mpBoardSet(\'st\',this.value)">'+stOpts.map(function(o){return '<option value="'+o[0]+'"'+(_mpB.st===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select>'
     +'</div>'
@@ -17992,8 +18119,8 @@ window.mpReportPublish=async function(){
 function mpCardPanel(){
   var b=document.getElementById('mp-rep-body');
   b.innerHTML='<div class="mp-sub" style="margin-bottom:8px">시험을 여러 개 골라 학생별 성적표를 만들어요. 여러 학생을 한 번에 선택해 일괄 생성할 수 있어요.</div>'
-   +'<div class="mp-lbl">1. 학생 선택 <a href="javascript:void(0)" onclick="mpCardAllStu(true)">전체</a> · <a href="javascript:void(0)" onclick="mpCardAllStu(false)">해제</a></div>'
-   +'<div style="display:flex;flex-wrap:wrap;gap:6px">'+_mpR.students.map(function(s){return '<label class="mp-chk" style="border:1px solid var(--border);border-radius:99px;padding:4px 10px"><input type="checkbox" class="mp-cs" value="'+s.uid+'">'+mpE(s.name)+'</label>';}).join('')+'</div>'
+   +'<div class="mp-lblrow"><div class="mp-lbl">1. 학생 선택</div><div class="acts"><button type="button" class="mp-pill" onclick="mpCardAllStu(true)"><i class="mpi mpi-check"></i>전체</button><button type="button" class="mp-pill" onclick="mpCardAllStu(false)">해제</button></div></div>'
+   +'<div style="display:flex;flex-wrap:wrap;gap:6px">'+_mpR.students.map(function(s){return '<label class="mp-chk mp-cs-chip"><input type="checkbox" class="mp-cs" value="'+s.uid+'">'+mpE(s.name)+'</label>';}).join('')+'</div>'
    +'<button class="mp-btn pri" style="margin-top:10px" onclick="mpCardLoadExams()">2. 성적 불러오기</button><div id="mp-c-body" style="margin-top:12px"></div>';
 }
 window.mpCardAllStu=function(on){ document.querySelectorAll('.mp-cs').forEach(function(c){c.checked=on;}); };
@@ -18143,10 +18270,10 @@ function ttChime(){
   });
 }
 function ttVibrate(){ try{ if('vibrate' in navigator) navigator.vibrate([400,150,400,150,800]); }catch(e){} }
-function ttBanner(title,body){
+function ttBanner(title,body,icon){
   var old=document.getElementById('mp-bell'); if(old) old.remove();
   var b=document.createElement('div'); b.id='mp-bell'; b.className='mp-bell';
-  b.innerHTML='<div class="t">'+mpE(title)+'</div><div class="s">'+mpE(body)+'</div>';
+  b.innerHTML='<div class="ic"><i class="mpi mpi-'+(icon||'bell')+'"></i></div><div class="tx"><div class="t">'+mpE(title)+'</div><div class="s">'+mpE(body)+'</div></div>';
   b.onclick=function(){ b.remove(); };
   document.body.appendChild(b); setTimeout(function(){ if(b.parentNode) b.remove(); },9000);
 }
@@ -18155,7 +18282,7 @@ function ttRing(block,next,opt){
   opt=opt||{}; var mode=ttMode();
   if(ttInExam()&&!opt.test) return;
   var tx=MPC.ttBellText(block,next);
-  ttBanner(tx.title,tx.body);
+  ttBanner(tx.title,tx.body,tx.icon);
   if(mode==='sound') ttChime(); else if(mode==='vibrate') ttVibrate();
   try{
     if(document.hidden&&'Notification' in window&&Notification.permission==='granted'&&navigator.serviceWorker){
@@ -18164,7 +18291,7 @@ function ttRing(block,next,opt){
   }catch(e){}
 }
 function ttChipText(st){
-  if(st.phase==='during'){ var c=st.cur; var ic={class:'',break:'☕ ',meal:'🍚 ',check:'✅ ',task:'📝 '}[c.type]||''; var nm=c.label.length>9?c.label.slice(0,9)+'…':c.label; return ic+nm+' · '+ttShort(st.remainSec)+' 남음'; }
+  if(st.phase==='during'){ var c=st.cur; var ic=''; var nm=c.label.length>9?c.label.slice(0,9)+'…':c.label; return ic+nm+' · '+ttShort(st.remainSec)+' 남음'; }
   if(st.phase==='gap'||st.phase==='before') return '다음 '+st.next.s+' '+(st.next.label.length>7?st.next.label.slice(0,7)+'…':st.next.label);
   if(st.phase==='after') return '오늘 일과 종료';
   return '시간표';
@@ -18190,22 +18317,44 @@ function MP_ttTick(){
 }
 setInterval(function(){ try{ MP_ttTick(); }catch(e){ console.warn('[시간표 tick]',e); } },1000);
 
+/* 시계: 시험 화면의 시계와 같은 디자인(아이디만 다름) */
+function ttClockSvg(){
+  var nums='',bat='',tk='',i,a,x,y;
+  for(i=1;i<=12;i++){ a=i*30*Math.PI/180; x=120+83*Math.sin(a); y=120-83*Math.cos(a); nums+='<text x="'+x+'" y="'+y+'" text-anchor="middle" dominant-baseline="central" class="exam-clock-numeral">'+i+'</text>'; }
+  for(i=0;i<12;i++){ a=i*30*Math.PI/180; bat+='<line x1="'+(120+96*Math.sin(a))+'" y1="'+(120-96*Math.cos(a))+'" x2="'+(120+107*Math.sin(a))+'" y2="'+(120-107*Math.cos(a))+'" stroke="var(--burg)" stroke-width="2" stroke-linecap="round"/>'; }
+  for(i=0;i<60;i++){ if(i%5===0) continue; a=i*6*Math.PI/180; tk+='<line x1="'+(120+101*Math.sin(a))+'" y1="'+(120-101*Math.cos(a))+'" x2="'+(120+107*Math.sin(a))+'" y2="'+(120-107*Math.cos(a))+'" stroke="var(--tx4)" stroke-width="0.6"/>'; }
+  return '<svg viewBox="0 0 240 240"><defs><radialGradient id="ttFaceGrad" cx="50%" cy="42%" r="65%"><stop offset="0%" stop-color="#FFFEFA"/><stop offset="100%" stop-color="#F6EFDC"/></radialGradient><clipPath id="ttFaceClip"><circle cx="120" cy="120" r="118"/></clipPath></defs>'
+   +'<circle cx="120" cy="120" r="118" fill="url(#ttFaceGrad)" stroke="var(--burg)" stroke-width="2.5"/><circle cx="120" cy="120" r="113" fill="none" stroke="var(--gold2)" stroke-width="0.75"/>'
+   +'<g clip-path="url(#ttFaceClip)"><g transform="rotate(-14 120 120)"><image href="'+MONO_WATERMARK_DATAURI+'" x="12" y="92" width="216" height="82"/></g></g>'
+   +tk+bat+nums
+   +'<g id="tt-clock-hour-g" transform="rotate(0 120 120)"><path d="M120,132 L117,64 L120,50 L123,64 Z" fill="var(--tx1)"/></g>'
+   +'<g id="tt-clock-min-g" transform="rotate(0 120 120)"><path d="M120,138 L118,40 L120,26 L122,40 Z" fill="var(--tx1)"/></g>'
+   +'<g id="tt-clock-sec-g" transform="rotate(0 120 120)"><line x1="120" y1="145" x2="120" y2="30" stroke="var(--burg)" stroke-width="1.4" stroke-linecap="round"/><circle cx="120" cy="145" r="3.5" fill="var(--burg)"/></g>'
+   +'<circle cx="120" cy="120" r="5" fill="var(--burg)" stroke="var(--gold2)" stroke-width="1.2"/></svg>';
+}
+function ttSetHands(){
+  var k=ttKst(), h=k.getHours()%12, m=k.getMinutes(), s=k.getSeconds();
+  function set(id,d){ var e=document.getElementById(id); if(e) e.setAttribute('transform','rotate('+d+' 120 120)'); }
+  set('tt-clock-hour-g',(h+m/60)*30); set('tt-clock-min-g',(m+s/60)*6); set('tt-clock-sec-g',s*6);
+}
 /* 화면 */
-var TT_ICON={class:'📖',break:'☕',meal:'🍚',check:'✅',task:'📝'};
+function ttImg(n){ return '<img class="mpi-img" src="/assets/ui/'+n+'.png" alt="" draggable="false">'; }
+function ttIconHtml(b){ var l=b.label||''; if(/입실/.test(l)&&b.type==='check') return ttImg('sunrise'); if(/퇴실/.test(l)&&!/휴식/.test(l)) return ttImg('exit'); return ttImg({class:'book',break:'mug',meal:'meal',check:'clipboard',task:'pencil'}[b.type]||'book'); }
+var TT_ICON_OLD={class:'<i class="mpi mpi-book"></i>',break:'<i class="mpi mpi-coffee"></i>',meal:'<i class="mpi mpi-utensils"></i>',check:'<i class="mpi mpi-clipcheck"></i>',task:'<i class="mpi mpi-edit"></i>'};
 function ttRowsHtml(){
   var L=MPC.ttState(MP_TT.blocks,0).blocks;
   return L.map(function(b,i){
-    return '<div class="r t-'+b.type+'" data-i="'+i+'"><span class="tm">'+b.s+' – '+b.e+'</span><span class="lb"><span class="ic">'+(TT_ICON[b.type]||'')+'</span>'+mpE(b.label)+'</span><span class="du">'+MPC.ttDur(b)+'분</span><span class="nw">지금</span></div>';
+    return '<div class="r t-'+b.type+'" data-i="'+i+'"><span class="tm">'+b.s+' – '+b.e+'</span><span class="lb"><span class="ic">'+ttIconHtml(b)+'</span>'+mpE(b.label)+'</span><span class="du">'+MPC.ttDur(b)+'분</span><span class="nw">지금</span></div>';
   }).join('');
 }
 function ttPanelHtml(canEdit){
   var m=ttMode(), vib=('vibrate' in navigator);
   return '<div class="mp-tt">'
-    +'<div class="mp-tt-now"><div class="clk" id="mp-tt-clk">--:--:--</div><div class="cur" id="mp-tt-cur">&nbsp;</div><div class="bar"><i id="mp-tt-bar"></i></div><div class="nx" id="mp-tt-nx">&nbsp;</div></div>'
+    +'<div class="mp-tt-hero"><div class="mp-tt-clock">'+ttClockSvg()+'</div><div class="mp-tt-info"><div class="eyebrow">지금 <b id="mp-tt-clk">--:--:--</b></div><div class="cur" id="mp-tt-cur">&nbsp;</div><div class="rng" id="mp-tt-rng">&nbsp;</div><div class="rem" id="mp-tt-rem">&nbsp;</div><div class="bar"><i id="mp-tt-bar"></i></div><div class="nx" id="mp-tt-nx">&nbsp;</div></div></div>'
     +'<div class="mp-lbl">종소리 알림</div>'
-    +'<div class="mp-seg mp-tt-mode"><button data-m="silent" class="'+(m==='silent'?'on':'')+'" onclick="mpTtMode(\'silent\')">🔇 무음</button><button data-m="sound" class="'+(m==='sound'?'on':'')+'" onclick="mpTtMode(\'sound\')">🔔 유음</button><button data-m="vibrate" class="'+(m==='vibrate'?'on':'')+'" onclick="mpTtMode(\'vibrate\')">📳 진동</button></div>'
+    +'<div class="mp-seg mp-tt-mode"><button data-m="silent" class="'+(m==='silent'?'on':'')+'" onclick="mpTtMode(\'silent\')"><i class="mpi mpi-bell-off"></i>무음</button><button data-m="sound" class="'+(m==='sound'?'on':'')+'" onclick="mpTtMode(\'sound\')"><i class="mpi mpi-bell"></i>유음</button><button data-m="vibrate" class="'+(m==='vibrate'?'on':'')+'" onclick="mpTtMode(\'vibrate\')"><i class="mpi mpi-vibrate"></i>진동</button></div>'
     +'<div class="mp-sub" id="mp-tt-hint" style="margin:6px 0 10px">'+mpTtHint(m,vib)+'</div>'
-    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"><button class="mp-btn sm" onclick="mpTtTest()">▶ 알림 테스트</button>'+(canEdit?'<button class="mp-btn sm" onclick="mpTtEdit()">✎ 시간표 수정</button>':'')+'</div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"><button class="mp-btn sm" onclick="mpTtTest()"><i class="mpi mpi-play"></i>알림 테스트</button>'+(canEdit?'<button class="mp-btn sm" onclick="mpTtEdit()"><i class="mpi mpi-edit"></i>시간표 수정</button>':'')+'</div>'
     +'<div class="mp-tt-list" id="mp-tt-list">'+ttRowsHtml()+'</div>'
     +'<div class="mp-sub" style="margin-top:8px">앱(웹)이 열려 있을 때 정해진 시각에 울려요. 화면이 꺼져 있거나 앱이 닫혀 있으면 울리지 않을 수 있어요.</div></div>';
 }
@@ -18226,16 +18375,16 @@ window.mpTtTest=function(){
 };
 function ttUpdatePanel(st,sec){
   var clk=document.getElementById('mp-tt-clk'); if(!clk) return;
-  clk.textContent=ttClock();
-  var cur=document.getElementById('mp-tt-cur'), bar=document.getElementById('mp-tt-bar'), nx=document.getElementById('mp-tt-nx');
+  clk.textContent=ttClock(); ttSetHands();
+  var cur=document.getElementById('mp-tt-cur'), rng=document.getElementById('mp-tt-rng'), rem=document.getElementById('mp-tt-rem'), bar=document.getElementById('mp-tt-bar'), nx=document.getElementById('mp-tt-nx');
   if(st.phase==='during'){
-    cur.innerHTML='<b>'+mpE(st.cur.label)+'</b> <span>'+st.cur.s+'~'+st.cur.e+'</span> · <em>'+ttFmtRemain(st.remainSec)+' 남음</em>';
+    cur.textContent=st.cur.label; rng.textContent=st.cur.s+' ~ '+st.cur.e; rem.textContent=ttFmtRemain(st.remainSec)+' 남음';
     bar.style.width=Math.round(st.progress*100)+'%';
     nx.textContent=st.next?('다음: '+st.next.s+' '+st.next.label):'오늘 마지막 일정이에요';
   } else if(st.phase==='gap'||st.phase==='before'){
-    cur.innerHTML='<b>'+(st.phase==='before'?'일과 시작 전':'잠시 쉬는 시간')+'</b> · <em>'+ttFmtRemain(st.untilSec)+' 뒤 시작</em>';
+    cur.textContent=(st.phase==='before'?'일과 시작 전':'잠시 쉬는 시간'); rng.textContent=''; rem.textContent=ttFmtRemain(st.untilSec)+' 뒤 시작';
     bar.style.width='0%'; nx.textContent='다음: '+st.next.s+' '+st.next.label;
-  } else { cur.innerHTML='<b>오늘 일과가 끝났어요</b>'; bar.style.width='100%'; nx.textContent='내일도 화이팅!'; }
+  } else { cur.textContent='오늘 일과가 끝났어요'; rng.textContent=''; rem.textContent=''; bar.style.width='100%'; nx.textContent='내일도 화이팅!'; }
   var list=document.getElementById('mp-tt-list'); if(!list||MP_TT.editing) return;
   var idx=st.phase==='during'?st.idx:-1, changed=(MP_TT.lastIdx!==idx);
   list.querySelectorAll('.r').forEach(function(r){
@@ -18251,7 +18400,7 @@ window.mpOpenTimetable=function(){
   MP_ttLoad(true).then(function(){
     var canEdit=currentProfile&&(currentProfile.role==='teacher'||currentProfile.role==='master');
     MP_TT.editing=false; MP_TT.lastIdx=null;
-    var ov=mpSheet('<h3>⏰ 시간표</h3>'+ttPanelHtml(canEdit)+'<button class="modal-btn cancel" style="margin-top:10px" onclick="mpCloseSheets()">닫기</button>');
+    var ov=mpSheet('<h3><i class="mpi mpi-clock"></i>시간표</h3>'+ttPanelHtml(canEdit)+'<button class="modal-btn cancel" style="margin-top:10px" onclick="mpCloseSheets()">닫기</button>');
     MP_ttTick();
   });
 };
@@ -18268,7 +18417,7 @@ function mpTtDrawEdit(){
     return '<div class="er"><input type="time" class="mp-in sm" value="'+b.s+'" onchange="mpTtSet('+i+',\'s\',this.value)"><span>~</span><input type="time" class="mp-in sm" value="'+b.e+'" onchange="mpTtSet('+i+',\'e\',this.value)">'
       +'<input class="mp-in sm lbl" value="'+mpE(b.label)+'" onchange="mpTtSet('+i+',\'label\',this.value)">'
       +'<select class="mp-in sm" onchange="mpTtSet('+i+',\'type\',this.value)">'+TY.map(function(t){return '<option value="'+t[0]+'"'+(b.type===t[0]?' selected':'')+'>'+t[1]+'</option>';}).join('')+'</select>'
-      +'<button class="mp-btn sm" onclick="mpTtDel('+i+')">✕</button></div>';
+      +'<button class="mp-btn sm" onclick="mpTtDel('+i+')"><i class="mpi mpi-x"></i></button></div>';
   }).join('')
   +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><button class="mp-btn sm" onclick="mpTtAdd()">+ 줄 추가</button><button class="mp-btn sm" onclick="mpTtDefault()">기본 시간표로</button><button class="mp-btn pri sm" onclick="mpTtSave()">저장</button><button class="mp-btn sm" onclick="mpTtCancel()">취소</button></div><div id="mp-tt-err" class="mp-warn" style="display:none;margin-top:8px"></div>';
 }
@@ -18288,7 +18437,7 @@ window.mpTtSave=async function(){
 };
 /* 선생님 탭 (idx 13) */
 window.buildTTimetable=function(){ return Promise.resolve('<div class="mp-card" id="mp-ttab"></div>'); };
-window.mpTtTabInit=function(){ var h=document.getElementById('mp-ttab'); if(!h) return; MP_ttLoad(true).then(function(){ MP_TT.editing=false; MP_TT.lastIdx=null; h.innerHTML='<div class="mp-h"><div class="mp-title">⏰ 시간표</div></div>'+ttPanelHtml(true); MP_ttTick(); }); };
+window.mpTtTabInit=function(){ var h=document.getElementById('mp-ttab'); if(!h) return; MP_ttLoad(true).then(function(){ MP_TT.editing=false; MP_TT.lastIdx=null; h.innerHTML='<div class="mp-h"><div class="mp-title"><i class="mpi mpi-clock"></i>시간표</div></div>'+ttPanelHtml(true); MP_ttTick(); }); };
 
 /* ───────────── 등급표 수정: 선택과목별 ───────────── */
 function egcArr(si,ei){ var s=_egcSubjects[si]; return ei<0?s.gradeCutoffs:s.gradeCutoffsByElective[s.electiveOptions[ei]]; }
@@ -18344,6 +18493,54 @@ window._egcCopyToAll=function(si,ei){
   s.electiveOptions.forEach(function(n,k){ if(k!==ei) s.gradeCutoffsByElective[n]=src.map(function(c){return Object.assign({},c);}); });
   renderEditGradeCutoffBody();
 };
+
+/* ======================================================================
+   MONO PLANNER 추가 기능 E — 이모지 → 선 아이콘 자동 변환(디자인 통일)
+   ====================================================================== */
+(function(){
+  var MAP={'⏰':'clock','⏱':'clock','🕐':'clock','🔔':'bell','🔇':'bell-off','📳':'vibrate','📅':'calendar','📌':'pin','📎':'clip','📄':'doc','📝':'edit','✎':'edit','✍':'edit','✅':'check-c','✓':'check','✔':'check','✕':'x','✖':'x','❌':'x-c','⚠':'warn','🔒':'lock','▶':'play','◀':'chev-l','🔍':'search','↺':'refresh','✨':'spark','✦':'spark','🎉':'spark','🎓':'cap','👀':'eye','💬':'msg','🗣':'msg','🗑':'trash','📖':'book','📊':'chart','🌱':'sprout','☕':'coffee','🍚':'utensils','🔊':'speaker','🎧':'headphones','🙋':'user','🎯':'target','🖼':'image','🔴':'dot-r','🟡':'dot-y','🟢':'dot-g'};
+  var IMG={'☕':'cup','🙋':'hand','🎉':'done','⏰':'bell','🔔':'bell','🎧':'headphones','🔊':'speaker','📅':'calendar','🕐':'clock','✕':'close','✖':'close','❌':'close','🎯':'target','⚠':'warn','✅':'seal'};
+  var EXROOT='#screen-exam,#screen-exam-display,#exam-warn-banner,.exam-taking-wrap';
+  var keys=Object.keys(MAP).map(function(k){return k.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');});
+  var RE=new RegExp('('+keys.join('|')+')[\\uFE0E\\uFE0F]?','g'), TEST=new RegExp(keys.join('|'));
+  var ROOTS='#modal-edit-grade-cutoff,.modal-overlay,.mp-card,.mp-sheet,.mp-bell,.mp-toast,.mp-tt-chip,#mp-sched-host,#mp-rep-host,#mp-board,#mp-tsched,#mp-ttab,#mp-rep,#mp-watch,.ex-hdr-actions,.exam-card-actions,#screen-exam,#screen-exam-display,#exam-warn-banner,.exam-taking-wrap,.exam-break-icon,.exam-wait-icon';
+  var SKIP={SCRIPT:1,STYLE:1,TEXTAREA:1,OPTION:1,INPUT:1,SELECT:1,SVG:1,svg:1};
+  function inRoot(n){ var e=n.nodeType===1?n:n.parentElement; return !!(e&&e.closest&&e.closest(ROOTS)); }
+  function conv(root){
+    if(!root||root.nodeType!==1&&root.nodeType!==3) return;
+    var list=[];
+    if(root.nodeType===3){ list.push(root); }
+    else { var w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:function(n){ var p=n.parentElement; if(!p||SKIP[p.tagName]||p.closest('svg,script,style,textarea,option,select,.mpi-no')) return NodeFilter.FILTER_REJECT; return TEST.test(n.nodeValue)?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT; }}); var n; while((n=w.nextNode())) list.push(n); }
+    list.forEach(function(t){
+      if(!t.parentNode||!TEST.test(t.nodeValue)||!inRoot(t)) return;
+      var p=t.parentElement; if(p&&(SKIP[p.tagName]||p.closest('svg,textarea,option,select,.mpi-no'))) return;
+      var s=t.nodeValue, frag=document.createDocumentFragment(), last=0, m; RE.lastIndex=0;
+      while((m=RE.exec(s))){
+        if(m.index>last) frag.appendChild(document.createTextNode(s.slice(last,m.index).replace(/\s+$/,function(x){return m.index>last?x:'';})));
+        var i, ex=t.parentElement&&t.parentElement.closest(EXROOT);
+        if(ex&&IMG[m[1]]){ i=document.createElement('img'); i.className='mpi-img'; i.src='/assets/ui/'+IMG[m[1]]+'.png'; i.alt=''; i.draggable=false; }
+        else { i=document.createElement('i'); i.className='mpi mpi-'+MAP[m[1]]; }
+        frag.appendChild(i);
+        last=m.index+m[0].length;
+        if(s.charAt(last)===' ') last++;
+      }
+      if(last<s.length) frag.appendChild(document.createTextNode(s.slice(last)));
+      t.parentNode.replaceChild(frag,t);
+    });
+  }
+  var busy=false, q=[], sched=false;
+  function flush(){ sched=false; busy=true; try{ var arr=q; q=[]; arr.forEach(function(n){ if(n.isConnected!==false) conv(n); }); }catch(e){} busy=false; }
+  var mo=new MutationObserver(function(ms){
+    if(busy) return;
+    ms.forEach(function(m){
+      if(m.type==='characterData') q.push(m.target);
+      else m.addedNodes.forEach(function(n){ if(n.nodeType===1||n.nodeType===3) q.push(n); });
+    });
+    if(q.length&&!sched){ sched=true; (window.requestAnimationFrame||setTimeout)(flush); }
+  });
+  function start(){ mo.observe(document.body,{childList:true,subtree:true,characterData:true}); conv(document.body); }
+  if(document.body) start(); else document.addEventListener('DOMContentLoaded',start);
+})();
 
 </script>
 </body>
