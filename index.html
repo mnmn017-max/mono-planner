@@ -17434,7 +17434,7 @@ window.mpOpenBulk=function(){
   var srcs={}, subs={}; _mpT.exams.forEach(function(e){ if(e.examSource) srcs[e.examSource]=1; (e.subjects||[]).forEach(function(x){ var k=mpSubKey(x); if(k) subs[k]=1; }); });
   var SL={practice:'연습용',daesung:'대성',megastudy:'메가스터디',etoos:'이투스',pyeongga:'평가원',office:'교육청',etc:'기타'};
   var h='<h3>모의고사 일정 일괄 등록</h3>'
-    +'<div class="mp-lbl">1. 시험(회차) 선택 — 여러 개 선택 가능 <span class="mp-sub" id="mp-bulk-cnt"></span></div>'
+    +'<div class="mp-lbl">1. 시험(회차) 선택 <a href="javascript:void(0)" onclick="mpBulkAllExams(true)">보이는 시험 전체</a> · <a href="javascript:void(0)" onclick="mpBulkAllExams(false)">전체 해제</a> <span class="mp-sub" id="mp-bulk-cnt"></span></div>'
     +'<div class="mp-filter-grid" style="margin-bottom:6px">'
     +'<input class="mp-in sm" id="mp-bf-q" placeholder="🔍 시험 이름 검색" oninput="mpBulkFilterExams()">'
     +'<select class="mp-in sm" id="mp-bf-src" onchange="mpBulkFilterExams()"><option value="">출처 전체</option>'+Object.keys(srcs).map(function(k){return '<option value="'+mpE(k)+'">'+mpE(SL[k]||k)+'</option>';}).join('')+'</select>'
@@ -17472,6 +17472,7 @@ window.mpBulkFilterExams=function(){
   el.innerHTML=list.map(function(e){return '<label class="mp-chk"><input type="checkbox" class="mp-be" value="'+e.id+'"'+(_mpBulk.sel[e.id]?' checked':'')+' onchange="mpBulkToggleExam(this.value,this.checked)">'+mpE(e.title)+' <span class="mp-sub">'+mpE(e.examSource||'')+(hasSch[e.id]?' · 일정 있음':'')+'</span></label>';}).join('')||'<div class="mp-sub">조건에 맞는 시험이 없어요</div>';
   mpBulkCounts();
 };
+window.mpBulkAllExams=function(on){ if(on){ document.querySelectorAll('.mp-be').forEach(function(c){c.checked=true; _mpBulk.sel[c.value]=1;}); } else { _mpBulk.sel={}; document.querySelectorAll('.mp-be').forEach(function(c){c.checked=false;}); } mpBulkCounts(); };
 window.mpBulkDrawStudents=function(){
   var el=document.getElementById('mp-bulk-students'); if(!el) return;
   var q=((document.getElementById('mp-bf-sq')||{}).value||'').trim().toLowerCase();
