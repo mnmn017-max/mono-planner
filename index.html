@@ -17426,16 +17426,19 @@ window.mpDeleteSchedule=async function(id){
 
 /* ── 일괄 등록 (학생 × 회차 표) ── */
 var _mpBulk={exams:[],students:[],sel:{},ssel:{}};
+/* 탐구 과목은 내부 코드가 ex1/ex2라서, 계열(과학탐구/사회탐구)로 바꿔서 보여주고 필터함 */
+function mpSubKey(x){ if(!x||!x.subject) return ''; return (x.subject==='ex1'||x.subject==='ex2')?(x.exCategory||'sc'):x.subject; }
+function mpSubLabel(k){ var fb={ko:'국어',ma:'수학',en:'영어',hi:'한국사',sc:'과학탐구',so:'사회탐구'}; var n=(typeof subjectNames!=='undefined')?subjectNames[k]:null; return n||fb[k]||k; }
 window.mpOpenBulk=function(){
   _mpBulk={exams:[],students:[],sel:{},ssel:{}};
-  var srcs={}, subs={}; _mpT.exams.forEach(function(e){ if(e.examSource) srcs[e.examSource]=1; (e.subjects||[]).forEach(function(x){ if(x.subject) subs[x.subject]=1; }); });
+  var srcs={}, subs={}; _mpT.exams.forEach(function(e){ if(e.examSource) srcs[e.examSource]=1; (e.subjects||[]).forEach(function(x){ var k=mpSubKey(x); if(k) subs[k]=1; }); });
   var SL={practice:'연습용',daesung:'대성',megastudy:'메가스터디',etoos:'이투스',pyeongga:'평가원',office:'교육청',etc:'기타'};
   var h='<h3>모의고사 일정 일괄 등록</h3>'
     +'<div class="mp-lbl">1. 시험(회차) 선택 — 여러 개 선택 가능 <span class="mp-sub" id="mp-bulk-cnt"></span></div>'
     +'<div class="mp-filter-grid" style="margin-bottom:6px">'
     +'<input class="mp-in sm" id="mp-bf-q" placeholder="🔍 시험 이름 검색" oninput="mpBulkFilterExams()">'
     +'<select class="mp-in sm" id="mp-bf-src" onchange="mpBulkFilterExams()"><option value="">출처 전체</option>'+Object.keys(srcs).map(function(k){return '<option value="'+mpE(k)+'">'+mpE(SL[k]||k)+'</option>';}).join('')+'</select>'
-    +'<select class="mp-in sm" id="mp-bf-sub" onchange="mpBulkFilterExams()"><option value="">과목 전체</option>'+Object.keys(subs).map(function(k){return '<option value="'+mpE(k)+'">'+mpE((typeof subjectNames!=='undefined'&&subjectNames[k])||k)+'</option>';}).join('')+'</select>'
+    +'<select class="mp-in sm" id="mp-bf-sub" onchange="mpBulkFilterExams()"><option value="">과목 전체</option>'+Object.keys(subs).map(function(k){return '<option value="'+mpE(k)+'">'+mpE(mpSubLabel(k))+'</option>';}).join('')+'</select>'
     +'<select class="mp-in sm" id="mp-bf-sch" onchange="mpBulkFilterExams()"><option value="">일정 전체</option><option value="none">일정 아직 없는 시험</option><option value="has">일정 있는 시험</option></select>'
     +'</div>'
     +'<div id="mp-bulk-exams" style="max-height:170px;overflow:auto;border:1px solid var(--border2);border-radius:8px;padding:6px"></div>'
@@ -17461,7 +17464,7 @@ window.mpBulkFilterExams=function(){
   var list=_mpT.exams.filter(function(e){
     if(q&&(e.title||'').toLowerCase().indexOf(q)<0) return false;
     if(src&&(e.examSource||'')!==src) return false;
-    if(sub&&!(e.subjects||[]).some(function(x){return x.subject===sub;})) return false;
+    if(sub&&!(e.subjects||[]).some(function(x){return mpSubKey(x)===sub;})) return false;
     if(sch==='none'&&hasSch[e.id]) return false;
     if(sch==='has'&&!hasSch[e.id]) return false;
     return true;
