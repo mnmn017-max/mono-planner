@@ -1640,6 +1640,160 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   .exam-report-total-score{font-size:34px;}
 }
 
+/* ===== MONO PLANNER 추가 기능 스타일 (일정표/현황판/주의학생/리포트/성적표) ===== */
+.mp-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:12px}
+.mp-h{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.mp-title{font-size:15px;font-weight:800;color:var(--burg)}
+.mp-sub{font-size:11px;color:var(--tx3)}
+.mp-btn{padding:8px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--tx2);font-size:12px;font-weight:600;cursor:pointer}
+.mp-btn.pri{background:var(--burg);color:#fff;border-color:var(--burg)}
+.mp-btn.gold{background:var(--gold-l);color:var(--gold);border-color:rgba(184,132,26,.3)}
+.mp-btn.sm{padding:5px 10px;font-size:11px}
+.mp-btn:disabled{opacity:.5;cursor:default}
+.mp-seg{display:inline-flex;border:1px solid var(--border);border-radius:9px;overflow:hidden}
+.mp-seg button{padding:7px 14px;border:0;background:var(--surface);font-size:12px;color:var(--tx3);cursor:pointer}
+.mp-seg button.on{background:var(--burg);color:#fff;font-weight:700}
+.mp-chip{display:inline-block;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700;white-space:nowrap}
+.mp-c-green{background:#dcfce7;color:#15803d}.mp-c-yellow{background:#fef9c3;color:#a16207}.mp-c-red{background:#fee2e2;color:#b91c1c}
+.mp-c-blue{background:#dbeafe;color:#1d4ed8}.mp-c-grey{background:#eceae6;color:#6b6258}.mp-c-orange{background:#ffedd5;color:#c2410c}
+.mp-dday{background:linear-gradient(135deg,#7B1D1D,#9B2D2D);color:#fff;border-radius:16px;padding:16px 18px;margin-bottom:12px;display:flex;gap:14px;align-items:center}
+.mp-dday .n{font-size:34px;font-weight:900;letter-spacing:1px;min-width:92px;text-align:center}
+.mp-dday .t{font-size:15px;font-weight:700}.mp-dday .s{font-size:12px;opacity:.85;margin-top:3px}
+.mp-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border2)}
+.mp-row:last-child{border-bottom:0}
+.mp-row .d{width:62px;flex-shrink:0;text-align:center;font-size:11px;color:var(--tx3);line-height:1.4}
+.mp-row .d b{display:block;font-size:17px;color:var(--tx1)}
+.mp-row .m{flex:1;min-width:0}.mp-row .m .a{font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mp-row .m .b{font-size:11px;color:var(--tx3);margin-top:2px}
+/* 월간 */
+.mp-mgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.mp-mh{font-size:11px;text-align:center;color:var(--tx3);padding:4px 0;font-weight:700}
+.mp-mc{min-height:76px;background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:3px;overflow:hidden;cursor:default}
+.mp-mc.out{opacity:.35}.mp-mc.today{border-color:var(--burg);box-shadow:inset 0 0 0 1px var(--burg)}
+.mp-mc .dn{font-size:11px;font-weight:700;color:var(--tx2)}
+.mp-ev{display:block;margin-top:2px;padding:1px 4px;border-radius:4px;font-size:10px;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.mp-ev.green{background:#dcfce7;color:#15803d}.mp-ev.yellow{background:#fef9c3;color:#a16207}.mp-ev.red{background:#fee2e2;color:#b91c1c}
+.mp-ev.blue{background:#dbeafe;color:#1d4ed8}.mp-ev.grey{background:#eceae6;color:#6b6258}.mp-ev.orange{background:#ffedd5;color:#c2410c}
+/* 주간 (학생 시간 그리드) */
+.mp-wk{display:grid;grid-template-columns:38px repeat(7,1fr);border:1px solid var(--border2);border-radius:10px;overflow:hidden;background:var(--surface)}
+.mp-wk .hd{font-size:11px;text-align:center;padding:6px 0;background:var(--surface2);font-weight:700;border-bottom:1px solid var(--border2)}
+.mp-wk .hd.today{background:var(--burg);color:#fff}
+.mp-wk .tm{position:relative;border-right:1px solid var(--border2)}
+.mp-wk .tm i{position:absolute;right:3px;font-style:normal;font-size:9px;color:var(--tx4);transform:translateY(-50%)}
+.mp-wk .col{position:relative;border-right:1px solid var(--border2);background-image:repeating-linear-gradient(to bottom,transparent 0,transparent 35px,var(--border2) 35px,var(--border2) 36px)}
+.mp-blk{position:absolute;left:2px;right:2px;border-radius:6px;padding:2px 4px;font-size:10px;line-height:1.25;overflow:hidden;touch-action:none;user-select:none;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.mp-blk.drag{cursor:grab}.mp-blk.drag:active{cursor:grabbing}
+.mp-blk.green{background:#bbf7d0;color:#14532d}.mp-blk.yellow{background:#fde68a;color:#78350f}.mp-blk.red{background:#fecaca;color:#7f1d1d}
+.mp-blk.blue{background:#bfdbfe;color:#1e3a8a}.mp-blk.grey{background:#e5e1da;color:#4b4439}.mp-blk.orange{background:#fed7aa;color:#7c2d12}
+.mp-blk .lk{position:absolute;right:3px;top:1px;font-size:9px}
+.mp-tip{position:fixed;z-index:900;background:#1d2a4a;color:#fff;font-size:12px;padding:5px 9px;border-radius:7px;pointer-events:none}
+/* 시트(모달) */
+.mp-sheet{background:var(--surface);width:100%;max-width:760px;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:18px 16px 22px}
+@media(min-width:900px){.mp-sheet{border-radius:18px;align-self:center}}
+.mp-sheet h3{font-size:16px;color:var(--burg);margin-bottom:12px}
+.mp-lbl{font-size:11px;color:var(--tx3);font-weight:700;margin:10px 0 4px}
+.mp-in{width:100%;padding:9px 11px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--tx1);outline:none}
+.mp-in.sm{padding:5px 6px;font-size:12px}
+.mp-tbl{width:100%;border-collapse:collapse;font-size:12px}
+.mp-tbl th,.mp-tbl td{border:1px solid var(--border2);padding:5px 6px;text-align:center;vertical-align:middle}
+.mp-tbl th{background:var(--surface2);font-size:11px}
+.mp-tbl td.l{text-align:left;font-weight:700;white-space:nowrap}
+.mp-scroll{overflow:auto;max-width:100%}
+.mp-warn{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;border-radius:9px;padding:8px 10px;font-size:12px;margin:8px 0;line-height:1.6}
+/* 현황판 */
+.mp-bt{border-collapse:separate;border-spacing:3px;font-size:11px}
+.mp-bt th{font-size:10px;color:var(--tx2);background:var(--surface2);padding:5px 6px;border-radius:6px;cursor:pointer;min-width:74px;white-space:normal;line-height:1.3}
+.mp-bt td.nm{font-weight:800;font-size:12px;text-align:left;padding:4px 8px;background:var(--surface2);border-radius:6px;cursor:pointer;white-space:nowrap;position:sticky;left:0;z-index:1}
+.mp-bt td.c{border-radius:6px;text-align:center;padding:5px 3px;font-size:10px;font-weight:700;line-height:1.3;min-width:74px;cursor:pointer}
+.mp-bt td.c.green{background:#bbf7d0;color:#14532d}.mp-bt td.c.yellow{background:#fde68a;color:#78350f}.mp-bt td.c.red{background:#fecaca;color:#7f1d1d}
+.mp-bt td.c.blue{background:#bfdbfe;color:#1e3a8a}.mp-bt td.c.grey{background:#eceae6;color:#6b6258}.mp-bt td.c.orange{background:#fed7aa;color:#7c2d12}
+.mp-bt td.c.none{background:transparent;color:var(--tx4);cursor:default}
+.mp-bt td.c small{display:block;font-weight:400;font-size:9px;opacity:.85}
+.mp-legend{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.mp-scard{border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:8px;background:var(--surface)}
+.mp-scard .hh{display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:14px;margin-bottom:6px}
+.mp-scard .it{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--border2);font-size:12px}
+.mp-board-desk{display:block}.mp-board-mob{display:none}
+@media(max-width:820px){.mp-board-desk{display:none}.mp-board-mob{display:block}}
+/* 시험관리 모바일/태블릿 ⋯ 메뉴 */
+.ex-hdr-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.ex-more-btn{display:none}
+@media(max-width:1100px){
+  .ex-hdr-actions .ex-sec,.exam-card-actions .ex-sec{display:none}
+  .ex-hdr-actions.open .ex-sec,.exam-card-actions.open .ex-sec{display:inline-block}
+  .ex-hdr-actions.open{width:100%}
+  .ex-more-btn{display:inline-block}
+  .exam-card-actions .ex-more-btn{margin-left:auto}
+}
+/* 주의 학생 */
+.mp-lv{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px}
+.mp-lv.red{background:#dc2626}.mp-lv.yellow{background:#eab308}.mp-lv.ok{background:#16a34a}
+.mp-flag{font-size:11px;color:var(--tx3);margin-top:3px;line-height:1.5}
+/* 코멘트 읽음 */
+.mp-read{font-size:10px;font-weight:700;padding:1px 7px;border-radius:99px}
+.mp-read.y{background:#dcfce7;color:#15803d}.mp-read.n{background:#fee2e2;color:#b91c1c}
+.mp-toast{position:fixed;left:50%;transform:translateX(-50%);top:14px;z-index:1200;background:#1d2a4a;color:#fff;padding:12px 16px;border-radius:12px;font-size:13px;max-width:92vw;box-shadow:0 6px 20px rgba(0,0,0,.3);cursor:pointer}
+/* 리포트/성적표 미리보기 */
+.mp-prev{display:flex;gap:12px;flex-wrap:wrap}
+.mp-prev .pgw{position:relative;overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,.22);background:#fff}
+.mp-prev .pgw>.pgx{transform-origin:0 0}
+.mp-theme{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.mp-theme .th{border:2px solid var(--border);border-radius:10px;padding:4px;cursor:pointer;text-align:center;font-size:11px;background:var(--surface)}
+.mp-theme .th.on{border-color:var(--burg);background:var(--burg-l)}
+.mp-theme .th img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:6px;display:block;margin-bottom:3px}
+.mp-theme .th small{display:block;font-size:9px;color:var(--c2410c,#c2410c)}
+.mp-chk{display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 0}
+/* ===== 리포트/성적표 페이지(A4 794x1123) ===== */
+.mpr-pg{width:794px;height:1123px;position:relative;overflow:hidden;background:#fff;font-family:'Noto Sans KR','Noto Sans CJK KR','Malgun Gothic',sans-serif;color:#2a2a33;box-sizing:border-box}
+.mpr-pg *{box-sizing:border-box}
+.mpr-ser{font-family:'Noto Serif KR','Noto Serif CJK KR',serif}
+.mpr-ab{position:absolute}
+.mpr-bgi{position:absolute;left:0;top:0;width:794px;height:1123px;background-size:cover;background-position:center}
+/* 별자리 리포트 */
+.mpr-rep{--paper:#FDFBF7;--navy:#1d2a4a;--burg:#7B1D1D;--gold:#B8841A;--lg:#E6D6A8;--tx:#2a2a33;--mut:#8a8478;--line:#e8e0d0;background:var(--paper)}
+.mpr-rep .fr{position:absolute;inset:22px;border:1px solid var(--gold);border-radius:34px}
+.mpr-rep .fr2{position:absolute;inset:28px;border:1px dashed var(--lg);border-radius:28px}
+.mpr-rep .in{position:absolute;inset:60px 56px}
+.mpr-rep .eyebrow{font-size:10px;letter-spacing:5px;color:var(--gold);font-weight:700}
+.mpr-rep .h2{font-family:'Noto Serif KR','Noto Serif CJK KR',serif;font-size:22px;font-weight:700;color:var(--navy);margin:2px 0 4px}
+.mpr-rep .sub{font-size:11px;color:var(--mut)}
+.mpr-rep .sec{margin-top:20px}
+.mpr-rep .num{font-family:'Noto Serif KR','Noto Serif CJK KR',serif;color:var(--gold);font-size:12px;letter-spacing:3px}
+.mpr-rep .kp{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.mpr-rep .kp div{text-align:center;padding:12px 4px;border-top:1px solid var(--gold);border-bottom:1px solid var(--gold)}
+.mpr-rep .kp b{display:block;font-family:'Noto Serif KR','Noto Serif CJK KR',serif;font-size:23px;color:var(--navy)}
+.mpr-rep .kp span{font-size:9px;color:var(--mut);letter-spacing:1px}
+.mpr-rep .cardx{border:1px solid var(--line);padding:11px 14px;font-size:11px;line-height:1.8;background:#fff}
+.mpr-rep table{border-collapse:collapse;width:100%;font-size:10.5px}
+.mpr-rep th{font-weight:700;color:var(--navy);border-bottom:1.5px solid var(--navy);padding:6px 4px;text-align:center;font-size:10px;letter-spacing:1px}
+.mpr-rep td{border-bottom:1px solid var(--line);padding:7px 4px;text-align:center}
+.mpr-rep .gd{font-family:'Noto Serif KR','Noto Serif CJK KR',serif;font-weight:700;color:var(--burg)}
+.mpr-rep .ft{position:absolute;left:60px;right:60px;bottom:38px;display:flex;justify-content:space-between;font-size:9px;color:var(--mut);letter-spacing:1px}
+.mpr-rep .it{margin:3px 0;font-size:11px;line-height:1.55}
+.mpr-rep .it b{color:var(--navy)}
+.mpr-rep .ln{border-bottom:1px dotted #cfc6b0;height:30px}
+/* 성적표 */
+.mpr-card .box{position:absolute;left:92px;transform-origin:0 0;color:#2b2b2b;--ac:#444;--bgc:rgba(255,255,255,.86)}
+.mpr-card .hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1.5px solid var(--ac);padding-bottom:9px;margin-bottom:14px}
+.mpr-card .hd small{font-size:11px;letter-spacing:3px;color:#666;display:block;margin-bottom:3px;text-shadow:0 0 6px #fff,0 0 3px #fff}
+.mpr-card .hd h1{text-shadow:0 0 8px #fff,0 0 4px #fff;font-family:'Noto Serif KR','Noto Serif CJK KR',serif;font-size:36px;font-weight:700;color:var(--ac);letter-spacing:2px;line-height:1.2}
+.mpr-card .hd .r{text-align:right;font-size:10px;letter-spacing:3px;color:#888;line-height:1.7}
+.mpr-card .blk{margin-bottom:14px}
+.mpr-card .blk h3{text-shadow:0 0 6px #fff,0 0 3px #fff;font-family:'Noto Serif KR','Noto Serif CJK KR',serif;font-size:14.5px;font-weight:700;margin-bottom:6px;display:flex;justify-content:space-between;align-items:baseline}
+.mpr-card .blk h3 i{font-style:normal;color:var(--ac);margin-right:7px;font-weight:800}
+.mpr-card .blk h3 span{font-family:'Noto Sans KR',sans-serif;font-size:11px;font-weight:400;color:#555}
+.mpr-card table{width:100%;border-collapse:collapse;font-size:11.5px;background:var(--bgc)}
+.mpr-card td,.mpr-card th{border:1px solid rgba(0,0,0,.16);padding:4px 7px;text-align:center;height:28px}
+.mpr-card th{background:rgba(255,255,255,.55);font-weight:700;color:#333;height:26px}
+.mpr-card td.l{text-align:left;background:rgba(255,255,255,.55);font-weight:700}
+.mpr-card .gp{display:inline-block;min-width:22px;padding:0 7px;border-radius:9px;background:var(--ac);color:#fff;font-weight:700;font-size:11px}
+.mpr-card .cm{border:1px solid rgba(0,0,0,.16);border-radius:8px;padding:10px 14px;font-size:11.5px;line-height:1.75;color:#444;background:var(--bgc);height:112px;overflow:hidden}
+.mpr-card .cm .sg{text-align:right;margin-top:3px;font-size:11px;color:#777}
+.mpr-card .memo{border:1px dashed rgba(0,0,0,.3);border-radius:8px;padding:8px 14px;background:var(--bgc)}
+.mpr-card .memo .ml{border-bottom:1px dotted rgba(0,0,0,.35);height:30px}
+.mpr-card .chartbox{border:1px solid rgba(0,0,0,.16);border-radius:8px;padding:6px 4px 0;background:var(--bgc)}
+
+.teacher-nav-scroll .teacher-nav-item{min-width:58px}
 </style>
 <script>
 // 스플래시 화면 자동 종료 (모듈 스크립트와 독립 실행 - Firebase 로딩 실패해도 작동)
@@ -2976,6 +3130,635 @@ for (var mi = 0; mi < modalOverlays.length; mi++) {
 showScreen('screen-loading');
 </script>
 
+<script>
+/* ===== MONO PLANNER 추가 기능: 순수 로직/렌더 ===== */
+/* MPCore — 순수 로직 (DOM/Firebase 의존 없음). 브라우저(window.MPCore)와 node 테스트 양쪽에서 사용 */
+(function(root){
+'use strict';
+var C = {};
+
+/* ───────── 날짜/시간 ───────── */
+function p2(n){ return (n<10?'0':'')+n; }
+C.p2 = p2;
+C.minToHHMM = function(m){ if(m==null||isNaN(m)) return ''; m=Math.max(0,Math.min(1439,Math.round(m))); return p2(Math.floor(m/60))+':'+p2(m%60); };
+C.hhmmToMin = function(s){ if(!s) return null; var m=/^(\d{1,2}):(\d{2})$/.exec(String(s).trim()); if(!m) return null; var h=+m[1],mi=+m[2]; if(h>23||mi>59) return null; return h*60+mi; };
+C.parseDate = function(s){ var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||''); if(!m) return null; return new Date(Date.UTC(+m[1],+m[2]-1,+m[3])); };
+C.fmtDate = function(d){ return d.getUTCFullYear()+'-'+p2(d.getUTCMonth()+1)+'-'+p2(d.getUTCDate()); };
+C.addDays = function(s,n){ var d=C.parseDate(s); if(!d) return s; d.setUTCDate(d.getUTCDate()+n); return C.fmtDate(d); };
+C.diffDays = function(a,b){ var da=C.parseDate(a),db=C.parseDate(b); if(!da||!db) return 0; return Math.round((db-da)/86400000); };
+C.dow = function(s){ var d=C.parseDate(s); return d?d.getUTCDay():0; };            // 0=일
+C.weekStart = function(s){ var w=C.dow(s); return C.addDays(s, -((w+6)%7)); };       // 월요일 시작
+C.monthStart = function(s){ return s.slice(0,8)+'01'; };
+C.monthEnd = function(s){ var d=C.parseDate(s); var e=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)); return C.fmtDate(e); };
+C.rangeDates = function(a,b,cap){ var out=[],cur=a,n=0; cap=cap||400; while(cur<=b && n<cap){ out.push(cur); cur=C.addDays(cur,1); n++; } return out; };
+var DOWK=['일','월','화','수','목','금','토'];
+C.dowKo = function(s){ return DOWK[C.dow(s)]; };
+C.mdLabel = function(s){ return (+s.slice(5,7))+'/'+(+s.slice(8,10)); };
+C.mdKo = function(s){ return (+s.slice(5,7))+'월 '+(+s.slice(8,10))+'일'; };
+
+/* 학습시간 문자열 "H:MM:SS" ↔ 초 */
+C.parseHMS = function(t){ if(!t||typeof t!=='string') return 0; var p=t.split(':'); if(p.length<2) return 0; var h=parseInt(p[0],10)||0,m=parseInt(p[1],10)||0,s=parseInt(p[2],10)||0; return h*3600+m*60+s; };
+C.fmtHMS = function(sec){ sec=Math.max(0,Math.round(sec||0)); var h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60; return h+':'+p2(m)+':'+p2(s); };
+C.fmtHM = function(sec){ sec=Math.max(0,Math.round(sec||0)); var h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60); if(h&&m) return h+'h '+p2(m)+'m'; if(h) return h+'h'; return m+'m'; };
+
+/* ───────── 일정(스케줄) ───────── */
+var MIN_START = 6*60, MAX_START = 23*60;
+C.START_MIN = MIN_START; C.START_MAX = MAX_START;
+C.effStart = function(s){ return (s.studentStartMin!=null && !isNaN(s.studentStartMin)) ? s.studentStartMin : (s.startMin!=null?s.startMin:null); };
+C.effEnd = function(s){ var st=C.effStart(s); if(st==null) return null; return st+(s.durationMin||60); };
+C.clampStart = function(min){ min=Math.round(min/10)*10; return Math.max(MIN_START,Math.min(MAX_START,min)); };
+
+/* 같은 날 시간이 겹치는 일정 찾기. cand: {studentUid,date,startMin|studentStartMin,durationMin,id?} */
+C.findCollisions = function(list, cand, ignoreId){
+  var cs=C.effStart(cand), ce=C.effEnd(cand); if(cs==null) return [];
+  return list.filter(function(s){
+    if(s.id && (s.id===ignoreId || s.id===cand.id)) return false;
+    if(s.studentUid!==cand.studentUid || s.date!==cand.date) return false;
+    var ss=C.effStart(s), se=C.effEnd(s); if(ss==null) return false;
+    return cs<se && ss<ce;
+  });
+};
+/* 같은 날 같은 학생에게 시간 미지정 일정이 이미 있어도 "같은 날 2개 이상"은 알려줌 */
+C.sameDayOthers = function(list, cand, ignoreId){
+  return list.filter(function(s){ return s.id!==ignoreId && s.id!==cand.id && s.studentUid===cand.studentUid && s.date===cand.date; });
+};
+
+/* 학생이 시작 시각을 바꿀 수 있는가 */
+C.canStudentEdit = function(s, session, today, nowMin){
+  if(s.timeLocked) return {ok:false, reason:'선생님이 시간을 고정했어요'};
+  if(session && ['in_progress','break','waiting','submitted','graded'].indexOf(session.status)>=0) return {ok:false, reason:'이미 시험을 시작했어요'};
+  if(s.date<today) return {ok:false, reason:'지난 일정이에요'};
+  if(s.date===today){ var st=C.effStart(s); if(st!=null && nowMin>=st) return {ok:false, reason:'시작 시간이 지나서 바꿀 수 없어요'}; }
+  return {ok:true};
+};
+/* 학생이 고른 새 시작 시각의 유효성 */
+C.validateStudentStart = function(s, newMin, today, nowMin){
+  if(newMin==null||isNaN(newMin)) return {ok:false, reason:'시간을 확인해 주세요'};
+  if(newMin<MIN_START||newMin>MAX_START) return {ok:false, reason:'06:00 ~ 23:00 사이로 골라 주세요'};
+  if(s.date===today && newMin<=nowMin) return {ok:false, reason:'이미 지난 시간이에요'};
+  return {ok:true};
+};
+
+/* 한 일정의 상태. session: 해당 학생·시험의 examSession(없을 수 있음) */
+C.scheduleStatus = function(s, session, today, nowMin){
+  var st = session && session.status;
+  if(st==='graded'||st==='submitted') return {key:'done', label:'응시 완료', color:'green'};
+  if(st==='in_progress'||st==='break') return {key:'inprogress', label:'응시 중', color:'yellow'};
+  if(st==='waiting') return {key:'waiting', label:'대기 중', color:'yellow'};
+  if(s.date<today) return {key:'overdue', label:'기한 지남', color:'red'};
+  if(s.date===today){
+    var es=C.effStart(s);
+    if(es!=null && nowMin>es) return {key:'late', label:'시간 지남', color:'orange'};
+    return {key:'today', label:'오늘 예정'+(es!=null?' '+C.minToHHMM(es):''), color:'yellow'};
+  }
+  return {key:'upcoming', label:'예정', color:'grey'};
+};
+/* 일정 없는 시험(배정만 됨) */
+C.noScheduleStatus = function(session){
+  var st = session && session.status;
+  if(st==='graded'||st==='submitted') return {key:'done', label:'응시 완료', color:'green'};
+  if(st==='in_progress'||st==='break') return {key:'inprogress', label:'응시 중', color:'yellow'};
+  if(st==='waiting') return {key:'waiting', label:'대기 중', color:'yellow'};
+  return {key:'assigned', label:'배정됨', color:'blue'};
+};
+/* 다음 시험(D-Day): 완료되지 않은 일정 중 가장 가까운 것 */
+C.nextExam = function(items, today){
+  var open = items.filter(function(it){ return it.status && ['done'].indexOf(it.status.key)<0 && it.s.date>=today; });
+  open.sort(function(a,b){ return a.s.date<b.s.date?-1:a.s.date>b.s.date?1:((C.effStart(a.s)||0)-(C.effStart(b.s)||0)); });
+  return open[0]||null;
+};
+C.dDayLabel = function(date, today){ var n=C.diffDays(today,date); return n===0?'D-DAY':(n>0?'D-'+n:'D+'+(-n)); };
+
+/* ───────── 일정 → 투두 / 시간 합산 ───────── */
+C.todoIdForSchedule = function(id){ return 'sch_'+id; };
+C.buildScheduleTodo = function(s, uid, branch, subjectKey){
+  return { uid:uid, title:'📝 '+(s.examTitle||'모의고사'), subject:subjectKey||'ko', status:'none', studyTime:null,
+    certified:false, date:s.date, branch:branch||s.branch||null, scheduleId:s.id, examId:s.examId||null, isExam:true, examSec:0, extraSec:0 };
+};
+/* 시험 결과(과목별)에서 실제 응시 시간(초) 합산. durations: 과목별 최대 분(선택) */
+C.examSecFromResults = function(results, durationsMin){
+  var tot=0;
+  (results||[]).forEach(function(r,i){
+    if(!r) return;
+    var a=r.startedAtMs, b=r.submittedAtMs; if(typeof a!=='number'||typeof b!=='number') return;
+    var sec=Math.max(0,(b-a)/1000);
+    var cap = durationsMin && durationsMin[i] ? durationsMin[i]*60 : 4*3600;
+    tot += Math.min(sec,cap);
+  });
+  return Math.round(tot);
+};
+/* 시험 투두를 "완료"로 만들 때의 필드. 기존 추가 학습시간(extraSec)은 보존하고 합산 */
+C.examDoneFields = function(prevTodo, examSec){
+  var extra = (prevTodo && prevTodo.extraSec) || 0;
+  return { status:'done', examSec:examSec, extraSec:extra, studyTime:C.fmtHMS(examSec+extra) };
+};
+/* 완료된 투두에서 타이머를 다시 돌려 추가 학습 → 시험시간에 더함. 일반 투두면 null(기존 동작 유지) */
+C.additiveFinalize = function(todo, addMs){
+  if(!todo || !(todo.examSec>0 || todo.isExam)) return null;
+  var extra=(todo.extraSec||0)+Math.max(0,addMs)/1000;
+  var tot=(todo.examSec||0)+extra;
+  return { studyTime:C.fmtHMS(tot), extraSec:Math.round(extra*1000)/1000 };
+};
+
+/* ───────── 주의 학생(시간 체크) ───────── */
+/* todos: [{uid,date,status,studyTime}], planners: [{uid,date,submitted}] */
+C.checkStudentTimeUse = function(todos, planners, days, today){
+  var done = todos.filter(function(t){return t.status==='done';});
+  var tracked = done.filter(function(t){return C.parseHMS(t.studyTime)>0;});
+  var shortOnes = tracked.filter(function(t){return C.parseHMS(t.studyTime)<180;});
+  var sec = tracked.reduce(function(s,t){return s+C.parseHMS(t.studyTime);},0);
+  var dates = {}; todos.forEach(function(t){dates[t.date]=1;});
+  var activeDays = Object.keys(dates).length;
+  var subDays = {}; (planners||[]).forEach(function(p){ if(p.submitted) subDays[p.date]=1; });
+  var compliance = done.length ? Math.round(tracked.length/done.length*100) : null;
+  var flags=[];
+  if(done.length>=5 && compliance!=null && compliance<60) flags.push({key:'nocheck', text:'완료 항목 중 시간 체크한 비율 '+compliance+'%'});
+  if(tracked.length>=5 && shortOnes.length/tracked.length>=0.5) flags.push({key:'short', text:'3분 미만 체크가 '+shortOnes.length+'건 ('+Math.round(shortOnes.length/tracked.length*100)+'%)'});
+  var perDay = activeDays? sec/activeDays : 0;
+  if(done.length>=days*2 && perDay<3600) flags.push({key:'low', text:'완료 항목은 많은데 하루 평균 체크 시간 '+C.fmtHM(perDay)});
+  var noPlan = days - Object.keys(subDays).length;
+  if(days>=5 && Object.keys(subDays).length===0) flags.push({key:'noplan', text:'최근 '+days+'일 플래너 제출 0회'});
+  var level = (flags.length>=2 || (compliance!=null && compliance<40 && done.length>=5)) ? 'red' : (flags.length===1 ? 'yellow' : 'ok');
+  return { doneCount:done.length, trackedCount:tracked.length, compliance:compliance, totalSec:sec, activeDays:activeDays, submitDays:Object.keys(subDays).length, flags:flags, level:level };
+};
+
+/* ───────── 별자리 리포트 분석 엔진 ───────── */
+function clip(s,n){ s=String(s==null?'':s); return s.length>n? s.slice(0,n-1)+'…' : s; }
+C.clip = clip;
+
+var CORE_ORDER=['ko','ma','en','hi','sc','so'];
+C.analyzeReport = function(inp){
+  var start=inp.startDate, end=inp.endDate, today=inp.today||end;
+  var names=inp.subjectNames||{ko:'국어',ma:'수학',en:'영어',hi:'한국사',sc:'과학탐구',so:'사회탐구'};
+  function nm(k){ return names[k]||k; }
+  var elapsedEnd = end<today? end : today;
+  var days = C.rangeDates(start,end,120);
+  var elapsedDays = C.rangeDates(start,elapsedEnd,120).length || 1;
+  var todos=(inp.todos||[]).filter(function(t){return t.date>=start&&t.date<=end;});
+  var secByDate={}; days.forEach(function(d){secByDate[d]=0;});
+  var bySubj={}, doneCount=0, trackedDone=0;
+  todos.forEach(function(t){
+    var s=C.parseHMS(t.studyTime);
+    if(t.status==='done'){ doneCount++; if(s>0) trackedDone++; }
+    if(s>0){ secByDate[t.date]=(secByDate[t.date]||0)+s; bySubj[t.subject||'etc']=(bySubj[t.subject||'etc']||0)+s; }
+  });
+  var daily = days.map(function(d){return {date:d, sec:secByDate[d]||0};});
+  var total = daily.reduce(function(s,x){return s+x.sec;},0);
+  var activeDays = daily.filter(function(x){return x.sec>=600;}).length;
+  var avgActive = activeDays? total/activeDays : 0;
+  var avgAll = total/elapsedDays;
+  var best = daily.reduce(function(b,x){return (!b||x.sec>b.sec)?x:b;}, null);
+  var streak=0,cur=0; daily.forEach(function(x){ if(x.sec>=600){cur++; if(cur>streak)streak=cur;} else cur=0; });
+  var dowSum=[0,0,0,0,0,0,0], dowCnt=[0,0,0,0,0,0,0];
+  daily.forEach(function(x){ if(x.date<=elapsedEnd){ var w=C.dow(x.date); dowSum[w]+=x.sec; dowCnt[w]++; } });
+  var bestDow=-1,bestDowAvg=0; for(var w=0;w<7;w++){ var a=dowCnt[w]?dowSum[w]/dowCnt[w]:0; if(a>bestDowAvg){bestDowAvg=a;bestDow=w;} }
+
+  var subs = Object.keys(bySubj).map(function(k){return {key:k,name:nm(k),sec:bySubj[k],pct:total?bySubj[k]/total:0};}).sort(function(a,b){return b.sec-a.sec;});
+
+  var span = days.length;
+  var prevStart=C.addDays(start,-span), prevEnd=C.addDays(start,-1);
+  var prevTotal=0, prevHas=false;
+  (inp.prevTodos||inp.todos||[]).forEach(function(t){ if(t.date>=prevStart&&t.date<=prevEnd){ var s=C.parseHMS(t.studyTime); if(s>0){prevTotal+=s;prevHas=true;} } });
+  var deltaPct = (prevHas&&prevTotal>0)? Math.round((total-prevTotal)/prevTotal*100) : null;
+
+  var submitted={}; (inp.planners||[]).forEach(function(p){ if(p.submitted && p.date>=start && p.date<=elapsedEnd) submitted[p.date]=1; });
+  var submitRate = Math.round(Object.keys(submitted).length/elapsedDays*100);
+  var compliance = doneCount? Math.round(trackedDone/doneCount*100) : null;
+  var completion = todos.length? Math.round(doneCount/todos.length*100) : null;
+
+  /* ── 성적 ── */
+  var gr=(inp.grades||[]).filter(function(g){return g.examDate&&g.examDate>=start&&g.examDate<=end;}).sort(function(a,b){return a.examDate<b.examDate?-1:a.examDate>b.examDate?1:0;});
+  var series={}; // group -> [{date,score,grade,exam,source,label}]
+  gr.forEach(function(g){
+    Object.keys(g.scores||{}).forEach(function(k){
+      var v=g.scores[k]||{}; var grp=v.group||k;
+      if(v.score==null && !v.grade) return;
+      (series[grp]=series[grp]||[]).push({date:g.examDate,score:v.score!=null?Number(v.score):null,grade:v.grade?parseInt(v.grade,10):null,exam:g.examName,source:g.examSource||'',label:v.label||nm(grp)});
+    });
+  });
+  var gstats = Object.keys(series).map(function(k){
+    var arr=series[k], f=arr[0], l=arr[arr.length-1];
+    var sameSrc = arr.filter(function(x){return x.source===l.source;});
+    var base = sameSrc.length>=2 ? sameSrc[0] : null;
+    var scoreDelta = (base&&base.score!=null&&l.score!=null)? l.score-base.score : null;
+    var gradeDelta = (base&&base.grade!=null&&l.grade!=null)? base.grade-l.grade : null; // +면 향상
+    return {key:k,name:nm(k),n:arr.length,series:arr,first:f,last:l,scoreDelta:scoreDelta,gradeDelta:gradeDelta,lastGrade:l.grade,lastScore:l.score,
+      study: bySubj[k]||0};
+  }).sort(function(a,b){ var ia=CORE_ORDER.indexOf(a.key),ib=CORE_ORDER.indexOf(b.key); return (ia<0?99:ia)-(ib<0?99:ib); });
+
+  /* ── 학습 × 성적 통합 해석 (규칙 기반) ── */
+  var good=[], focus=[];
+  var studyVals = subs.map(function(s){return s.sec;});
+  var avgSubjSec = studyVals.length? studyVals.reduce(function(a,b){return a+b;},0)/studyVals.length : 0;
+  function add(arr,w,subject,head,tail){ arr.push({w:w,subject:subject,head:head,tail:tail,text:tail?head+' — '+tail:head}); }
+  gstats.forEach(function(g){
+    var improved = (g.gradeDelta!=null && g.gradeDelta>0) || (g.gradeDelta==null && g.scoreDelta!=null && g.scoreDelta>=3);
+    var declined = (g.gradeDelta!=null && g.gradeDelta<0) || (g.gradeDelta==null && g.scoreDelta!=null && g.scoreDelta<=-3);
+    var gradeTxt = g.gradeDelta!=null ? (g.first.grade+'→'+g.last.grade+'등급') : (g.scoreDelta!=null? (g.scoreDelta>0?'+':'')+g.scoreDelta+'점' : '');
+    var hrs = C.fmtHM(g.study);
+    var hiStudy = g.study>=avgSubjSec && g.study>0;
+    var head = g.name+' '+gradeTxt;
+    if(improved && hiStudy) add(good,3,g.key,head,'학습 '+hrs+' 투자가 성적으로 이어졌어요');
+    else if(improved) add(good,2,g.key,head,'적은 시간에도 효율이 좋았어요');
+    else if(g.lastGrade!=null && g.lastGrade<=2) add(good,1,g.key,g.name+' '+g.lastGrade+'등급','안정적으로 유지 중이에요');
+    if(declined && !hiStudy) add(focus,3,g.key,head,'학습 '+hrs+', 시간 확보가 먼저예요');
+    else if(declined) add(focus,3,g.key,head,'학습 '+hrs+', 오답·풀이 방식을 점검해요');
+    else if(!improved && hiStudy && g.n>=2 && g.lastGrade!=null && g.lastGrade>=3) add(focus,2,g.key,g.name+' '+g.lastGrade+'등급 정체','학습 '+hrs+', 공부 방법을 바꿔볼 때예요');
+  });
+  if(submitRate>=90 && elapsedDays>=5) add(good,2,null,'플래너 제출 '+submitRate+'%','꾸준함이 가장 큰 힘이에요');
+  else if(submitRate<50 && elapsedDays>=5) add(focus,2,null,'플래너 제출 '+submitRate+'%','매일 제출하는 습관부터 잡아요');
+  if(compliance!=null){
+    if(compliance>=90) add(good,2,null,'시간 체크 준수율 '+compliance+'%','기록이 정확해요');
+    else if(compliance<70) add(focus,3,null,'시간 체크 준수율 '+compliance+'%','완료한 공부의 시간 기록을 챙겨요');
+  }
+  var actRate = Math.round(activeDays/elapsedDays*100);
+  if(actRate>=80 && elapsedDays>=7) add(good,2,null,'공부한 날 '+actRate+'%','기간 대부분을 공부로 채웠어요');
+  else if(actRate<40 && elapsedDays>=7) add(focus,2,null,'공부한 날 '+actRate+'%','주 4일 이상을 목표로 이어가요');
+  if(deltaPct!=null){
+    if(deltaPct>=10) add(good,2,null,'순공시간 '+deltaPct+'% 증가','이전 기간보다 늘었어요');
+    else if(deltaPct<=-15) add(focus,2,null,'순공시간 '+(-deltaPct)+'% 감소','이전 기간보다 줄었어요');
+  }
+  if(streak>=5) add(good,1,null,'최장 '+streak+'일 연속 학습','리듬이 좋아요');
+  if(subs.length>=2){
+    var top=subs[0], low=subs[subs.length-1];
+    if(top.pct>=0.5) add(focus,1,null,top.name+' 비중 '+Math.round(top.pct*100)+'%','과목 균형을 맞춰봐요');
+    else if(subs.length>=3 && low.pct<0.08) add(focus,1,null,low.name+' 비중 '+Math.round(low.pct*100)+'%','조금 더 늘려봐요');
+  }
+  good.sort(function(a,b){return b.w-a.w;}); focus.sort(function(a,b){return b.w-a.w;});
+  var brightItems = good.slice(0,3).map(function(x){return {head:x.head,tail:x.tail};});
+  var risingItems = focus.slice(0,3).map(function(x){return {head:x.head,tail:x.tail};});
+  var fb={bright:false,rising:false};
+  if(!brightItems.length){ brightItems=[ total>0? {head:'이번 기간 '+C.fmtHM(total),tail:'학습을 기록했어요'} : {head:'새로운 별',tail:'켤 준비가 됐어요'} ]; fb.bright=true; }
+  if(!risingItems.length){ risingItems=[{head:'지금의 흐름',tail:'그대로 이어가요'}]; fb.rising=true; }
+  var bright=brightItems.map(function(x){return x.tail?x.head+' — '+x.tail:x.head;});
+  var rising=risingItems.map(function(x){return x.tail?x.head+' — '+x.tail:x.head;});
+
+  /* 다음 달 목표 제안 (선생님이 수정 가능) */
+  var goals=[];
+  var wf = focus.filter(function(x){return x.subject;})[0];
+  if(wf) goals.push(nm(wf.subject)+' 오답 정리 주 3회');
+  if(compliance!=null && compliance<90) goals.push('시간 체크 준수율 90% 이상');
+  if(avgActive>0) goals.push('일 평균 순공 '+C.fmtHM(Math.round((avgActive+1800)/600)*600));
+  if(submitRate<90 && goals.length<3) goals.push('플래너 매일 제출하기');
+  if(!goals.length) goals.push('지금의 학습 리듬 유지하기');
+
+  var autoComment = '';
+  if(good.length||focus.length){
+    autoComment = (good[0]? good[0].head+', '+good[0].tail+'. ' : '') + (focus[0]? '다음에는 '+focus[0].head+' 부분을 함께 챙겨 봐요.' : '이 흐름을 그대로 이어가요.');
+  } else autoComment = '꾸준히 기록을 쌓아 가는 모습이 좋아요. 다음 기간에도 함께 이어가요.';
+
+  return {
+    period:{start:start,end:end,days:span,elapsedDays:elapsedDays},
+    kpi:{totalSec:total,avgActiveSec:avgActive,avgAllSec:avgAll,activeDays:activeDays,submitRate:submitRate,compliance:compliance,completion:completion,streak:streak,deltaPct:deltaPct},
+    weekdayAvg:[1,2,3,4,5,6,0].map(function(w){return dowCnt[w]?dowSum[w]/dowCnt[w]:0;}), daily:daily, best:(best&&best.sec>0)?best:null, bestDow:bestDow>=0?DOWK[bestDow]:null,
+    subjects:subs, grades:gstats, examCount:gr.length,
+    bright:bright, rising:rising, brightItems:brightItems, risingItems:risingItems, fallback:fb, goals:goals.slice(0,3), autoComment:clip(autoComment,160),
+    hasStudy: total>0, hasGrades: gstats.length>0
+  };
+};
+
+/* 과목별 한 줄 진단 (리포트 성적 표) */
+C.diagLine = function(g){
+  var hrs=C.fmtHM(g.study||0);
+  var imp=(g.gradeDelta!=null&&g.gradeDelta>0)||(g.gradeDelta==null&&g.scoreDelta!=null&&g.scoreDelta>=3);
+  var dec=(g.gradeDelta!=null&&g.gradeDelta<0)||(g.gradeDelta==null&&g.scoreDelta!=null&&g.scoreDelta<=-3);
+  if(g.n<2 && g.lastGrade!=null) return '이번 기간 첫 기록';
+  if(g.n<2) return '이번 기간 첫 기록';
+  if(imp) return (g.study>0?hrs+' 학습, ':'')+'꾸준히 오르는 중';
+  if(dec) return g.study>0?'학습 '+hrs+', 오답 점검':'학습 시간 확보 필요';
+  return g.lastGrade!=null&&g.lastGrade<=2?'좋은 흐름 유지':'안정적, 한 단계 도전';
+};
+
+/* ───────── 성적표 페이지 레이아웃 ─────────
+   내지 콘텐츠 박스 좌표계(스케일 적용 전) 기준 높이(px).
+   순서: [info] → exam들 → chart → comment → memo(남는 공간) / 차트는 남는 공간만큼 확대 */
+C.CARD_H = { head1:131, headN:40, info:98, exam:function(rows){ return 66+rows*28; }, chartMin:240, chartMax:420, comment:150, memoMin:120, gap:0 };
+C.cardAvail = function(topPx, scale){ return Math.floor((1123 - topPx - 78)/scale); };
+/* exams: [{rows:n}] , opt:{avail, chart:bool, comment:bool, memo:bool, info:bool} → pages:[{blocks:[{t,h,i?}], free}] */
+C.layoutCard = function(exams, opt){
+  var H=C.CARD_H, avail=opt.avail, pages=[], cur=null;
+  function newPage(){ var first=pages.length===0; cur={blocks:[],used:(first?H.head1:H.headN)}; pages.push(cur); }
+  function fits(h){ return cur.used+h<=avail; }
+  function put(t,h,i){ cur.blocks.push({t:t,h:h,i:i}); cur.used+=h+H.gap; }
+  newPage();
+  if(opt.info!==false){ put('info',H.info); }
+  exams.forEach(function(e,i){
+    var h=H.exam(e.rows);
+    if(!fits(h) && cur.blocks.length) newPage();
+    put('exam',h,i);
+  });
+  var chartBlock=null;
+  if(opt.chart){
+    if(!fits(H.chartMin)) newPage();
+    chartBlock={t:'chart',h:H.chartMin}; cur.blocks.push(chartBlock); cur.used+=H.chartMin+H.gap;
+  }
+  var commentBlock=null;
+  if(opt.comment){
+    if(!fits(H.comment)){ // 코멘트가 안 들어가면 새 페이지(차트는 그 전 페이지에 남김)
+      newPage();
+    }
+    commentBlock={t:'comment',h:H.comment}; cur.blocks.push(commentBlock); cur.used+=H.comment+H.gap;
+  }
+  // 마지막 페이지의 남는 공간 활용: 차트 확대 → 메모 칸
+  var last=pages[pages.length-1], free=avail-last.used;
+  if(chartBlock && last.blocks.indexOf(chartBlock)>=0){
+    var grow=Math.max(0,Math.min(free-(opt.memo?H.memoMin+H.gap:0), H.chartMax-H.chartMin));
+    if(grow<0) grow=0; chartBlock.h+=grow; last.used+=grow; free=avail-last.used;
+  } else if(chartBlock){
+    // 차트가 이전 페이지에 있으면 그 페이지에서 확대
+    for(var pi=0;pi<pages.length-1;pi++){ if(pages[pi].blocks.indexOf(chartBlock)>=0){ var f2=avail-pages[pi].used; var g2=Math.max(0,Math.min(f2,H.chartMax-H.chartMin)); chartBlock.h+=g2; pages[pi].used+=g2; } }
+  }
+  if(opt.memo && free>=H.memoMin+H.gap){ last.blocks.push({t:'memo',h:free-H.gap}); last.used+=free; free=0; }
+  pages.forEach(function(p){ p.free=avail-p.used; });
+  return pages;
+};
+
+/* 등급 → y 위치, 점수 → y 위치 */
+C.gradeColor = function(g){ return g<=1?'#7B1D1D':g<=2?'#B8841A':'#1d2a4a'; };
+
+if(typeof module!=='undefined' && module.exports) module.exports = C;
+else root.MPCore = C;
+})(typeof window!=='undefined'?window:this);
+
+/* MPRender — 별자리 리포트 / 성적표 페이지 HTML 생성 (DOM·Firebase 비의존, 데이터 스냅샷 → 문자열) */
+(function(root){
+'use strict';
+var C=root.MPCore, R={};
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+R.esc=esc;
+var SUBJ_COLORS={ko:'#7B1D1D',ma:'#B8841A',en:'#1d2a4a',hi:'#6b8a76',sc:'#7a5a9a',so:'#8a6a4a'};
+var PALETTE=['#7B1D1D','#B8841A','#1d2a4a','#6b8a76','#7a5a9a','#8a6a4a'];
+function colorOf(k,i){ return SUBJ_COLORS[k]||PALETTE[i%PALETTE.length]; }
+var SCHOOL='멘토즈 스터디카페 울산송정점';
+var CONTACT='카카오톡 채널 “멘토즈 울산송정점” · 010-2848-8317';
+R.THEME_BASE='assets/theme/';
+function img(n){ return R.THEME_BASE+String(n).padStart(2,'0')+'.jpg'; }
+R.img=img;
+
+/* 둥근 5각 별 (확정 디자인 #5) */
+function star(cx,cy,r,fill,rot){
+  var f=fill||'#B8841A',p=[],Ro=r*.8,Ri=r*.38;
+  for(var i=0;i<10;i++){ var a=-Math.PI/2+i*Math.PI/5,rr=i%2?Ri:Ro; p.push((cx+rr*Math.cos(a)).toFixed(1)+','+(cy+rr*Math.sin(a)).toFixed(1)); }
+  var g='<polygon points="'+p.join(' ')+'" fill="'+f+'" stroke="'+f+'" stroke-width="'+(r*.3).toFixed(1)+'" stroke-linejoin="round"/>';
+  if(r>5) g+='<circle cx="'+(cx-r*.2).toFixed(1)+'" cy="'+(cy-r*.22).toFixed(1)+'" r="'+(r*.11).toFixed(1)+'" fill="#FDFBF7" opacity=".75"/>';
+  return rot?'<g transform="rotate('+rot+' '+cx+' '+cy+')">'+g+'</g>':g;
+}
+R.star=star;
+function seedRnd(str){ var s=0; for(var i=0;i<str.length;i++) s=(s*31+str.charCodeAt(i))>>>0; s=s||11; return function(){ s=(s*9301+49297)%233280; return s/233280; }; }
+function ymdDot(s){ return s.replace(/-/g,'.'); }
+function periodWord(days){ return days>=25?'달':days<=8?'주':'기간'; }
+function dayWord(days){ return days>=25?'이번 달':days<=8?'이번 주':'이번 기간'; }
+function frame(){ return '<div class="fr"></div><div class="fr2"></div>'; }
+function foot(a,b){ return '<div class="ft"><span>'+esc(a)+'</span><span>'+esc(b)+'</span></div>'; }
+
+/* ───────── 별자리 리포트 ───────── */
+/* payload: {name, periodStart, periodEnd, analysis, comment, goals[], nextWord?} */
+R.reportPages=function(P){
+  var A=P.analysis, days=A.period.days;
+  return [reportCover(P,A,days), reportInner1(P,A,days), reportInner2(P,A,days), reportBack(P,A,days)];
+};
+function reportCover(P,A,days){
+  var rnd=seedRnd(P.name||'mono'), s='', G='#B8841A', N='#1d2a4a', B='#7B1D1D', PG='#EFDFAE', PR='#E8C6C6', PN='#C9D0E0';
+  for(var i=0;i<46;i++){ var x=90+rnd()*614,y=110+rnd()*560,r=3+rnd()*6,c=[PG,PR,PN][i%3]; if(i%3===0) s+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+(1+rnd()*1.6).toFixed(1)+'" fill="'+G+'" opacity=".5"/>'; else s+=star(x,y,r,c,rnd()*72); }
+  s+='<circle cx="150" cy="215" r="30" fill="'+G+'"/><circle cx="164" cy="205" r="27" fill="#FDFBF7"/>';
+  // 실제 학습 데이터: 가장 많이 공부한 7일 → 별(크기=시간), 날짜순으로 이어 별자리
+  var top=A.daily.slice().sort(function(a,b){return b.sec-a.sec;}).slice(0,7).filter(function(d){return d.sec>0;}).sort(function(a,b){return a.date<b.date?-1:1;});
+  var pos=[[160,600],[245,470],[340,545],[395,385],[500,450],[575,300],[655,400]], cols=[PG,B,N,N,PG,B,N], maxs=top.reduce(function(m,d){return Math.max(m,d.sec);},1);
+  if(top.length>=2){
+    s+='<polyline fill="none" stroke="'+G+'" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="0.1 9" points="'+top.map(function(d,i){return pos[i][0]+','+pos[i][1];}).join(' ')+'"/>';
+  }
+  top.forEach(function(d,i){ var r=(14+16*d.sec/maxs)*1.25; s+=star(pos[i][0],pos[i][1],r,cols[i],[0,12,-8,6,-12,10,-6][i]); });
+  if(!top.length){ [[245,470],[395,385],[575,300]].forEach(function(p,i){ s+=star(p[0],p[1],18+i*4,PG,0); }); }
+  s+=star(560,610,46,G,-8);
+  [[200,360],[610,520],[300,660],[690,250]].forEach(function(p){ s+='<path d="M'+p[0]+','+(p[1]-9)+' V'+(p[1]+9)+' M'+(p[0]-9)+','+p[1]+' H'+(p[0]+9)+'" stroke="'+G+'" stroke-width="2.4" stroke-linecap="round"/>'; });
+  return '<div class="mpr-pg mpr-rep">'+frame()+'<svg viewBox="0 0 794 1123" width="794" height="1123" style="position:absolute;left:0;top:0">'+s+'</svg>'
+   +'<div style="position:absolute;top:60px;left:0;right:0;text-align:center"><span style="display:inline-block;border:1.2px solid var(--gold);color:var(--gold);font-size:10px;letter-spacing:4px;font-weight:700;padding:6px 18px;border-radius:99px">MONO PLANNER · CONSTELLATION</span></div>'
+   +'<div style="position:absolute;top:772px;left:0;right:0;text-align:center"><div style="font-size:54px;font-weight:800;color:var(--navy);letter-spacing:3px"><span style="background:linear-gradient(transparent 62%,#F3E3B0 62%);padding:0 6px">별자리</span> 리포트</div>'
+   +'<div style="margin:26px auto 12px;display:inline-block;border:1.4px solid var(--burg);border-radius:99px;padding:9px 34px;font-size:20px;color:var(--burg);font-weight:700;letter-spacing:8px">'+esc(P.name)+'</div>'
+   +'<div class="sub" style="letter-spacing:2px;font-size:12px">'+ymdDot(A.period.start)+' — '+ymdDot(A.period.end)+' · 나의 '+days+'일 학습 기록</div></div>'
+   +'<div style="position:absolute;bottom:58px;left:0;right:0;text-align:center;font-size:10px;letter-spacing:3px;color:var(--mut)">'+SCHOOL+'</div></div>';
+}
+function lineChartStudy(A){
+  var W=680,H=230,pl=26,pr=10,pt=26,pb=34, d=A.daily, n=d.length;
+  if(!A.hasStudy){
+    var e='';
+    for(var g=0;g<=3;g++){ var y=pt+(H-pt-pb)*g/3; e+='<line x1="'+pl+'" x2="'+(W-pr)+'" y1="'+y+'" y2="'+y+'" stroke="#e8e0d0" stroke-dasharray="2 4"/>'; }
+    e+=star(W/2,H/2-18,18,'#EFDFAE',0)+'<text x="'+W/2+'" y="'+(H/2+24)+'" text-anchor="middle" font-size="12" fill="#8a8478">이 기간에는 아직 학습 기록이 없어요. 오늘 첫 별을 켜 볼까요?</text>';
+    return '<svg viewBox="0 0 '+W+' '+H+'" width="682" height="'+H+'">'+e+'</svg>';
+  }
+  var maxH=Math.max.apply(null,d.map(function(x){return x.sec/3600;})), max=Math.max(2,Math.ceil(maxH/2)*2), s='';
+  for(var g2=0;g2<=3;g2++){ var y2=pt+(H-pt-pb)*g2/3; s+='<line x1="'+pl+'" x2="'+(W-pr)+'" y1="'+y2+'" y2="'+y2+'" stroke="#e8e0d0" stroke-dasharray="2 4"/><text x="0" y="'+(y2-3)+'" font-size="8" fill="#8a8478">'+Math.round(max-g2*max/3)+'h</text>'; }
+  var span=W-pl-pr-20, pts=d.map(function(x,i){ var h=x.sec/3600; return [pl+10+(n>1?i*span/(n-1):span/2), pt+(H-pt-pb)*(1-h/max), h]; });
+  s+='<polyline fill="none" stroke="#1d2a4a" stroke-width="1" points="'+pts.map(function(p){return p[0].toFixed(1)+','+p[1].toFixed(1);}).join(' ')+'"/>';
+  var mx=A.best?A.best.sec/3600:0, k=n>45?0.8:1.5, bestDone=false;
+  pts.forEach(function(p){
+    var h=p[2], r=Math.min(9,2.5+h*k); if(h<=0){ s+='<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="1.4" fill="#cfc6b0"/>'; return; }
+    if(!bestDone && h===mx){ bestDone=true; s+='<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="'+(r+7)+'" fill="none" stroke="#B8841A" stroke-width=".8" stroke-dasharray="2 2"/>'+star(p[0],p[1],r+2,'#B8841A',0)+'<text x="'+Math.min(W-40,Math.max(40,p[0])).toFixed(1)+'" y="'+(p[1]-r-13).toFixed(1)+'" font-size="9" text-anchor="middle" fill="#B8841A" font-weight="700">최고 '+C.fmtHM(A.best.sec)+'</text>'; }
+    else s+=star(p[0],p[1],r,h>=maxH*0.75?'#7B1D1D':'#1d2a4a',0);
+  });
+  var ticks=Math.min(5,n); for(var t=0;t<ticks;t++){ var idx=ticks===1?0:Math.round(t*(n-1)/(ticks-1)); s+='<text x="'+pts[idx][0].toFixed(1)+'" y="'+(H-10)+'" font-size="9" fill="#8a8478" text-anchor="middle">'+C.mdLabel(d[idx].date)+'</text>'; }
+  return '<svg viewBox="0 0 '+W+' '+H+'" width="682" height="'+H+'">'+s+'</svg>';
+}
+function radarSvg(A){
+  var subs=A.subjects.slice(0,6);
+  if(subs.length<3){
+    return '<svg viewBox="-130 -132 260 262" width="320" height="274"><circle r="80" fill="none" stroke="#e0d3ac" stroke-dasharray="2 4"/><circle r="45" fill="none" stroke="#e0d3ac" stroke-dasharray="2 4"/>'+star(0,-4,14,'#EFDFAE',0)+'<text y="40" text-anchor="middle" font-size="10" fill="#8a8478">과목이 3개 이상 기록되면</text><text y="54" text-anchor="middle" font-size="10" fill="#8a8478">별자리가 그려져요</text></svg>';
+  }
+  var n=subs.length, r=95, t='', mx=subs[0].sec||1;
+  [1,.66,.33].forEach(function(k){ var pp=subs.map(function(_,i){var a=-Math.PI/2+i*2*Math.PI/n; return (r*k*Math.cos(a)).toFixed(1)+','+(r*k*Math.sin(a)).toFixed(1);}).join(' '); t+='<polygon points="'+pp+'" fill="none" stroke="#e0d3ac" stroke-width=".8"/>'; });
+  subs.forEach(function(_,i){ var a=-Math.PI/2+i*2*Math.PI/n; t+='<line x1="0" y1="0" x2="'+(r*Math.cos(a)).toFixed(1)+'" y2="'+(r*Math.sin(a)).toFixed(1)+'" stroke="#e8e0d0"/>'; });
+  var vp=subs.map(function(s,i){ var v=Math.max(.15,s.sec/mx), a=-Math.PI/2+i*2*Math.PI/n; return [r*v*Math.cos(a),r*v*Math.sin(a)]; });
+  t+='<polygon points="'+vp.map(function(p){return p[0].toFixed(1)+','+p[1].toFixed(1);}).join(' ')+'" fill="rgba(184,132,26,.12)" stroke="#B8841A" stroke-width="1.4"/>';
+  vp.forEach(function(p){ t+=star(p[0],p[1],8,'#7B1D1D',0); });
+  subs.forEach(function(s,i){ var a=-Math.PI/2+i*2*Math.PI/n; t+='<text x="'+(r*1.24*Math.cos(a)).toFixed(1)+'" y="'+(r*1.24*Math.sin(a)+3).toFixed(1)+'" font-size="10" text-anchor="middle" fill="#1d2a4a" font-weight="700">'+esc(C.clip(s.name,5))+'</text>'; });
+  return '<svg viewBox="-130 -132 260 262" width="320" height="274">'+t+'</svg>';
+}
+function subjBars(A){
+  var subs=A.subjects.slice(0,5); if(!subs.length) return '<div class="sub" style="padding:8px 0">기록된 과목이 없어요</div>';
+  var mx=subs[0].sec||1;
+  return subs.map(function(x,i){ return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px;font-size:11px"><span style="width:40px;font-weight:700;white-space:nowrap">'+esc(C.clip(x.name,4))+'</span><div style="flex:1;height:6px;background:#efe8d8;position:relative"><i style="display:block;height:6px;width:'+(x.sec/mx*100).toFixed(0)+'%;background:'+colorOf(x.key,i)+'"></i></div><span style="width:52px;text-align:right">'+C.fmtHM(x.sec)+'</span></div>'; }).join('');
+}
+function weekdayBlock(A){
+  var v=A.weekdayAvg||[], mx=Math.max.apply(null,v.concat([1])), W=680,H=126,s='', names=['월','화','수','목','금','토','일'], bi=v.indexOf(Math.max.apply(null,v));
+  if(!A.hasStudy) return '<div class="cardx" style="text-align:center;color:#8a8478">학습 기록이 쌓이면 요일별 공부 패턴이 이곳에 그려져요</div>';
+  v.forEach(function(x,i){ var cx=60+i*(W-120)/6, h=Math.max(3,(x/mx)*56), y=100-h; s+='<rect x="'+(cx-14)+'" y="'+y.toFixed(1)+'" width="28" height="'+h.toFixed(1)+'" rx="4" fill="'+(i===bi?'#B8841A':'#e7dfca')+'"/>'+(i===bi?star(cx,y-12,9,'#B8841A',0):'')+'<text x="'+cx+'" y="118" text-anchor="middle" font-size="10" fill="#1d2a4a" font-weight="700">'+names[i]+'</text><text x="'+cx+'" y="'+(y-(i===bi?24:5)).toFixed(1)+'" text-anchor="middle" font-size="9" fill="#8a8478">'+(x>0?C.fmtHM(x):'')+'</text>'; });
+  return '<svg viewBox="0 0 '+W+' '+H+'" width="682" height="'+H+'">'+s+'</svg>';
+}
+function reportInner1(P,A,days){
+  var K=A.kpi, dw=dayWord(days);
+  var kp=[[C.fmtHM(K.totalSec)||'0m','누적 순공시간'],[K.activeDays?C.fmtHM(K.avgActiveSec):'–','공부한 날 평균'],[K.submitRate+'%','플래너 제출률'],[K.compliance==null?'–':K.compliance+'%','시간 체크 준수율']];
+  var stat='';
+  stat+='<div class="it">✦ 가장 빛난 날 <b>'+(A.best?C.mdKo(A.best.date)+' ('+C.fmtHM(A.best.sec)+')':'–')+'</b></div>';
+  stat+='<div class="it">✦ 최장 연속 학습 <b>'+(K.streak?K.streak+'일':'–')+'</b></div>';
+  stat+='<div class="it">✦ 가장 많이 공부한 요일 <b>'+(A.bestDow?A.bestDow+'요일':'–')+'</b></div>';
+  stat+='<div class="it">✦ 이전 '+days+'일 대비 <b>'+(K.deltaPct==null?'비교 기록 없음':(K.deltaPct>0?'+':'')+K.deltaPct+'%')+'</b></div>';
+  return '<div class="mpr-pg mpr-rep">'+frame()+'<div class="in"><div class="num">01 — THIS '+(days>=25?'MONTH':days<=8?'WEEK':'PERIOD')+'</div><div class="h2">'+dw+'에 켜진 별</div><div class="sub">'+days+'일 동안 쌓은 순공시간으로 그린 나의 학습 별자리</div>'
+   +'<div class="sec kp">'+kp.map(function(x){return '<div><b>'+esc(x[0])+'</b><span>'+x[1]+'</span></div>';}).join('')+'</div>'
+   +'<div class="sec"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:6px">학습 별자리 <span class="sub" style="font-weight:400">· 별이 클수록 오래 공부한 날</span></div>'+lineChartStudy(A)+'</div>'
+   +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px" class="sec"><div><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:4px">과목 별자리</div>'+radarSvg(A)+'</div>'
+   +'<div><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px">과목별 학습시간</div>'+subjBars(A)+'<div class="cardx" style="margin-top:14px">'+stat+'</div></div></div>'
+   +'<div class="sec" style="margin-top:14px"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:2px">요일별 평균 학습 <span class="sub" style="font-weight:400">· 금색 막대가 가장 열심히 공부한 요일</span></div>'+weekdayBlock(A)+'</div></div>'
+   +foot('MONO PLANNER · '+P.name,'1 / 4')+'</div>';
+}
+function gradeChart(A){
+  var W=680,H=330,pl=44,pr=64,pt=20,pb=36;
+  var gs=A.grades.filter(function(g){return g.series.length;}).slice(0,6);
+  if(!gs.length){
+    return '<svg viewBox="0 0 '+W+' '+H+'" width="682" height="'+H+'">'+[0,1,2,3].map(function(g){var y=pt+(H-pt-pb)*g/3; return '<line x1="'+pl+'" x2="'+(W-pr)+'" y1="'+y+'" y2="'+y+'" stroke="#e8e0d0" stroke-dasharray="2 4"/>';}).join('')
+      +star(W/2,H/2-20,20,'#EFDFAE',0)+'<text x="'+W/2+'" y="'+(H/2+26)+'" text-anchor="middle" font-size="12" fill="#8a8478">이 기간에는 응시한 시험이 없어요.</text><text x="'+W/2+'" y="'+(H/2+44)+'" text-anchor="middle" font-size="12" fill="#8a8478">다음 시험에서 첫 별을 켜 볼까요?</text></svg>';
+  }
+  // x축: 시험 날짜(중복 제거) 시간순
+  var keys={}, xs=[]; gs.forEach(function(g){ g.series.forEach(function(p){ if(!keys[p.date]){ keys[p.date]=1; xs.push(p.date); } }); }); xs.sort(); if(xs.length>8) xs=xs.slice(-8);
+  var gradeMode=gs.every(function(g){return g.series.every(function(p){return p.grade!=null;});}) || gs.reduce(function(a,g){return a+g.series.filter(function(p){return p.grade!=null;}).length;},0) >= gs.reduce(function(a,g){return a+g.series.length;},0)*0.6;
+  var vals=[]; gs.forEach(function(g){ g.series.forEach(function(p){ var v=gradeMode?p.grade:p.score; if(v!=null) vals.push(v); }); });
+  var lo,hi,ticks=[];
+  if(gradeMode){ lo=1; hi=Math.max(5,Math.max.apply(null,vals)); for(var t=lo;t<=hi;t++) ticks.push(t); }
+  else { lo=Math.max(0,Math.floor((Math.min.apply(null,vals)-5)/10)*10); hi=Math.min(100,Math.ceil((Math.max.apply(null,vals)+3)/10)*10); if(hi-lo<20) hi=lo+20; for(var t2=lo;t2<=hi;t2+=10) ticks.push(t2); }
+  var Y=function(v){ return gradeMode? pt+(H-pt-pb)*(v-lo)/(hi-lo) : pt+(H-pt-pb)*(1-(v-lo)/(hi-lo)); };
+  var X=function(i){ return pl+30+(xs.length>1?i*(W-pl-pr-40)/(xs.length-1):(W-pl-pr-40)/2); };
+  var s='';
+  ticks.forEach(function(t){ var y=Y(t); s+='<line x1="'+pl+'" x2="'+(W-pr)+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)+'" stroke="#e8e0d0" stroke-dasharray="2 4"/><text x="'+(pl-10)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="#8a8478" text-anchor="end">'+t+(gradeMode?'등급':'')+'</text>'; });
+  xs.forEach(function(d,i){ s+='<text x="'+X(i).toFixed(1)+'" y="'+(H-12)+'" font-size="9" fill="#8a8478" text-anchor="middle">'+C.mdLabel(d)+'</text>'; });
+  var labelY=[];
+  gs.forEach(function(g,gi){
+    var col=colorOf(g.key,gi), pts=[];
+    xs.forEach(function(d,i){ var p=g.series.filter(function(q){return q.date===d;})[0]; if(!p) return; var v=gradeMode?p.grade:p.score; if(v==null) return; pts.push([X(i),Y(v)]); });
+    if(!pts.length) return;
+    if(pts.length>1) s+='<polyline fill="none" stroke="'+col+'" stroke-width="1.6" points="'+pts.map(function(q){return q[0].toFixed(1)+','+q[1].toFixed(1);}).join(' ')+'"/>';
+    pts.forEach(function(q){ s+=star(q[0],q[1],8,col,0); });
+    var l=pts[pts.length-1], ly=l[1]+3; while(labelY.some(function(y){return Math.abs(y-ly)<11;})) ly+=11; labelY.push(ly);
+    s+='<text x="'+(l[0]+13).toFixed(1)+'" y="'+ly.toFixed(1)+'" font-size="10" font-weight="700" fill="'+col+'">'+esc(C.clip(g.name,4))+'</text>';
+  });
+  return '<svg viewBox="0 0 '+W+' '+H+'" width="682" height="'+H+'">'+s+'</svg>';
+}
+function changeCell(g){
+  if(g.gradeDelta!=null){ if(g.gradeDelta>0) return '<span style="color:#2e7d4f;font-weight:700">▲ '+g.gradeDelta+'</span>'; if(g.gradeDelta<0) return '<span style="color:#b91c1c;font-weight:700">▼ '+(-g.gradeDelta)+'</span>'; return '―'; }
+  if(g.scoreDelta!=null){ if(g.scoreDelta>0) return '<span style="color:#2e7d4f;font-weight:700">▲ '+g.scoreDelta+'점</span>'; if(g.scoreDelta<0) return '<span style="color:#b91c1c;font-weight:700">▼ '+(-g.scoreDelta)+'점</span>'; return '―'; }
+  return '―';
+}
+function valCell(p){ if(!p) return '–'; return p.grade!=null?p.grade+'등급':(p.score!=null?p.score+'점':'–'); }
+function itemsHtml(items){ return items.map(function(x){ return '<div class="it">✦ <b>'+esc(x.head)+'</b>'+(x.tail?' <span style="color:#555">'+esc(x.tail)+'</span>':'')+'</div>'; }).join(''); }
+function reportInner2(P,A,days){
+  var rows=A.grades.slice(0,7), comment=(P.comment&&P.comment.trim())||A.autoComment;
+  var table = rows.length? '<table><tr><th style="width:13%">과목</th><th style="width:15%">학습 시간</th><th style="width:12%">첫 기록</th><th style="width:12%">최근</th><th style="width:10%">변화</th><th>한 줄 진단</th></tr>'
+    +rows.map(function(g){ return '<tr><td><b>'+esc(C.clip(g.name,6))+'</b></td><td>'+(g.study>0?C.fmtHM(g.study):'–')+'</td><td>'+valCell(g.first)+'</td><td class="gd">'+valCell(g.last)+'</td><td>'+changeCell(g)+'</td><td style="text-align:left">'+esc(C.diagLine(g))+'</td></tr>'; }).join('')+'</table>'
+    : '<div class="cardx" style="text-align:center;color:#8a8478">성적 기록이 쌓이면 과목별 변화와 진단이 이곳에 표시돼요</div>';
+  return '<div class="mpr-pg mpr-rep">'+frame()+'<div class="in"><div class="num">02 — GRADE CONSTELLATION</div><div class="h2">성적의 별자리</div><div class="sub">'+ymdDot(A.period.start)+' ~ '+ymdDot(A.period.end)+' 응시한 시험 '+A.examCount+'회 · 학습 시간과 함께 읽은 변화</div>'
+   +'<div class="sec" style="margin-top:12px">'+gradeChart(A)+'</div><div class="sec" style="margin-top:12px">'+table+'</div>'
+   +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px" class="sec"><div class="cardx" style="min-height:104px"><div class="num" style="font-size:10px">BRIGHT STARS</div><b>밝게 빛나는 별</b>'+itemsHtml(A.brightItems)+'</div>'
+   +'<div class="cardx" style="min-height:104px"><div class="num" style="font-size:10px;color:var(--burg)">RISING STARS</div><b>더 키울 별</b>'+itemsHtml(A.risingItems)+'</div></div>'
+   +'<div class="sec cardx" style="border-left:3px solid var(--gold)"><b class="mpr-ser" style="color:var(--navy)">선생님의 한마디</b><br>'+esc(C.clip(comment,170))+'</div>'
+   +(rows.length<=5?'<div class="sec" style="margin-top:16px"><div style="font-size:11px;color:var(--mut);letter-spacing:2px">✎ 나의 한 줄 회고</div><div class="ln"></div><div class="ln"></div><div class="ln"></div></div>':'')+'</div>'+foot('MONO PLANNER · '+P.name,'2 / 4')+'</div>';
+}
+function reportBack(P,A,days){
+  var goals=(P.goals&&P.goals.length?P.goals:A.goals).filter(function(x){return x&&x.trim();}).slice(0,3);
+  var nw=periodWord(days), s='<g fill="none" stroke="#E6D6A8" stroke-width=".8"><circle cx="397" cy="300" r="210"/><circle cx="397" cy="300" r="160" stroke-dasharray="2 5"/></g>';
+  var p=[[300,350],[350,260],[430,290],[470,210],[540,270]]; s+='<polyline fill="none" stroke="#B8841A" stroke-width="1.2" points="'+p.map(function(q){return q.join(',');}).join(' ')+'"/>';
+  p.forEach(function(q,i){ s+=star(q[0],q[1],7+i%3*2,'#B8841A',0); });
+  [[250,230],[560,390],[330,420]].forEach(function(q){ s+='<path d="M'+q[0]+','+(q[1]-7)+' Q'+q[0]+','+q[1]+' '+(q[0]+7)+','+q[1]+' Q'+q[0]+','+q[1]+' '+q[0]+','+(q[1]+7)+' Q'+q[0]+','+q[1]+' '+(q[0]-7)+','+q[1]+' Q'+q[0]+','+q[1]+' '+q[0]+','+(q[1]-7)+'Z" fill="#B8841A"/>'; });
+  return '<div class="mpr-pg mpr-rep">'+frame()+'<svg viewBox="0 0 794 1123" width="794" height="1123" style="position:absolute;left:0;top:0">'+s+'</svg>'
+   +'<div style="position:absolute;top:530px;left:90px;right:90px;text-align:center"><div class="eyebrow">NEXT CONSTELLATION</div><div class="mpr-ser" style="font-size:26px;font-weight:700;color:var(--navy);margin:10px 0 16px">다음 '+nw+', 새로운 별을 이어가요</div>'
+   +'<div style="text-align:left;display:inline-block;font-size:12.5px;line-height:2.3">'+goals.map(function(g){return '<div>✦ &nbsp;'+esc(C.clip(g,26))+'</div>';}).join('')+'</div></div>'
+   +'<div style="position:absolute;top:740px;left:120px;right:120px"><div style="font-size:11px;color:var(--mut);margin-bottom:2px;letter-spacing:2px">✎ 나의 다짐</div><div class="ln"></div><div class="ln"></div><div class="ln"></div><div class="ln"></div></div>'
+   +'<div style="position:absolute;bottom:80px;left:0;right:0;text-align:center"><div class="mpr-ser" style="font-size:13px;color:var(--mut);line-height:2;margin-bottom:16px">“흩어진 하루하루도 이어 놓으면<br>하나의 별자리가 됩니다.”</div><div style="width:40px;height:1px;background:var(--gold);margin:0 auto 14px"></div><div class="mpr-ser" style="font-size:14px;color:var(--burg);font-weight:700">MONO PLANNER</div><div style="font-size:10px;color:var(--mut);margin-top:6px;line-height:1.9;letter-spacing:1px">'+SCHOOL+'<br>'+CONTACT+'</div></div></div>';
+}
+
+/* ───────── 성적표 ───────── */
+R.THEMES=[
+{n:1,nm:'등대',cov:1,bk:2,paper:5,top:104,sc:.98,hr:1,ac:'#4b6a8a',tc:'#2f4560',sub:'#4a627c',fr:'rgba(255,255,255,.75)',lay:'top',btc:'#2f4560',bpos:'top',scrim:'rgba(255,255,255,.5)',tag:'길을 비추는 한 학기의 기록'},
+{n:2,nm:'구름 위의 능선',cov:6,bk:8,paper:9,top:106,sc:.92,hr:0,ac:'#4f7084',tc:'#2e4656',sub:'#3f5a6b',fr:'rgba(255,255,255,.7)',lay:'left',btc:'#2e4656',bpos:'top',scrim:'rgba(255,255,255,.45)',tag:'구름 위로 오르는<br>한 걸음의 기록'},
+{n:3,nm:'봄, 벚꽃길',cov:10,bk:16,paper:17,top:186,sc:.84,hr:1,ac:'#b0566c',tc:'#5a2a38',sub:'#7d4a58',fr:'rgba(255,255,255,.85)',lay:'bottom',btc:'#5a2a38',bpos:'top',scrim:'rgba(255,255,255,.5)',tag:'봄처럼 피어나는 노력의 기록'},
+{n:4,nm:'아침 도서관',cov:3,bk:7,paper:4,top:140,sc:.86,hr:0,ac:'#5f7a52',tc:'#34452a',sub:'#58694e',fr:'rgba(255,255,255,.8)',lay:'top',btc:'#34452a',bpos:'top',scrim:'rgba(255,255,255,.4)',tag:'한 장 한 장 쌓아 온 시간'},
+{n:5,nm:'아치와 계단',cov:18,bk:15,paper:14,top:100,sc:.88,hr:1,ac:'#8a7448',tc:'#3a3626',sub:'#5a5642',fr:'rgba(255,255,255,.7)',lay:'arch',btc:'#3b3626',bpos:'card',card:'rgba(255,253,246,.82)',tag:'열린 문 너머의 내일'},
+{n:6,nm:'고요한 밤',cov:13,bk:11,paper:12,top:108,sc:.9,hr:1,ac:'#34508a',tc:'#fff',sub:'#fff',fr:'rgba(255,255,255,.5)',lay:'night',btc:'#fff',bpos:'top',scrim:'rgba(10,18,50,.5)',tag:'밤이 깊을수록 또렷해지는 불빛',dark:true}];
+R.theme=function(id){ return R.THEMES.filter(function(t){return t.n===+id;})[0]||R.THEMES[0]; };
+function bg(n){ return '<div class="mpr-bgi" style="background-image:url('+img(n)+')"></div>'; }
+function cardCover(c,P){
+  var tc=c.tc,sub=c.sub,t='';
+  var info='<div style="display:inline-flex;gap:18px;align-items:center;font-size:14px;letter-spacing:2px;white-space:nowrap"><span class="mpr-ser" style="font-size:22px;letter-spacing:6px">'+esc(P.student.name)+'</span><span style="opacity:.5">|</span><span>'+esc(P.student.grade||SCHOOL.replace('멘토즈 스터디카페 ',''))+'</span><span style="opacity:.5">|</span><span>'+esc(P.issueLabel)+'</span></div>';
+  var frame='<div class="mpr-ab" style="left:30px;top:30px;right:30px;bottom:30px;border:1px solid '+c.fr+'"></div><div class="mpr-ab" style="left:38px;top:38px;right:38px;bottom:38px;border:.6px solid '+c.fr+';opacity:.6"></div>';
+  var year=(P.issueLabel||'').slice(0,4);
+  if(c.lay==='top') t=frame+'<div class="mpr-ab" style="left:0;right:0;top:92px;text-align:center;color:'+tc+';font-size:13px;letter-spacing:8px">'+year+' · ACADEMIC RECORD</div><div class="mpr-ab mpr-ser" style="left:0;right:0;top:128px;text-align:center;font-size:118px;font-weight:700;color:'+tc+';letter-spacing:8px;text-indent:8px">성적표</div><div class="mpr-ab" style="left:0;right:0;top:290px;text-align:center;color:'+sub+';font-size:16px;letter-spacing:4px">'+c.tag+'</div><div class="mpr-ab" style="left:0;right:0;bottom:84px;text-align:center"><div style="display:inline-block;padding:16px 32px;background:rgba(255,255,255,.7);color:#2b3a4a;border:1px solid rgba(255,255,255,.8)">'+info+'</div></div>';
+  if(c.lay==='left') t=frame+'<div class="mpr-ab" style="left:78px;top:96px;color:'+tc+';font-size:13px;letter-spacing:6px;line-height:2">'+year+'<br>ACADEMIC RECORD</div><div class="mpr-ab mpr-ser" style="left:70px;top:176px;font-size:132px;font-weight:700;color:'+tc+';letter-spacing:2px">성적표</div><div class="mpr-ab" style="left:80px;top:350px;color:'+sub+';font-size:16px;line-height:2.1;letter-spacing:4px;border-left:1.5px solid '+tc+';padding-left:16px">'+c.tag+'</div><div class="mpr-ab" style="left:78px;bottom:90px;color:#fff;text-shadow:0 1px 8px rgba(0,0,0,.35)">'+info+'</div>';
+  if(c.lay==='bottom') t=frame+'<div class="mpr-ab" style="left:60px;right:60px;bottom:74px;padding:26px 30px;background:rgba(255,250,248,.86);border:1px solid rgba(255,255,255,.9);text-align:center;color:'+tc+'"><div style="font-size:12px;letter-spacing:8px;margin-bottom:6px">'+year+' · ACADEMIC RECORD</div><div class="mpr-ser" style="font-size:92px;font-weight:700;letter-spacing:8px;text-indent:8px;line-height:1.2">성적표</div><div style="color:'+sub+';font-size:14px;letter-spacing:4px;margin:4px 0 14px">'+c.tag+'</div><div style="border-top:1px solid rgba(0,0,0,.2);padding-top:14px;color:#3a2a30">'+info+'</div></div>';
+  if(c.lay==='arch') t='<div class="mpr-ab" style="left:0;right:0;top:150px;text-align:center;color:'+tc+';font-size:12px;letter-spacing:8px">'+year+' · ACADEMIC RECORD</div><div class="mpr-ab mpr-ser" style="left:0;right:0;top:180px;text-align:center;font-size:100px;font-weight:700;color:'+tc+';letter-spacing:6px;text-indent:6px">성적표</div><div class="mpr-ab" style="left:0;right:0;top:318px;text-align:center;color:'+sub+';font-size:14px;letter-spacing:4px">'+c.tag+'</div><div class="mpr-ab" style="left:60px;right:60px;bottom:60px;text-align:center"><div style="display:inline-block;padding:14px 28px;background:rgba(255,253,246,.88);color:#3b3626">'+info+'</div></div>';
+  if(c.lay==='night') t=frame+'<div class="mpr-ab" style="left:0;right:0;top:190px;text-align:center;color:#fff;font-size:12px;letter-spacing:9px;opacity:.9">'+year+' · ACADEMIC RECORD</div><div class="mpr-ab mpr-ser" style="left:0;right:0;top:220px;text-align:center;font-size:112px;font-weight:700;color:#fff;letter-spacing:8px;text-indent:8px;text-shadow:0 0 30px rgba(170,190,255,.45)">성적표</div><div class="mpr-ab" style="left:0;right:0;top:372px;text-align:center;color:rgba(255,255,255,.92);font-size:15px;letter-spacing:5px">'+c.tag+'</div><div class="mpr-ab" style="left:60px;right:60px;bottom:70px;text-align:center"><div style="display:inline-block;padding:14px 30px;background:rgba(18,24,58,.62);border:1px solid rgba(255,255,255,.55);color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.5)">'+info+'</div></div>';
+  return '<div class="mpr-pg mpr-card">'+bg(c.cov)+t+'</div>';
+}
+function cardBack(c){
+  var tc=c.btc,t='';
+  var msg='<div class="mpr-ser" style="font-size:24px;line-height:2;letter-spacing:3px">지금의 기록이<br>더 멀리, 더 높은 내일을 만듭니다.</div><div style="font-size:10.5px;letter-spacing:6px;margin-top:14px;opacity:.85;line-height:2">YOUR TODAY CREATES<br>A BRIGHTER TOMORROW</div>';
+  var sch='<div class="mpr-ser" style="font-size:20px;letter-spacing:3px">'+SCHOOL+'</div><div style="font-size:10px;letter-spacing:5px;margin-top:6px;opacity:.85">MENTORS STUDY CAFE · ULSAN SONGJEONG</div>';
+  if(c.bpos==='top') t='<div class="mpr-ab" style="left:0;right:0;top:0;height:560px;background:linear-gradient('+c.scrim+',transparent)"></div><div class="mpr-ab" style="left:0;right:0;bottom:0;height:300px;background:linear-gradient(to top,rgba(0,0,0,.5),transparent)"></div><div class="mpr-ab" style="left:0;right:0;top:150px;text-align:center;color:'+tc+'">'+msg+'</div><div class="mpr-ab" style="left:0;right:0;bottom:70px;text-align:center;color:#fff;text-shadow:0 1px 10px rgba(0,0,0,.5)">'+sch+'</div>';
+  else t='<div class="mpr-ab" style="left:90px;right:90px;top:120px;padding:34px 20px;text-align:center;background:'+c.card+';color:'+tc+';border:1px solid rgba(255,255,255,.7)">'+msg+'</div><div class="mpr-ab" style="left:90px;right:90px;bottom:70px;padding:18px;text-align:center;background:'+c.card+';color:'+tc+'">'+sch+'</div>';
+  return '<div class="mpr-pg mpr-card">'+bg(c.bk)+t+'</div>';
+}
+/* 성적 추이 차트 (시험 순서대로, 과목별 선) — exams: [{name,date,rows:[{key,label,score,grade}]}] */
+function cardChart(exams,h,ac){
+  var W=630,H=h,px=44,py=18,pb=28, ex=exams, n=ex.length;
+  var keys=[], lab={}; ex.forEach(function(e){ e.rows.forEach(function(r){ if(keys.indexOf(r.key)<0){ keys.push(r.key); lab[r.key]=r.label; } }); });
+  keys=keys.slice(0,5);
+  var gradeMode=ex.every(function(e){return e.rows.every(function(r){return r.grade!=null;});});
+  var vals=[]; ex.forEach(function(e){ e.rows.forEach(function(r){ var v=gradeMode?r.grade:r.score; if(v!=null) vals.push(v); }); });
+  if(!vals.length) return '';
+  var lo,hi,ticks=[];
+  if(gradeMode){ lo=1; hi=Math.max(4,Math.max.apply(null,vals)); for(var t=lo;t<=hi;t++) ticks.push(t); }
+  else { lo=Math.max(0,Math.floor((Math.min.apply(null,vals)-5)/10)*10); hi=Math.min(100,Math.ceil((Math.max.apply(null,vals)+3)/10)*10); if(hi-lo<20) hi=lo+20; for(var t2=lo;t2<=hi;t2+=10) ticks.push(t2); }
+  var Y=function(v){ return gradeMode? py+(H-py-pb)*(v-lo)/(hi-lo) : py+(H-py-pb)*(1-(v-lo)/(hi-lo)); };
+  var X=function(i){ return px+14+(n>1?i*(W-px-60)/(n-1):(W-px-60)/2); };
+  var cols=[ac,'#B8841A','#8a8a8a','#2f6d5b','#8a4a6a'], s='<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'">';
+  ticks.forEach(function(t){ var y=Y(t); s+='<path d="M'+px+' '+y.toFixed(1)+'H'+(W-30)+'" stroke="rgba(0,0,0,.18)" stroke-width=".8" stroke-dasharray="3 4"/><text x="'+(px-8)+'" y="'+(y+4).toFixed(1)+'" text-anchor="end" font-size="10.5" fill="#666">'+t+(gradeMode?'등급':'')+'</text>'; });
+  var step=Math.ceil(n/8);
+  ex.forEach(function(e,i){ if(i%step===0||i===n-1) s+='<text x="'+X(i).toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle" font-size="10.5" fill="#666">'+C.mdLabel(e.date)+'</text>'; });
+  keys.forEach(function(k,j){
+    var pts=[]; ex.forEach(function(e,i){ var r=e.rows.filter(function(x){return x.key===k;})[0]; if(!r) return; var v=gradeMode?r.grade:r.score; if(v==null) return; pts.push([X(i),Y(v)]); });
+    if(!pts.length) return;
+    if(pts.length>1) s+='<polyline points="'+pts.map(function(p){return p[0].toFixed(1)+','+p[1].toFixed(1);}).join(' ')+'" fill="none" stroke="'+cols[j]+'" stroke-width="2.2" stroke-linejoin="round"/>';
+    pts.forEach(function(p){ s+='<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="3.8" fill="#fff" stroke="'+cols[j]+'" stroke-width="2"/>'; });
+    s+='<rect x="'+(W-30-(keys.length-j)*64)+'" y="2" width="12" height="3" fill="'+cols[j]+'"/><text x="'+(W-14-(keys.length-j)*64)+'" y="8" font-size="10.5" font-weight="700" fill="'+cols[j]+'">'+esc(C.clip(lab[k],4))+'</text>';
+  });
+  return s+'</svg>';
+}
+function examBlock(e,showWrong){
+  return '<div class="blk" style="margin-bottom:12px"><h3><span style="font-family:inherit;font-size:14.5px;font-weight:700;color:#2b2b2b"><i>●</i>'+esc(C.clip(e.name,26))+'</span><span>'+esc(e.date)+'</span></h3><table><tr><th>과목</th><th>원점수</th><th>등급</th>'+(showWrong?'<th>오답</th>':'')+'</tr>'
+   +e.rows.map(function(r){ return '<tr><td class="l">'+esc(C.clip(r.label,12))+'</td><td>'+(r.score==null?'–':r.score)+'</td><td>'+(r.grade!=null?'<span class="gp">'+r.grade+'</span>':'–')+'</td>'+(showWrong?'<td>'+(r.wrong==null?'–':r.wrong+'개')+'</td>':'')+'</tr>'; }).join('')+'</table></div>';
+}
+/* 페이지 높이 추정치와 실제가 어긋나지 않도록 exam.rows 개수만 사용 */
+R.cardLayout=function(P){
+  var c=R.theme(P.themeId), avail=C.cardAvail(c.top,c.sc);
+  var inc=P.include||{};
+  var exams=P.exams.map(function(e){ return {rows:e.rows.length}; });
+  var chart=inc.chart!==false && P.exams.length>=2 && P.exams.some(function(e){return e.rows.some(function(r){return r.score!=null||r.grade!=null;});});
+  var comment=!!(inc.comment&&P.comment&&P.comment.trim());
+  return {avail:avail,chart:chart,comment:comment,pages:C.layoutCard(exams,{avail:avail,chart:chart,comment:comment,memo:inc.memo!==false,info:true})};
+};
+R.cardPages=function(P){
+  var c=R.theme(P.themeId), inc=P.include||{}, L=R.cardLayout(P), out=[];
+  if(inc.cover!==false) out.push(cardCover(c,P));
+  if(inc.inner!==false){
+    var sorted=P.exams;
+    L.pages.forEach(function(pg,pi){
+      var body='';
+      pg.blocks.forEach(function(b){
+        if(b.t==='info') body+='<div class="blk"><h3><span style="font-family:inherit;font-size:14.5px"><i>01</i>학생 기본 정보</span></h3><table><tr><td class="l" style="width:14%">소속</td><td style="width:36%">'+esc(P.school||SCHOOL.replace('멘토즈 ',''))+'</td><td class="l" style="width:14%">학년</td><td>'+esc(P.student.grade||'–')+'</td></tr><tr><td class="l">이름</td><td>'+esc(P.student.name)+'</td><td class="l">담당</td><td>'+esc(P.teacher||'담당 선생님')+'</td></tr></table></div>';
+        else if(b.t==='exam') body+=examBlock(sorted[b.i],P.showWrong);
+        else if(b.t==='chart') body+='<div class="blk"><h3><span style="font-family:inherit;font-size:14.5px"><i>●</i>성적 변화 추이</span></h3><div class="chartbox">'+cardChart(sorted,b.h-54,c.ac)+'</div></div>';
+        else if(b.t==='comment') body+='<div class="blk"><h3><span style="font-family:inherit;font-size:14.5px"><i>●</i>종합 의견</span></h3><div class="cm">'+esc(P.comment).replace(/\n/g,'<br>')+'<div class="sg">담당 선생님 '+esc(P.teacher||'')+'</div></div></div>';
+        else if(b.t==='memo'){ var lines=Math.max(1,Math.floor((b.h-66)/30)); body+='<div class="blk" style="margin-bottom:0"><h3><span style="font-family:inherit;font-size:14.5px"><i>✎</i>다음 시험 목표</span></h3><div class="memo" style="height:'+(b.h-40)+'px;overflow:hidden">'+new Array(lines+1).join('<div class="ml"></div>')+'</div></div>'; }
+      });
+      var first=pi===0, hd=first?'<div class="hd"><div><small>'+esc(P.periodLabel||'')+'</small><h1>성적표</h1></div><div class="r" style="'+(c.hr?'visibility:hidden':'')+'">ACADEMIC<br>REPORT CARD</div></div>'
+        : '<div class="hd" style="padding-bottom:6px"><div><small>'+esc(P.student.name)+' · '+(pi+1)+'쪽</small></div><div class="r" style="'+(c.hr?'visibility:hidden':'')+'">REPORT CARD</div></div>';
+      out.push('<div class="mpr-pg mpr-card" style="--ac:'+c.ac+'">'+bg(c.paper)+'<div class="box" style="top:'+c.top+'px;width:'+(610/c.sc).toFixed(1)+'px;transform:scale('+c.sc+')">'+hd+body+'</div></div>');
+    });
+  }
+  if(inc.back!==false) out.push(cardBack(c));
+  return out;
+};
+root.MPRender=R;
+if(typeof module!=='undefined'&&module.exports) module.exports=R;
+})(typeof window!=='undefined'?window:this);
+
+</script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
@@ -3663,7 +4446,7 @@ function buildTExamManage(){
       return '<button onclick="switchExamMgmtCategory(\''+escapeHtml(c).replace(/'/g,"\\'")+'\')" class="exam-mgmt-cat-btn'+(active?' active':'')+'">'+escapeHtml(c)+'</button>';
     }).join('') + '<button onclick="openAddExamSourceOption()" class="exam-mgmt-cat-btn exam-mgmt-cat-add">+ 분류 추가</button>' + '<button onclick="openManageExamSourceOptions()" class="exam-mgmt-cat-btn" style="color:var(--tx3);">🔧 관리</button>';
     return safetyCard + '<div class="card">'
-      +'<div class="card-h"><div class="card-title">📝 시험 관리</div><div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;background:#fef2f2;color:#dc2626;" onclick="openLiveExamStatusModal()">🔴 실시간 응시 현황</button><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;background:var(--gold-l);color:var(--gold);" onclick="openMissingGradesRecoveryModal()">🔧 누락 성적 검사</button><button id="exam-merge-toggle-btn" class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="_toggleExamMergeMode()">🔗 시험 묶기</button><button id="exam-merge-confirm-btn" class="modal-btn primary" style="display:none;margin:0;width:auto;padding:8px 16px;font-size:12px;background:var(--gold);" onclick="openMergeExamsModal()">선택한 시험 묶기</button><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openExamMergeGroupsModal()">📋 묶음 목록</button><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openElectiveManageModal()">🔧 선택과목 관리</button><button class="modal-btn primary" style="margin:0;width:auto;padding:8px 16px;font-size:12px;" onclick="openCreateExamModal()">+ 새 시험 만들기</button></div></div>'
+      +'<div class="card-h"><div class="card-title">📝 시험 관리</div><div class="ex-hdr-actions"><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;background:#fef2f2;color:#dc2626;" onclick="openLiveExamStatusModal()">🔴 실시간 응시 현황</button><button class="modal-btn cancel ex-sec" style="margin:0;width:auto;padding:8px 14px;font-size:12px;background:var(--gold-l);color:var(--gold);" onclick="openMissingGradesRecoveryModal()">🔧 누락 성적 검사</button><button id="exam-merge-toggle-btn" class="modal-btn cancel ex-sec" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="_toggleExamMergeMode()">🔗 시험 묶기</button><button id="exam-merge-confirm-btn" class="modal-btn primary" style="display:none;margin:0;width:auto;padding:8px 16px;font-size:12px;background:var(--gold);" onclick="openMergeExamsModal()">선택한 시험 묶기</button><button class="modal-btn cancel ex-sec" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openExamMergeGroupsModal()">📋 묶음 목록</button><button class="modal-btn cancel ex-sec" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openElectiveManageModal()">🔧 선택과목 관리</button><button class="modal-btn primary" style="margin:0;width:auto;padding:8px 16px;font-size:12px;" onclick="openCreateExamModal()">+ 새 시험 만들기</button><button class="mp-btn ex-more-btn" onclick="mpToggleExMore(this)">⋯ 더보기</button></div></div>'
       +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;" id="exam-mgmt-cat-tabs">'+catTabs+'</div>'
       +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">'
       +  '<span style="font-size:12px;color:var(--tx3);">정렬</span>'
@@ -3832,6 +4615,7 @@ window.runExamForceSubmitNow = function(filterExamId, filterUid){
                     _awardExamRewards(sess.studentUid, exam, results, prevScores, sess.electiveChoices);
                   });
                 })
+                .then(function(){ return MP_onExamCompleted(sess.studentUid, exam.id, results, exam); })
                 .then(function(){ fullyCompleted++; forceSubmittedSubjects++; })
                 .catch(function(e){ console.error(e); errors++; });
             } else {
@@ -3943,16 +4727,18 @@ function examCardHtml(ex){
     +(multiLabel?'<span style="font-size:10px;font-weight:700;color:var(--gold);background:var(--gold-l);padding:2px 8px;border-radius:5px;">'+multiLabel+'</span>':'')+'</div>'
     +'<div style="font-size:12px;color:var(--tx3);margin-top:2px;">'+escapeHtml(subjName)+(multiLabel?' 외':'')+' · 문항 '+qCount+'개 · 총점 '+totalScore+'점 · 배정 '+assignedCount+'명</div></div>'
     +'</div>'
+    +'<div class="mp-card-stat" style="margin:2px 0 8px;display:flex;gap:4px;flex-wrap:wrap;"></div>'
     +'<div class="exam-card-actions">'
     +'<button onclick="openAssignExamModal(\''+ex.id+'\')" class="btn-secondary" style="font-size:11px;padding:6px 10px;">배정</button>'
     +'<button onclick="openExamMonitor(\''+ex.id+'\')" class="btn-primary" style="font-size:11px;padding:6px 10px;">현황</button>'
-    +'<button onclick="openEditExamModal(\''+ex.id+'\')" style="font-size:11px;padding:6px 10px;background:#eef7ff;border:1px solid rgba(59,130,246,0.25);border-radius:6px;color:#2563eb;cursor:pointer;">✏️ 설정 수정</button>'
-    +'<button onclick="openExamFullRanking(\''+ex.id+'\',\''+escapeHtml(ex.title).replace(/'/g,"\\'")+'\')" style="font-size:11px;padding:6px 10px;background:#fff7ed;border:1px solid rgba(234,88,12,0.25);border-radius:6px;color:#c2410c;cursor:pointer;">🏆 전체 순위</button>'
-    +(ex.startAtMs ? '<button onclick="openExamDisplayScreen(\''+ex.id+'\')" style="font-size:11px;padding:6px 10px;background:#1a1a1a;border:none;border-radius:6px;color:#fff;cursor:pointer;">🖥 진행 화면</button>' : '')
-    +'<button onclick="reGradeExamSessions(\''+ex.id+'\',\''+escapeHtml(ex.title).replace(/'/g,"\\'")+'\')" style="font-size:11px;padding:6px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);cursor:pointer;">🔄 다시 채점하기</button>'
+    +'<button class="ex-sec" onclick="openEditExamModal(\''+ex.id+'\')" style="font-size:11px;padding:6px 10px;background:#eef7ff;border:1px solid rgba(59,130,246,0.25);border-radius:6px;color:#2563eb;cursor:pointer;">✏️ 설정 수정</button>'
+    +'<button class="ex-sec" onclick="openExamFullRanking(\''+ex.id+'\',\''+escapeHtml(ex.title).replace(/'/g,"\\'")+'\')" style="font-size:11px;padding:6px 10px;background:#fff7ed;border:1px solid rgba(234,88,12,0.25);border-radius:6px;color:#c2410c;cursor:pointer;">🏆 전체 순위</button>'
+    +(ex.startAtMs ? '<button class="ex-sec" onclick="openExamDisplayScreen(\''+ex.id+'\')" style="font-size:11px;padding:6px 10px;background:#1a1a1a;border:none;border-radius:6px;color:#fff;cursor:pointer;">🖥 진행 화면</button>' : '')
+    +'<button class="ex-sec" onclick="reGradeExamSessions(\''+ex.id+'\',\''+escapeHtml(ex.title).replace(/'/g,"\\'")+'\')" style="font-size:11px;padding:6px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);cursor:pointer;">🔄 다시 채점하기</button>'
     +'<button onclick="openExamReflections(\''+ex.id+'\',\''+escapeHtml(ex.title)+'\')" style="font-size:11px;padding:6px 10px;background:#eef2ff;border:1px solid rgba(79,70,229,0.2);border-radius:6px;color:#4338ca;cursor:pointer;">🌱 다음 걸음을 위하여</button>'
-    +'<button onclick="deleteExamConfirm(\''+ex.id+'\',\''+escapeHtml(ex.title)+'\')" style="font-size:11px;padding:6px 10px;background:var(--red-l);border:1px solid rgba(185,28,28,0.2);border-radius:6px;color:var(--red);cursor:pointer;">삭제</button>'
-    +'<button onclick="openEditGradeCutoffModal(\''+ex.id+'\')" style="font-size:11px;padding:6px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.25);border-radius:6px;color:var(--gold);cursor:pointer;">📐 등급표</button>'
+    +'<button class="ex-sec" onclick="deleteExamConfirm(\''+ex.id+'\',\''+escapeHtml(ex.title)+'\')" style="font-size:11px;padding:6px 10px;background:var(--red-l);border:1px solid rgba(185,28,28,0.2);border-radius:6px;color:var(--red);cursor:pointer;">삭제</button>'
+    +'<button class="ex-sec" onclick="openEditGradeCutoffModal(\''+ex.id+'\')" style="font-size:11px;padding:6px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.25);border-radius:6px;color:var(--gold);cursor:pointer;">📐 등급표</button>'
+    +'<button class="ex-more-btn mp-btn sm" onclick="mpToggleExMore(this)">⋯ 더보기</button>'
     +'</div></div>'
     +'</div>';
 }
@@ -5792,7 +6578,7 @@ window.openExamMonitor = function(examId){
 
 function buildExamListPage(){
   var __dt_h = '<div class="dt-header dt-only"><div><div class="dt-header-title">나의 시험</div></div></div>';
-  return __dt_h+'<div class="dt-main-grid"><div style="grid-column:1/3;"><div class="card"><div class="card-h"><div class="card-title">📝 나의 시험</div></div>'
+  return __dt_h+'<div class="dt-main-grid"><div style="grid-column:1/3;"><div id="mp-sched-host"></div><div id="mp-rep-host"></div><div class="card"><div class="card-h"><div class="card-title">📝 나의 시험</div></div>'
     +'<div id="exam-list-cat-tabs" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;"></div>'
     +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;"><span style="font-size:12px;color:var(--tx3);">정렬</span><select class="modal-select" id="exam-list-sort-select" onchange="switchExamListSort(this.value)" style="margin:0;width:auto;padding:6px 10px;font-size:12px;"><option value="date_desc">최신순</option><option value="date_asc">오래된순</option><option value="name_asc">이름순</option></select></div>'
     +'<div id="exam-list-student">불러오는 중...</div></div></div></div>';
@@ -5801,8 +6587,15 @@ function buildExamListPage(){
 var _currentExamListCategory = '전체', _currentExamListSort = 'date_desc';
 window.switchExamListCategory = function(cat){
   _currentExamListCategory = cat;
+  // 처음 렌더링할 때 색상을 클래스가 아니라 인라인 스타일로 직접 넣어뒀어서, active
+  // 클래스만 토글해서는 실제로는 색이 안 바뀌는 문제가 있었음(목록은 바뀌는데 버튼
+  // 색만 그대로). 초기 렌더링과 똑같은 방식으로 인라인 스타일을 직접 다시 넣어줌.
   document.querySelectorAll('.exam-list-cat-btn').forEach(function(btn){
-    btn.classList.toggle('active', btn.textContent === cat);
+    var isActive = btn.textContent === cat;
+    btn.classList.toggle('active', isActive);
+    btn.style.background = isActive ? 'var(--blue-l)' : 'var(--surface2)';
+    btn.style.borderColor = isActive ? 'rgba(29,78,216,0.2)' : 'var(--border)';
+    btn.style.color = isActive ? '#7aa8ff' : 'var(--tx3)';
   });
   _renderExamListStudent();
 };
@@ -6948,6 +7741,9 @@ function _finalizeExamSubmit(sessionId, exam, subj, subjIdx, answers, autoSubmit
           return _writeExamResultToGrades(studentUid, sessionId, exam, results, sess.electiveChoices).then(function(){
             _awardExamRewards(studentUid, exam, results, prevScores, sess.electiveChoices);
           });
+        }).then(function(){
+          // 일정표 연동: 오늘 투두를 자동 완료하고 시험 시간을 기록 (실패해도 제출은 영향 없음)
+          return MP_onExamCompleted(studentUid, exam.id, results, exam);
         });
       }).then(function(){
         var totalScore = results.reduce(function(s,r){return s + (r?r.score:0);}, 0);
@@ -9482,6 +10278,7 @@ window.doLogout = function() {
   if (unsubNotices) { unsubNotices(); unsubNotices = null; }
   if (unsubChat) { unsubChat(); unsubChat = null; }
   if (unsubChatNotif) { unsubChatNotif(); unsubChatNotif = null; }
+  try{ MP_stopComments(); MP_stopCommentHistory(); }catch(e){}
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
   if (timerAutoSave) { clearInterval(timerAutoSave); timerAutoSave = null; }
   TimerEngine.operationVersion += 1;
@@ -9647,7 +10444,7 @@ window.studentTab = function(i) {
   if (i===1) loadGrades('mock');
   if (i===2) loadRewardData();
   if (i===3) listenKChatRooms();
-  if (i===4) loadExamList();
+  if (i===4) { loadExamList(); MP_renderStudentSchedule(); MP_renderStudentReports(); }
   if (i !== 0 && prev !== i) {
     pushHistory(function(){ studentTab(0); });
   }
@@ -9906,7 +10703,10 @@ function buildDashboard() {
 function listenTodos() {
   if (!currentUser) return;
   if (unsubTodos) { unsubTodos(); unsubTodos = null; }
+  // 오늘 날짜의 모의고사 일정이 있으면 투두에 자동으로 추가한 뒤 목록을 그림 (실패해도 목록은 그대로 표시)
+  MP_ensureScheduleTodos().then(loadTodos, loadTodos);
   loadTodos();
+  try{ MP_listenComments(); }catch(e){}
   // 타이머 배너 상태 동기화
   _renderTimerBanner(!!TimerEngine.todoId);
   if (TimerEngine.todoId) _tickDisplay();
@@ -10159,18 +10959,11 @@ function loadMentorComment() {
   if (!area) return;
   getDocs(query(collection(db,'comments'), where('studentUid','==',currentUser.uid))).then(function(snap) {
     if (snap.empty) { area.innerHTML='<div style="color:var(--tx3);font-size:12px;padding:6px 0;">아직 코멘트가 없습니다</div>'; return; }
-    var docs=snap.docs.map(function(d){return d.data();}).sort(function(a,b){
+    var docs=snap.docs.map(function(d){return Object.assign({id:d.id},d.data());}).sort(function(a,b){
       var at=a.createdAt?a.createdAt.toMillis():0, bt=b.createdAt?b.createdAt.toMillis():0;
       return bt-at;
     });
-    var d=docs[0];
-    var date = d.createdAt ? d.createdAt.toDate().toLocaleDateString('ko-KR') : '';
-    area.innerHTML = '<div class="mentor-card">'
-      +'<div class="mentor-av">'+escapeHtml((d.teacherName||'T').slice(0,2))+'</div>'
-      +'<div class="mentor-body">'
-      +'<div class="mentor-meta">멘토 코멘트 <span class="mentor-meta-date">· '+escapeHtml(d.teacherName||'')+' · '+date+'</span></div>'
-      +'<div class="mentor-text">'+escapeHtml(d.content)+'</div>'
-      +'</div></div>';
+    MP_renderMentorComments(area, docs);
   }).catch(function(e) { area.innerHTML='<div style="color:var(--tx3);font-size:12px;">코멘트 로딩 실패</div>'; });
 }
 
@@ -10395,6 +11188,7 @@ window.confirmDeleteTodo = function() {
     TimerEngine.todoId=null; TimerEngine.accumMs=0; TimerEngine.status='idle'; TimerEngine.startedAtMs=null; TimerEngine.sessionId=null;
     window._timerCurSubj=null; window._timerCurTitle=null;
   }
+  try{ if(id.indexOf('sch_')===0) localStorage.setItem('mp_sch_dismiss_'+id.slice(4),'1'); }catch(e){}
   deleteDoc(doc(db,'todos',id)).then(function(){closeModal('modal-edit-todo');loadTodos();});
 };
 // 학생이 "제출" 버튼을 안 눌러도, 실제로 플래너에서 할 일을 추가하거나 완료하는 등
@@ -11045,8 +11839,14 @@ async function finalizeTimer(certified, totalMsOverride, timeTextOverride) {
     var finishedId = TimerEngine.todoId;
     clearTimerLocal(finishedId);
     clearActiveTimerIndex();
+    var _mpExtra = null;
     try {
-      await updateDoc(doc(db,'todos',finishedId), {
+      // 모의고사 투두(시험 시간이 이미 기록된 항목)는 학습시간을 덮어쓰지 않고 '추가 학습'으로 더함
+      var _mpSnap = await getDoc(doc(db,'todos',finishedId));
+      if (_mpSnap.exists()) _mpExtra = MPCore.additiveFinalize(_mpSnap.data(), totalMs);
+    } catch (e) { console.warn('[시험 투두 확인 실패]', e); }
+    try {
+      await updateDoc(doc(db,'todos',finishedId), Object.assign({
         status:'done',
         studyTime: timeText,
         certified: false,
@@ -11054,7 +11854,7 @@ async function finalizeTimer(certified, totalMsOverride, timeTextOverride) {
         timerSchemaVersion: TIMER_SCHEMA_VERSION,
         timerAccumMs: 0, timerStartedAtMs: null, timerRunning: false,
         timerAccum: 0, timerStartAt: null
-      });
+      }, _mpExtra || {}));
     } catch (error) {
       console.error('학습 완료 저장 실패:', error);
       alert('완료 저장에 실패했습니다. 다시 시도해주세요.');
@@ -11428,8 +12228,13 @@ window.gradeSubTab=function(i){
 var _currentStudentGradeCategory = '전체', _currentStudentGradeSort = 'date_desc';
 window.switchStudentGradeCategory = function(cat){
   _currentStudentGradeCategory = cat;
+  // 위와 같은 이유로 인라인 스타일을 직접 다시 넣어줘야 버튼 색이 실제로 바뀜
   document.querySelectorAll('.student-grade-cat-btn').forEach(function(btn){
-    btn.classList.toggle('active', btn.textContent === cat);
+    var isActive = btn.textContent === cat;
+    btn.classList.toggle('active', isActive);
+    btn.style.background = isActive ? 'var(--blue-l)' : 'var(--surface2)';
+    btn.style.borderColor = isActive ? 'rgba(29,78,216,0.2)' : 'var(--border)';
+    btn.style.color = isActive ? '#7aa8ff' : 'var(--tx3)';
   });
   _renderGradeList();
 };
@@ -12640,9 +13445,14 @@ window.buildTeacherTabs=function(isMaster){
   ];
   tabs.push({label:'시험관리',icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>'});
   if(isMaster) tabs.push({label:'전체채팅',icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'});
+  tabs.forEach(function(t,i){ if(t.idx==null) t.idx=i; });
+  tabs.push({idx:9,label:'일정표',icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'});
+  tabs.push({idx:10,label:'현황판',icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>'});
+  tabs.push({idx:11,label:'주의학생',icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'});
+  tabs.push({idx:12,label:'리포트',icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>'});
   // 모바일/태블릿 하단 탭
   document.getElementById('teacher-tabs').innerHTML=tabs.map(function(t,i){
-    return '<div class="teacher-nav-item '+(i===0?'active':'')+'" id="tnav-'+i+'" onclick="teacherTab('+i+')">'+t.icon+'<span>'+t.label+'</span></div>';
+    return '<div class="teacher-nav-item '+(i===0?'active':'')+'" id="tnav-'+t.idx+'" data-idx="'+t.idx+'" onclick="teacherTab('+t.idx+')">'+t.icon+'<span>'+t.label+'</span></div>';
   }).concat([
     '<div class="teacher-nav-item" onclick="doLogout()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span>로그아웃</span></div>'
   ]).join('');
@@ -12650,15 +13460,15 @@ window.buildTeacherTabs=function(isMaster){
   var sb = document.getElementById('teacher-sb-items');
   if (sb) {
     sb.innerHTML=tabs.map(function(t,i){
-      return '<div class="dt-sb-item '+(i===0?'active':'')+'" id="tsb-'+i+'" onclick="teacherTab('+i+')">'+t.icon+'<span class="dt-sb-item-label">'+t.label+'</span></div>';
+      return '<div class="dt-sb-item '+(i===0?'active':'')+'" id="tsb-'+t.idx+'" data-idx="'+t.idx+'" onclick="teacherTab('+t.idx+')">'+t.icon+'<span class="dt-sb-item-label">'+t.label+'</span></div>';
     }).concat([
       '<div class="dt-sb-item" onclick="doLogout()"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span class="dt-sb-item-label">로그아웃</span></div>'
     ]).join('');
   }
 };
 window.teacherTab=function(i){
-  document.querySelectorAll('.teacher-nav-item').forEach(function(t,j){t.classList.toggle('active',i===j);});
-  document.querySelectorAll('.dt-sb-item[id^="tsb-"]').forEach(function(t,j){t.classList.toggle('active',i===j);});
+  document.querySelectorAll('.teacher-nav-item').forEach(function(t){t.classList.toggle('active',t.dataset.idx!=null&&+t.dataset.idx===i);});
+  document.querySelectorAll('.dt-sb-item[id^="tsb-"]').forEach(function(t){t.classList.toggle('active',t.dataset.idx!=null&&+t.dataset.idx===i);});
   renderTeacher(i);
 };
 // 탭을 빠르게 여러 번 전환하면, 먼저 누른(느린) 탭의 응답이 나중에 도착해서
@@ -12679,10 +13489,11 @@ window.renderTeacher=function(i){
   function isStale(){ return myGen !== _teacherRenderGen; }
 
   if(unsubChat){unsubChat();unsubChat=null;}
+  try{ MP_stopCommentHistory(); }catch(e){}
   teacherChatUid=null;
   var isMaster=currentProfile&&currentProfile.role==='master';
   var c=document.getElementById('teacher-content');
-  var tabLabels=['학생현황','플래너','성적관리','상벌점','메시지','공지','계정관리','시험관리','전체채팅'];
+  var tabLabels=['학생현황','플래너','성적관리','상벌점','메시지','공지','계정관리','시험관리','전체채팅','모의고사 일정표','시험 현황판','시간 체크 주의 학생','별자리 리포트 · 성적표'];
   function wrap(idx, h){
     if(idx===0) return h;
     var dtHeader='<div class="dt-header dt-only"><div><div class="dt-header-title">'+(tabLabels[idx]||'')+'</div></div></div>';
@@ -12697,6 +13508,11 @@ window.renderTeacher=function(i){
     if (idx===0) loadStudyRankings('study-rankings-teacher');
     else if (idx===1) { teacherPlannerHistory(); filterLecturesByStudent(_lectureFilterUid); }
     else if (idx===4) listenKChatRooms();
+    else if (idx===7) mpDecorateExamCards();
+    else if (idx===9) mpTeacherSchedInit();
+    else if (idx===10) mpBoardInit();
+    else if (idx===11) mpWatchInit();
+    else if (idx===12) mpReportInit();
   }
 
   var cached = _teacherTabCache[i];
@@ -12728,6 +13544,10 @@ window.renderTeacher=function(i){
   else if(i===6) buildAndCache(buildTAccounts);
   else if(i===7) buildAndCache(buildTExamManage);
   else if(i===8&&isMaster) buildAndCache(buildAllChats);
+  else if(i===9) buildAndCache(buildTSchedule);
+  else if(i===10) buildAndCache(buildTBoard);
+  else if(i===11) buildAndCache(buildTWatch);
+  else if(i===12) buildAndCache(buildTReport);
 };
 
 // 데이터가 실제로 바뀌는 조작(성적 저장, 학생 추가, 시험 생성 등)을 하고 나면
@@ -13116,43 +13936,17 @@ window.saveComment=function(){
   var uid=parts[0], sName=parts[1]||'';
   var content=document.getElementById('comment-input').value.trim();
   if(!uid||!content){alert('학생과 코멘트 내용을 입력해주세요.');return;}
-  addDoc(collection(db,'comments'),{branch:getBranch(),studentUid:uid,studentName:sName,teacherUid:currentUser.uid,teacherName:currentProfile.name,content:content,createdAt:serverTimestamp()}).then(function(){
-    alert('코멘트가 저장되었습니다!');
+  addDoc(collection(db,'comments'),{branch:getBranch(),studentUid:uid,studentName:sName,teacherUid:currentUser.uid,teacherName:currentProfile.name,content:content,read:false,readAt:null,createdAt:serverTimestamp()}).then(function(){
+    try{ MP_afterCommentSaved(uid,sName,content); }catch(e){}
+    alert('코멘트가 저장되었습니다! (학생에게 알림이 전송돼요)');
     document.getElementById('comment-input').value='';
     loadCommentHistory(val);
   });
 };
-window.loadCommentHistory=function(val){
-  if(!val) return;
-  var parts=val.split('|');
-  var uid=parts[0], sName=parts[1]||'학생';
-  var el=document.getElementById('comment-history');
-  if(!el) return;
-  el.innerHTML='<div style="color:var(--tx3);font-size:12px">불러오는 중...</div>';
-  getDocs(query(collection(db,'comments'),where('studentUid','==',uid))).then(function(snap){
-    if(snap.empty){el.innerHTML='<div style="color:var(--tx3);font-size:12px;padding:8px 0">'+escapeHtml(sName)+'님의 코멘트가 없습니다</div>';return;}
-    var items=snap.docs.map(function(d){return Object.assign({_id:d.id},d.data());})
-      .sort(function(a,b){var at=a.createdAt?a.createdAt.toMillis():0,bt=b.createdAt?b.createdAt.toMillis():0;return bt-at;});
-    el.innerHTML='<div class="section-label" style="margin-bottom:8px">'+escapeHtml(sName)+' 코멘트 히스토리</div>'
-      +items.map(function(c){
-        var date=c.createdAt?c.createdAt.toDate().toLocaleDateString('ko-KR'):'';
-        return '<div style="background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:12px;margin-bottom:8px">'
-          +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
-          +'<div style="display:flex;align-items:center;gap:7px">'
-          +'<div class="teacher-av" style="width:28px;height:28px;font-size:10px">'+escapeHtml((c.teacherName||'T').slice(0,2))+'</div>'
-          +'<span style="font-size:12px;font-weight:600;color:var(--burg)">'+escapeHtml(c.teacherName||'')+'</span>'
-          +'<span style="font-size:11px;color:var(--tx3)">'+date+'</span>'
-          +'</div>'
-          +'<button onclick="deleteComment(\''+c._id+'\',\''+val+'\')" style="padding:3px 8px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:5px;color:var(--red);font-size:10px;cursor:pointer">삭제</button>'
-          +'</div>'
-          +'<div style="font-size:13px;color:var(--tx2);line-height:1.8;white-space:pre-wrap">'+escapeHtml(c.content)+'</div>'
-          +'</div>';
-      }).join('');
-  }).catch(function(e){el.innerHTML='<div style="color:var(--red);font-size:12px">불러오기 실패: '+e.message+'</div>';});
-};
+window.loadCommentHistory=function(val){ MP_commentHistoryLive(val); };
 window.deleteComment=function(id,val){
   if(!confirm('이 코멘트를 삭제하시겠습니까?')) return;
-  deleteDoc(doc(db,'comments',id)).then(function(){loadCommentHistory(val);}).catch(function(e){alert('삭제 실패: '+e.message);});
+  deleteDoc(doc(db,'comments',id)).then(function(){}).catch(function(e){alert('삭제 실패: '+e.message);});
 };
 
 window.openAddLectureModal=function(){
@@ -16179,6 +16973,959 @@ var _masterAllMessages=[];
 })();
 
 
+
+/* ===== MONO PLANNER 추가 기능 UI ===== */
+/* ======================================================================
+   MONO PLANNER 추가 기능 A — 모의고사 일정표 (선생님 등록 / 학생 조회·시간선택) + 투두 자동 연동
+   ====================================================================== */
+var MPC = window.MPCore;
+function mpNow(){
+  var now=new Date(); var kst=new Date(now.getTime()+(9*60+now.getTimezoneOffset())*60000);
+  var min=kst.getHours()*60+kst.getMinutes(); if(kst.getHours()<4) min+=1440;
+  return {today:getPlannerDate(), nowMin:min};
+}
+function mpE(s){ return escapeHtml(s==null?'':String(s)); }
+function mpSheet(html){
+  var ov=document.createElement('div'); ov.className='modal-overlay open'; ov.style.zIndex=700;
+  ov.innerHTML='<div class="mp-sheet">'+html+'</div>';
+  ov.addEventListener('click',function(e){ if(e.target===ov) ov.remove(); });
+  document.body.appendChild(ov); ov.close=function(){ ov.remove(); }; return ov;
+}
+window.mpCloseSheets=function(){ document.querySelectorAll('.modal-overlay.open[style*="700"]').forEach(function(e){e.remove();}); };
+function mpToast(msg, onclick){
+  var t=document.createElement('div'); t.className='mp-toast'; t.textContent=msg;
+  t.onclick=function(){ t.remove(); if(onclick) onclick(); };
+  document.body.appendChild(t); setTimeout(function(){ if(t.parentNode) t.remove(); },7000);
+}
+function mpSessKey(examId,uid){ return examId+'|'+uid; }
+async function mpFetchSchedules(uid){
+  var q = uid ? query(collection(db,'examSchedules'),where('studentUid','==',uid)) : query(collection(db,'examSchedules'),where('branch','==',getBranch()));
+  var snap=await getDocs(q); return snap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
+}
+async function mpFetchSessions(uid){
+  var q = uid ? query(collection(db,'examSessions'),where('studentUid','==',uid)) : query(collection(db,'examSessions'),where('branch','==',getBranch()));
+  var snap=await getDocs(q); return snap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
+}
+function mpSessMap(list){ var m={}; list.forEach(function(s){ m[mpSessKey(s.examId,s.studentUid)]=s; }); return m; }
+function mpItems(sch,sessMap){
+  var n=mpNow();
+  return sch.map(function(s){ var se=sessMap[mpSessKey(s.examId,s.studentUid)]||null; return {s:s, session:se, status:MPC.scheduleStatus(s,se,n.today,n.nowMin)}; });
+}
+function mpTimeStr(s){ var m=MPC.effStart(s); return m==null?'시간 미정':MPC.minToHHMM(m); }
+function mpDateLabel(d){ return MPC.mdKo(d)+'('+MPC.dowKo(d)+')'; }
+function mpChip(st){ return '<span class="mp-chip mp-c-'+st.color+'">'+mpE(st.label)+'</span>'; }
+
+/* ───────────── 학생: 일정표 ───────────── */
+var _mpStu = {sch:[],sess:{},view:'list',cursor:null};
+window.MP_renderStudentSchedule = async function(){
+  var host=document.getElementById('mp-sched-host'); if(!host||!currentUser) return;
+  host.innerHTML='<div class="mp-card"><div class="mp-sub">모의고사 일정 불러오는 중...</div></div>';
+  try{
+    var r=await Promise.all([mpFetchSchedules(currentUser.uid),mpFetchSessions(currentUser.uid)]);
+    _mpStu.sch=r[0]; _mpStu.sess=mpSessMap(r[1]); if(!_mpStu.cursor) _mpStu.cursor=getPlannerDate();
+    mpDrawStudent();
+  }catch(e){ host.innerHTML='<div class="mp-card"><div class="mp-sub" style="color:var(--red)">일정을 불러오지 못했어요</div></div>'; }
+};
+window.mpStuView=function(v){ _mpStu.view=v; mpDrawStudent(); };
+window.mpStuNav=function(n){
+  if(_mpStu.view==='month'){ var d=MPC.parseDate(_mpStu.cursor); d.setUTCMonth(d.getUTCMonth()+n,1); _mpStu.cursor=MPC.fmtDate(d); }
+  else _mpStu.cursor=MPC.addDays(_mpStu.cursor,7*n);
+  mpDrawStudent();
+};
+function mpDrawStudent(){
+  var host=document.getElementById('mp-sched-host'); if(!host) return;
+  var n=mpNow(), items=mpItems(_mpStu.sch,_mpStu.sess);
+  var h='';
+  if(!items.length){
+    host.innerHTML='<div class="mp-card"><div class="mp-title">📅 모의고사 일정</div><div class="mp-sub" style="padding:14px 0;text-align:center">아직 등록된 모의고사 일정이 없어요</div></div>'; return;
+  }
+  var nx=MPC.nextExam(items,n.today);
+  if(nx){
+    var ed=MPC.canStudentEdit(nx.s,nx.session,n.today,n.nowMin);
+    h+='<div class="mp-dday"><div class="n">'+MPC.dDayLabel(nx.s.date,n.today)+'</div><div style="flex:1;min-width:0"><div class="t">'+mpE(nx.s.examTitle)+'</div>'
+      +'<div class="s">'+mpDateLabel(nx.s.date)+' · '+mpTimeStr(nx.s)+(nx.s.studentStartMin!=null?' (내가 정한 시간)':'')+'</div></div>'
+      +(ed.ok?'<button class="mp-btn sm" onclick="mpStuDetail(\''+nx.s.id+'\')">시간 정하기</button>':'')+'</div>';
+  } else {
+    h+='<div class="mp-card" style="text-align:center"><div class="mp-title">예정된 모의고사가 없어요</div><div class="mp-sub" style="margin-top:4px">다음 일정이 등록되면 여기에 표시돼요</div></div>';
+  }
+  h+='<div class="mp-card"><div class="mp-h"><div class="mp-title">📅 모의고사 일정</div>'
+    +'<div class="mp-seg">'+[['list','목록'],['month','월간'],['week','주간']].map(function(x){return '<button class="'+(_mpStu.view===x[0]?'on':'')+'" onclick="mpStuView(\''+x[0]+'\')">'+x[1]+'</button>';}).join('')+'</div></div>';
+  if(_mpStu.view==='list') h+=mpStuList(items,n);
+  else if(_mpStu.view==='month') h+=mpMonthHtml(items,_mpStu.cursor,true,'mpStuNav','mpStuDetail');
+  else h+=mpStuWeek(items,n);
+  h+='</div>';
+  host.innerHTML=h;
+  if(_mpStu.view==='week') mpBindDrag();
+}
+function mpStuList(items,n){
+  var up=items.filter(function(x){return x.s.date>=n.today||x.status.key!=='done';}).sort(function(a,b){return a.s.date<b.s.date?-1:a.s.date>b.s.date?1:0;});
+  var past=items.filter(function(x){return up.indexOf(x)<0;}).sort(function(a,b){return a.s.date<b.s.date?1:-1;});
+  function row(x){
+    var s=x.s; var ed=MPC.canStudentEdit(s,x.session,n.today,n.nowMin);
+    return '<div class="mp-row" onclick="mpStuDetail(\''+s.id+'\')" style="cursor:pointer"><div class="d"><b>'+(+s.date.slice(8,10))+'</b>'+(+s.date.slice(5,7))+'월 '+MPC.dowKo(s.date)+'</div>'
+      +'<div class="m"><div class="a">'+mpE(s.examTitle)+'</div><div class="b">'+mpTimeStr(s)+(s.studentStartMin!=null?' · 내가 정함':'')+(s.timeLocked?' · 🔒 고정':'')+' · '+(s.durationMin||'-')+'분</div></div>'
+      +'<div style="text-align:right">'+mpChip(x.status)+(x.status.key!=='done'&&s.date>=n.today?'<div class="mp-sub" style="margin-top:3px">'+MPC.dDayLabel(s.date,n.today)+'</div>':'')+'</div></div>';
+  }
+  return (up.length?up.map(row).join(''):'<div class="mp-sub" style="padding:10px 0">예정된 일정이 없어요</div>')
+    +(past.length?'<div class="mp-lbl" style="margin-top:14px">지난 일정</div>'+past.map(row).join(''):'');
+}
+/* 월간 (공용: 학생/선생님) */
+function mpMonthHtml(items,cursor,studentMode,navFn,clickFn){
+  var n=mpNow(), ms=MPC.monthStart(cursor), me=MPC.monthEnd(cursor);
+  var gs=MPC.weekStart(ms), ge=MPC.addDays(MPC.weekStart(me),6), days=MPC.rangeDates(gs,ge,50);
+  var byDate={}; items.forEach(function(x){ (byDate[x.s.date]=byDate[x.s.date]||[]).push(x); });
+  var h='<div class="mp-h" style="margin-bottom:6px"><button class="mp-btn sm" onclick="'+navFn+'(-1)">◀</button><b>'+cursor.slice(0,4)+'년 '+(+cursor.slice(5,7))+'월</b><button class="mp-btn sm" onclick="'+navFn+'(1)">▶</button></div>'
+    +'<div class="mp-mgrid">'+['월','화','수','목','금','토','일'].map(function(d){return '<div class="mp-mh">'+d+'</div>';}).join('');
+  days.forEach(function(d){
+    var evs=(byDate[d]||[]).sort(function(a,b){return (MPC.effStart(a.s)||0)-(MPC.effStart(b.s)||0);});
+    h+='<div class="mp-mc'+(d<ms||d>me?' out':'')+(d===n.today?' today':'')+'"><div class="dn">'+(+d.slice(8,10))+'</div>'
+      +evs.map(function(x){ return '<span class="mp-ev '+x.status.color+'" onclick="'+clickFn+'(\''+x.s.id+'\')" title="'+mpE((x.s.studentName||'')+' '+x.s.examTitle)+'">'+(studentMode?'':mpE((x.s.studentName||'').slice(0,3))+' ')+mpE(x.s.examTitle)+' '+mpTimeStr(x.s)+'</span>'; }).join('')+'</div>';
+  });
+  return h+'</div>';
+}
+/* 학생 주간: 시간 그리드 + 드래그 */
+var MP_HOUR_PX=36, MP_H0=6, MP_H1=24;
+function mpStuWeek(items,n){
+  var ws=MPC.weekStart(_mpStu.cursor), days=MPC.rangeDates(ws,MPC.addDays(ws,6));
+  var h='<div class="mp-h" style="margin-bottom:6px"><button class="mp-btn sm" onclick="mpStuNav(-1)">◀</button><b>'+mpDateLabel(ws)+' ~ '+mpDateLabel(days[6])+'</b><button class="mp-btn sm" onclick="mpStuNav(1)">▶</button></div>'
+    +'<div class="mp-sub" style="margin-bottom:6px">시험 칸을 위아래로 끌어서 시작 시간을 정해요 (날짜는 선생님이 정한 날로 고정)</div>';
+  var totalH=(MP_H1-MP_H0)*MP_HOUR_PX;
+  h+='<div class="mp-wk"><div class="hd"></div>'+days.map(function(d){return '<div class="hd'+(d===n.today?' today':'')+'">'+MPC.dowKo(d)+'<br>'+(+d.slice(8,10))+'</div>';}).join('');
+  var tm='<div class="tm" style="height:'+totalH+'px">';
+  for(var hh=MP_H0;hh<MP_H1;hh++) tm+='<i style="top:'+((hh-MP_H0)*MP_HOUR_PX)+'px">'+hh+'</i>';
+  tm+='</div>'; h+=tm;
+  days.forEach(function(d){
+    var col='<div class="col" data-date="'+d+'" style="height:'+totalH+'px">';
+    items.filter(function(x){return x.s.date===d;}).forEach(function(x){
+      var st=MPC.effStart(x.s); if(st==null) st=MP_H0*60;
+      var top=(st-MP_H0*60)/60*MP_HOUR_PX, ht=Math.max(26,(x.s.durationMin||60)/60*MP_HOUR_PX);
+      var ed=MPC.canStudentEdit(x.s,x.session,n.today,n.nowMin).ok;
+      col+='<div class="mp-blk '+x.status.color+(ed?' drag':'')+'" data-id="'+x.s.id+'" data-ed="'+(ed?1:0)+'" style="top:'+top+'px;height:'+ht+'px"><b>'+mpE(x.s.examTitle)+'</b><br>'+MPC.minToHHMM(st)+(x.s.timeLocked?'<span class="lk">🔒</span>':'')+'</div>';
+    });
+    h+=col+'</div>';
+  });
+  return h+'</div>';
+}
+function mpBindDrag(){
+  document.querySelectorAll('.mp-blk[data-ed="1"]').forEach(function(el){
+    el.addEventListener('pointerdown',function(ev){
+      ev.preventDefault(); el.setPointerCapture(ev.pointerId);
+      var id=el.dataset.id, s=_mpStu.sch.find(function(x){return x.id===id;}); if(!s) return;
+      var startY=ev.clientY, baseTop=parseFloat(el.style.top), baseMin=MPC.effStart(s)||MP_H0*60, curMin=baseMin;
+      var tip=document.createElement('div'); tip.className='mp-tip'; document.body.appendChild(tip);
+      function mv(e){
+        var dy=e.clientY-startY; curMin=MPC.clampStart(baseMin+dy/MP_HOUR_PX*60);
+        el.style.top=((curMin-MP_H0*60)/60*MP_HOUR_PX)+'px';
+        tip.textContent=MPC.minToHHMM(curMin)+' 시작'; tip.style.left=(e.clientX+12)+'px'; tip.style.top=(e.clientY-30)+'px';
+      }
+      function up(){
+        el.removeEventListener('pointermove',mv); el.removeEventListener('pointerup',up); el.removeEventListener('pointercancel',up); tip.remove();
+        if(curMin!==baseMin) mpStuSaveStart(id,curMin); else mpDrawStudent();
+      }
+      el.addEventListener('pointermove',mv); el.addEventListener('pointerup',up); el.addEventListener('pointercancel',up);
+    });
+  });
+}
+window.mpStuDetail=function(id){
+  var s=_mpStu.sch.find(function(x){return x.id===id;}); if(!s) return;
+  var n=mpNow(), se=_mpStu.sess[mpSessKey(s.examId,s.studentUid)]||null, st=MPC.scheduleStatus(s,se,n.today,n.nowMin), ed=MPC.canStudentEdit(s,se,n.today,n.nowMin);
+  var cur=MPC.effStart(s);
+  var h='<h3>'+mpE(s.examTitle)+'</h3><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">'+mpChip(st)+'<span class="mp-sub">'+mpDateLabel(s.date)+' · '+MPC.dDayLabel(s.date,n.today)+'</span></div>'
+    +'<div class="mp-card" style="background:var(--surface2)"><div class="mp-sub">선생님이 정한 시간</div><b>'+(s.startMin!=null?MPC.minToHHMM(s.startMin):'미정')+'</b> <span class="mp-sub">· 시험 시간 '+(s.durationMin||'-')+'분</span></div>';
+  if(ed.ok){
+    h+='<div class="mp-lbl">내 시작 시간 (06:00 ~ 23:00)</div><input id="mp-stu-time" type="time" step="600" class="mp-in" value="'+(cur!=null?MPC.minToHHMM(cur):'')+'">'
+      +'<div class="mp-sub" style="margin-top:4px">날짜는 바꿀 수 없고, 같은 날 안에서 시작 시간만 정할 수 있어요.</div>'
+      +'<button class="modal-btn primary" style="margin-top:12px" onclick="mpStuSaveFromInput(\''+id+'\')">저장</button>'
+      +(s.studentStartMin!=null?'<button class="modal-btn cancel" onclick="mpStuSaveStart(\''+id+'\',null)">선생님이 정한 시간으로 되돌리기</button>':'');
+  } else {
+    h+='<div class="mp-warn">'+mpE(ed.reason)+'</div><div class="mp-sub">현재 시작 시간: <b>'+mpTimeStr(s)+'</b></div>';
+  }
+  h+='<button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>';
+  mpSheet(h);
+};
+window.mpStuSaveFromInput=function(id){
+  var v=document.getElementById('mp-stu-time').value; var m=MPC.hhmmToMin(v);
+  mpStuSaveStart(id,m==null?NaN:MPC.clampStart(m));
+};
+window.mpStuSaveStart=async function(id,min){
+  var s=_mpStu.sch.find(function(x){return x.id===id;}); if(!s) return;
+  var n=mpNow(), se=_mpStu.sess[mpSessKey(s.examId,s.studentUid)]||null;
+  var ed=MPC.canStudentEdit(s,se,n.today,n.nowMin); if(!ed.ok){ alert(ed.reason); mpDrawStudent(); return; }
+  if(min!=null){
+    var v=MPC.validateStudentStart(s,min,n.today,n.nowMin); if(!v.ok){ alert(v.reason); mpDrawStudent(); return; }
+    var cand=Object.assign({},s,{studentStartMin:min});
+    var col=MPC.findCollisions(_mpStu.sch,cand,s.id);
+    if(col.length && !confirm('같은 날 다른 시험('+col.map(function(c){return c.examTitle+' '+mpTimeStr(c);}).join(', ')+')과 시간이 겹쳐요.\n그래도 '+MPC.minToHHMM(min)+'에 시작할까요?')){ mpDrawStudent(); return; }
+  }
+  try{
+    await updateDoc(doc(db,'examSchedules',id),{studentStartMin:(min==null?null:min), studentStartSetAt:serverTimestamp()});
+    s.studentStartMin=(min==null?null:min); mpCloseSheets(); mpDrawStudent();
+  }catch(e){ alert('저장에 실패했어요. 잠시 후 다시 시도해 주세요.\n('+e.message+')'); mpDrawStudent(); }
+};
+
+/* ───────────── 일정 → 오늘 투두 자동 추가 / 시험 완료 시 자동 완료 ───────────── */
+function mpDismissKey(id){ return 'mp_sch_dismiss_'+id; }
+async function mpExamSecFor(session, examId){
+  var dur=null;
+  try{ var ed=await getDoc(doc(db,'exams',examId)); if(ed.exists()&&ed.data().subjects) dur=ed.data().subjects.map(function(x){return x.durationMin;}); }catch(e){}
+  return MPC.examSecFromResults(session.subjectResults||[],dur);
+}
+window.MP_ensureScheduleTodos=async function(){
+  try{
+    if(!currentUser||!currentProfile||currentProfile.role!=='student') return;
+    var T=getPlannerDate(), uid=currentUser.uid;
+    var snap=await getDocs(query(collection(db,'examSchedules'),where('studentUid','==',uid),where('date','==',T)));
+    if(snap.empty) return;
+    var sessMap=mpSessMap(await mpFetchSessions(uid));
+    for(var i=0;i<snap.docs.length;i++){
+      var s=Object.assign({id:snap.docs[i].id},snap.docs[i].data());
+      var tid=MPC.todoIdForSchedule(s.id), tref=doc(db,'todos',tid), ts=await getDoc(tref);
+      var se=sessMap[mpSessKey(s.examId,uid)]||null;
+      var done=se&&(se.status==='submitted'||se.status==='graded');
+      if(!ts.exists()){
+        var dismissed=s.todoDismissed; try{ dismissed=dismissed||localStorage.getItem(mpDismissKey(s.id)); }catch(e){}
+        if(dismissed) continue;
+        var data=MPC.buildScheduleTodo(s,uid,getBranch(),s.subjectKey||'ko');
+        if(done){ Object.assign(data,MPC.examDoneFields(data,await mpExamSecFor(se,s.examId)),{completedAt:serverTimestamp()}); }
+        data.createdAt=serverTimestamp();
+        await setDoc(tref,data);
+      } else if(done){
+        var td=ts.data();
+        if(td.status!=='done' && !(td.examSec>0)){
+          await updateDoc(tref,Object.assign(MPC.examDoneFields(td,await mpExamSecFor(se,s.examId)),{completedAt:serverTimestamp()}));
+        }
+      }
+    }
+  }catch(e){ console.warn('[일정→투두 연동 실패]',e); }
+};
+/* 시험 제출이 끝났을 때 호출 (학생 본인 제출 / 강제제출 공통) */
+window.MP_onExamCompleted=async function(studentUid, examId, results, exam){
+  try{
+    if(!studentUid||!examId) return;
+    var snap=await getDocs(query(collection(db,'examSchedules'),where('studentUid','==',studentUid),where('examId','==',examId)));
+    if(snap.empty) return;
+    var dur=exam&&exam.subjects?exam.subjects.map(function(x){return x.durationMin;}):null;
+    var sec=MPC.examSecFromResults(results||[],dur);
+    for(var i=0;i<snap.docs.length;i++){
+      var s=Object.assign({id:snap.docs[i].id},snap.docs[i].data());
+      updateDoc(doc(db,'examSchedules',s.id),{status:'done',doneAt:serverTimestamp()}).catch(function(){});
+      if(currentUser&&currentUser.uid===studentUid&&s.date===getPlannerDate()){
+        var tref=doc(db,'todos',MPC.todoIdForSchedule(s.id)), ts=await getDoc(tref);
+        if(ts.exists()){
+          var td=ts.data();
+          if(!(td.examSec>0)) await updateDoc(tref,Object.assign(MPC.examDoneFields(td,sec),{completedAt:serverTimestamp()}));
+        } else {
+          var data=MPC.buildScheduleTodo(s,studentUid,getBranch(),s.subjectKey||'ko');
+          Object.assign(data,MPC.examDoneFields(data,sec),{completedAt:serverTimestamp(),createdAt:serverTimestamp()});
+          await setDoc(tref,data);
+        }
+        try{ loadTodos(); }catch(e){}
+      }
+    }
+  }catch(e){ console.warn('[시험 완료 연동 실패]',e); }
+};
+
+/* ───────────── 선생님/마스터: 일정표 탭 ───────────── */
+var _mpT={sch:[],sess:{},students:[],exams:[],examsById:{},view:'month',cursor:null,filterUid:'',showPast:false};
+window.buildTSchedule=function(){
+  return Promise.resolve('<div id="mp-tsched"><div class="mp-card"><div class="mp-sub">불러오는 중...</div></div></div>');
+};
+window.mpTeacherSchedInit=async function(){
+  var host=document.getElementById('mp-tsched'); if(!host) return;
+  try{
+    var r=await Promise.all([mpFetchSchedules(null),mpFetchSessions(null),loadStudentList(),getDocs(query(collection(db,'exams'),where('branch','==',getBranch())))]);
+    _mpT.sch=r[0]; _mpT.sess=mpSessMap(r[1]); _mpT.students=r[2];
+    _mpT.exams=r[3].docs.map(function(d){return Object.assign({id:d.id},d.data());}).sort(function(a,b){return (b.createdAt?b.createdAt.toMillis():0)-(a.createdAt?a.createdAt.toMillis():0);});
+    _mpT.examsById={}; _mpT.exams.forEach(function(e){_mpT.examsById[e.id]=e;});
+    if(!_mpT.cursor) _mpT.cursor=getPlannerDate();
+    mpDrawTeacher();
+  }catch(e){ host.innerHTML='<div class="mp-card"><div class="mp-sub" style="color:var(--red)">불러오기 실패: '+mpE(e.message)+'</div></div>'; }
+};
+window.mpTView=function(v){ _mpT.view=v; mpDrawTeacher(); };
+window.mpTNav=function(n){
+  if(_mpT.view==='month'){ var d=MPC.parseDate(_mpT.cursor); d.setUTCMonth(d.getUTCMonth()+n,1); _mpT.cursor=MPC.fmtDate(d); }
+  else _mpT.cursor=MPC.addDays(_mpT.cursor,7*n);
+  mpDrawTeacher();
+};
+window.mpTFilter=function(v){ _mpT.filterUid=v; mpDrawTeacher(); };
+window.mpTPast=function(v){ _mpT.showPast=!!v; mpDrawTeacher(); };
+function mpDrawTeacher(){
+  var host=document.getElementById('mp-tsched'); if(!host) return;
+  var n=mpNow(); var sch=_mpT.sch.filter(function(s){return !_mpT.filterUid||s.studentUid===_mpT.filterUid;});
+  var items=mpItems(sch,_mpT.sess);
+  var h='<div class="mp-card"><div class="mp-h"><div class="mp-title">📅 모의고사 일정표</div><div style="display:flex;gap:6px;flex-wrap:wrap">'
+    +'<button class="mp-btn pri" onclick="mpOpenBulk()">+ 일정 일괄 등록</button></div></div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'
+    +'<div class="mp-seg">'+[['month','월간'],['week','주간'],['list','목록']].map(function(x){return '<button class="'+(_mpT.view===x[0]?'on':'')+'" onclick="mpTView(\''+x[0]+'\')">'+x[1]+'</button>';}).join('')+'</div>'
+    +'<select class="mp-in sm" style="width:auto" onchange="mpTFilter(this.value)"><option value="">전체 학생</option>'+_mpT.students.map(function(s){return '<option value="'+s.uid+'"'+(_mpT.filterUid===s.uid?' selected':'')+'>'+mpE(s.name)+'</option>';}).join('')+'</select>'
+    +(_mpT.view==='list'?'<label class="mp-chk"><input type="checkbox" '+(_mpT.showPast?'checked':'')+' onchange="mpTPast(this.checked)">지난 일정도 보기</label>':'')+'</div>';
+  if(_mpT.view==='month') h+=mpMonthHtml(items,_mpT.cursor,false,'mpTNav','mpEditSchedule');
+  else if(_mpT.view==='week') h+=mpTeacherWeek(items,n);
+  else h+=mpTeacherList(items,n);
+  h+='<div class="mp-legend" style="margin-top:10px">'+[['green','응시 완료'],['yellow','오늘/응시 중'],['orange','시간 지남'],['red','기한 지남'],['grey','예정']].map(function(x){return '<span class="mp-chip mp-c-'+x[0]+'">'+x[1]+'</span>';}).join('')+'</div></div>';
+  host.innerHTML=h;
+}
+function mpTeacherWeek(items,n){
+  var ws=MPC.weekStart(_mpT.cursor), days=MPC.rangeDates(ws,MPC.addDays(ws,6));
+  var h='<div class="mp-h"><button class="mp-btn sm" onclick="mpTNav(-1)">◀</button><b>'+mpDateLabel(ws)+' ~ '+mpDateLabel(days[6])+'</b><button class="mp-btn sm" onclick="mpTNav(1)">▶</button></div><div class="mp-scroll"><div style="display:grid;grid-template-columns:repeat(7,minmax(110px,1fr));gap:4px">';
+  days.forEach(function(d){
+    var evs=items.filter(function(x){return x.s.date===d;}).sort(function(a,b){return (MPC.effStart(a.s)||0)-(MPC.effStart(b.s)||0);});
+    h+='<div class="mp-mc'+(d===n.today?' today':'')+'" style="min-height:120px"><div class="dn">'+MPC.dowKo(d)+' '+(+d.slice(8,10))+'</div>'
+      +evs.map(function(x){return '<span class="mp-ev '+x.status.color+'" style="white-space:normal" onclick="mpEditSchedule(\''+x.s.id+'\')"><b>'+mpTimeStr(x.s)+'</b> '+mpE(x.s.studentName||'')+'<br>'+mpE(x.s.examTitle)+(x.s.studentStartMin!=null?' ✎':'')+'</span>';}).join('')+'</div>';
+  });
+  return h+'</div></div>';
+}
+function mpTeacherList(items,n){
+  var list=items.filter(function(x){return _mpT.showPast||x.s.date>=n.today||x.status.key==='overdue'||x.status.key==='late';}).sort(function(a,b){return a.s.date<b.s.date?-1:a.s.date>b.s.date?1:((MPC.effStart(a.s)||0)-(MPC.effStart(b.s)||0));});
+  if(!list.length) return '<div class="mp-sub" style="padding:14px 0;text-align:center">표시할 일정이 없어요</div>';
+  return list.map(function(x){ var s=x.s;
+    return '<div class="mp-row" onclick="mpEditSchedule(\''+s.id+'\')" style="cursor:pointer"><div class="d"><b>'+(+s.date.slice(8,10))+'</b>'+(+s.date.slice(5,7))+'월 '+MPC.dowKo(s.date)+'</div>'
+      +'<div class="m"><div class="a">'+mpE(s.studentName||'')+' · '+mpE(s.examTitle)+'</div><div class="b">'+mpTimeStr(s)+(s.studentStartMin!=null?' (학생 지정)':'')+(s.timeLocked?' · 🔒':'')+' · '+(s.durationMin||'-')+'분</div></div>'+mpChip(x.status)+'</div>';
+  }).join('');
+}
+window.mpEditSchedule=function(id){
+  var s=_mpT.sch.find(function(x){return x.id===id;}); if(!s) return;
+  var h='<h3>일정 수정</h3><div style="font-weight:700">'+mpE(s.studentName||'')+' · '+mpE(s.examTitle)+'</div>'
+    +'<div class="mp-lbl">날짜</div><input id="mp-e-date" type="date" class="mp-in" value="'+s.date+'">'
+    +'<div class="mp-lbl">시작 시간</div><input id="mp-e-time" type="time" step="600" class="mp-in" value="'+(s.startMin!=null?MPC.minToHHMM(s.startMin):'')+'">'
+    +(s.studentStartMin!=null?'<div class="mp-sub" style="margin-top:4px">학생이 정한 시간: <b>'+MPC.minToHHMM(s.studentStartMin)+'</b> <a href="javascript:void(0)" onclick="mpClearStudentStart(\''+id+'\')">초기화</a></div>':'')
+    +'<label class="mp-chk" style="margin-top:8px"><input id="mp-e-lock" type="checkbox" '+(s.timeLocked?'checked':'')+'>학생이 시간을 바꾸지 못하게 고정</label>'
+    +'<button class="modal-btn primary" onclick="mpSaveEdit(\''+id+'\')">저장</button>'
+    +'<button class="modal-btn danger" onclick="mpDeleteSchedule(\''+id+'\')">🗑 이 일정 삭제</button><button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>';
+  mpSheet(h);
+};
+window.mpClearStudentStart=async function(id){
+  try{ await updateDoc(doc(db,'examSchedules',id),{studentStartMin:null}); var s=_mpT.sch.find(function(x){return x.id===id;}); if(s) s.studentStartMin=null; mpCloseSheets(); mpDrawTeacher(); }catch(e){ alert('실패: '+e.message); }
+};
+window.mpSaveEdit=async function(id){
+  var s=_mpT.sch.find(function(x){return x.id===id;}); if(!s) return;
+  var date=document.getElementById('mp-e-date').value, tm=MPC.hhmmToMin(document.getElementById('mp-e-time').value), lock=document.getElementById('mp-e-lock').checked;
+  if(!date||tm==null){ alert('날짜와 시간을 모두 입력해 주세요.'); return; }
+  var cand=Object.assign({},s,{date:date,startMin:tm,studentStartMin:(date===s.date?s.studentStartMin:null)});
+  var col=MPC.findCollisions(_mpT.sch,cand,s.id);
+  if(col.length && !confirm('같은 학생의 같은 날 다른 시험과 시간이 겹쳐요:\n'+col.map(function(c){return '· '+c.examTitle+' '+mpTimeStr(c);}).join('\n')+'\n\n그래도 저장할까요?')) return;
+  var upd={date:date,startMin:tm,timeLocked:lock,updatedAt:serverTimestamp()};
+  if(date!==s.date){ upd.studentStartMin=null; upd.status='planned'; }
+  try{ await updateDoc(doc(db,'examSchedules',id),upd); Object.assign(s,upd,{updatedAt:null}); if(upd.studentStartMin===null) s.studentStartMin=null; mpCloseSheets(); mpDrawTeacher(); }catch(e){ alert('저장 실패: '+e.message); }
+};
+window.mpDeleteSchedule=async function(id){
+  if(!confirm('이 일정을 삭제할까요?\n(이미 만들어진 오늘의 투두는 그대로 남아요)')) return;
+  try{ await deleteDoc(doc(db,'examSchedules',id)); _mpT.sch=_mpT.sch.filter(function(x){return x.id!==id;}); mpCloseSheets(); mpDrawTeacher(); }catch(e){ alert('삭제 실패: '+e.message); }
+};
+
+/* ── 일괄 등록 (학생 × 회차 표) ── */
+var _mpBulk={exams:[],students:[]};
+window.mpOpenBulk=function(){
+  _mpBulk={exams:[],students:[]};
+  var h='<h3>모의고사 일정 일괄 등록</h3>'
+    +'<div class="mp-lbl">1. 시험(회차) 선택 — 여러 개 선택 가능</div>'
+    +'<input class="mp-in sm" placeholder="시험 이름 검색" oninput="mpBulkFilterExams(this.value)" style="margin-bottom:6px">'
+    +'<div id="mp-bulk-exams" style="max-height:170px;overflow:auto;border:1px solid var(--border2);border-radius:8px;padding:6px"></div>'
+    +'<div class="mp-lbl">2. 학생 선택 <a href="javascript:void(0)" onclick="mpBulkAllStudents(true)">전체</a> · <a href="javascript:void(0)" onclick="mpBulkAllStudents(false)">해제</a></div>'
+    +'<div id="mp-bulk-students" style="display:flex;flex-wrap:wrap;gap:6px"></div>'
+    +'<button class="modal-btn primary" style="margin-top:12px" onclick="mpBulkBuildTable()">3. 표 만들기</button>'
+    +'<div id="mp-bulk-table" style="margin-top:12px"></div>';
+  mpSheet(h); mpBulkFilterExams('');
+  document.getElementById('mp-bulk-students').innerHTML=_mpT.students.map(function(s){return '<label class="mp-chk" style="border:1px solid var(--border);border-radius:99px;padding:4px 10px"><input type="checkbox" class="mp-bs" value="'+s.uid+'">'+mpE(s.name)+'</label>';}).join('');
+};
+window.mpBulkFilterExams=function(q){
+  var el=document.getElementById('mp-bulk-exams'); if(!el) return; q=(q||'').trim();
+  var list=_mpT.exams.filter(function(e){return !q||(e.title||'').indexOf(q)>=0;}).slice(0,80);
+  var chk={}; document.querySelectorAll('.mp-be:checked').forEach(function(c){chk[c.value]=1;});
+  el.innerHTML=list.map(function(e){return '<label class="mp-chk"><input type="checkbox" class="mp-be" value="'+e.id+'"'+(chk[e.id]?' checked':'')+'>'+mpE(e.title)+' <span class="mp-sub">'+mpE(e.examSource||'')+'</span></label>';}).join('')||'<div class="mp-sub">시험이 없어요</div>';
+};
+window.mpBulkAllStudents=function(on){ document.querySelectorAll('.mp-bs').forEach(function(c){c.checked=on;}); };
+function mpExamDuration(e){ var t=0; (e.subjects||[]).forEach(function(s,i,a){ t+=(s.durationMin||0)+(i<a.length-1?(s.breakAfterMin||0):0); }); return t||60; }
+window.mpBulkBuildTable=function(){
+  var exIds=[].map.call(document.querySelectorAll('.mp-be:checked'),function(c){return c.value;});
+  var stIds=[].map.call(document.querySelectorAll('.mp-bs:checked'),function(c){return c.value;});
+  if(!exIds.length||!stIds.length){ alert('시험과 학생을 각각 1개 이상 선택해 주세요.'); return; }
+  _mpBulk.exams=exIds; _mpBulk.students=stIds;
+  var exByS={}; _mpT.sch.forEach(function(s){ exByS[s.examId+'|'+s.studentUid]=s; });
+  var h='<div class="mp-sub" style="margin-bottom:6px">칸을 비워 두면 일정이 만들어지지 않아요. 맨 윗줄에서 열 전체에 같은 날짜·시간을 한 번에 채울 수 있어요.</div><div class="mp-scroll"><table class="mp-tbl"><tr><th>학생</th>';
+  exIds.forEach(function(id,ci){ var e=_mpT.examsById[id]; h+='<th style="min-width:150px">'+mpE(e.title)+'<br><span class="mp-sub">'+mpExamDuration(e)+'분</span></th>'; });
+  h+='</tr><tr><td class="l">열 일괄 입력</td>';
+  exIds.forEach(function(id,ci){ h+='<td><input type="date" class="mp-in sm" id="mp-fd-'+ci+'"> <input type="time" step="600" class="mp-in sm" id="mp-ft-'+ci+'" style="margin-top:3px"><br><button class="mp-btn sm" style="margin-top:3px" onclick="mpBulkFillCol('+ci+')">모두 적용</button></td>'; });
+  h+='</tr>';
+  stIds.forEach(function(uid,ri){
+    var st=_mpT.students.find(function(s){return s.uid===uid;});
+    h+='<tr><td class="l">'+mpE(st?st.name:uid)+'</td>';
+    exIds.forEach(function(id,ci){
+      var ex=exByS[id+'|'+uid];
+      h+='<td><input type="date" class="mp-in sm mp-cd" data-r="'+ri+'" data-c="'+ci+'" value="'+(ex?ex.date:'')+'"> <input type="time" step="600" class="mp-in sm mp-ct" data-r="'+ri+'" data-c="'+ci+'" value="'+(ex&&ex.startMin!=null?MPC.minToHHMM(ex.startMin):'')+'" style="margin-top:3px">'+(ex?'<div class="mp-sub">등록됨</div>':'')+'</td>';
+    });
+    h+='</tr>';
+  });
+  h+='</table></div><label class="mp-chk" style="margin-top:8px"><input id="mp-bulk-lock" type="checkbox">학생이 시간을 바꾸지 못하게 고정</label>'
+    +'<div class="mp-sub" style="margin-top:4px">※ 일정을 등록하면 아직 배정되지 않은 학생에게 시험이 자동으로 배정돼요.</div>'
+    +'<div id="mp-bulk-warn"></div><button class="modal-btn primary" onclick="mpBulkSave()">일정 저장</button>';
+  document.getElementById('mp-bulk-table').innerHTML=h;
+};
+window.mpBulkFillCol=function(ci){
+  var d=document.getElementById('mp-fd-'+ci).value, t=document.getElementById('mp-ft-'+ci).value;
+  document.querySelectorAll('.mp-cd[data-c="'+ci+'"]').forEach(function(i){ if(d) i.value=d; });
+  document.querySelectorAll('.mp-ct[data-c="'+ci+'"]').forEach(function(i){ if(t) i.value=t; });
+};
+window.mpBulkSave=async function(){
+  var cells=[], errs=[];
+  _mpBulk.students.forEach(function(uid,ri){ _mpBulk.exams.forEach(function(exId,ci){
+    var d=document.querySelector('.mp-cd[data-r="'+ri+'"][data-c="'+ci+'"]').value, t=document.querySelector('.mp-ct[data-r="'+ri+'"][data-c="'+ci+'"]').value;
+    var st=_mpT.students.find(function(s){return s.uid===uid;});
+    if(!d&&!t) return;
+    if(!d||!t){ errs.push((st?st.name:uid)+' · '+_mpT.examsById[exId].title+': 날짜와 시간을 모두 입력'); return; }
+    cells.push({uid:uid,name:st?st.name:'',examId:exId,date:d,startMin:MPC.hhmmToMin(t)});
+  }); });
+  if(errs.length){ alert('입력을 확인해 주세요:\n\n'+errs.slice(0,8).join('\n')); return; }
+  if(!cells.length){ alert('저장할 일정이 없어요.'); return; }
+  // 충돌 검사: 이번에 덮어쓰는 문서는 제외하고 기존 일정 + 새 일정끼리 비교
+  var ids={}; cells.forEach(function(c){ ids[c.examId+'_'+c.uid]=1; });
+  var base=_mpT.sch.filter(function(s){return !ids[s.id];});
+  var pool=base.slice(), warns=[];
+  cells.forEach(function(c){
+    var ex=_mpT.examsById[c.examId]; var cand={id:c.examId+'_'+c.uid,studentUid:c.uid,date:c.date,startMin:c.startMin,durationMin:mpExamDuration(ex)};
+    var col=MPC.findCollisions(pool,cand);
+    if(col.length) warns.push(c.name+' '+MPC.mdKo(c.date)+' '+ex.title+' ↔ '+col.map(function(x){return x.examTitle;}).join(', '));
+    else { var others=MPC.sameDayOthers(pool,cand); if(others.length) warns.push(c.name+' '+MPC.mdKo(c.date)+' 같은 날 시험 '+(others.length+1)+'개'); }
+    pool.push(cand);
+  });
+  if(warns.length && !confirm('⚠️ 같은 날 일정이 겹치거나 몰려 있어요 ('+warns.length+'건)\n\n'+warns.slice(0,8).join('\n')+(warns.length>8?'\n...':'')+'\n\n그래도 저장할까요?')) return;
+  var lock=document.getElementById('mp-bulk-lock').checked, existing={}; _mpT.sch.forEach(function(s){existing[s.id]=s;});
+  try{
+    for(var i=0;i<cells.length;i++){
+      var c=cells[i], ex=_mpT.examsById[c.examId], id=c.examId+'_'+c.uid, old=existing[id];
+      var f={studentUid:c.uid,studentName:c.name,branch:getBranch(),examId:c.examId,examTitle:ex.title,durationMin:mpExamDuration(ex),
+        subjectKey:mpSubjectKey(ex),date:c.date,startMin:c.startMin,timeLocked:lock,updatedAt:serverTimestamp(),createdBy:currentUser.uid};
+      if(!old) { f.status='planned'; f.studentStartMin=null; f.createdAt=serverTimestamp(); }
+      else if(old.date!==c.date) { f.studentStartMin=null; f.status='planned'; }
+      await setDoc(doc(db,'examSchedules',id),f,{merge:true});
+      await mpEnsureAssigned(ex,c.uid);
+    }
+    alert('일정 '+cells.length+'건을 저장했어요.');
+    mpCloseSheets(); invalidateTeacherTabCache(9); mpTeacherSchedInit();
+  }catch(e){ alert('저장 중 오류: '+e.message+'\n\n(Firestore 규칙에 examSchedules 컬렉션 허용이 되어 있는지 확인해 주세요)'); }
+};
+function mpSubjectKey(ex){ var s=ex.subjects&&ex.subjects[0]; if(!s) return 'ko'; return (s.subject==='ex1'||s.subject==='ex2')?(s.exCategory||'sc'):s.subject; }
+async function mpEnsureAssigned(ex,uid){
+  var assigned=ex.assignedTo||[];
+  if(assigned.indexOf(uid)<0){ await updateDoc(doc(db,'exams',ex.id),{assignedTo:arrayUnion(uid)}); ex.assignedTo=assigned.concat([uid]); }
+  var snap=await getDocs(query(collection(db,'examSessions'),where('examId','==',ex.id),where('studentUid','==',uid)));
+  if(snap.empty) await addDoc(collection(db,'examSessions'),{examId:ex.id,studentUid:uid,branch:ex.branch||getBranch(),status:'not_started',currentSubjectIndex:0,subjectResults:[],createdAt:serverTimestamp()});
+}
+
+/* ======================================================================
+   MONO PLANNER 추가 기능 B — 시험 현황판 / 시험관리 카드 요약 / 주의 학생 / 코멘트 읽음
+   ====================================================================== */
+/* ───────────── 시험 현황판 ───────────── */
+var _mpB={filter:'all',limit:12,data:null};
+window.buildTBoard=function(){ return Promise.resolve('<div id="mp-board"><div class="mp-card"><div class="mp-sub">불러오는 중...</div></div></div>'); };
+window.mpBoardInit=async function(){
+  var host=document.getElementById('mp-board'); if(!host) return;
+  try{
+    var r=await Promise.all([
+      getDocs(query(collection(db,'exams'),where('branch','==',getBranch()))),
+      mpFetchSessions(null), mpFetchSchedules(null), loadStudentList(),
+      getDocs(query(collection(db,'examReflections'),where('branch','==',getBranch()))).catch(function(){return {docs:[]};})
+    ]);
+    var exams=r[0].docs.map(function(d){return Object.assign({id:d.id},d.data());});
+    var refl={}; r[4].docs.forEach(function(d){ var x=d.data(); if(x.q1){ refl[x.uid+'|'+x.examId]=(refl[x.uid+'|'+x.examId]||0)+1; } });
+    _mpB.data={exams:exams,sess:mpSessMap(r[1]),sch:r[2],students:r[3],refl:refl};
+    mpBoardDraw();
+  }catch(e){ host.innerHTML='<div class="mp-card"><div class="mp-sub" style="color:var(--red)">불러오기 실패: '+mpE(e.message)+'</div></div>'; }
+};
+window.mpBoardFilter=function(f){ _mpB.filter=f; mpBoardDraw(); };
+window.mpBoardLimit=function(n){ _mpB.limit=+n; mpBoardDraw(); };
+/* 한 칸(학생×시험) 계산 — 순수에 가깝게 분리 */
+function mpCell(D,st,ex,n){
+  var sch=D.schByKey[ex.id+'|'+st.uid], se=D.sess[mpSessKey(ex.id,st.uid)]||null;
+  if(!sch&&!se) return null;
+  var status=sch?MPC.scheduleStatus(sch,se,n.today,n.nowMin):MPC.noScheduleStatus(se);
+  var score=null; if(se&&se.subjectResults&&(se.status==='graded'||se.status==='submitted')){ score=se.subjectResults.reduce(function(s,r){return s+(r?(r.score||0):0);},0); }
+  var rc=D.refl[st.uid+'|'+ex.id]||0;
+  return {sch:sch,se:se,status:status,score:score,refl:rc};
+}
+function mpBoardPrepare(){
+  var D=_mpB.data, n=mpNow();
+  D.schByKey={}; D.schByExam={}; D.sch.forEach(function(s){ D.schByKey[s.examId+'|'+s.studentUid]=s; (D.schByExam[s.examId]=D.schByExam[s.examId]||[]).push(s); });
+  var ws=MPC.weekStart(n.today), we=MPC.addDays(ws,6);
+  // 시험 후보: 배정(세션) 또는 일정이 있는 시험만
+  var hasSess={}; Object.keys(D.sess).forEach(function(k){ hasSess[D.sess[k].examId]=1; });
+  var list=D.exams.filter(function(e){ return D.schByExam[e.id]||hasSess[e.id]; }).map(function(e){
+    var sc=D.schByExam[e.id]||[]; var minDate=sc.length?sc.map(function(x){return x.date;}).sort()[0]:null;
+    return {ex:e,isSch:sc.length>0,minDate:minDate,sortKey:minDate||(e.createdAt?MPC.fmtDate(new Date(e.createdAt.toMillis())):'0000-00-00')};
+  });
+  list.sort(function(a,b){return a.sortKey<b.sortKey?1:-1;});
+  var f=_mpB.filter;
+  if(f==='schedule') list=list.filter(function(x){return x.isSch;});
+  else if(f==='nonschedule') list=list.filter(function(x){return !x.isSch;});
+  else if(f==='week') list=list.filter(function(x){ return (D.schByExam[x.ex.id]||[]).some(function(s){return s.date>=ws&&s.date<=we;}); });
+  else if(f==='nottaken') list=list.filter(function(x){ return D.students.some(function(st){ var c=mpCell(D,st,x.ex,n); return c&&c.status.key!=='done'; }); });
+  return {n:n,list:list};
+}
+function mpBoardDraw(){
+  var host=document.getElementById('mp-board'); if(!host||!_mpB.data) return;
+  var D=_mpB.data, P=mpBoardPrepare(), n=P.n, total=P.list.length, cols=P.list.slice(0,_mpB.limit||9999);
+  var fl=[['all','전체'],['schedule','📌 일정 시험'],['nonschedule','📎 일정 외'],['nottaken','미응시 있음'],['week','이번 주']];
+  var h='<div class="mp-card"><div class="mp-h"><div class="mp-title">📊 시험 현황판</div><div class="mp-sub">'+total+'개 시험 · 학생 '+D.students.length+'명</div></div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'+fl.map(function(x){return '<button class="mp-btn sm'+(_mpB.filter===x[0]?' pri':'')+'" onclick="mpBoardFilter(\''+x[0]+'\')">'+x[1]+'</button>';}).join('')
+    +'<select class="mp-in sm" style="width:auto" onchange="mpBoardLimit(this.value)">'+[[8,'8개'],[12,'12개'],[24,'24개'],[0,'전체']].map(function(x){return '<option value="'+x[0]+'"'+(_mpB.limit===x[0]?' selected':'')+'>시험 '+x[1]+'</option>';}).join('')+'</select></div>'
+    +'<div class="mp-legend">'+[['green','응시 완료'],['yellow','응시 중/대기/오늘'],['orange','시간 지남'],['red','기한 지남'],['blue','일정 없이 배정'],['grey','예정']].map(function(x){return '<span class="mp-chip mp-c-'+x[0]+'">'+x[1]+'</span>';}).join('')+'</div>';
+  if(!cols.length){ host.innerHTML=h+'<div class="mp-sub" style="padding:18px;text-align:center">조건에 맞는 시험이 없어요</div></div>'; return; }
+  // 데스크탑 표
+  h+='<div class="mp-board-desk mp-scroll"><table class="mp-bt"><tr><th style="position:sticky;left:0;z-index:2">학생</th>'
+    +cols.map(function(c){
+      var done=0,all=0; D.students.forEach(function(st){var ce=mpCell(D,st,c.ex,n); if(ce){all++; if(ce.status.key==='done')done++;}});
+      return '<th onclick="mpBoardExam(\''+c.ex.id+'\')" title="클릭: 시험 상세">'+(c.isSch?'📌':'📎')+' '+mpE(MPC.clip(c.ex.title,16))+'<br><span style="font-weight:400">'+(c.minDate?MPC.mdLabel(c.minDate):'')+' · '+done+'/'+all+'</span></th>';
+    }).join('')+'</tr>'
+    +D.students.map(function(st){
+      return '<tr><td class="nm" onclick="mpBoardStudent(\''+st.uid+'\')">'+mpE(st.name)+'</td>'
+        +cols.map(function(c){ return mpCellTd(D,st,c.ex,n,_mpB.filter==='nottaken'); }).join('')+'</tr>';
+    }).join('')+'</table></div>';
+  // 모바일 카드
+  h+='<div class="mp-board-mob">'+D.students.map(function(st){
+    var rows=cols.map(function(c){ var ce=mpCell(D,st,c.ex,n); return ce?{c:c,ce:ce}:null; }).filter(Boolean);
+    if(!rows.length) return '';
+    var late=rows.filter(function(x){return x.ce.status.key==='late'||x.ce.status.key==='overdue';}).length;
+    return '<div class="mp-scard"><div class="hh" onclick="mpBoardStudent(\''+st.uid+'\')"><span>'+mpE(st.name)+'</span>'+(late?'<span class="mp-chip mp-c-red">확인 필요 '+late+'</span>':'')+'</div>'
+      +rows.map(function(x){ return '<div class="it" onclick="mpBoardExam(\''+x.c.ex.id+'\')"><span>'+(x.c.isSch?'📌':'📎')+' '+mpE(MPC.clip(x.c.ex.title,18))+'</span><span>'+mpChip(x.ce.status)+(x.ce.score!=null?' <b>'+x.ce.score+'점</b>':'')+'</span></div>'; }).join('')+'</div>';
+  }).join('')+'</div></div>';
+  host.innerHTML=h;
+}
+function mpCellTd(D,st,ex,n,dim){
+  var ce=mpCell(D,st,ex,n); if(!ce) return '<td class="c none">–</td>';
+  var sub='';
+  if(ce.status.key==='done'){ sub=(ce.score!=null?ce.score+'점':'')+' '+(ce.refl?'✍':'<span style="color:#c2410c">✍미</span>'); }
+  else if(ce.sch){ sub=MPC.mdLabel(ce.sch.date)+' '+mpTimeStr(ce.sch)+(ce.sch.studentStartMin!=null?'✎':''); }
+  var dimStyle=(dim&&ce.status.key==='done')?' style="opacity:.3"':'';
+  return '<td class="c '+ce.status.color+'"'+dimStyle+' onclick="mpBoardCell(\''+st.uid+'\',\''+ex.id+'\')">'+mpE(ce.status.label)+(sub?'<small>'+sub+'</small>':'')+'</td>';
+}
+window.mpBoardCell=function(uid,exId){ mpBoardStudent(uid); };
+window.mpBoardStudent=function(uid){
+  var D=_mpB.data, n=mpNow(), st=D.students.find(function(s){return s.uid===uid;}); if(!st) return;
+  var rows=D.exams.map(function(e){ var c=mpCell(D,st,e,n); return c?{e:e,c:c}:null; }).filter(Boolean)
+    .sort(function(a,b){ var da=a.c.sch?a.c.sch.date:'0'; var db2=b.c.sch?b.c.sch.date:'0'; return da<db2?1:-1; });
+  var h='<h3>'+mpE(st.name)+' 시험 현황</h3>'+(rows.length?rows.map(function(x){
+    return '<div class="mp-row"><div class="m"><div class="a">'+(x.c.sch?'📌':'📎')+' '+mpE(x.e.title)+'</div><div class="b">'+(x.c.sch?mpDateLabel(x.c.sch.date)+' '+mpTimeStr(x.c.sch)+(x.c.sch.studentStartMin!=null?' (학생 지정)':''):'일정 없음')+(x.c.score!=null?' · '+x.c.score+'점':'')+(x.c.status.key==='done'?(x.c.refl?' · ✍ 다음 걸음 작성':' · ✍ 미작성'):'')+'</div></div>'+mpChip(x.c.status)+'</div>';
+  }).join(''):'<div class="mp-sub">배정된 시험이 없어요</div>')+'<button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>';
+  mpSheet(h);
+};
+window.mpBoardExam=function(examId){
+  var D=_mpB.data, n=mpNow(), ex=D.exams.find(function(e){return e.id===examId;}); if(!ex) return;
+  var rows=D.students.map(function(st){ var c=mpCell(D,st,ex,n); return c?{st:st,c:c}:null; }).filter(Boolean);
+  var cnt={done:0,notdone:0,refl:0}; rows.forEach(function(x){ if(x.c.status.key==='done'){cnt.done++; if(x.c.refl)cnt.refl++;} else cnt.notdone++; });
+  var h='<h3>'+mpE(ex.title)+'</h3><div class="mp-sub" style="margin-bottom:8px">응시 완료 '+cnt.done+' / 미완료 '+cnt.notdone+' · 다음 걸음 작성 '+cnt.refl+'/'+cnt.done+'</div>'
+    +(cnt.notdone?'<button class="mp-btn gold" style="margin-bottom:8px" onclick="mpBoardRemind(\''+examId+'\')">🔔 미응시 학생에게 알림 보내기</button>':'')
+    +rows.map(function(x){
+      var live=x.c.se&&(x.c.se.status==='in_progress'||x.c.se.status==='waiting'||x.c.se.status==='break');
+      return '<div class="mp-row"><div class="m"><div class="a">'+mpE(x.st.name)+'</div><div class="b">'+(x.c.sch?mpDateLabel(x.c.sch.date)+' '+mpTimeStr(x.c.sch)+(x.c.sch.studentStartMin!=null?' (학생 지정)':''):'일정 없음')+(x.c.score!=null?' · '+x.c.score+'점':'')+(x.c.status.key==='done'?(x.c.refl?' · ✍ 작성':' · ✍ 미작성'):'')+'</div></div>'
+        +mpChip(x.c.status)+(live?'<button class="mp-btn sm" onclick="_runExamForceSubmitForStudent(\''+examId+'\',\''+x.st.uid+'\',\''+mpE(x.st.name)+'\')">강제제출</button>':'')+'</div>';
+    }).join('')+'<button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>';
+  mpSheet(h);
+};
+window.mpBoardRemind=function(examId){
+  var D=_mpB.data, n=mpNow(), ex=D.exams.find(function(e){return e.id===examId;});
+  var uids=D.students.filter(function(st){var c=mpCell(D,st,ex,n); return c&&c.status.key!=='done';}).map(function(s){return s.uid;});
+  if(!uids.length){ alert('알림 보낼 학생이 없어요.'); return; }
+  if(!confirm(uids.length+'명에게 "'+ex.title+'" 응시 알림을 보낼까요?')) return;
+  _sendPushNotification(uids,'📝 모의고사 응시 안내','"'+ex.title+'" 아직 응시 전이에요. 일정을 확인하고 응시해 주세요.',{type:'exam'});
+  alert('알림을 보냈어요.');
+};
+
+/* ───────────── 시험관리 카드: 한눈에 보는 요약 ───────────── */
+window.mpDecorateExamCards=async function(){
+  var cards=document.querySelectorAll('#exam-list-area .exam-card'); if(!cards.length) return;
+  try{
+    var r=await Promise.all([mpFetchSessions(null),mpFetchSchedules(null),getDocs(query(collection(db,'examReflections'),where('branch','==',getBranch()))).catch(function(){return {docs:[]};})]);
+    var by={}; r[0].forEach(function(s){ var o=by[s.examId]=by[s.examId]||{tot:0,done:0,live:0}; o.tot++; if(s.status==='graded'||s.status==='submitted')o.done++; else if(s.status==='in_progress'||s.status==='waiting'||s.status==='break')o.live++; });
+    var sc={}; r[1].forEach(function(s){ sc[s.examId]=(sc[s.examId]||0)+1; });
+    var rf={}; r[2].docs.forEach(function(d){ var x=d.data(); if(x.q1){ (rf[x.examId]=rf[x.examId]||{})[x.uid]=1; } });
+    cards.forEach(function(card){
+      var id=card.dataset.examId, o=by[id]||{tot:0,done:0,live:0}, rn=rf[id]?Object.keys(rf[id]).length:0;
+      var el=card.querySelector('.mp-card-stat'); if(!el) return;
+      el.innerHTML='<span class="mp-chip mp-c-'+(o.tot&&o.done===o.tot?'green':'grey')+'">응시 '+o.done+'/'+o.tot+'</span> '
+        +(o.live?'<span class="mp-chip mp-c-yellow">진행 '+o.live+'</span> ':'')
+        +'<span class="mp-chip mp-c-'+(o.done&&rn>=o.done?'green':(o.done?'orange':'grey'))+'">🌱 다음 걸음 '+rn+'/'+o.done+'</span> '
+        +(sc[id]?'<span class="mp-chip mp-c-blue">📌 일정 '+sc[id]+'</span>':'');
+    });
+  }catch(e){ console.warn('[시험 카드 요약 실패]',e); }
+};
+window.mpToggleExMore=function(btn){ var p=btn.closest('.exam-card-actions,.ex-hdr-actions'); if(p) p.classList.toggle('open'); btn.textContent=p&&p.classList.contains('open')?'접기 ▲':'⋯ 더보기'; };
+
+/* ───────────── 주의 학생 (시간 체크 관리) ───────────── */
+var _mpW={days:7,data:null};
+window.buildTWatch=function(){ return Promise.resolve('<div id="mp-watch"><div class="mp-card"><div class="mp-sub">불러오는 중...</div></div></div>'); };
+window.mpWatchInit=async function(){
+  var host=document.getElementById('mp-watch'); if(!host) return;
+  try{
+    var n=mpNow(), start=MPC.addDays(n.today,-(_mpW.days-1));
+    var r=await Promise.all([loadStudentList(),
+      getDocs(query(collection(db,'todos'),where('date','>=',start))),
+      getDocs(query(collection(db,'planners'),where('date','>=',start))),
+      getDocs(query(collection(db,'studentWatch'),where('branch','==',getBranch()))).catch(function(){return {docs:[]};})]);
+    var uids={}; r[0].forEach(function(s){uids[s.uid]=1;});
+    var todos={}, planners={}, watch={};
+    r[1].docs.forEach(function(d){ var t=d.data(); if(uids[t.uid]) (todos[t.uid]=todos[t.uid]||[]).push(t); });
+    r[2].docs.forEach(function(d){ var p=d.data(); if(uids[p.uid]) (planners[p.uid]=planners[p.uid]||[]).push({date:p.date,submitted:!!p.submittedAt}); });
+    r[3].docs.forEach(function(d){ watch[d.id]=d.data(); });
+    _mpW.data={students:r[0].map(function(s){ var res=MPC.checkStudentTimeUse(todos[s.uid]||[],planners[s.uid]||[],_mpW.days,n.today); return {s:s,res:res,w:watch[s.uid]||null}; }),start:start};
+    mpWatchDraw();
+  }catch(e){ host.innerHTML='<div class="mp-card"><div class="mp-sub" style="color:var(--red)">불러오기 실패: '+mpE(e.message)+'</div></div>'; }
+};
+window.mpWatchDays=function(d){ _mpW.days=+d; mpWatchInit(); };
+function mpWatchDraw(){
+  var host=document.getElementById('mp-watch'); if(!host||!_mpW.data) return;
+  var rank={red:0,yellow:1,ok:2};
+  var list=_mpW.data.students.slice().sort(function(a,b){ return (rank[a.res.level]-rank[b.res.level])||((a.res.compliance==null?101:a.res.compliance)-(b.res.compliance==null?101:b.res.compliance)); });
+  var red=list.filter(function(x){return x.res.level==='red';}).length, yel=list.filter(function(x){return x.res.level==='yellow';}).length;
+  var h='<div class="mp-card"><div class="mp-h"><div class="mp-title">⚠️ 시간 체크 주의 학생</div><div class="mp-seg">'+[7,14,30].map(function(d){return '<button class="'+(_mpW.days===d?'on':'')+'" onclick="mpWatchDays('+d+')">최근 '+d+'일</button>';}).join('')+'</div></div>'
+    +'<div class="mp-sub" style="margin-bottom:8px">공부를 마쳤다고 체크했는데 시간 기록이 없거나, 3분 미만의 짧은 체크만 반복하는 학생을 찾아줘요. 🔴 '+red+'명 · 🟡 '+yel+'명</div>';
+  h+=list.map(function(x){
+    var r=x.res, w=x.w;
+    return '<div class="mp-row" style="align-items:flex-start"><div style="padding-top:5px"><span class="mp-lv '+r.level+'"></span></div><div class="m"><div class="a" style="white-space:normal">'+mpE(x.s.name)
+      +(w&&w.status==='watching'?' <span class="mp-chip mp-c-orange">지도 중</span>':'')+(w&&w.status==='resolved'?' <span class="mp-chip mp-c-green">지도 완료</span>':'')+'</div>'
+      +'<div class="b">완료 '+r.doneCount+'개 · 시간 체크 '+(r.compliance==null?'-':r.compliance+'%')+' · 기록 '+MPC.fmtHM(r.totalSec)+' · 플래너 제출 '+r.submitDays+'일</div>'
+      +r.flags.map(function(f){return '<div class="mp-flag">• '+mpE(f.text)+'</div>';}).join('')
+      +(w&&w.note?'<div class="mp-flag" style="color:var(--burg)">📝 '+mpE(w.note)+'</div>':'')+'</div>'
+      +'<div style="display:flex;flex-direction:column;gap:4px"><button class="mp-btn sm" onclick="mpWatchNote(\''+x.s.uid+'\')">메모/상태</button>'
+      +(r.level!=='ok'?'<button class="mp-btn sm gold" onclick="mpWatchPush(\''+x.s.uid+'\')">🔔 알림</button>':'')+'</div></div>';
+  }).join('')||'<div class="mp-sub">학생이 없어요</div>';
+  host.innerHTML=h+'</div>';
+}
+window.mpWatchNote=function(uid){
+  var x=_mpW.data.students.find(function(y){return y.s.uid===uid;}); if(!x) return; var w=x.w||{};
+  mpSheet('<h3>'+mpE(x.s.name)+' · 지도 기록</h3><div class="mp-lbl">상태</div><select id="mp-w-st" class="mp-in"><option value="">선택 안 함</option><option value="watching"'+(w.status==='watching'?' selected':'')+'>지도 중</option><option value="resolved"'+(w.status==='resolved'?' selected':'')+'>지도 완료</option></select>'
+    +'<div class="mp-lbl">메모</div><textarea id="mp-w-note" class="mp-in" rows="4" placeholder="예) 10/14 면담 — 타이머 사용법 안내함">'+mpE(w.note||'')+'</textarea>'
+    +'<button class="modal-btn primary" onclick="mpWatchSave(\''+uid+'\')">저장</button><button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>');
+};
+window.mpWatchSave=async function(uid){
+  var st=document.getElementById('mp-w-st').value, note=document.getElementById('mp-w-note').value.trim();
+  var x=_mpW.data.students.find(function(y){return y.s.uid===uid;});
+  try{
+    await setDoc(doc(db,'studentWatch',uid),{uid:uid,name:x.s.name,branch:getBranch(),status:st||null,note:note,updatedAt:serverTimestamp(),updatedBy:currentProfile.name},{merge:true});
+    x.w={status:st,note:note}; mpCloseSheets(); mpWatchDraw();
+  }catch(e){ alert('저장 실패: '+e.message); }
+};
+window.mpWatchPush=function(uid){
+  var x=_mpW.data.students.find(function(y){return y.s.uid===uid;});
+  if(!confirm(x.s.name+' 학생에게 시간 체크 알림을 보낼까요?')) return;
+  _sendPushNotification([uid],'⏱ 시간 체크 안내','공부를 시작할 때 타이머를 켜고, 끝나면 꼭 완료 처리해 주세요. 시간 기록이 학습 리포트에 반영돼요.',{type:'timecheck'});
+  alert('알림을 보냈어요.');
+};
+
+/* ───────────── 멘토 코멘트: 실시간 + 읽음 확인 + 푸시 ───────────── */
+var _mpCmtUnsub=null, _mpCmtSeen=null, _mpHistUnsub=null;
+/* 학생: 실시간 수신 (앱을 켜 둔 동안) */
+window.MP_listenComments=function(){
+  if(!currentUser||!currentProfile||currentProfile.role!=='student'||_mpCmtUnsub) return;
+  _mpCmtUnsub=onSnapshot(query(collection(db,'comments'),where('studentUid','==',currentUser.uid)),function(snap){
+    var first=_mpCmtSeen===null; if(first) _mpCmtSeen={};
+    var fresh=[];
+    snap.docs.forEach(function(d){ var c=d.data(); if(!_mpCmtSeen[d.id]){ _mpCmtSeen[d.id]=1; if(!c.read) fresh.push(c); } });
+    if(fresh.length){
+      var c=fresh[0];
+      mpToast('💬 '+(c.teacherName||'선생님')+' 코멘트가 도착했어요'+(fresh.length>1?' (외 '+(fresh.length-1)+'개)':'')+'\n'+MPC.clip(c.content,50),function(){ studentTab(0); });
+    }
+    if(document.getElementById('mentor-comment-area')) loadMentorComment();
+  },function(e){ console.warn('[코멘트 실시간 수신 실패]',e); });
+};
+window.MP_stopComments=function(){ if(_mpCmtUnsub){_mpCmtUnsub();_mpCmtUnsub=null;} _mpCmtSeen=null; };
+/* 학생 화면: 읽음 처리 + 최근 3개 */
+window.MP_renderMentorComments=function(area,docs){
+  var unread=docs.filter(function(x){return !x.read;});
+  function card(x){
+    var date=x.createdAt?x.createdAt.toDate().toLocaleDateString('ko-KR'):'';
+    return '<div class="mentor-card" style="'+(x.read?'':'border:1.5px solid var(--burg);')+'"><div class="mentor-av">'+escapeHtml((x.teacherName||'T').slice(0,2))+'</div><div class="mentor-body"><div class="mentor-meta">멘토 코멘트 '+(x.read?'':'<span class="mp-read n">NEW</span> ')+'<span class="mentor-meta-date">· '+escapeHtml(x.teacherName||'')+' · '+date+'</span></div><div class="mentor-text">'+escapeHtml(x.content)+'</div></div></div>';
+  }
+  area.innerHTML=docs.slice(0,3).map(card).join('')+(docs.length>3?'<div class="mp-sub" style="text-align:center;padding:4px">이전 코멘트 '+(docs.length-3)+'개</div>':'');
+  unread.slice(0,10).forEach(function(x){ updateDoc(doc(db,'comments',x.id),{read:true,readAt:serverTimestamp()}).catch(function(){}); x.read=true; });
+};
+/* 선생님: 학생별 코멘트 히스토리 실시간 + 읽음 표시 */
+window.MP_commentHistoryLive=function(val){
+  if(_mpHistUnsub){_mpHistUnsub();_mpHistUnsub=null;}
+  if(!val) return;
+  var parts=val.split('|'), uid=parts[0], sName=parts[1]||'학생', el=document.getElementById('comment-history'); if(!el) return;
+  el.innerHTML='<div style="color:var(--tx3);font-size:12px">불러오는 중...</div>';
+  _mpHistUnsub=onSnapshot(query(collection(db,'comments'),where('studentUid','==',uid)),function(snap){
+    var host=document.getElementById('comment-history'); if(!host) return;
+    if(snap.empty){ host.innerHTML='<div style="color:var(--tx3);font-size:12px;padding:8px 0">'+escapeHtml(sName)+'님의 코멘트가 없습니다</div>'; return; }
+    var items=snap.docs.map(function(d){return Object.assign({_id:d.id},d.data());}).sort(function(a,b){return (b.createdAt?b.createdAt.toMillis():0)-(a.createdAt?a.createdAt.toMillis():0);});
+    host.innerHTML='<div class="section-label" style="margin-bottom:8px">'+escapeHtml(sName)+' 코멘트 히스토리</div>'+items.map(function(c){
+      var date=c.createdAt?c.createdAt.toDate().toLocaleDateString('ko-KR'):'';
+      var rd=c.read?'<span class="mp-read y">읽음 ✓ '+(c.readAt?c.readAt.toDate().toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'')+'</span>':'<span class="mp-read n">아직 안 읽음</span>';
+      return '<div style="background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:12px;margin-bottom:8px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:6px;flex-wrap:wrap"><div style="display:flex;align-items:center;gap:7px"><div class="teacher-av" style="width:28px;height:28px;font-size:10px">'+escapeHtml((c.teacherName||'T').slice(0,2))+'</div><span style="font-size:12px;font-weight:600;color:var(--burg)">'+escapeHtml(c.teacherName||'')+'</span><span style="font-size:11px;color:var(--tx3)">'+date+'</span> '+rd+'</div><button onclick="deleteComment(\''+c._id+'\',\''+val+'\')" style="padding:3px 8px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:5px;color:var(--red);font-size:10px;cursor:pointer">삭제</button></div><div style="font-size:13px;color:var(--tx2);line-height:1.8;white-space:pre-wrap">'+escapeHtml(c.content)+'</div></div>';
+    }).join('');
+  },function(e){ var host=document.getElementById('comment-history'); if(host) host.innerHTML='<div style="color:var(--red);font-size:12px">불러오기 실패: '+escapeHtml(e.message)+'</div>'; });
+};
+window.MP_stopCommentHistory=function(){ if(_mpHistUnsub){_mpHistUnsub();_mpHistUnsub=null;} };
+window.MP_afterCommentSaved=function(uid,sName,content){
+  _sendPushNotification([uid],'💬 '+(currentProfile.name||'선생님')+' 코멘트',MPC.clip(content,60),{type:'comment'});
+};
+
+/* ======================================================================
+   MONO PLANNER 추가 기능 C — 별자리 리포트 / 성적표 만들기 / 학생용 열람
+   ====================================================================== */
+var MPR = window.MPRender;
+var MP_LIBS={h2c:'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',pdf:'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',zip:'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'};
+var _mpLibP={};
+function mpLoadLib(key,test){
+  if(test()) return Promise.resolve();
+  if(_mpLibP[key]) return _mpLibP[key];
+  _mpLibP[key]=new Promise(function(res,rej){ var s=document.createElement('script'); s.src=MP_LIBS[key]; s.onload=res; s.onerror=function(){ _mpLibP[key]=null; rej(new Error('라이브러리를 불러오지 못했어요 (인터넷 연결 확인)')); }; document.head.appendChild(s); });
+  return _mpLibP[key];
+}
+var _mpFontsOk=false;
+function mpEnsureFonts(){
+  if(!_mpFontsOk){ _mpFontsOk=true; var l=document.createElement('link'); l.rel='stylesheet'; l.href='https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&family=Noto+Serif+KR:wght@600;700&display=swap'; document.head.appendChild(l); }
+  return (document.fonts&&document.fonts.ready)?Promise.race([document.fonts.ready,new Promise(function(r){setTimeout(r,2500);})]):Promise.resolve();
+}
+function mpClean(o){ return JSON.parse(JSON.stringify(o)); }
+function mpDownload(blob,name){ var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },1500); }
+function mpWaitImages(root){
+  var imgs=[].slice.call(root.querySelectorAll('img'));
+  var bgs=[].slice.call(root.querySelectorAll('.mpr-bgi')).map(function(el){ var m=/url\(["']?([^"')]+)["']?\)/.exec(el.style.backgroundImage||''); return m?m[1]:null; }).filter(Boolean);
+  return Promise.all(imgs.map(function(i){return i.complete?1:new Promise(function(r){i.onload=i.onerror=r;});}).concat(bgs.map(function(u){return new Promise(function(r){ var im=new Image(); im.onload=im.onerror=r; im.src=u; });})));
+}
+/* 페이지 HTML → 캔버스 (A4, 2배 해상도) */
+async function mpPageCanvas(html){
+  var wrap=document.createElement('div'); wrap.style.cssText='position:fixed;left:-10000px;top:0;width:794px;height:1123px;background:#fff'; wrap.innerHTML=html; document.body.appendChild(wrap);
+  try{ await mpWaitImages(wrap); await mpEnsureFonts(); await mpLoadLib('h2c',function(){return window.html2canvas;});
+    return await window.html2canvas(wrap.firstElementChild,{scale:2,useCORS:true,backgroundColor:'#ffffff',width:794,height:1123,windowWidth:794,windowHeight:1123,logging:false});
+  } finally { wrap.remove(); }
+}
+function mpCanvasBlob(cv,type,q){ return new Promise(function(r){ cv.toBlob(r,type,q); }); }
+/* sets: [{name:'황시영', pages:[html...]}]. kind:'png'|'pdf' → 1명이면 바로 파일, 여러 명이면 ZIP */
+window.mpExportSets=async function(sets,kind,baseName,onProgress){
+  await Promise.all([mpEnsureFonts(),mpLoadLib('h2c',function(){return window.html2canvas;})]);
+  var needZip=sets.length>1||(kind==='png'&&sets[0].pages.length>1);
+  if(needZip) await mpLoadLib('zip',function(){return window.JSZip;});
+  if(kind==='pdf') await mpLoadLib('pdf',function(){return window.jspdf;});
+  var zip=needZip?new window.JSZip():null, total=sets.reduce(function(s,x){return s+x.pages.length;},0), done=0, single=null;
+  for(var si=0;si<sets.length;si++){
+    var set=sets[si], pdf=null;
+    if(kind==='pdf') pdf=new window.jspdf.jsPDF({orientation:'p',unit:'mm',format:'a4',compress:true});
+    for(var pi=0;pi<set.pages.length;pi++){
+      var cv=await mpPageCanvas(set.pages[pi]);
+      if(kind==='png'){
+        var blob=await mpCanvasBlob(cv,'image/png');
+        var fname=(sets.length>1?set.name+'/':'')+set.name+'_'+baseName+'_'+(pi+1)+'.png';
+        if(zip) zip.file(fname,blob); else single={blob:blob,name:set.name+'_'+baseName+'.png'};
+      } else {
+        if(pi>0) pdf.addPage();
+        pdf.addImage(cv.toDataURL('image/jpeg',0.93),'JPEG',0,0,210,297,undefined,'FAST');
+      }
+      done++; if(onProgress) onProgress(done,total);
+    }
+    if(kind==='pdf'){
+      var pb=pdf.output('blob'), pn=set.name+'_'+baseName+'.pdf';
+      if(zip) zip.file(pn,pb); else single={blob:pb,name:pn};
+    }
+  }
+  if(zip){ var zb=await zip.generateAsync({type:'blob'}); mpDownload(zb,(sets.length>1?baseName:sets[0].name+'_'+baseName)+'.zip'); }
+  else mpDownload(single.blob,single.name);
+};
+/* 미리보기 마운트 */
+function mpMountPreview(host,pages,width){
+  var k=width/794;
+  host.innerHTML='<div class="mp-prev">'+pages.map(function(p,i){ return '<div class="pgw" style="width:'+width+'px;height:'+(1123*k)+'px;cursor:zoom-in" onclick="mpBigPreview('+i+')"><div class="pgx" style="width:794px;height:1123px;transform:scale('+k+')">'+p+'</div></div>'; }).join('')+'</div>';
+  host._pages=pages;
+}
+window.mpBigPreview=function(i){
+  var host=document.querySelector('#mp-r-prev, #mp-c-prev, #mp-sv-prev'); if(!host||!host._pages) return;
+  var k=Math.min(1,(window.innerWidth-40)/794);
+  var ov=mpSheet('<div style="overflow:auto"><div style="width:'+(794*k)+'px;height:'+(1123*k)+'px;margin:0 auto"><div style="width:794px;height:1123px;transform:scale('+k+');transform-origin:0 0">'+host._pages[i]+'</div></div></div><button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>');
+  ov.firstChild.style.maxWidth='860px';
+};
+function mpDateRangeBtns(){
+  var T=getPlannerDate();
+  return {week:[MPC.weekStart(T),T], month:[MPC.monthStart(T),T], d30:[MPC.addDays(T,-29),T]};
+}
+
+/* ───────────── 선생님: 리포트 탭 ───────────── */
+var _mpR={tab:'report',students:[],loaded:false,payload:null,cardCtx:null};
+window.buildTReport=function(){ return Promise.resolve('<div id="mp-rep"><div class="mp-card"><div class="mp-sub">불러오는 중...</div></div></div>'); };
+window.mpReportInit=async function(){
+  var host=document.getElementById('mp-rep'); if(!host) return;
+  try{ _mpR.students=await loadStudentList(); mpEnsureFonts(); mpRepShell(); }catch(e){ host.innerHTML='<div class="mp-card"><div class="mp-sub" style="color:var(--red)">불러오기 실패: '+mpE(e.message)+'</div></div>'; }
+};
+window.mpRepTab=function(t){ _mpR.tab=t; mpRepShell(); };
+function mpRepShell(){
+  var host=document.getElementById('mp-rep'); if(!host) return;
+  var h='<div class="mp-card"><div class="mp-h"><div class="mp-title">📄 리포트 · 성적표</div><div class="mp-seg"><button class="'+(_mpR.tab==='report'?'on':'')+'" onclick="mpRepTab(\'report\')">✨ 별자리 리포트</button><button class="'+(_mpR.tab==='card'?'on':'')+'" onclick="mpRepTab(\'card\')">🎓 성적표 만들기</button></div></div><div id="mp-rep-body"></div></div>';
+  host.innerHTML=h;
+  if(_mpR.tab==='report') mpReportPanel(); else mpCardPanel();
+}
+/* ── 별자리 리포트 ── */
+function mpReportPanel(){
+  var b=document.getElementById('mp-rep-body'), T=getPlannerDate(), r=mpDateRangeBtns();
+  b.innerHTML='<div class="mp-sub" style="margin-bottom:8px">학습 시간·플래너·성적 기록을 합쳐서 학생 한 명의 학습 리포트를 만들어요. 기간은 직접 고를 수 있어요.</div>'
+   +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">'
+   +'<div><div class="mp-lbl">학생</div><select id="mp-r-stu" class="mp-in"><option value="">선택</option>'+_mpR.students.map(function(s){return '<option value="'+s.uid+'">'+mpE(s.name)+'</option>';}).join('')+'</select></div>'
+   +'<div><div class="mp-lbl">시작일</div><input id="mp-r-s" type="date" class="mp-in" value="'+r.d30[0]+'"></div><div><div class="mp-lbl">종료일</div><input id="mp-r-e" type="date" class="mp-in" value="'+r.d30[1]+'"></div></div>'
+   +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0"><button class="mp-btn sm" onclick="mpRQuick(\'week\')">이번 주</button><button class="mp-btn sm" onclick="mpRQuick(\'month\')">이번 달</button><button class="mp-btn sm" onclick="mpRQuick(\'d30\')">최근 30일</button></div>'
+   +'<button class="mp-btn pri" onclick="mpReportAnalyze()">리포트 만들기</button><div id="mp-r-out" style="margin-top:14px"></div>';
+}
+window.mpRQuick=function(k){ var r=mpDateRangeBtns()[k]; document.getElementById('mp-r-s').value=r[0]; document.getElementById('mp-r-e').value=r[1]; };
+window.mpReportAnalyze=async function(){
+  var uid=document.getElementById('mp-r-stu').value, s=document.getElementById('mp-r-s').value, e=document.getElementById('mp-r-e').value, out=document.getElementById('mp-r-out');
+  if(!uid){ alert('학생을 선택해 주세요.'); return; }
+  if(!s||!e||s>e){ alert('기간을 확인해 주세요.'); return; }
+  if(MPC.diffDays(s,e)>99){ alert('기간은 최대 100일까지 선택할 수 있어요.'); return; }
+  out.innerHTML='<div class="mp-sub">기록을 모아 분석하는 중...</div>';
+  try{
+    var r=await Promise.all([getDocs(query(collection(db,'todos'),where('uid','==',uid))),getDocs(query(collection(db,'planners'),where('uid','==',uid))),getDocs(query(collection(db,'grades'),where('uid','==',uid)))]);
+    var todos=r[0].docs.map(function(d){var t=d.data(); return {date:t.date,subject:t.subject,status:t.status,studyTime:t.studyTime};});
+    var planners=r[1].docs.map(function(d){var p=d.data(); return {date:p.date,submitted:!!p.submittedAt};});
+    var grades=r[2].docs.map(function(d){return d.data();});
+    var st=_mpR.students.find(function(x){return x.uid===uid;});
+    var A=MPC.analyzeReport({startDate:s,endDate:e,today:getPlannerDate(),todos:todos,prevTodos:todos,planners:planners,grades:grades,subjectNames:subjectNames});
+    _mpR.payload={uid:uid,name:st?st.name:'',analysis:A,comment:A.autoComment,goals:A.goals.slice()};
+    mpReportEditor(out);
+  }catch(err){ out.innerHTML='<div class="mp-warn">분석 실패: '+mpE(err.message)+'</div>'; }
+};
+function mpReportEditor(out){
+  var P=_mpR.payload, A=P.analysis, g=P.goals.concat(['','','']).slice(0,3);
+  var info=[];
+  if(!A.hasStudy) info.push('이 기간에는 학습 시간 기록이 없어요 — 학습 영역은 빈 상태로 표시돼요.');
+  if(!A.hasGrades) info.push('이 기간에는 성적 기록이 없어요 — 성적 영역은 안내 문구로 표시돼요.');
+  out.innerHTML=(info.length?'<div class="mp-warn">'+info.map(mpE).join('<br>')+'</div>':'')
+   +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px"><div><div class="mp-lbl">선생님의 한마디 (자동 제안 · 직접 고칠 수 있어요)</div><textarea id="mp-r-cm" class="mp-in" rows="4" oninput="mpReportRefresh()">'+mpE(P.comment)+'</textarea></div>'
+   +'<div><div class="mp-lbl">다음 목표 (최대 3개)</div>'+g.map(function(x,i){return '<input class="mp-in" style="margin-bottom:5px" id="mp-r-g'+i+'" value="'+mpE(x)+'" oninput="mpReportRefresh()">';}).join('')+'</div></div>'
+   +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0"><button class="mp-btn pri" onclick="mpReportExport(\'png\')">🖼 PNG 저장</button><button class="mp-btn pri" onclick="mpReportExport(\'pdf\')">📄 PDF 저장</button><button class="mp-btn gold" onclick="mpReportPublish()">👀 학생에게 공개</button><span id="mp-r-stat" class="mp-sub" style="align-self:center"></span></div>'
+   +'<div id="mp-r-prev"></div>';
+  mpReportRefresh();
+}
+window.mpReportRefresh=function(){
+  var P=_mpR.payload; if(!P) return;
+  var cm=document.getElementById('mp-r-cm'); if(cm) P.comment=cm.value;
+  P.goals=[0,1,2].map(function(i){var el=document.getElementById('mp-r-g'+i); return el?el.value:'';}).filter(function(x){return x.trim();});
+  var host=document.getElementById('mp-r-prev'); if(!host) return;
+  mpEnsureFonts().then(function(){ mpMountPreview(host,MPR.reportPages(P),300); });
+};
+window.mpReportExport=async function(kind){
+  var P=_mpR.payload, st=document.getElementById('mp-r-stat'); if(!P) return;
+  try{ await mpExportSets([{name:P.name,pages:MPR.reportPages(P)}],kind,'별자리리포트_'+P.analysis.period.start+'_'+P.analysis.period.end,function(d,t){ if(st) st.textContent='만드는 중 '+d+'/'+t; }); if(st) st.textContent='✓ 저장했어요'; }
+  catch(e){ if(st) st.textContent=''; alert('저장 실패: '+e.message); }
+};
+window.mpReportPublish=async function(){
+  var P=_mpR.payload; if(!P) return;
+  if(!confirm(P.name+' 학생에게 이 리포트를 공개할까요?\n(학생의 "나의 시험" 화면에서 볼 수 있어요)')) return;
+  try{
+    await addDoc(collection(db,'studentReports'),{uid:P.uid,kind:'report',title:'별자리 리포트 '+P.analysis.period.start+' ~ '+P.analysis.period.end,branch:getBranch(),createdAt:serverTimestamp(),createdBy:currentProfile.name,payload:mpClean({name:P.name,analysis:P.analysis,comment:P.comment,goals:P.goals})});
+    alert('학생에게 공개했어요.');
+  }catch(e){ alert('저장 실패: '+e.message+'\n(Firestore 규칙에 studentReports 컬렉션 허용이 필요해요)'); }
+};
+
+/* ── 성적표 만들기 ── */
+function mpCardPanel(){
+  var b=document.getElementById('mp-rep-body');
+  b.innerHTML='<div class="mp-sub" style="margin-bottom:8px">시험을 여러 개 골라 학생별 성적표를 만들어요. 여러 학생을 한 번에 선택해 일괄 생성할 수 있어요.</div>'
+   +'<div class="mp-lbl">1. 학생 선택 <a href="javascript:void(0)" onclick="mpCardAllStu(true)">전체</a> · <a href="javascript:void(0)" onclick="mpCardAllStu(false)">해제</a></div>'
+   +'<div style="display:flex;flex-wrap:wrap;gap:6px">'+_mpR.students.map(function(s){return '<label class="mp-chk" style="border:1px solid var(--border);border-radius:99px;padding:4px 10px"><input type="checkbox" class="mp-cs" value="'+s.uid+'">'+mpE(s.name)+'</label>';}).join('')+'</div>'
+   +'<button class="mp-btn pri" style="margin-top:10px" onclick="mpCardLoadExams()">2. 성적 불러오기</button><div id="mp-c-body" style="margin-top:12px"></div>';
+}
+window.mpCardAllStu=function(on){ document.querySelectorAll('.mp-cs').forEach(function(c){c.checked=on;}); };
+window.mpCardLoadExams=async function(){
+  var uids=[].map.call(document.querySelectorAll('.mp-cs:checked'),function(c){return c.value;}), body=document.getElementById('mp-c-body');
+  if(!uids.length){ alert('학생을 1명 이상 선택해 주세요.'); return; }
+  body.innerHTML='<div class="mp-sub">성적을 불러오는 중...</div>';
+  try{
+    var gs=await Promise.all(uids.map(function(u){return getDocs(query(collection(db,'grades'),where('uid','==',u)));}));
+    var byUid={}, keys={};
+    uids.forEach(function(u,i){ byUid[u]=gs[i].docs.map(function(d){return Object.assign({_id:d.id},d.data());}).filter(function(g){return g.examName&&g.examDate&&g.scores;});
+      byUid[u].forEach(function(g){ var k=g.examName+'|'+g.examDate; (keys[k]=keys[k]||{name:g.examName,date:g.examDate,n:0}).n++; }); });
+    var list=Object.keys(keys).map(function(k){return Object.assign({key:k},keys[k]);}).sort(function(a,b){return a.date<b.date?1:-1;});
+    var pref=null; if(uids.length===1){ try{ var pd=await getDoc(doc(db,'studentCardPrefs',uids[0])); if(pd.exists()) pref=pd.data(); }catch(e){} }
+    _mpR.cardCtx={uids:uids,byUid:byUid,list:list,themeId:pref?pref.themeId:1,include:Object.assign({cover:true,inner:true,back:true,comment:true,chart:true,memo:true},pref?pref.include:{})};
+    mpCardStep2(body);
+  }catch(e){ body.innerHTML='<div class="mp-warn">불러오기 실패: '+mpE(e.message)+'</div>'; }
+};
+function mpCardStep2(body){
+  var X=_mpR.cardCtx, inc=X.include;
+  if(!X.list.length){ body.innerHTML='<div class="mp-warn">선택한 학생들에게 저장된 성적이 없어요.</div>'; return; }
+  body.innerHTML='<div class="mp-lbl">시험 선택 — 여러 개 선택 가능 (칸에 학생 수가 표시돼요)</div><div style="max-height:200px;overflow:auto;border:1px solid var(--border2);border-radius:8px;padding:6px">'
+   +X.list.map(function(e,i){return '<label class="mp-chk"><input type="checkbox" class="mp-cx" value="'+mpE(e.key)+'" onchange="mpCardRefresh()">'+mpE(e.name)+' <span class="mp-sub">'+e.date+' · '+e.n+'명</span></label>';}).join('')+'</div>'
+   +'<div class="mp-lbl">3. 디자인 선택</div><div class="mp-theme">'+MPR.THEMES.map(function(t){return '<div class="th'+(X.themeId===t.n?' on':'')+'" onclick="mpCardTheme('+t.n+')"><img loading="lazy" src="'+MPR.img(t.cov)+'" alt=""><b>'+t.n+'. '+mpE(t.nm)+'</b>'+(t.dark?'<small>인쇄 잉크 많이 듦</small>':'')+'</div>';}).join('')+'</div>'
+   +'<div class="mp-lbl">포함 항목</div><div style="display:flex;flex-wrap:wrap;gap:4px 14px">'+[['cover','표지'],['inner','내지(쪽수 자동)'],['back','뒷표지'],['comment','종합 의견'],['chart','성적 추이 그래프']].map(function(x){return '<label class="mp-chk"><input type="checkbox" class="mp-ci" data-k="'+x[0]+'" '+(inc[x[0]]!==false?'checked':'')+' onchange="mpCardRefresh()">'+x[1]+'</label>';}).join('')+'</div>'
+   +'<div class="mp-lbl">종합 의견 (선택 · 선택한 모든 학생에게 같이 들어가요)</div><textarea id="mp-c-cm" class="mp-in" rows="3" placeholder="비워 두면 종합 의견 칸은 만들어지지 않아요" oninput="mpCardRefresh()"></textarea>'
+   +'<label class="mp-chk" style="margin-top:8px"><input type="checkbox" id="mp-c-save" checked>이 디자인을 선택한 학생들의 기본 디자인으로 저장</label>'
+   +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0"><button class="mp-btn pri" onclick="mpCardExport(\'png\')">🖼 PNG 저장</button><button class="mp-btn pri" onclick="mpCardExport(\'pdf\')">📄 PDF 저장</button><button class="mp-btn gold" onclick="mpCardPublish()">👀 학생에게 공개</button><span id="mp-c-stat" class="mp-sub" style="align-self:center"></span></div><div id="mp-c-prevname" class="mp-sub"></div><div id="mp-c-prev"></div>';
+}
+window.mpCardTheme=function(n){ _mpR.cardCtx.themeId=n; document.querySelectorAll('.mp-theme .th').forEach(function(el,i){ el.classList.toggle('on',i+1===n); }); mpCardRefresh(); };
+function mpReadCardCfg(){
+  var X=_mpR.cardCtx; if(!X) return null;
+  var sel=[].map.call(document.querySelectorAll('.mp-cx:checked'),function(c){return c.value;});
+  document.querySelectorAll('.mp-ci').forEach(function(c){ X.include[c.dataset.k]=c.checked; });
+  X.include.memo=true; X.sel=sel; X.comment=(document.getElementById('mp-c-cm')||{value:''}).value.trim();
+  return X;
+}
+var _mpGradeOrder=['ko','ma','en','hi','sc','so'];
+function mpCardPayloadFor(uid,X){
+  var st=_mpR.students.find(function(s){return s.uid===uid;})||{name:'학생'}, docs=X.byUid[uid]||[];
+  var exams=docs.filter(function(g){return X.sel.indexOf(g.examName+'|'+g.examDate)>=0;}).sort(function(a,b){return a.examDate<b.examDate?-1:1;}).map(function(g){
+    var rows=Object.keys(g.scores).map(function(k){ var v=g.scores[k]||{}; var grp=v.group||k; var w=g.wrongBySubj&&g.wrongBySubj[k]; return {key:grp,label:v.label||subjectNames[grp]||k,score:(v.score==null?null:Number(v.score)),grade:(v.grade?parseInt(v.grade,10):null),wrong:w?String(w).split(',').filter(function(x){return x.trim();}).length:null}; });
+    rows.sort(function(a,b){var ia=_mpGradeOrder.indexOf(a.key),ib=_mpGradeOrder.indexOf(b.key); return (ia<0?99:ia)-(ib<0?99:ib);});
+    return {name:g.examName,date:g.examDate,rows:rows};
+  });
+  if(!exams.length) return null;
+  var T=getPlannerDate().replace(/-/g,'.');
+  return {uid:uid,themeId:X.themeId,include:mpClean(X.include),student:{name:st.name,grade:st.grade||''},teacher:currentProfile.name,school:'울산송정점',issueLabel:T+' 발급',periodLabel:exams[0].date.replace(/-/g,'.')+' ~ '+exams[exams.length-1].date.replace(/-/g,'.'),
+    exams:exams,showWrong:exams.every(function(e){return e.rows.every(function(r){return r.wrong!=null;});}),comment:X.comment};
+}
+window.mpCardRefresh=function(){
+  var X=mpReadCardCfg(); if(!X) return; var host=document.getElementById('mp-c-prev'); if(!host) return;
+  if(!X.sel.length){ host.innerHTML='<div class="mp-sub">시험을 선택하면 미리보기가 나타나요</div>'; return; }
+  var first=null, P=null; for(var i=0;i<X.uids.length&&!P;i++){ P=mpCardPayloadFor(X.uids[i],X); first=X.uids[i]; }
+  if(!P){ host.innerHTML='<div class="mp-warn">선택한 학생들에게 해당 시험 성적이 없어요.</div>'; return; }
+  document.getElementById('mp-c-prevname').textContent='미리보기: '+P.student.name+' 학생 ('+(X.uids.length>1?'일괄 생성 시 학생마다 각자의 성적으로 만들어져요':'')+')';
+  mpEnsureFonts().then(function(){ mpMountPreview(host,MPR.cardPages(P),240); });
+};
+function mpCardSets(){
+  var X=mpReadCardCfg(); if(!X||!X.sel.length){ alert('시험을 1개 이상 선택해 주세요.'); return null; }
+  var sets=[], skipped=[];
+  X.uids.forEach(function(u){ var P=mpCardPayloadFor(u,X); if(P) sets.push({name:P.student.name,pages:MPR.cardPages(P),payload:P,uid:u}); else skipped.push((_mpR.students.find(function(s){return s.uid===u;})||{}).name); });
+  if(!sets.length){ alert('선택한 학생들에게 해당 시험 성적이 없어요.'); return null; }
+  if(skipped.length) alert('성적이 없어 제외된 학생: '+skipped.join(', '));
+  return sets;
+}
+async function mpSaveCardPrefs(sets){
+  if(!document.getElementById('mp-c-save')||!document.getElementById('mp-c-save').checked) return;
+  var X=_mpR.cardCtx; for(var i=0;i<sets.length;i++){ try{ await setDoc(doc(db,'studentCardPrefs',sets[i].uid),{themeId:X.themeId,include:mpClean(X.include),updatedAt:serverTimestamp()},{merge:true}); }catch(e){} }
+}
+window.mpCardExport=async function(kind){
+  var sets=mpCardSets(); if(!sets) return; var st=document.getElementById('mp-c-stat');
+  try{ await mpExportSets(sets,kind,'성적표',function(d,t){ if(st) st.textContent='만드는 중 '+d+'/'+t; }); if(st) st.textContent='✓ '+sets.length+'명 저장했어요'; await mpSaveCardPrefs(sets); }
+  catch(e){ if(st) st.textContent=''; alert('저장 실패: '+e.message); }
+};
+window.mpCardPublish=async function(){
+  var sets=mpCardSets(); if(!sets) return;
+  if(!confirm(sets.length+'명의 학생에게 성적표를 공개할까요?\n(학생의 "나의 시험" 화면에서 볼 수 있어요)')) return;
+  try{
+    for(var i=0;i<sets.length;i++) await addDoc(collection(db,'studentReports'),{uid:sets[i].uid,kind:'card',title:'성적표 '+sets[i].payload.periodLabel,branch:getBranch(),createdAt:serverTimestamp(),createdBy:currentProfile.name,payload:mpClean(sets[i].payload)});
+    await mpSaveCardPrefs(sets); alert('공개했어요.');
+  }catch(e){ alert('저장 실패: '+e.message+'\n(Firestore 규칙에 studentReports 컬렉션 허용이 필요해요)'); }
+};
+
+/* ───────────── 학생: 내 리포트/성적표 열람 ───────────── */
+window.MP_renderStudentReports=async function(){
+  var host=document.getElementById('mp-rep-host'); if(!host||!currentUser) return;
+  try{
+    var snap=await getDocs(query(collection(db,'studentReports'),where('uid','==',currentUser.uid)));
+    var list=snap.docs.map(function(d){return Object.assign({id:d.id},d.data());}).sort(function(a,b){return (b.createdAt?b.createdAt.toMillis():0)-(a.createdAt?a.createdAt.toMillis():0);});
+    window._mpSv={}; list.forEach(function(x){window._mpSv[x.id]=x;});
+    if(!list.length){ host.innerHTML=''; return; }
+    host.innerHTML='<div class="mp-card"><div class="mp-title" style="margin-bottom:6px">📄 나의 리포트 · 성적표</div>'+list.map(function(x){
+      return '<div class="mp-row" style="cursor:pointer" onclick="mpOpenSaved(\''+x.id+'\')"><div style="font-size:22px">'+(x.kind==='card'?'🎓':'✨')+'</div><div class="m"><div class="a">'+mpE(x.title)+'</div><div class="b">'+(x.createdAt?x.createdAt.toDate().toLocaleDateString('ko-KR'):'')+' · '+mpE(x.createdBy||'')+'</div></div><span class="mp-chip mp-c-blue">보기</span></div>';
+    }).join('')+'</div>';
+  }catch(e){ host.innerHTML=''; }
+};
+window.mpOpenSaved=async function(id){
+  var x=window._mpSv&&window._mpSv[id]; if(!x) return;
+  await mpEnsureFonts();
+  var pages=x.kind==='card'?MPR.cardPages(x.payload):MPR.reportPages(x.payload);
+  var ov=mpSheet('<h3>'+mpE(x.title)+'</h3><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"><button class="mp-btn pri sm" id="mp-sv-png">🖼 PNG 저장</button><button class="mp-btn pri sm" id="mp-sv-pdf">📄 PDF 저장</button><span id="mp-sv-stat" class="mp-sub" style="align-self:center"></span></div><div id="mp-sv-prev"></div><button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>');
+  mpMountPreview(ov.querySelector('#mp-sv-prev'),pages,Math.min(330,window.innerWidth-60));
+  function run(kind){ var st=ov.querySelector('#mp-sv-stat'); mpExportSets([{name:x.payload.name||x.payload.student.name,pages:pages}],kind,x.kind==='card'?'성적표':'별자리리포트',function(d,t){st.textContent='만드는 중 '+d+'/'+t;}).then(function(){st.textContent='✓ 저장했어요';}).catch(function(e){st.textContent='';alert('저장 실패: '+e.message);}); }
+  ov.querySelector('#mp-sv-png').onclick=function(){run('png');}; ov.querySelector('#mp-sv-pdf').onclick=function(){run('pdf');};
+};
 
 </script>
 </body>
