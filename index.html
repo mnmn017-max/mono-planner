@@ -1982,6 +1982,31 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .mp-ar .dt{max-width:none;flex-wrap:nowrap}.mp-ar .dt input[type=date]{width:138px}.mp-ar .dt input[type=time]{width:98px}
 @media(max-width:560px){.mp-ar .dt{flex-wrap:wrap}}
 .mp-ar .why{display:block}.mp-ar .why .mpi{vertical-align:-2px;margin-right:4px}
+/* 배정 달력 */
+.mp-cal{margin-bottom:12px}.mp-cal-h{font-family:Georgia,'Nanum Myeongjo',serif;font-weight:700;color:var(--burg);font-size:15px;margin:4px 2px 6px}
+.mp-cal-g{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
+.mp-cal-g .w{text-align:center;font-size:10.5px;font-weight:800;color:var(--tx3);padding:2px 0}.mp-cal-g .w.we{color:var(--burg)}
+.mp-cal-g .c{min-height:84px;border:1px solid var(--border);border-radius:9px;background:#fff;padding:3px 3px 4px;display:flex;flex-direction:column;gap:2px;overflow:hidden}
+.mp-cal-g .c.o{border:0;background:none}
+.mp-cal-g .c.we{background:#fffaf0}
+.mp-cal-g .c.sch{background:#f6f1fa}
+.mp-cal-g .c.off{opacity:.45;background:var(--surface2)}
+.mp-cal-g .c.xx{background:repeating-linear-gradient(135deg,#f3eeea,#f3eeea 5px,#fff 5px,#fff 10px)}
+.mp-cal-g .c.td{box-shadow:inset 0 0 0 1.5px var(--gold2)}
+.mp-cal-g .c.ok{cursor:pointer}.mp-cal-g .c.ok:hover{border-color:var(--gold2)}
+.mp-cal-g .n{font-size:10.5px;font-weight:700;color:var(--tx2);display:flex;justify-content:space-between;align-items:center}
+.mp-cal-g .n em{font-style:normal;font-size:8.5px;font-weight:800;color:#7a5aa6}.mp-cal-g .c.xx .n em{color:var(--tx4)}
+.mp-cal-g .cc{border:1px solid;border-left-width:3px;border-radius:6px;padding:2px 4px;font-size:10px;line-height:1.25;cursor:grab;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mp-cal-g .cc b{font-variant-numeric:tabular-nums;font-weight:800}
+.mp-cal-g .cc.chg{box-shadow:0 0 0 1.5px var(--gold2)}
+.mp-cal-g .cc.pk{box-shadow:0 0 0 2px var(--burg);transform:scale(1.02)}
+.mp-cal-g .cc.ex{background:#eceae8;color:#6b6460;border-color:#b9b2ac;border-style:dashed;cursor:default}
+.mp-legend{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:11px;color:var(--tx3);margin:2px 0 8px}
+.mp-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+.mp-legend i.ex{background:#eceae8;border:1px dashed #b9b2ac}.mp-legend i.sc{background:#f6f1fa;border:1px solid #d6c7e6}.mp-legend i.xx{background:repeating-linear-gradient(135deg,#ddd,#ddd 2px,#fff 2px,#fff 4px);border:1px solid #ccc}
+.mp-pick{position:sticky;bottom:64px;margin-top:8px;background:#fff;border:1.5px solid var(--burg);border-radius:12px;padding:10px 12px;box-shadow:0 6px 22px rgba(60,20,20,.16);z-index:2}
+.mp-pick .t{margin-bottom:6px}.mp-pick .r{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:4px}.mp-pick .r .mp-in{width:auto}
+@media(max-width:560px){.mp-cal-g{gap:2px}.mp-cal-g .c{min-height:62px;padding:2px}.mp-cal-g .cc{font-size:8.5px;padding:1px 2px}.mp-cal-g .cc b{display:block}.mp-cal-g .n em{display:none}}
 
 .teacher-nav-scroll .teacher-nav-item{min-width:58px}
 </style>
@@ -18682,7 +18707,7 @@ function mpaStarted(uid,examId){ var se=_mpT.sess[mpSessKey(examId,uid)]; return
 window.mpOpenAuto=function(){
   if(!_mpT.exams||!_mpT.exams.length){ alert('먼저 시험을 만들어 주세요.'); return; }
   var n=mpNow();
-  _mpA={step:1,sel:{},q:'',start:n.today,end:MPC.addDays(n.today,28),excluded:[],schoolStart:'19:00',late:'22:30',maxPer:2,maxSchool:1,vacation:false,pace:'ramp',base:null,unplaced:[],ssel:{},sq:'',fsrc:'',fsub:'',fsch:'',fgr:'',fsc:'',plans:null,lock:false,ov:null};
+  _mpA={step:1,sel:{},q:'',start:n.today,end:MPC.addDays(n.today,28),excluded:[],schoolStart:'19:00',late:'22:30',maxPer:2,maxSchool:1,vacation:false,pace:'ramp',base:null,unplaced:[],ssel:{},sq:'',fsrc:'',fsub:'',fsch:'',fgr:'',fsc:'',view:'cal',pick:null,plans:null,lock:false,ov:null};
   var ov=mpSheet('<div id="mpa-root"></div>'); ov.firstChild.classList.add('mp-wide'); _mpA.ov=ov; mpaDraw();
 };
 var MPA_STEPS=['시험 선택','기간 설정','배정안 확인','학생 선택','조정·배정'];
@@ -18765,7 +18790,9 @@ function mpaS3(){
   var A=_mpA, byId={}; _mpT.exams.forEach(function(e){byId[e.id]=e;});
   var h='<div class="mp-sub" style="margin-bottom:8px">평일에도 자유롭게 올 수 있는 학생(N수) 기준 <b>기본 배정안</b>이에요. 날짜·시간은 직접 고칠 수 있고, 학교 가는 학생과 기존 일정은 다음 단계에서 학생별로 자동 반영돼요.</div>';
   if(A.unplaced.length) h+='<div class="mp-warn"><b>배정하지 못한 시험 '+A.unplaced.length+'개</b><br>'+A.unplaced.map(function(u){return mpE((byId[u.examId]||{}).title)+' — '+mpE(u.reason);}).join('<br>')+'</div>';
-  h+=mpaSummary(A.base)+'<div class="mp-aplist">'+A.base.map(function(it,i){ var e=byId[it.examId]||{}; var k=mpSubKey((e.subjects||[])[0]);
+  h+='<div id="mpa-sum">'+mpaSummary(A.base)+'</div>'+mpaViewToggle();
+  if(A.view==='cal') h+='<div class="mp-sub" style="margin:6px 0">시험을 누른 뒤 옮길 날짜를 누르거나, 끌어다 놓으면 날짜를 바꿀 수 있어요. 시간은 아래 칸에서 고쳐요.</div><div id="mpa-cal-base">'+mpaCalHtml('base')+'</div>'+mpaCalLegend(false);
+  else h+='<div class="mp-aplist">'+A.base.map(function(it,i){ var e=byId[it.examId]||{}; var k=mpSubKey((e.subjects||[])[0]);
     return '<div class="mp-ar"><div class="dt"><input type="date" class="mp-in sm" value="'+it.date+'" onchange="mpaBaseSet('+i+',\'date\',this.value)"><input type="time" step="600" class="mp-in sm" value="'+MPC.minToHHMM(it.startMin)+'" onchange="mpaBaseSet('+i+',\'startMin\',this.value)"><span class="dw">'+MPC.dowKo(it.date)+'</span></div>'
       +'<div class="nm"><b>'+mpE(e.title)+'</b> <span class="mp-sub">'+mpE(mpSubLabel(k||'ko'))+' · '+mpExamDuration(e)+'분</span><div class="mp-sub">'+mpE(it.notes.join(' · '))+'</div></div></div>'; }).join('')+'</div>';
   return mpaFrame(h,'<button class="mp-btn" onclick="mpaPrev()">이전</button><button type="button" class="mp-pill" onclick="mpaRegen()"><i class="mpi mpi-refresh"></i>다시 자동 배정</button><button class="mp-btn pri" onclick="mpaNext()">다음 · 학생 선택</button>');
@@ -18817,7 +18844,7 @@ function mpaPlanFor(uid){
   var A=_mpA, s=mpaStu(uid), selIds=A.base.map(function(b){return b.examId;});
   var skipped=[], examsAll=_mpT.exams.filter(function(e){return A.sel[e.id];});
   var exams=[]; examsAll.forEach(function(e){ if(mpaStarted(uid,e.id)) skipped.push({examId:e.id,title:e.title,reason:'이미 응시를 시작했거나 완료해서 제외'}); else exams.push(mpaInfo(e)); });
-  var existing=_mpT.sch.filter(function(x){ return x.studentUid===uid && !(A.sel[x.examId]&&!mpaStarted(uid,x.examId)); }).map(function(x){ return {date:x.date,startMin:MPC.effStart(x),durationMin:x.durationMin||60,subj:x.subjectKey}; });
+  var existing=_mpT.sch.filter(function(x){ return x.studentUid===uid && !(A.sel[x.examId]&&!mpaStarted(uid,x.examId)); }).map(function(x){ return {date:x.date,startMin:MPC.effStart(x),durationMin:x.durationMin||60,subj:x.subjectKey,title:x.examTitle||''}; });
   var overwrite={}; _mpT.sch.forEach(function(x){ if(x.studentUid===uid&&A.sel[x.examId]) overwrite[x.examId]=x; });
   var prefer={}; A.base.forEach(function(b){ prefer[b.examId]=b.date; });
   var r=MPC.autoPlan(mpaOpt({exams:exams,school:MPC.isSchoolGrade(s.grade),existing:existing,prefer:prefer}));
@@ -18842,7 +18869,7 @@ function mpaPlanFor(uid){
 function mpaS5(){
   var A=_mpA, byId={}; _mpT.exams.forEach(function(e){byId[e.id]=e;});
   var uids=Object.keys(A.ssel).filter(function(k){return A.ssel[k];}), tot=0, chg=0;
-  var h='<div class="mp-sub" style="margin-bottom:8px">학생마다 학교 일정과 기존 일정을 반영해 자동 조정한 결과예요. 바뀐 항목에는 이유가 표시되고, 날짜·시간은 직접 고칠 수 있어요.</div>';
+  var h='<div class="mp-sub" style="margin-bottom:8px">학생마다 학교 일정과 기존 일정을 반영해 자동 조정한 결과예요. 바뀐 항목에는 이유가 표시되고, 날짜·시간은 직접 고칠 수 있어요.</div>'+mpaViewToggle()+(A.view==='cal'?mpaCalLegend(true):'');
   h+=uids.map(function(uid,ui){
     var P=A.plans[uid], s=mpaStu(uid), c=P.items.filter(function(x){return x.changed;}).length; tot+=P.items.length; chg+=c;
     var rows=P.items.map(function(it,i){ var e=byId[it.examId]||{}, k=mpSubKey((e.subjects||[])[0]);
@@ -18852,12 +18879,78 @@ function mpaS5(){
         +(it.ow?'<div class="mp-sub">기존 일정('+mpDateLabel(it.ow.date)+')을 덮어써요</div>':'')+'<div class="mp-sub cf" id="mpa-cf-'+uid+'-'+i+'"></div></div></div>'; }).join('');
     var sk=P.skipped.map(function(x){return '<div class="mp-sub">· '+mpE(x.title)+' — '+mpE(x.reason)+'</div>';}).join('');
     var un=P.unplaced.map(function(u){return '<div class="mp-warn">'+mpE((byId[u.examId]||{}).title)+' — '+mpE(u.reason)+'</div>';}).join('');
-    return '<details class="mp-pcard" '+(ui<3||c?'open':'')+'><summary><span class="nmx">'+mpE(s.name)+'</span> '+mpaGradeTag(s)+'<span class="mp-sub">'+(c?c+'건 조정':'기본안 그대로')+' · 기존 일정 '+P.existing.length+'건 반영</span></summary><div class="mp-pbody">'+un+rows+sk+'</div></details>';
+    return '<details class="mp-pcard" '+(ui<3||c?'open':'')+'><summary><span class="nmx">'+mpE(s.name)+'</span> '+mpaGradeTag(s)+'<span class="mp-sub">'+(c?c+'건 조정':'기본안 그대로')+' · 기존 일정 '+P.existing.length+'건 반영</span></summary><div class="mp-pbody">'+un+(A.view==='cal'?'<div id="mpa-cal-'+uid+'">'+mpaCalHtml(uid)+'</div>':rows)+sk+'</div></details>';
   }).join('');
   h+='<label class="mp-chk" style="margin-top:10px"><input type="checkbox" id="mpa-lock" '+(A.lock?'checked':'')+' onchange="_mpA.lock=this.checked">학생이 시간을 바꾸지 못하게 고정</label>'
    +'<div class="mp-sub" style="margin-top:4px">배정하면 시험이 학생에게 자동으로 배정되고, 일정표에 등록돼요. (총 '+tot+'건 · 조정 '+chg+'건)</div>';
   return mpaFrame(h,'<button class="mp-btn" onclick="mpaPrev()">이전</button><button class="mp-btn pri" id="mpa-go" onclick="mpaSave()">'+tot+'건 배정하기</button>');
 }
+/* ── 달력 보기 ── */
+var MPA_COL={ko:['#7B1D1D','#f6e3e3'],ma:['#1d2a4a','#e4e8f3'],en:['#8a5f0d','#f8ecd0'],hi:['#5a4a3a','#ece6df'],sc:['#2f6b4f','#e2f0e8'],so:['#5b2a86','#efe6f5']};
+function mpaCol(s){ return MPA_COL[s]||['#555','#eee']; }
+function mpaViewToggle(){ var v=_mpA.view; return '<div class="mp-seg" style="margin:4px 0 8px"><button class="'+(v==='cal'?'on':'')+'" onclick="mpaView(\'cal\')"><i class="mpi mpi-calendar"></i>달력</button><button class="'+(v==='list'?'on':'')+'" onclick="mpaView(\'list\')"><i class="mpi mpi-doc"></i>목록</button></div>'; }
+window.mpaView=function(v){ _mpA.view=v; mpaDraw(); };
+function mpaCalLegend(school){ var seen={}; (_mpA.base||[]).forEach(function(i){seen[i._subj]=1;}); return '<div class="mp-legend">'+Object.keys(seen).map(function(k){ var c=mpaCol(k); return '<span><i style="background:'+c[0]+'"></i>'+mpE(mpSubLabel(k))+'</span>'; }).join('')+'<span><i class="ex"></i>기존 일정</span>'+(school?'<span><i class="sc"></i>학교(평일)</span>':'')+'<span><i class="xx"></i>제외 날짜</span></div>'; }
+function mpaItemsOf(scope){ return scope==='base'?_mpA.base:_mpA.plans[scope].items; }
+function mpaTitle(id){ return (_mpT.examsById[id]||{}).title||id; }
+function mpaCalHtml(scope){
+  var A=_mpA, items=mpaItemsOf(scope), P=scope==='base'?null:A.plans[scope], stu=P?mpaStu(scope):null;
+  var school=!!(stu&&MPC.isSchoolGrade(stu.grade)&&!A.vacation), ex={}; A.excluded.forEach(function(d){ex[d]=1;});
+  var by={}; items.forEach(function(it){ (by[it.date]=by[it.date]||[]).push({k:'p',it:it}); });
+  if(P) P.existing.forEach(function(x){ (by[x.date]=by[x.date]||[]).push({k:'e',x:x}); });
+  var all=items.map(function(i){return i.date;}).concat(P?P.existing.map(function(x){return x.date;}):[]).concat([A.start,A.end]).sort();
+  var first=all[0]<A.start?A.start:all[0], last=all[all.length-1]; first=A.start<first?A.start:first;
+  var today=mpNow().today, h='', m=first.slice(0,7);
+  var lastM=last.slice(0,7), guard=0;
+  while(m<=lastM&&guard++<8){
+    var ms=m+'-01', me=MPC.monthEnd(ms), gs=MPC.weekStart(ms<first?first:ms), ge=MPC.addDays(MPC.weekStart(me>last?last:me),6);
+    h+='<div class="mp-cal"><div class="mp-cal-h">'+m.slice(0,4)+'년 '+(+m.slice(5,7))+'월</div><div class="mp-cal-g"><div class="w">월</div><div class="w">화</div><div class="w">수</div><div class="w">목</div><div class="w">금</div><div class="w we">토</div><div class="w we">일</div>';
+    MPC.rangeDates(gs,ge).forEach(function(d){
+      var inM=d.slice(0,7)===m, inR=d>=A.start&&d<=A.end, w=MPC.dow(d), we=(w===0||w===6);
+      if(!inM){ h+='<div class="c o"></div>'; return; }
+      var cls='c'+(inR&&!ex[d]?' ok':' off')+(we?' we':'')+(ex[d]?' xx':'')+(d===today?' td':'')+((school&&!we&&inR&&!ex[d])?' sch':'');
+      var chips=(by[d]||[]).sort(function(a,b){ var sa=a.k==='p'?a.it.startMin:a.x.startMin, sb=b.k==='p'?b.it.startMin:b.x.startMin; return (sa||0)-(sb||0); }).map(function(o){
+        if(o.k==='e'){ return '<div class="cc ex" title="기존 일정"><b>'+(o.x.startMin!=null?MPC.minToHHMM(o.x.startMin):'')+'</b> '+mpE(o.x.title||'기존 일정')+'</div>'; }
+        var c=mpaCol(o.it._subj), pk=A.pick&&A.pick.scope===scope&&A.pick.examId===o.it.examId;
+        return '<div class="cc'+(o.it.changed&&P?' chg':'')+(pk?' pk':'')+'" draggable="true" style="background:'+c[1]+';color:'+c[0]+';border-color:'+c[0]+'" ondragstart="event.dataTransfer.setData(\'text/plain\',\''+o.it.examId+'\')" onclick="event.stopPropagation();mpaCalPick(\''+scope+'\',\''+o.it.examId+'\')"><b>'+MPC.minToHHMM(o.it.startMin)+'</b> '+mpE(mpaTitle(o.it.examId))+'</div>'; }).join('');
+      h+='<div class="'+cls+'" ondragover="event.preventDefault()" ondrop="event.preventDefault();mpaCalDrop(\''+scope+'\',event,\''+d+'\')" onclick="mpaCalDay(\''+scope+'\',\''+d+'\')"><div class="n">'+(+d.slice(8,10))+(ex[d]?'<em>제외</em>':(school&&!we&&inR?'<em>학교</em>':''))+'</div>'+chips+'</div>';
+    });
+    h+='</div></div>';
+    m=MPC.addDays(me,1).slice(0,7);
+  }
+  return h+mpaPickPanel(scope);
+}
+function mpaPickPanel(scope){
+  var A=_mpA, p=A.pick; if(!p||p.scope!==scope) return '';
+  var it=mpaItemsOf(scope).find(function(x){return x.examId===p.examId;}); if(!it) return '';
+  var e=_mpT.examsById[it.examId]||{}, k=mpSubKey((e.subjects||[])[0]);
+  var cf=scope==='base'?'':mpaConflictText(scope,it);
+  return '<div class="mp-pick"><div class="t"><b>'+mpE(e.title)+'</b> <span class="mp-sub">'+mpE(mpSubLabel(k||'ko'))+' · '+mpExamDuration(e)+'분</span></div>'
+   +'<div class="r"><input type="date" class="mp-in sm" value="'+it.date+'" onchange="mpaCalSet(\''+scope+'\',\''+it.examId+'\',\'date\',this.value)"><input type="time" step="600" class="mp-in sm" value="'+MPC.minToHHMM(it.startMin)+'" onchange="mpaCalSet(\''+scope+'\',\''+it.examId+'\',\'startMin\',this.value)"><button type="button" class="mp-pill" onclick="mpaCalPick(\''+scope+'\',null)">닫기</button></div>'
+   +'<div class="mp-sub">'+(it.why&&it.why.length&&scope!=='base'?'조정 이유: '+mpE(it.why.join(' · '))+' · ':'')+'옮길 날짜를 누르거나 끌어다 놓으세요.</div>'+(cf?'<div class="mp-sub" style="color:#9a3412">'+cf+'</div>':'')+'</div>';
+}
+function mpaConflictText(uid,it){
+  var P=_mpA.plans[uid], pool=P.existing.map(function(x){return {studentUid:uid,date:x.date,startMin:x.startMin,durationMin:x.durationMin};})
+    .concat(P.items.filter(function(o){return o!==it;}).map(function(o){return {studentUid:uid,date:o.date,startMin:o.startMin,durationMin:o._dur};}));
+  var cand={id:'c',studentUid:uid,date:it.date,startMin:it.startMin,durationMin:it._dur};
+  if(MPC.findCollisions(pool,cand).length) return '⚠ 같은 날 다른 시험과 시간이 겹쳐요';
+  return MPC.sameDayOthers(pool,cand).length?'같은 날 다른 시험이 있어요':'';
+}
+function mpaCalRefresh(scope){
+  var host=document.getElementById('mpa-cal-'+scope); if(host) host.innerHTML=mpaCalHtml(scope);
+  if(scope==='base'){ var s=document.getElementById('mpa-sum'); if(s) s.innerHTML=mpaSummary(_mpA.base); }
+}
+window.mpaCalPick=function(scope,id){ var A=_mpA, prev=A.pick; A.pick=id?{scope:scope,examId:id}:null; if(prev&&prev.scope!==scope) mpaCalRefresh(prev.scope); mpaCalRefresh(scope); };
+function mpaEdit(scope,id,date,startMin){
+  var it=mpaItemsOf(scope).find(function(x){return x.examId===id;}); if(!it) return;
+  if(date) it.date=date; if(startMin!=null) it.startMin=startMin;
+  if(scope==='base'){ it.notes=['직접 수정']; _mpA.base.sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:a.startMin-b.startMin; }); }
+  else { it.changed=true; it.why=['직접 수정']; }
+  mpaCalRefresh(scope);
+}
+window.mpaCalDay=function(scope,d){ var p=_mpA.pick; if(!p||p.scope!==scope) return; var A=_mpA; if(d<A.start||d>A.end||A.excluded.indexOf(d)>=0) return; mpaEdit(scope,p.examId,d,null); };
+window.mpaCalDrop=function(scope,ev,d){ var id=ev.dataTransfer.getData('text/plain'); var A=_mpA; if(!id||d<A.start||d>A.end||A.excluded.indexOf(d)>=0) return; A.pick={scope:scope,examId:id}; mpaEdit(scope,id,d,null); };
+window.mpaCalSet=function(scope,id,k,v){ if(!v) return; if(k==='date') mpaEdit(scope,id,v,null); else { var m=MPC.hhmmToMin(v); if(m!=null) mpaEdit(scope,id,null,m); } };
 window.mpaPlanSet=function(uid,i,k,v){
   var it=_mpA.plans[uid].items[i]; if(!it||!v) return;
   if(k==='date') it.date=v; else { var m=MPC.hhmmToMin(v); if(m!=null) it.startMin=m; }
