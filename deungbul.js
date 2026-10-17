@@ -25,7 +25,8 @@
   // 과목별 구조: 공통 문항 수, 전체 문항 수, 선택과목
   var SUBJ = {
     ko: { name: '국어', commonMax: 34, total: 45, electives: ['화법과 작문', '언어와 매체'] },
-    ma: { name: '수학', commonMax: 22, total: 30, electives: ['확률과 통계', '미적분', '기하'] }
+    ma: { name: '수학', commonMax: 22, total: 30, electives: ['확률과 통계', '미적분', '기하'] },
+    en: { name: '영어', commonMax: 45, total: 45, electives: [] }
   };
   var ABBR = { '화법과 작문': '화작', '언어와 매체': '언매', '확률과 통계': '확통', '미적분': '미적', '기하': '기하' };
   function subjOf(m) { return SUBJ[(m && m.subject) || 'ko'] || SUBJ.ko; }
@@ -59,9 +60,9 @@
   window.DB_icon = lhIcon;
   // 쌍둥이 문항 섞기 순서: 학생(세션)마다 다르고, 인쇄와 OMR에서 항상 같은 순서. 문항이 추가돼도 기존 문항끼리의 순서는 유지
   function hash32(str) { var h = 2166136261; for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
-  function twinOrder(sheet) {
+  function twinOrder(sheet, idx) {
     var sid = String(sheet.sessionId || '');
-    return (sheet.items || []).slice().sort(function (a, b) { return hash32(sid + '|' + a.k) - hash32(sid + '|' + b.k); })
+    return (sheet.items || []).filter(function (x) { return !idx || (idx[x.k] && idx[x.k].item.twin_a); }).sort(function (a, b) { return hash32(sid + '|' + a.k) - hash32(sid + '|' + b.k); })
       .map(function (x, i) { return { k: x.k, t: i + 1, it: x }; });
   }
   function secShort(sec) { return !sec || sec === '공통' ? '' : abbr(sec) + ' '; }
@@ -166,6 +167,7 @@
       }
       if (bad.length) { report.ok = false; report.errors.push(label + ' 정답 불일치: ' + bad.join(', ')); }
     }
+    if (!S.electives.length) { cmp(info.base, S.name, '공통', 1, TOT); report.electives = []; return report; }
     var hasEl = Object.keys(info.byElective).length > 0;
     if (hasEl) {
       if (!packEls.some(function (el) { return info.byElective[el]; })) {
@@ -224,8 +226,8 @@
     if (!info) return null;
     var r = (sess.subjectResults || [])[info.index];
     if (!r || !r.answers) return null;
-    var elective = normEl((sess.electiveChoices && sess.electiveChoices[info.index]) || packMeta.singleElective || null);
-    if (!elective || S.electives.indexOf(elective) < 0 || !packMeta.answerKey[elective]) return { skip: '선택과목 정보 없음(' + (elective || '-') + ')' };
+    var elective = S.electives.length ? normEl((sess.electiveChoices && sess.electiveChoices[info.index]) || packMeta.singleElective || null) : '';
+    if (S.electives.length && (!elective || S.electives.indexOf(elective) < 0 || !packMeta.answerKey[elective])) return { skip: '선택과목 정보 없음(' + (elective || '-') + ')' };
     var unk = (sess.unknownBySubj && (sess.unknownBySubj[info.index] || sess.unknownBySubj[String(info.index)])) || [];
     var unkSet = {}; unk.forEach(function (n) { unkSet[parseInt(n, 10)] = true; });
     var all = [];
@@ -406,6 +408,7 @@
         h += '<div class="db-note">아직 연결된 등불 데이터가 없습니다. 「앱 업로드용 문항데이터.json」 파일을 올려 주세요. 올리는 즉시 시험 정답과 자동 대조합니다.</div>';
       }
       h += '<div style="margin-top:10px"><label class="db-btn p" style="display:inline-block">' + (p ? '데이터 다시 올리기' : '등불 데이터 올리기') + '<input type="file" accept=".json,application/json" id="db-pack-file" style="display:none"></label>';
+      if (p && !(p.meta.electives || []).length) h += '<button class="db-btn" data-tprint="">🖨 선생님용 전체본(보기·인쇄)</button>';
       if (p) (p.meta.electives || []).forEach(function (el) { h += '<button class="db-btn" data-tprint="' + esc(el) + '">🖨 선생님용 전체본(보기·인쇄) · ' + esc(abbr(el)) + '</button>'; });
       h += '</div><div id="db-val"></div></div>';
 
@@ -612,7 +615,7 @@
     function render() {
       var sh = st.sh, locked = sh.status === 'submitted' && !sh.needsResubmit;
       var left = sh.dueAtMs - now();
-      var order = twinOrder(sh);
+      var order = twinOrder(sh, st.idx);
       var h = '<div class="db-sec" style="background:linear-gradient(135deg,#1a2338,#0f1626);color:#F3E7CF;border:0">' +
         '<div style="font-size:13px;line-height:1.7"><b style="color:#D4A04A">① 해설 복습</b> — 원 문항마다 해설을 읽고 확인 질문 빈칸을 채웠으면 체크하고, 오답 원인을 고르세요.<br><b style="color:#D4A04A">② 섞어 푸는 쌍둥이</b> — 복습지 뒤의 쌍둥이 문항(T번호)을 풀고 답을 입력하세요. 해설 다음 날 푸는 것을 권합니다.</div>' +
         '<div style="margin-top:6px;font-size:12px;color:#D8C6A2">' + (locked ? (sh.late ? '지연 제출됨 · ' : '제출 완료 · ') + fmtDT(sh.submittedAtMs) : (left > 0 ? '⏳ ' + fmtLeft(left) + ' (마감 ' + fmtDT(sh.dueAtMs) + ')' : '⚠ 기한이 지났습니다. 지금 제출하면 「지연」으로 표시됩니다.')) + '</div></div>';
@@ -625,7 +628,7 @@
         h += '<div class="db-line"><span class="db-lab">복습</span><span class="db-chk' + (a.done ? ' on' : '') + '" data-act="done">' + (a.done ? '✔ 해설 복습 · 확인 질문 완료' : '☐ 해설 읽고 확인 질문 빈칸 채움') + '</span></div>';
         h += '<div class="db-line"><span class="db-lab">' + (it.status === 'unknown' ? '헷갈린 이유<br>(선택)' : '오답 원인') + '</span>' + CAUSES.map(function (c) { return '<span class="db-chip' + (a.cause === c ? ' on' : '') + '" data-act="cause" data-v="' + c + '">' + c + '</span>'; }).join('') + '</div></div>';
       });
-      h += '<h4 class="db-omr-h">② 섞어 푸는 쌍둥이 · T1~T' + order.length + '</h4>';
+      if (order.length) h += '<h4 class="db-omr-h">② 섞어 푸는 쌍둥이 · T1~T' + order.length + '</h4>';
       order.forEach(function (o) {
         var a = st.ans[o.k] || {}, ref = st.idx[o.k], u = ref && ref.unit, tw = ref && ref.item.twin_a;
         h += '<div class="db-omr-row tw" data-k="' + esc(o.k) + '"><div class="db-omr-top"><span class="db-no">T' + o.t + '</span><span class="db-mya">' + (u ? '원 시험지 ' + esc(u.section + ' ' + u.range) + '번 지문' : '') + '</span></div>';
@@ -677,18 +680,18 @@
         if (!a.cause && it.status !== 'unknown') need.push('오답 원인');
         if (need.length) miss.push('① ' + secShort(it.sec) + it.no + '번(' + need.join('·') + ')');
       });
-      twinOrder(sh).forEach(function (o) { if ((st.ans[o.k] || {}).twin == null) miss.push('② T' + o.t + ' 쌍둥이 답'); });
+      twinOrder(sh, st.idx).forEach(function (o) { if ((st.ans[o.k] || {}).twin == null) miss.push('② T' + o.t + ' 쌍둥이 답'); });
       if (miss.length) { alert('아직 입력하지 않은 항목이 있어요.\n\n' + miss.join('\n')); return; }
-      var t = now(), ok = 0;
+      var t = now(), ok = 0, nTw = 0;
       // 재채점으로 문항이 추가돼 다시 제출하는 경우, 처음 제출 시점의 지연 여부를 유지한다
       var resubmit = sh.status === 'submitted' && sh.submittedAtMs;
       var late = resubmit ? !!sh.late : t > sh.dueAtMs;
       (sh.items || []).forEach(function (it) {
         var ref = st.idx[it.k]; var tw = ref && ref.item.twin_a;
-        var a = st.ans[it.k]; a.twinOk = !!(tw && a.twin != null && Number(a.twin) === Number(tw.answer)); if (a.twinOk) ok++;
+        var a = st.ans[it.k] || (st.ans[it.k] = {}); if (!tw) { delete a.twinOk; return; } nTw++; a.twinOk = !!(a.twin != null && Number(a.twin) === Number(tw.answer)); if (a.twinOk) ok++;
       });
       if (late && !resubmit && !confirm('기한(' + fmtDT(sh.dueAtMs) + ')이 지났습니다. 「지연 제출」로 표시됩니다. 제출할까요?')) return;
-      var upd = { reviewAnswers: st.ans, status: 'submitted', late: late, twinCorrect: ok, twinTotal: (sh.items || []).length, needsResubmit: false };
+      var upd = { reviewAnswers: st.ans, status: 'submitted', late: late, twinCorrect: ok, twinTotal: nTw, needsResubmit: false };
       if (resubmit) upd.resubmittedAtMs = t; else upd.submittedAtMs = t;
       F.updateDoc(F.doc(F.db, 'reviewSheets', sheetId), upd).then(function () {
         Object.assign(st.sh, upd); render();
@@ -734,15 +737,17 @@
   function E(s) {
     s = String(s == null ? '' : s);
     if (s.indexOf('**') >= 0) return E(s.replace(/\*\*/g, '\u0001')).replace(/\u0001([^\u0001]*)\u0001/g, '<b>$1</b>').replace(/\u0001/g, '');
-    if (s.indexOf('$') < 0) return esc(nb(s));
+    if (s.indexOf('$') < 0 || !MM) return esc(nb(s));
     // 수식($...$)은 줄바꿈 처리(nb) 없이 그대로 두고 KaTeX가 그린다
     return s.split(/(\$\$[\s\S]+?\$\$|\$[^$]+?\$)/).map(function (p, i) { return i % 2 ? esc(p) : esc(nb(p)); }).join('');
   }
   function H(s) { return esc(s); } // 속성값용(줄바꿈 처리 없음)
+  var EM = false; // 영어
   var MM = false; // 지금 조판 중인 책이 수학인가 (personalParts/teacherParts가 설정)
   function areaGroup(u) {
     if (u.section !== '공통') return u.section;
     if (MM) return '공통';
+    if (EM) return String(u.area || '').indexOf('듣기') === 0 ? '듣기' : '독해';
     return ['시', '소설', '수필', '극', '고전'].some(function (k) { return (u.area || '').indexOf(k) >= 0; }) ? '문학' : '독서';
   }
   function runLabel(u) { return u.section + ' ' + u.range + '번 · ' + (u.area || ''); }
@@ -809,7 +814,8 @@
     });
     A.push('<template class="altset">' + alt.join('') + '</template>');
     items.forEach(function (it) { A = A.concat(itemAtoms(u, it, run, opts.personal)); });
-    return opts.noTwins ? A : A.concat(twinAtoms(u, items));
+    var tws = items.filter(function (it) { return it.twin_a; });
+    return opts.noTwins || !tws.length ? A : A.concat(twinAtoms(u, tws));
   }
   function itemAtoms(u, it, run, personal) {
     var ans = it.answer;
@@ -859,22 +865,24 @@
   }
   function twinAtoms(u, items) {
     var pm = (u.passage_map || []).map(function (p) { return '<em>' + E(p.part) + '</em>'; }).join('<i>→</i>');
-    var head = '<div class="tw-head">' + icon('mirror', 'ic big') + '<div><div class="kick">같은 바다, 다른 파도</div><h3>쌍둥이 문항 · ' + E(u.range) + '번</h3></div></div><div class="pointer"><b>' + (MM ? '원 시험지 없이 이 쪽만으로 풉니다' : '원 시험지를 펴고 푸세요') + '</b><span>' + E(u.orig_location) + '</span><span class="pm">' + pm + '</span></div>';
+    var head = '<div class="tw-head">' + icon('mirror', 'ic big') + '<div><div class="kick">같은 바다, 다른 파도</div><h3>쌍둥이 문항 · ' + E(u.range) + '번</h3></div></div><div class="pointer"><b>' + (MM || EM ? '원 시험지 없이 이 쪽만으로 풉니다' : '원 시험지를 펴고 푸세요') + '</b><span>' + E(u.orig_location) + '</span><span class="pm">' + pm + '</span></div>';
     return items.map(function (it, k) {
       var t = it.twin_a, bx = String(t.box || '').trim(), box = '';
       if (bx.indexOf('(원 시험지') === 0) box = '<div class="refbox"><b>원 시험지 자료를 보고 답하세요</b><span>' + E(bx.replace(/^\(|\)$/g, '')) + '</span></div>';
-      else if (bx) box = '<div class="tbox"><div class="tbl">&lt;보기&gt;</div>' + boxHtml(bx) + '</div>';
+      else if (bx) box = (EM ? '<div class="tbox psg">' : '<div class="tbox"><div class="tbl">&lt;보기&gt;</div>') + boxHtml(bx) + '</div>';
       var tw = '<div class="twin"><div class="twh"><span class="tno">' + it.no + '<small>-쌍둥이</small></span><span class="tfrom">원 ' + it.no + '번과 같은 출제 포인트</span></div><div class="stem">' + E(t.stem) + '</div>' + box + twinChoices(t) + (MM ? '' : '<div class="memo"><span>풀이 메모</span></div>') + '</div>';
       var ta = atom((k === 0 ? head : '') + tw, { run: '쌍둥이 문항 · ' + u.section + ' ' + u.range + '번', newpage: k === 0, cls: 'a-twin' });
       return MM ? ta + atom('<div class="memo big"><span>' + it.no + '-쌍둥이 풀이 메모</span></div>', { run: '쌍둥이 문항 · ' + u.section + ' ' + u.range + '번', cls: 'a-memo' }) : ta;
     });
   }
-  var KIND = { signal: '신호 → 도구', tool: '해법 도구', calc: '계산 요령', structure: '지문 구조', trap: '함정 유형', apply: '〈보기〉 적용', bg: '배경지식', concept: '개념', work: '작품 정리', genre: '갈래 독법', term: '표현·서술 용어', grammar: '문법 개념', checklist: '판단 체크리스트' };
+  var KIND = { procedure: '유형 절차', syntax: '구문', signal: '신호 → 도구', tool: '해법 도구', calc: '계산 요령', structure: '지문 구조', trap: '함정 유형', apply: '〈보기〉 적용', bg: '배경지식', concept: '개념', work: '작품 정리', genre: '갈래 독법', term: '표현·서술 용어', grammar: '문법 개념', checklist: '판단 체크리스트' };
   function cardBody(c) {
     function p(x) { return x ? '<p>' + E(x) + '</p>' : ''; }
     function row(k, x) { return x ? '<div class="cr"><span class="ck">' + k + '</span><span class="cv">' + E(x) + '</span></div>' : ''; }
     function list(k, arr, ord) { if (!arr || !arr.length) return ''; var t = ord ? 'ol' : 'ul'; return '<div class="cr"><span class="ck">' + k + '</span><' + t + ' class="cl">' + arr.map(function (x) { return '<li>' + E(x) + '</li>'; }).join('') + '</' + t + '></div>'; }
     switch (c.kind) {
+      case 'procedure': return p(c.desc) + list('푸는 순서', c.steps, true) + row('이번 시험', c.this_exam);
+      case 'syntax': return p(c.desc) + row('예문', c.example) + row('이번 지문', c.this_exam);
       case 'signal': return row('이런 문구가 보이면', c.signal) + row('꺼낼 도구', c.tool) + row('왜', c.why);
       case 'tool': return p(c.desc) + row('쓰는 조건', c.when) + row('주의', c.caution);
       case 'calc': return p(c.desc) + row('이번 시험', c.example);
@@ -895,7 +903,7 @@
     }
   }
   function conceptAtoms(units, filter) {
-    var A = [atom('<div class="kick">항해 일지</div><h2 class="pt">개념 총정리</h2><p class="lead">' + (filter ? '내가 틀리거나 모름으로 표시한 문항과 관련된 것만 모았습니다. ' : '') + '이 시험지에서만 통하는 내용은 해설에 두고, <b>다음 시험에서도 다시 쓰이는 것</b>만 정리했습니다 — ' + (MM ? '어떤 조건 문구를 보면 어떤 도구를 꺼내는지(신호 → 도구), 해법 도구, 함정 유형, 계산 요령.' : '독서는 지문 구조·함정 유형, 문학은 작품·갈래 독법·표현 용어, 문법은 판별 순서, 화작·매체는 판단 체크리스트.') + '</p>', { run: '부록 · 개념 총정리', mark: 'CONCEPTS', newpage: true })];
+    var A = [atom('<div class="kick">항해 일지</div><h2 class="pt">개념 총정리</h2><p class="lead">' + (filter ? '내가 틀리거나 모름으로 표시한 문항과 관련된 것만 모았습니다. ' : '') + '이 시험지에서만 통하는 내용은 해설에 두고, <b>다음 시험에서도 다시 쓰이는 것</b>만 정리했습니다 — ' + (EM ? '유형별 푸는 순서, 함정 유형, 어법 판별, 구문 끊어 읽기.' : MM ? '어떤 조건 문구를 보면 어떤 도구를 꺼내는지(신호 → 도구), 해법 도구, 함정 유형, 계산 요령.' : '독서는 지문 구조·함정 유형, 문학은 작품·갈래 독법·표현 용어, 문법은 판별 순서, 화작·매체는 판단 체크리스트.') + '</p>', { run: '부록 · 개념 총정리', mark: 'CONCEPTS', newpage: true })];
     units.forEach(function (u) {
       var cs = (u.concepts || []).filter(function (c) { return !filter || (c.items || []).some(function (n) { return filter[key(u.section, n)]; }); });
       cs.forEach(function (c, k) {
@@ -909,7 +917,7 @@
   function tansAtoms(units, pick) {
     var A = [atom('<div class="kick">거울 너머의 답</div><h2 class="pt">쌍둥이 문항 정답과 해설</h2>', { run: '부록 · 쌍둥이 문항 정답과 해설', mark: 'TANS', newpage: true })];
     units.forEach(function (u) {
-      var its = pick(u); if (!its.length) return;
+      var its = pick(u).filter(function (it) { return it.twin_a; }); if (!its.length) return;
       its.forEach(function (it, k) {
         var t = it.twin_a;
         var h = k === 0 ? '<div class="csh"><span class="crng">' + E(u.section) + ' ' + E(u.range) + '</span>' + E(u.title) + '</div>' : '';
@@ -921,19 +929,46 @@
     return A;
   }
   function mixedTwinAtoms(order, unitOf) {
+    if (!order.length) return [];
     var A = [atom('<div class="tw-head">' + icon('mirror', 'ic big') + '<div><div class="kick">같은 바다, 다른 파도</div><h3>섞어 푸는 쌍둥이 문항</h3></div></div>' +
-      '<p class="lead">해설을 다 읽은 <b>다음 날</b> 푸는 것을 권합니다. 문항은 섞여 있고 원래 몇 번의 쌍둥이인지 적혀 있지 않습니다. <b>어떤 개념을 묻는지부터 스스로 판단</b>하세요. ' + (MM ? '쌍둥이는 원 시험지 없이 이 쪽만으로 풀 수 있습니다. 풀이 메모 칸에 풀이 과정을 남기세요. ' : '원 시험지는 표시된 지문을 펴 두고 풉니다. ') + '답은 앱의 등불 복습 OMR에 T번호대로 입력합니다(단답형은 숫자 입력).</p>', { run: '섞어 푸는 쌍둥이 문항', mark: 'TWINS', newpage: true })];
+      '<p class="lead">해설을 다 읽은 <b>다음 날</b> 푸는 것을 권합니다. 문항은 섞여 있고 원래 몇 번의 쌍둥이인지 적혀 있지 않습니다. <b>어떤 개념을 묻는지부터 스스로 판단</b>하세요. ' + (EM ? '쌍둥이는 새로 쓴 지문이라 원 시험지 없이 풉니다. 듣기 문항은 쌍둥이가 없습니다. ' : MM ? '쌍둥이는 원 시험지 없이 이 쪽만으로 풀 수 있습니다. 풀이 메모 칸에 풀이 과정을 남기세요. ' : '원 시험지는 표시된 지문을 펴 두고 풉니다. ') + '답은 앱의 등불 복습 OMR에 T번호대로 입력합니다(단답형은 숫자 입력).</p>', { run: '섞어 푸는 쌍둥이 문항', mark: 'TWINS', newpage: true })];
     order.forEach(function (o) {
       var ref = unitOf(o.k); if (!ref) return;
       var u = ref.unit, t = ref.item.twin_a, bx = String(t.box || '').trim(), box = '';
       if (bx.indexOf('(원 시험지') === 0) box = '<div class="refbox"><b>원 시험지 자료를 보고 답하세요</b><span>' + E(bx.replace(/^\(|\)$/g, '')) + '</span></div>';
-      else if (bx) box = '<div class="tbox"><div class="tbl">&lt;보기&gt;</div>' + boxHtml(bx) + '</div>';
-      var tw = '<div class="twin"><div class="twh"><span class="tno">T' + o.t + '</span><span class="tfrom">' + (MM ? E(u.section === '공통' ? '공통과목' : u.section) : '원 시험지 · ' + E(u.section + ' ' + u.range) + '번 지문을 펴고 푸세요') + '</span></div><div class="stem">' + E(t.stem) + '</div>' + box + twinChoices(t) + (MM ? '' : '<div class="memo"><span>풀이 메모</span></div>') + '</div>';
+      else if (bx) box = (EM ? '<div class="tbox psg">' : '<div class="tbox"><div class="tbl">&lt;보기&gt;</div>') + boxHtml(bx) + '</div>';
+      var tw = '<div class="twin"><div class="twh"><span class="tno">T' + o.t + '</span><span class="tfrom">' + (EM ? E(areaGroup(u)) : MM ? E(u.section === '공통' ? '공통과목' : u.section) : '원 시험지 · ' + E(u.section + ' ' + u.range) + '번 지문을 펴고 푸세요') + '</span></div><div class="stem">' + E(t.stem) + '</div>' + box + twinChoices(t) + (MM ? '' : '<div class="memo"><span>풀이 메모</span></div>') + '</div>';
       A.push(atom(tw, { run: '섞어 푸는 쌍둥이 문항', cls: 'a-twin' }));
       if (MM) A.push(atom('<div class="memo big"><span>T' + o.t + ' 풀이 메모</span></div>', { run: '섞어 푸는 쌍둥이 문항', cls: 'a-memo' }));
     });
     return A;
   }
+  // 단어장(영어): list = [{w,pos,m,no}]
+  function vocabList(units, inc) {
+    var seen = {}, out = [];
+    units.forEach(function (u) { (u.items || []).forEach(function (it) {
+      if (inc && !inc[key(u.section, it.no)]) return;
+      (it.vocab || []).forEach(function (v) { var k = String(v.w || '').toLowerCase().trim(); if (!k) return; if (seen[k]) { if (seen[k].nos.indexOf(it.no) < 0) seen[k].nos.push(it.no); return; } seen[k] = { w: v.w, pos: v.pos || '', m: v.m || '', nos: [it.no] }; out.push(seen[k]); });
+    }); });
+    return out;
+  }
+  function vocabAtoms(list, test) {
+    if (!list.length) return [];
+    var run = test ? '단어 테스트' : '부록 · 나의 단어장';
+    var A = [atom(test
+      ? '<div class="kick">뜻 쓰기</div><h2 class="pt">단어 테스트</h2><p class="lead">이번 복습 문항에서 나온 단어입니다. 지문 속에서 쓰인 뜻을 적고, 부록 「나의 단어장」으로 채점하세요.</p>'
+      : '<div class="kick">단어</div><h2 class="pt">' + (inUnitsAll ? '단어장' : '나의 단어장') + '</h2><p class="lead">뜻은 그 지문에서 쓰인 뜻(문맥상 의미)입니다. 문항 번호를 보고 원 지문에서 다시 확인하세요.</p>',
+      { run: run, mark: test ? 'VTEST' : 'VOCAB', newpage: true })];
+    for (var i = 0; i < list.length; i += 2) {
+      var pair = list.slice(i, i + 2).map(function (v, j) {
+        var n = i + j + 1;
+        return '<div class="vcell"><span class="vno">' + n + '</span><span class="vw">' + E(v.w) + '</span><span class="vp">' + E(v.pos) + '</span>' + (test ? '<span class="vblank"></span>' : '<span class="vm">' + E(v.m) + '</span><span class="vn">' + v.nos.join('·') + '번</span>') + '</div>';
+      }).join('');
+      A.push(atom('<div class="vrow">' + pair + '</div>', { run: run }));
+    }
+    return A;
+  }
+  var inUnitsAll = false;
   function checkAnsAtoms(list) { // list: [{label, a}]
     if (!list.length) return [];
     var A = [atom('<div class="kick">빈칸 확인</div><h2 class="pt">확인 질문 정답</h2><p class="lead">해설 끝 「확인 질문」의 정답입니다. 틀렸다면 그 문항의 정답 해설을 다시 읽으세요.</p>', { run: '부록 · 확인 질문 정답', mark: 'CHECKANS' })];
@@ -953,6 +988,7 @@
     return A;
   }
   function mixedTansAtoms(order, unitOf) {
+    if (!order.length) return [];
     var A = [atom('<div class="kick">거울 너머의 답</div><h2 class="pt">쌍둥이 문항 정답과 해설</h2><p class="lead">여기서 처음으로 각 T번호가 원래 몇 번의 쌍둥이인지 밝힙니다. 틀린 문항은 「다시 내릴 닻」을 읽고 원 문항 해설로 돌아가세요.</p>', { run: '부록 · 쌍둥이 문항 정답과 해설', mark: 'TANS', newpage: true })];
     order.forEach(function (o) {
       var ref = unitOf(o.k); if (!ref) return;
@@ -976,22 +1012,23 @@
       '<div class="howto"><div class="kick">이렇게 쓰세요</div><ol>' +
       '<li><b>48시간 안에</b> — ' + (due ? '이 복습지의 제출 기한은 <b>' + esc(fmtDT(due)) + '</b>입니다. ' : '복습지를 받은 순간 모노플래너 시험탭에 OMR이 열리고, 그때부터 48시간 안에 제출해야 합니다. ') + '다음 시험과 겹치면 복습이 밀립니다.</li>' +
       '<li><b>첫날 · 해설</b> — 출제 포인트 → 풀이 전략 → 선지 근거 순으로 읽고, 문항 끝 <b>확인 질문</b>의 빈칸을 채웁니다. 내가 고른 답과 가장 매력적인 오답은 특히 꼼꼼히.</li>' +
-      '<li><b>다음 날 · 쌍둥이</b> — 책 뒤의 「섞어 푸는 쌍둥이 문항」을 ' + (MM ? '풀이 과정을 적으며' : '원 시험지를 펴 둔 채') + ' 풉니다. 몇 번의 쌍둥이인지 숨겨 두었으니 무엇을 묻는지부터 판단하세요.</li>' +
+      '<li><b>다음 날 · 쌍둥이</b> — 책 뒤의 「섞어 푸는 쌍둥이 문항」을 ' + (MM ? '풀이 과정을 적으며' : EM ? '단어 테스트와 함께' : '원 시험지를 펴 둔 채') + ' 풉니다. 몇 번의 쌍둥이인지 숨겨 두었으니 무엇을 묻는지부터 판단하세요.</li>' +
       '<li><b>제출</b> — 모노플래너 시험탭의 「등불 복습 OMR」에 복습 체크·오답 원인·쌍둥이 답(T번호)을 입력하고 제출합니다. 틀린 쌍둥이는 원 문항 해설로 돌아가 다시 읽습니다.</li></ol></div></div>', 'greet');
   }
   function divider(img, k, t, s) { return full('<img class="bgimg" src="' + ASSET + '/' + img + '"><div class="dtext"><div class="kick">' + E(k) + '</div><h2>' + E(t) + '</h2><p>' + E(s) + '</p></div>', 'divider'); }
 
   // 학생 개인 복습지
   function personalParts(sheet, pack, name) {
-    MM = (pack.meta && pack.meta.subject) === 'ma';
+    MM = (pack.meta && pack.meta.subject) === 'ma'; EM = (pack.meta && pack.meta.subject) === 'en';
+    var trackLabel = sheet.elective ? '공통 + ' + sheet.elective : subjOf(pack.meta).name;
     var units = pack.units, meta = pack.meta, disp = meta.display || {};
     var inc = {}; (sheet.items || []).forEach(function (x) { inc[x.k] = x; });
     var allMap = {}; (sheet.all || []).forEach(function (x) { allMap[x.k] = x; });
     var track = units.filter(function (u) { return u.section === '공통' || u.section === sheet.elective; });
     var pick = function (u) { return (u.items || []).filter(function (it) { return inc[key(u.section, it.no)]; }).map(function (it) { var x = inc[key(u.section, it.no)]; var c = Object.assign({}, it); c._mine = '내 답 ' + (x.my != null ? AT(x.my, it.type) : '미기입') + (x.status === 'unknown' ? ' · 모름' : ''); c._myNo = it.type === 'short' ? null : (x.my || null); return c; }); };
     var idx = itemIndex(track);
-    var order = twinOrder(sheet).filter(function (o) { return idx[o.k]; });
-    var P = [cover(disp, name + ' 학생의 등불', '공통 + ' + sheet.elective + ' · 복습 ' + (sheet.items || []).length + '문항'), greeting(sheet.dueAtMs)];
+    var order = twinOrder(sheet, idx);
+    var P = [cover(disp, name + ' 학생의 등불', trackLabel + ' · 복습 ' + (sheet.items || []).length + '문항'), greeting(sheet.dueAtMs)];
     // 문항 지도(자동 표기)
     var wrong = (sheet.items || []).filter(function (x) { return x.status !== 'unknown'; }).length, unk = (sheet.items || []).filter(function (x) { return x.status !== 'wrong'; }).length;
     P.push(atom('<div class="kick">한눈에 보는 바다</div><h2 class="pt">나의 문항 지도</h2><div class="sumbox"><div><b>' + num(sheet.score) + '</b><span>원점수' + (sheet.totalScore ? ' / ' + num(sheet.totalScore) : '') + '</span></div><div><b>' + wrong + '</b><span>오답 문항</span></div><div><b>' + unk + '</b><span>모름(?) 표시 문항</span></div><div><b>' + (sheet.items || []).length + '</b><span>이번 복습 문항</span></div></div><p class="lead">색이 칠해진 줄이 이번에 복습할 문항입니다. <b>해설 쪽</b>을 펴서 순서대로 복습하세요.</p>', { run: '나의 문항 지도', mark: 'MAPPAGE', newpage: true }));
@@ -1025,22 +1062,26 @@
     });
     var unitOf = function (k) { return idx[k]; };
     P = P.concat(mixedTwinAtoms(order, unitOf));
+    var vl = vocabList(track, inc); inUnitsAll = false;
+    if (vl.length) P = P.concat(vocabAtoms(vl, true));
     P.push(divider('div_common2.jpg', '부록', '항해 일지', '개념 총정리 · 확인 질문 정답 · 쌍둥이 해설'));
     var cqs = []; track.forEach(function (u) { pick(u).forEach(function (it) { if (it.check_a) cqs.push({ label: secShort(u.section) + it.no + '번', a: it.check_a }); }); });
-    P = P.concat(conceptAtoms(track, inc)).concat(checkAnsAtoms(cqs)).concat(mixedTansAtoms(order, unitOf));
+    P = P.concat(conceptAtoms(track, inc)).concat(checkAnsAtoms(cqs)).concat(mixedTansAtoms(order, unitOf)).concat(vocabAtoms(vl, false));
     P.push(backCover());
-    return { parts: P, short: disp.short || '', foot: name + ' · 공통 + ' + sheet.elective + ' · 개인 복습지' };
+    return { parts: P, short: disp.short || '', foot: name + ' · ' + trackLabel + ' · 개인 복습지', math: MM };
   }
   // 선생님용 전체본
   function groupsFor(elective) {
+    if (EM) return [['듣기', 'div_eng.jpg', '영어', '듣기', '한 번 흘려들은 말을 다시 놓치지 않도록'], ['독해', 'div_eng.jpg', '영어', '독해', '문장과 문장 사이의 논리를 따라']];
     if (MM) return [['공통', 'div_math.jpg', '공통과목', '수학Ⅰ · 수학Ⅱ', '조건 하나하나가 길을 가리킨다'], [elective, 'div_common1.jpg', '선택과목', elective, '마지막 여덟 문항까지, 같은 정확도로']];
     return [['독서', 'div_kor.jpg', '공통', '독서', '지문의 구조를 따라, 빛이 닿는 순서대로'], ['문학', 'div_kor.jpg', '공통', '문학', '작품이 건네는 말을 놓치지 않도록'], [elective, 'div_common1.jpg', '선택과목', elective, '마지막 열한 문항까지, 같은 정확도로']];
   }
   function teacherParts(pack, elective) {
-    MM = (pack.meta && pack.meta.subject) === 'ma';
+    MM = (pack.meta && pack.meta.subject) === 'ma'; EM = (pack.meta && pack.meta.subject) === 'en';
+    var trackLabel = elective ? '공통 + ' + elective : subjOf(pack.meta).name;
     var units = pack.units.filter(function (u) { return u.section === '공통' || u.section === elective; }), disp = pack.meta.display || {};
     var all = function (u) { return u.items || []; };
-    var P = [cover(disp, '', '공통 + ' + elective), greeting(null)];
+    var P = [cover(disp, '', trackLabel), greeting(null)];
     var rows = [['MAPPAGE', '문항 지도', '정답 · 난이도 · 해설 쪽 한눈에 보기'], ['QUICK', '빠른 정답', '원 문항 · 쌍둥이 문항 정답표']].concat(units.map(function (u) { return ['SET:' + u.set_id, u.section + ' ' + u.range + '번', (u.area || '') + ' · ' + (u.title || '')]; })).concat([['CONCEPTS', '부록 1', '개념 총정리'], ['CHECKANS', '부록 2', '확인 질문 정답'], ['TANS', '부록 3', '쌍둥이 문항 정답과 해설']]);
     P.push(atom('<div class="kick">CONTENTS</div><h2 class="pt">차례</h2><div class="toct">' + rows.map(function (r) { return '<div class="trow"><span class="tl">' + E(r[1]) + '</span><span class="ts">' + E(r[2]) + '</span><span class="tp" data-ref="' + H(r[0]) + '"></span></div>'; }).join('') + '</div>', { run: '차례', newpage: true }));
     P.push(atom('<div class="kick">한눈에 보는 바다</div><h2 class="pt">문항 지도</h2><p class="lead">학생이 <b>틀린 문항</b>과 <b>모름(?)으로 표시한 문항</b>에 체크하면, 그 줄의 쪽만 복습하면 됩니다. 앱에서는 학생별 개인 복습지에 자동으로 표기됩니다.</p>', { run: '문항 지도', mark: 'MAPPAGE', newpage: true }));
@@ -1050,9 +1091,9 @@
       P.push(atom('<div class="mrow' + (n % 5 === 0 ? ' z' : '') + '"><span class="mn">' + it.no + '</span><span class="ma">' + E(u.area) + '</span><span class="mt">' + E(it.q_type) + '<small>' + E((it.concept_tags || []).slice(0, 2).join(', ')) + '</small></span><span class="md lv-' + H(it.difficulty) + '">' + E(it.difficulty) + '</span><span class="mans">' + AT(it.answer, it.type) + '</span><span class="mp" data-ref="ITEM:' + H(u.section) + ':' + it.no + '"></span><span class="mx"><i></i></span><span class="mx"><i></i></span></div>', { run: '문항 지도', group: 'map' }));
     }); });
     var blocks = '';
-    ['공통', elective].forEach(function (sec) {
+    (elective ? ['공통', elective] : ['공통']).forEach(function (sec) {
       var cells = '';
-      units.filter(function (u) { return u.section === sec; }).forEach(function (u) { all(u).forEach(function (it) { cells += '<div class="qc"><div class="qcn">' + it.no + '</div><div class="qcr"><span class="ql">원</span><b>' + AT(it.answer, it.type) + '</b></div><div class="qcr tw"><span class="ql">쌍둥이</span><b>' + AT(it.twin_a.answer, it.twin_a.type) + '</b></div><div class="qcm"><span>내 답</span><i></i></div></div>'; }); });
+      units.filter(function (u) { return u.section === sec; }).forEach(function (u) { all(u).forEach(function (it) { cells += '<div class="qc"><div class="qcn">' + it.no + '</div><div class="qcr"><span class="ql">원</span><b>' + AT(it.answer, it.type) + '</b></div><div class="qcr tw"><span class="ql">쌍둥이</span><b>' + (it.twin_a ? AT(it.twin_a.answer, it.twin_a.type) : '-') + '</b></div><div class="qcm"><span>내 답</span><i></i></div></div>'; }); });
       blocks += '<div class="qblk"><div class="qh">' + E(sec) + '</div><div class="qgrid">' + cells + '</div></div>';
     });
     P.push(atom('<div class="kick">빠른 정답</div><h2 class="pt">원 문항 · 쌍둥이 문항 정답표</h2><p class="lead">원 문항 정답과, 각 세트 뒤에 실린 쌍둥이 문항의 정답입니다.</p>' + blocks, { run: '빠른 정답표', mark: 'QUICK', newpage: true }));
@@ -1064,9 +1105,11 @@
     });
     P.push(divider('div_common2.jpg', '부록', '항해 일지', '개념 총정리 · 확인 질문 정답 · 쌍둥이 해설'));
     var cqt = []; units.forEach(function (u) { all(u).forEach(function (it) { if (it.check_a) cqt.push({ label: secShort(u.section) + it.no + '번', a: it.check_a }); }); });
-    P = P.concat(conceptAtoms(units, null)).concat(checkAnsAtoms(cqt)).concat(tansAtoms(units, all));
+    inUnitsAll = true;
+    P = P.concat(conceptAtoms(units, null)).concat(checkAnsAtoms(cqt)).concat(tansAtoms(units, all)).concat(vocabAtoms(vocabList(units, null), false));
+    inUnitsAll = false;
     P.push(backCover());
-    return { parts: P, short: disp.short || '', foot: (MM ? '수학' : '국어') + ' · 공통 + ' + elective + ' · 선생님용' };
+    return { parts: P, short: disp.short || '', foot: trackLabel + ' · 선생님용', math: MM };
   }
 
   // 페이지 조판 스크립트(인쇄 창 안에서 실행) — Python 빌더와 동일한 규칙 + 여러 권 연속 처리
@@ -1147,11 +1190,11 @@
   }
   function buildPrintHtml(books, title, origin) {
     var src = books.map(function (b) { return '<div class="bookinfo" data-short="' + H(b.short) + '" data-foot="' + H(b.foot) + '"></div>' + b.parts.join(''); }).join('');
-    var hasMath = /\$[^$<>]+\$/.test(src);
+    var hasMath = books.some(function (b) { return b.math; });
     return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>' + esc(title) + '</title><base href="' + origin + '/">' +
       '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
       '<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@400;700&family=Cormorant+Garamond:ital,wght@0,600;1,600&family=Bebas+Neue&family=DM+Mono:wght@500&display=block" rel="stylesheet">' +
-      '<link rel="stylesheet" href="' + origin + '/deungbul-print.css?v=4">' +
+      '<link rel="stylesheet" href="' + origin + '/deungbul-print.css?v=5">' +
       (hasMath ? '<style>*{text-wrap-style:auto!important}</style><link rel="stylesheet" href="' + origin + '/assets/katex/katex.min.css"><script src="' + origin + '/assets/katex/katex.min.js"><\/script><script src="' + origin + '/assets/katex/contrib/auto-render.min.js"><\/script>' : '') +
       '</head><body><div id="db-printbar"><span id="db-pstat">페이지를 조판하는 중입니다… (글꼴·이미지 로딩)</span><button id="db-pbtn" disabled>🖨 인쇄 / PDF 저장</button></div><div id="book"></div><div id="src" style="display:none">' + src + '</div>' +
       '<script>window.DB_ASSET=' + JSON.stringify(ASSET) + ';var PAG=' + PAGINATE.toString() + ';' +
@@ -1221,7 +1264,7 @@
     var w = preparePrintWindow(); if (!w) return;
     loadPack(state.examId, true).then(function (pack) {
       if (!pack) { w.close(); alert('등불 데이터가 없습니다.'); return; }
-      if (!pack.units.some(function (u) { return u.section === elective; })) { w.close(); alert('이 데이터에는 「' + elective + '」가 없습니다.'); return; }
+      if (elective && !pack.units.some(function (u) { return u.section === elective; })) { w.close(); alert('이 데이터에는 「' + elective + '」가 없습니다.'); return; }
       fillPrintWindow(w, [teacherParts(pack, elective)], '등불 선생님용 전체본 · ' + elective);
     }).catch(function (e) { try { w.close(); } catch (x) {} alert('인쇄 준비 실패: ' + e.message); });
   }

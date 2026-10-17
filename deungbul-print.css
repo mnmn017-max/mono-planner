@@ -383,3 +383,14 @@ body{overflow-wrap:break-word}
 .solp.more{padding-top:1mm}
 .a-memo{margin-bottom:5mm}.memo.big{height:40mm}
 .katex span{text-wrap:inherit!important}.katex .base,.katex-display>.katex{text-wrap:nowrap!important}
+
+/* ---- 영어 단어장 ---- */
+.vrow{display:grid;grid-template-columns:1fr 1fr;gap:0 5mm;border-bottom:.5pt solid var(--line)}
+.vcell{display:grid;grid-template-columns:6mm 30mm 8mm 1fr auto;gap:1.2mm;align-items:baseline;padding:1.5mm .5mm;font-size:9.2pt;line-height:1.45}
+.vno{color:var(--tx4);font-size:7.6pt}
+.vw{font-weight:700;color:var(--ink)}
+.vp{color:var(--gold);font-size:7.8pt;font-style:italic}
+.vm{color:var(--tx2)}
+.vn{color:var(--tx4);font-size:7.2pt;white-space:nowrap}
+.vblank{border-bottom:.6pt solid var(--tx4);height:5mm;grid-column:4 / span 2}
+.tbox.psg{border:0;padding:0;margin:1.5mm 0 2.4mm;font-family:"Noto Serif KR",serif;font-size:10pt;line-height:1.75;text-align:justify}
