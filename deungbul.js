@@ -46,6 +46,9 @@
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
   function num(x) { var n = Number(x); return isFinite(n) ? String(n) : '-'; }
+  function elSquash(t) {
+    return String(t).replace(/[\s·ㆍ・.]/g, '').replace(/II$|2$/, 'Ⅱ').replace(/I$|1$/, 'Ⅰ');
+  }
   function normEl(e) {
     if (!e) return e;
     var t = String(e).replace(/\s+/g, '');
@@ -53,6 +56,12 @@
     if (t === '확통' || t === '확률과통계') return '확률과 통계';
     if (t === '미적') return '미적분';
     if (t === '언매' || t === '언어와매체') return '언어와 매체';
+    if (t === '생윤') return '생활과 윤리';
+    if (t === '윤사') return '윤리와 사상';
+    if (t === '사문') return '사회문화';
+    if (t === '정법') return '정치와 법';
+    var q = elSquash(t);
+    for (var k in SUBJ) { var els = SUBJ[k].electives; for (var i = 0; i < els.length; i++) if (elSquash(els[i]) === q) return els[i]; }
     return e;
   }
   // 등불 아이콘: 아이보리 배경 위 금색 등대
@@ -122,22 +131,38 @@
   }
 
   // 시험(exams 문서)에서 국어 과목과 선택과목별 정답표를 뽑는다
-  function examKoInfo(exam, code) {
+  // 시험 안에서 이 과목(code)에 해당하는 블록들. 탐구는 예전 구조(subject=so/sc)와
+  // 새 구조(subject=ex1/ex2 + exCategory=so/sc)를 모두 찾는다. 탐구1·2가 같은 계열이면 둘 다 후보.
+  function examSubjInfos(exam, code) {
     code = code || 'ko';
-    var subs = exam.subjects || [];
-    var idx = -1;
-    for (var i = 0; i < subs.length; i++) { if (subs[i].subject === code) { idx = i; break; } }
-    if (idx < 0) return null;
-    var subj = subs[idx];
-    var byEl = {};
-    var hasByEl = subj.questionsByElective && Object.keys(subj.questionsByElective).some(function (k) { return (subj.questionsByElective[k] || []).length; });
-    if (hasByEl) {
-      Object.keys(subj.questionsByElective).forEach(function (el) {
-        var qs = subj.questionsByElective[el];
-        if (qs && qs.length) byEl[normEl(el)] = qs;
-      });
+    var subs = exam.subjects || [], out = [];
+    for (var i = 0; i < subs.length; i++) {
+      var sb = subs[i];
+      var hit = sb.subject === code || ((sb.subject === 'ex1' || sb.subject === 'ex2') && sb.exCategory === code);
+      if (!hit) continue;
+      var byEl = {};
+      var hasByEl = sb.questionsByElective && Object.keys(sb.questionsByElective).some(function (k) { return (sb.questionsByElective[k] || []).length; });
+      if (hasByEl) {
+        Object.keys(sb.questionsByElective).forEach(function (el) {
+          var qs = sb.questionsByElective[el];
+          if (qs && qs.length) byEl[normEl(el)] = qs;
+        });
+      }
+      out.push({ index: i, subj: sb, byElective: byEl, base: sb.questions || [], options: (sb.electiveOptions || []).map(normEl) });
     }
-    return { index: idx, subj: subj, byElective: byEl, base: subj.questions || [] };
+    return out;
+  }
+  // els(등불 선택과목 목록)를 다루는 블록을 우선으로 하나 고른다
+  function examKoInfo(exam, code, els) {
+    var infos = examSubjInfos(exam, code);
+    if (!infos.length) return null;
+    if (els && els.length) {
+      for (var i = 0; i < infos.length; i++) {
+        var f = infos[i];
+        if (els.some(function (el) { return f.byElective[el] || f.options.indexOf(el) >= 0; })) return f;
+      }
+    }
+    return infos[0];
   }
   function answerMap(qs) {
     var m = {};
@@ -153,7 +178,8 @@
     var report = { ok: true, errors: [], warnings: [], electives: [] };
     if (!pack || !pack.answer_key || !pack.sets) { report.ok = false; report.errors.push('등불 데이터 형식이 아닙니다(answer_key/sets 없음).'); return report; }
     var S = subjOf(pack), code = pack.subject || 'ko';
-    var info = examKoInfo(exam, code);
+    var packEls0 = Object.keys(pack.answer_key).filter(function (k) { return k !== '공통'; });
+    var info = examKoInfo(exam, code, packEls0);
     if (!info) { report.ok = false; report.errors.push('이 시험에 ' + S.name + ' 과목이 없습니다. (등불 데이터는 ' + S.name + ')'); return report; }
     var CM = S.commonMax, TOT = S.total;
     var common = pack.answer_key['공통'] || {};
@@ -224,11 +250,19 @@
   // 세션(채점 완료) → 국어 결과 → 오답/모름 문항 → reviewSheets/{sessionId}
   function buildSheetData(sess, exam, packMeta) {
     var S = subjOf(packMeta);
-    var info = examKoInfo(exam, packMeta.subject || 'ko');
-    if (!info) return null;
+    var infos = examSubjInfos(exam, packMeta.subject || 'ko');
+    if (!infos.length) return null;
+    var ec = sess.electiveChoices || {};
+    var info = null;
+    if (S.electives.length) {
+      // 학생이 이 등불의 선택과목을 고른 블록(탐구1/탐구2 중)을 찾는다
+      for (var ii = 0; ii < infos.length; ii++) { var ch = normEl(ec[infos[ii].index] || ec[String(infos[ii].index)]); if (ch && packMeta.answerKey[ch]) { info = infos[ii]; break; } }
+      if (!info && infos.length === 1) info = infos[0];
+      if (!info) return { skip: '이 등불 선택과목을 응시하지 않음' };
+    } else info = infos[0];
     var r = (sess.subjectResults || [])[info.index];
     if (!r || !r.answers) return null;
-    var elective = S.electives.length ? normEl((sess.electiveChoices && sess.electiveChoices[info.index]) || packMeta.singleElective || null) : '';
+    var elective = S.electives.length ? normEl(ec[info.index] || ec[String(info.index)] || packMeta.singleElective || null) : '';
     if (S.electives.length && (!elective || S.electives.indexOf(elective) < 0 || !packMeta.answerKey[elective])) return { skip: '선택과목 정보 없음(' + (elective || '-') + ')' };
     var unk = (sess.unknownBySubj && (sess.unknownBySubj[info.index] || sess.unknownBySubj[String(info.index)])) || [];
     var unkSet = {}; unk.forEach(function (n) { unkSet[parseInt(n, 10)] = true; });
@@ -1282,5 +1316,5 @@
   }
 
   // 테스트·외부 사용을 위한 노출
-  window.DB_internal = { uploadPack: uploadPack, ensureSheet: ensureSheet, loadPack: loadPack, buildPrintHtml: buildPrintHtml, flattenUnits: flattenUnits, validatePack: validatePack, buildSheetData: buildSheetData, nb: nb, personalParts: personalParts, teacherParts: teacherParts, PAGINATE: PAGINATE, examKoInfo: examKoInfo, itemIndex: itemIndex, twinOrder: twinOrder, publishSheets: publishSheets };
+  window.DB_internal = { uploadPack: uploadPack, ensureSheet: ensureSheet, loadPack: loadPack, buildPrintHtml: buildPrintHtml, flattenUnits: flattenUnits, validatePack: validatePack, buildSheetData: buildSheetData, nb: nb, personalParts: personalParts, teacherParts: teacherParts, PAGINATE: PAGINATE, examKoInfo: examKoInfo, examSubjInfos: examSubjInfos, normEl: normEl, itemIndex: itemIndex, twinOrder: twinOrder, publishSheets: publishSheets };
 })();
