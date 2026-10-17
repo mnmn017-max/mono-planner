@@ -394,3 +394,5 @@ body{overflow-wrap:break-word}
 .vn{color:var(--tx4);font-size:7.2pt;white-space:nowrap}
 .vblank{border-bottom:.6pt solid var(--tx4);height:5mm;grid-column:4 / span 2}
 .tbox.psg{border:0;padding:0;margin:1.5mm 0 2.4mm;font-family:"Noto Serif KR",serif;font-size:10pt;line-height:1.75;text-align:justify}
+.ctab .btab{margin:1.2mm 0 .6mm;font-size:8.8pt}
+.a-opt .orow.mk .on{font-family:var(--serif);font-weight:700;color:var(--burg)}
