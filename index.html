@@ -8380,7 +8380,7 @@ window._reflGoBack = function(){
 window.openReflectionForPastExam = function(sessionId){
   Promise.all([
     getDoc(doc(db,'examSessions',sessionId)),
-    getDocs(query(collection(db,'examReflections'), where('sessionId','==',sessionId)))
+    getDocs(query(collection(db,'examReflections'), where('sessionId','==',sessionId), where('uid','==',currentUser.uid))) // [보안] 본인 회고만 조회
   ]).then(function(res){
     var sessDoc = res[0], reflSnap = res[1];
     if (!sessDoc.exists()) { alert('시험 세션을 찾을 수 없습니다'); return; }
@@ -10697,12 +10697,14 @@ window.doLogin = function() {
   var err = document.getElementById('login-err');
   err.textContent = '';
   if (!id || !pw) { err.textContent = '아이디와 비밀번호를 입력해주세요.'; return; }
-  getDocs(query(collection(db, 'users'), where('username', '==', id))).then(function(snap) {
-    if (snap.empty) { showScreen('screen-login'); document.getElementById('login-err').textContent = '아이디 또는 비밀번호가 올바르지 않습니다.'; return; }
-    var isTeacher = window._loginType === 'teacher';
-    var matched = snap.docs.filter(function(d) { var r = d.data().role; return isTeacher ? (r==='teacher'||r==='master') : r==='student'; });
+  // [보안] 로그인 전에는 users 컬렉션을 읽을 수 없으므로 서버(/api/login-lookup)에서 로그인 이메일만 조회
+  var isTeacher = window._loginType === 'teacher';
+  fetch('/api/login-lookup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: id, type: isTeacher ? 'teacher' : 'student' }) })
+  .then(function(r) { if (!r.ok) throw new Error('lookup ' + r.status); return r.json(); }).then(function(info) {
+    if (!info.found) { showScreen('screen-login'); document.getElementById('login-err').textContent = '아이디 또는 비밀번호가 올바르지 않습니다.'; return; }
+    var matched = info.accounts || [];
     if (!matched.length) { showScreen('screen-login'); document.getElementById('login-err').textContent = '해당 탭에 맞는 계정이 없습니다.'; return; }
-    signInWithEmailAndPassword(auth, matched[0].data().email, pw).then(function(cred) {
+    signInWithEmailAndPassword(auth, matched[0].email, pw).then(function(cred) {
       // 로그인 성공 - 스플래시 시간 무시하고 즉시 화면 전환
       _authResolved = true;
       _doGoToScreen(cred.user);
@@ -15572,7 +15574,7 @@ window.deletePoint=function(id){
 window.saveRules=function(){
   var content=document.getElementById('rules-input').value.trim();
   getDocs(query(collection(db,'rules'),where('branch','==',getBranch()),limit(1))).then(function(snap){
-    if(snap.empty) addDoc(collection(db,'rules'),{content:content,updatedAt:serverTimestamp()}).then(function(){alert('규정이 저장되었습니다!');});
+    if(snap.empty) addDoc(collection(db,'rules'),{branch:getBranch(),content:content,updatedAt:serverTimestamp()}).then(function(){alert('규정이 저장되었습니다!');});
     else updateDoc(doc(db,'rules',snap.docs[0].id),{content:content,updatedAt:serverTimestamp()}).then(function(){alert('규정이 저장되었습니다!');});
   });
 };

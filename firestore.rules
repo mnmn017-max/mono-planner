@@ -1,0 +1,219 @@
+rules_version = '2';
+
+// ============================================================
+// MONO PLANNER Firestore 보안 규칙 (날짜 조건 없음)
+//  - 로그인하지 않은 사람: 아무것도 읽고 쓸 수 없음
+//  - 마스터: 전부 가능
+//  - 선생님: 운영에 필요한 전부 가능 (단, 마스터 계정 생성·권한 변경 불가)
+//  - 학생: 본인 데이터만 쓰기, 공용 정보(시험·공지·랭킹용 데이터)는 읽기
+//  - 서버 API(api/*.js)는 관리자 키를 쓰므로 이 규칙과 무관
+// ============================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- 공통 함수 ----------
+    function signedIn() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+    function userPath() { return /databases/$(database)/documents/users/$(request.auth.uid); }
+    function isMember() { return signedIn() && exists(userPath()); }
+    function myRole() { return get(userPath()).data.role; }
+    function isMaster() { return isMember() && myRole() == 'master'; }
+    function isStaff() { return isMember() && myRole() in ['teacher', 'master']; }
+    function owns(field) { return signedIn() && resource.data[field] == uid(); }
+    function willOwn(field) { return signedIn() && request.resource.data[field] == uid(); }
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    function onlyChanges(keys) { return changed().hasOnly(keys); }
+    function keeps(keys) { return !changed().hasAny(keys); }
+    function idIsMine(docId) { return signedIn() && docId.matches('^' + uid() + '_.*'); }
+
+    // 마스터는 모든 문서 읽기·쓰기 가능 (지점 삭제·이전 등 관리 도구)
+    match /{document=**} {
+      allow read, write: if isMaster();
+    }
+
+    // ---------- 계정 ----------
+    match /users/{userId} {
+      // 랭킹·채팅 상대 목록 등에서 학생도 다른 사람 이름을 봄 → 로그인한 회원만 읽기
+      allow read: if isMember() || (signedIn() && userId == uid());
+      // 계정 생성은 선생님 이상. 선생님은 마스터 계정을 만들 수 없음
+      allow create: if isStaff() && request.resource.data.role in ['student', 'teacher'];
+      // 선생님: 다른 계정 정보 수정 가능하지만 role(권한)은 못 바꿈
+      allow update: if (isStaff() && keeps(['role']) && resource.data.role != 'master')
+        // 본인: 프로필·앱 설정 항목만 (권한·아이디·지점·정지 여부는 못 바꿈)
+        || (signedIn() && userId == uid() && onlyChanges([
+              'name', 'school', 'grade', 'univ', 'dept', 'goal', 'univLogo',
+              'fcmToken', 'fcmTokenUpdatedAt', 'subjects',
+              'plannerStreak', 'plannerStreakLastDate', 'avatar']));
+      allow delete: if false; // 마스터만 (위 공통 규칙)
+    }
+
+    // ---------- 플래너·할 일 ----------
+    match /todos/{id} {
+      allow read: if isMember(); // 월간 랭킹 계산에 전체 공부 기록 사용
+      allow create: if isStaff() || willOwn('uid');
+      allow update: if isStaff() || (owns('uid') && willOwn('uid'));
+      allow delete: if isStaff() || owns('uid');
+    }
+    match /planners/{id} {
+      allow read: if isStaff() || idIsMine(id) || owns('uid');
+      allow create, update: if isStaff() || (idIsMine(id) && willOwn('uid'));
+      allow delete: if isStaff();
+    }
+    match /dailyMemos/{id} {
+      allow read: if isStaff() || idIsMine(id) || owns('uid');
+      allow create, update: if isStaff() || (idIsMine(id) && willOwn('uid'));
+      allow delete: if isStaff();
+    }
+    match /admissionPlans/{studentId} {
+      allow read: if isStaff() || (signedIn() && studentId == uid());
+      allow create, update: if isStaff() || (signedIn() && studentId == uid());
+      allow delete: if isStaff();
+    }
+
+    // ---------- 포인트·성적 ----------
+    match /points/{id} {
+      allow read: if isStaff() || owns('studentUid');
+      // 학생 앱이 자동 지급(출석·플래너·시험 보상 등)을 직접 기록함 → 본인 것만, 상점은 1건 최대 20점
+      allow create: if isStaff() || (willOwn('studentUid')
+                       && request.resource.data.type in ['plus', 'minus', 'offset']
+                       && request.resource.data.points is number
+                       && request.resource.data.points > 0
+                       && (request.resource.data.type != 'plus' || request.resource.data.points <= 20));
+      allow update, delete: if isStaff();
+    }
+    match /grades/{id} {
+      allow read: if isMember(); // 시험별 통계(평균·분포)에 사용
+      allow create: if isStaff() || willOwn('uid');
+      allow update: if isStaff() || (owns('uid') && willOwn('uid'));
+      allow delete: if isStaff() || owns('uid');
+    }
+    match /scholars/{month} {
+      allow read: if isMember();
+      allow write: if isStaff();
+    }
+
+    // ---------- 선생님 → 학생 ----------
+    match /comments/{id} {
+      allow read: if isStaff() || owns('studentUid');
+      allow create, delete: if isStaff();
+      allow update: if isStaff() || (owns('studentUid') && onlyChanges(['read', 'readAt']));
+    }
+    match /studentReports/{id} {
+      allow read: if isStaff() || owns('uid');
+      allow write: if isStaff();
+    }
+    match /lectures/{id} {
+      allow read: if isStaff() || owns('studentUid');
+      allow write: if isStaff();
+    }
+    match /notices/{id} {
+      allow read: if isMember();
+      allow create, delete: if isStaff();
+      allow update: if isStaff() || (isMember() && onlyChanges(['readBy']));
+    }
+    match /rules/{id} {
+      allow read: if isMember();
+      allow write: if isStaff();
+    }
+    match /appeals/{id} {
+      allow create: if willOwn('studentUid');
+      allow read, update, delete: if isStaff();
+    }
+    match /timetables/{branch} {
+      allow read: if isMember();
+      allow write: if isStaff();
+    }
+
+    // ---------- 선생님 전용 ----------
+    match /studentWatch/{id}             { allow read, write: if isStaff(); }
+    match /studentCardPrefs/{id}         { allow read, write: if isStaff(); }
+    match /ttsCustomAudioLibrary/{id}    { allow read, write: if isStaff(); }
+    match /examSourceOptions/{id}        { allow read: if isMember(); allow write: if isStaff(); }
+    match /electiveSubjectOptions/{id}   { allow read: if isMember(); allow write: if isStaff(); }
+
+    // ---------- 시험 ----------
+    match /exams/{id} {
+      allow read: if isMember();
+      allow write: if isStaff();
+    }
+    match /examMergeGroups/{id} {
+      allow read: if isMember();
+      allow write: if isStaff();
+    }
+    match /examSessions/{id} {
+      allow read: if isStaff() || owns('studentUid');
+      allow create, delete: if isStaff();
+      // 학생은 본인 응시 기록만 진행(답안 저장·제출). 누구의 어떤 시험인지는 못 바꿈
+      allow update: if isStaff()
+        || (owns('studentUid') && keeps(['studentUid', 'examId', 'branch', 'forcedByServer']));
+    }
+    match /examSchedules/{id} {
+      allow read: if isStaff() || owns('studentUid');
+      allow create, delete: if isStaff();
+      allow update: if isStaff()
+        || (owns('studentUid') && onlyChanges(['studentStartMin', 'studentStartSetAt', 'status', 'doneAt']));
+    }
+    match /examReflections/{id} {
+      allow read: if isStaff() || idIsMine(id) || owns('uid');
+      allow create, update: if isStaff() || (idIsMine(id) && willOwn('uid'));
+      allow delete: if isStaff();
+    }
+    match /serverTimeSync/{userId} {
+      allow read, write: if signedIn() && userId == uid();
+    }
+
+    // ---------- 등불 ----------
+    match /deungbulPacks/{examId} {
+      allow read: if isMember();
+      allow write: if isStaff();
+      match /units/{unitId} {
+        allow read: if isMember();
+        allow write: if isStaff();
+      }
+    }
+    match /reviewSheets/{sid} {
+      allow read: if isStaff() || resource == null || owns('uid');
+      // 학생: 채점 직후 '발행 대기' 상태로만 만들 수 있음 (스스로 발행 불가)
+      allow create: if isStaff() || (willOwn('uid') && request.resource.data.status in ['pending', 'clear']);
+      allow update: if isStaff()
+        || (owns('uid') && willOwn('uid')
+            && keeps(['issuedAtMs', 'dueAtMs', 'issuedBy', 'printedAtMs', 'studentName', 'sessionId', 'examId'])
+            && (request.resource.data.status == resource.data.status
+                || (resource.data.status in ['pending', 'clear'] && request.resource.data.status in ['pending', 'clear'])
+                || (request.resource.data.status == 'submitted' && resource.data.status in ['assigned', 'submitted'])));
+      allow delete: if isStaff();
+    }
+
+    // ---------- 채팅 ----------
+    function roomPath(roomId) { return /databases/$(database)/documents/chatRooms/$(roomId); }
+    function inRoom(roomId) {
+      return isMember() && exists(roomPath(roomId)) && uid() in get(roomPath(roomId)).data.participants;
+    }
+    match /chatRooms/{roomId} {
+      allow read: if isMember() && (resource == null || uid() in resource.data.participants);
+      allow create: if isMember() && uid() in request.resource.data.participants;
+      // 참여자만 수정 (나가기는 수정 후 목록에서 빠지므로 수정 전 기준으로 판단)
+      allow update: if isMember() && uid() in resource.data.participants;
+      allow delete: if isMember() && uid() in resource.data.participants;
+      match /messages/{msgId} {
+        allow read, create, update, delete: if inRoom(roomId);
+      }
+    }
+    // 옛 채팅(읽기 전용, 자동 이전용)
+    match /chats/{roomId} {
+      allow read: if isMember();
+      match /messages/{msgId} {
+        allow read: if isMember();
+        allow create: if isMember() && willOwn('senderUid');
+      }
+    }
+    // 채팅 알림: 보내는 사람이 받는 사람 함에 넣고, 받는 사람만 읽음
+    match /chatNotifs/{ownerUid} {
+      allow read: if signedIn() && ownerUid == uid();
+      match /items/{itemId} {
+        allow read, update, delete: if signedIn() && ownerUid == uid();
+        allow create: if isMember() && willOwn('senderUid');
+      }
+    }
+  }
+}
