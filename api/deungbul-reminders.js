@@ -58,11 +58,11 @@ module.exports = async function handler(req, res) {
     const left = s.dueAtMs - now;
     if (left > 0 && left <= 24 * 3600 * 1000 && !s.remindSoonAt) {
       const hrs = Math.max(1, Math.round(left / 3600000));
-      const r = await sendPush(db, s.uid, '🏮 등불 복습 마감 임박', '「' + (s.examTitle || '') + '」 복습 OMR 마감까지 약 ' + hrs + '시간 남았어요.');
+      const r = await sendPush(db, s.uid, '[등불] 복습 마감 임박', '「' + (s.examTitle || '') + '」 복습 OMR 마감까지 약 ' + hrs + '시간 남았어요.');
       await d.ref.update({ remindSoonAt: now });
       out.soon++; out.results.push({ id: d.id, type: 'soon', r });
     } else if (left <= 0 && !s.remindOverdueAt) {
-      const r = await sendPush(db, s.uid, '🏮 등불 복습 기한이 지났어요', '「' + (s.examTitle || '') + '」 복습 OMR을 아직 제출하지 않았어요. 지금 제출하면 지연으로 표시됩니다.');
+      const r = await sendPush(db, s.uid, '[등불] 복습 기한이 지났어요', '「' + (s.examTitle || '') + '」 복습 OMR을 아직 제출하지 않았어요. 지금 제출하면 지연으로 표시됩니다.');
       await d.ref.update({ remindOverdueAt: now });
       out.overdue++; out.results.push({ id: d.id, type: 'overdue', r });
     }

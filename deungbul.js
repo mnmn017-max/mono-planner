@@ -40,6 +40,11 @@
     if (t === '언매' || t === '언어와매체') return '언어와 매체';
     return e;
   }
+  // 등불 아이콘: 아이보리 배경 위 금색 등대
+  function lhIcon(box, img, radius) {
+    return '<span style="display:inline-flex;align-items:center;justify-content:center;flex:none;vertical-align:middle;width:' + box + 'px;height:' + box + 'px;border-radius:' + radius + 'px;background:#FBF1DC"><img src="' + ASSET + '/ic_lighthouse.svg" alt="" style="width:' + img + 'px;height:' + img + 'px;display:block"></span>';
+  }
+  window.DB_icon = lhIcon;
   function now() { return window.MP_nowSynced ? window.MP_nowSynced() : Date.now(); }
   function key(sec, no) { return sec + ':' + no; }
   function sectionOf(no, elective) { return no <= 34 ? '공통' : elective; }
@@ -269,7 +274,7 @@
     })).then(function (done) {
       var uids = done.map(function (id) { return sheets[id].uid; }).filter(Boolean);
       if (uids.length && window.MP_push) {
-        try { window.MP_push(uids, '🏮 등불 복습지가 도착했어요', '「' + (examTitle || '') + '」 복습 OMR이 시험탭에 열렸어요. ' + fmtDT(t + DUE_MS) + '까지 제출해 주세요.', { type: 'deungbul' }); } catch (e) {}
+        try { window.MP_push(uids, '[등불] 복습지가 도착했어요', '「' + (examTitle || '') + '」 복습 OMR이 시험탭에 열렸어요. ' + fmtDT(t + DUE_MS) + '까지 제출해 주세요.', { type: 'deungbul' }); } catch (e) {}
       }
       return done.length;
     });
@@ -301,7 +306,7 @@
     '.db-scroll{overflow-x:auto}' +
     /* 학생 카드 */
     '.db-card{background:linear-gradient(135deg,#1a2338,#0f1626);color:#F3E7CF;border-radius:14px;padding:16px;margin-bottom:12px;display:flex;gap:14px;align-items:center;cursor:pointer;border:1px solid rgba(212,160,74,.35)}' +
-    '.db-card .lamp{width:44px;height:44px;flex:none;border-radius:50%;background:radial-gradient(circle,#D4A04A 0,#B8841A 45%,transparent 70%);display:flex;align-items:center;justify-content:center;font-size:22px}' +
+    '.db-card .lamp{width:44px;height:44px;flex:none;display:flex;align-items:center;justify-content:center}' +
     '.db-card .t{font-size:15px;font-weight:800;color:#F6E9CC}.db-card .s{font-size:12px;color:#D8C6A2;margin-top:3px}.db-card .r{margin-left:auto;text-align:right;font-size:12px;white-space:nowrap}' +
     '.db-card.done{background:var(--surface,#fff);color:var(--tx1);border-color:var(--border)}.db-card.done .t{color:var(--tx1)}.db-card.done .s{color:var(--tx3)}' +
     /* 복습 OMR */
@@ -330,7 +335,7 @@
   function overlay(id, title, sub) {
     var old = document.getElementById(id); if (old) old.remove();
     var ov = document.createElement('div'); ov.className = 'db-ov'; ov.id = id;
-    ov.innerHTML = '<div class="db-panel"><div class="db-ph"><div style="font-size:22px">🏮</div><h3>' + esc(title) + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</h3><button class="db-x" title="닫기">✕</button></div><div class="db-body">불러오는 중...</div></div>';
+    ov.innerHTML = '<div class="db-panel"><div class="db-ph">' + lhIcon(30, 23, 8) + '<h3>' + esc(title) + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</h3><button class="db-x" title="닫기">✕</button></div><div class="db-body">불러오는 중...</div></div>';
     ov.querySelector('.db-x').onclick = function () { ov.remove(); };
     ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
     document.body.appendChild(ov);
@@ -517,7 +522,7 @@
         var targets = Object.keys(state.sheets).map(function (k) { return state.sheets[k]; }).filter(function (sh) { return sh.status === 'assigned' || sh.needsResubmit; });
         if (!targets.length) { alert('미제출 학생이 없습니다.'); return; }
         if (!confirm('미제출 학생 ' + targets.length + '명에게 알림을 보낼까요?')) return;
-        if (window.MP_push) window.MP_push(targets.map(function (s) { return s.uid; }), '🏮 등불 복습 제출 안내', '「' + (state.exam.title || '') + '」 복습 OMR을 제출해 주세요. 기한이 지나면 지연으로 표시됩니다.', { type: 'deungbul' });
+        if (window.MP_push) window.MP_push(targets.map(function (s) { return s.uid; }), '[등불] 복습 제출 안내', '「' + (state.exam.title || '') + '」 복습 OMR을 제출해 주세요. 기한이 지나면 지연으로 표시됩니다.', { type: 'deungbul' });
         alert('알림을 보냈습니다.');
       };
     }
@@ -540,7 +545,7 @@
         if (done) right = '<span class="db-badge ' + (sh.late ? 'db-b-late' : 'db-b-ok') + '">' + (sh.late ? '지연 제출' : '제출 완료') + '</span><div style="margin-top:4px">쌍둥이 ' + num(sh.twinCorrect) + '/' + num(sh.twinTotal) + '</div>';
         else if (now() > sh.dueAtMs) right = '<span class="db-badge db-b-over">기한 지남</span><div style="margin-top:4px">지금 제출하면 지연으로 표시돼요</div>';
         else right = '<div style="color:#D4A04A;font-weight:800">' + fmtLeft(sh.dueAtMs - now()) + '</div><div style="margin-top:2px;opacity:.8">마감 ' + fmtDT(sh.dueAtMs) + '</div>';
-        return '<div class="db-card' + (done ? ' done' : '') + '" onclick="DB_openReviewOmr(\'' + esc(sh.id) + '\')"><div class="lamp">🏮</div><div><div class="t">등불 복습 · ' + esc(sh.examTitle) + '</div><div class="s">오답 ' + num(sh.wrongCount) + ' · 모름 ' + num(sh.unknownCount) + ' · 복습 문항 ' + (sh.items || []).length + '개' + (sh.needsResubmit ? ' · 문항이 추가되어 다시 제출이 필요해요' : '') + '</div></div><div class="r">' + right + '</div></div>';
+        return '<div class="db-card' + (done ? ' done' : '') + '" onclick="DB_openReviewOmr(\'' + esc(sh.id) + '\')"><div class="lamp">' + lhIcon(38, 30, 10) + '</div><div><div class="t">등불 복습 · ' + esc(sh.examTitle) + '</div><div class="s">오답 ' + num(sh.wrongCount) + ' · 모름 ' + num(sh.unknownCount) + ' · 복습 문항 ' + (sh.items || []).length + '개' + (sh.needsResubmit ? ' · 문항이 추가되어 다시 제출이 필요해요' : '') + '</div></div><div class="r">' + right + '</div></div>';
       }).join('');
     }).catch(function (e) { console.warn('[등불] 학생 복습 목록 실패', e); host.innerHTML = ''; });
   };
@@ -965,7 +970,7 @@
   function preparePrintWindow() {
     var w = window.open('', '_blank');
     if (!w) { alert('팝업이 차단되었습니다. 브라우저 주소창의 팝업 허용을 켠 뒤 다시 눌러 주세요.'); return null; }
-    w.document.write('<!doctype html><meta charset="utf-8"><title>등불 인쇄 준비</title><p style="font:15px sans-serif;padding:30px;color:#7B1D1D">🏮 등불 복습지를 준비하는 중입니다…</p>');
+    w.document.write('<!doctype html><meta charset="utf-8"><title>등불 인쇄 준비</title><p style="font:15px sans-serif;padding:30px;color:#7B1D1D">등불 복습지를 준비하는 중입니다…</p>');
     return w;
   }
   function fillPrintWindow(w, books, title) {

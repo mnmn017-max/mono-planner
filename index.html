@@ -4145,7 +4145,7 @@ if(typeof module!=='undefined'&&module.exports) module.exports=R;
 })(typeof window!=='undefined'?window:this);
 
 </script>
-<script src="/deungbul.js?v=2" defer></script>
+<script src="/deungbul.js?v=3" defer></script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
@@ -5120,7 +5120,7 @@ function examCardHtml(ex){
     +'<div class="exam-card-actions">'
     +'<button onclick="openAssignExamModal(\''+ex.id+'\')" class="btn-secondary" style="font-size:11px;padding:6px 10px;">배정</button>'
     +'<button onclick="openExamMonitor(\''+ex.id+'\')" class="btn-primary" style="font-size:11px;padding:6px 10px;">현황</button>'
-    +'<button onclick="DB_openTeacherPanel(\''+ex.id+'\')" style="font-size:11px;padding:6px 10px;background:#0f1626;border:1px solid rgba(212,160,74,0.6);border-radius:6px;color:#D4A04A;font-weight:700;cursor:pointer;">🏮 등불 복습</button>'
+    +'<button onclick="DB_openTeacherPanel(\''+ex.id+'\')" style="font-size:11px;padding:6px 10px;background:#0f1626;border:1px solid rgba(212,160,74,0.6);border-radius:6px;color:#D4A04A;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:5px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:5px;background:#FBF1DC"><img src="/assets/deungbul/ic_lighthouse.svg" alt="" style="width:14px;height:14px"></span>등불 복습</button>'
     +'<button class="ex-sec" onclick="openEditExamModal(\''+ex.id+'\')" style="font-size:11px;padding:6px 10px;background:#eef7ff;border:1px solid rgba(59,130,246,0.25);border-radius:6px;color:#2563eb;cursor:pointer;">✏️ 설정 수정</button>'
     +'<button class="ex-sec" onclick="openExamFullRanking(\''+ex.id+'\',\''+escapeHtml(ex.title).replace(/'/g,"\\'")+'\')" style="font-size:11px;padding:6px 10px;background:#fff7ed;border:1px solid rgba(234,88,12,0.25);border-radius:6px;color:#c2410c;cursor:pointer;">🏆 전체 순위</button>'
     +(ex.startAtMs ? '<button class="ex-sec" onclick="openExamDisplayScreen(\''+ex.id+'\')" style="font-size:11px;padding:6px 10px;background:#1a1a1a;border:none;border-radius:6px;color:#fff;cursor:pointer;">🖥 진행 화면</button>' : '')
