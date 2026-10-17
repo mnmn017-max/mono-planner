@@ -403,6 +403,7 @@
       h += '<div class="db-note" style="margin-bottom:8px">채점 완료 ' + graded.length + '명 · 복습지 ' + Object.keys(state.sheets).length + '건 · 제출 ' + submitted.length + '명(지연 ' + late + ') · 발행 대기 ' + pendingN + '명 · 복습지 미생성 ' + missing + '명</div>';
       h += '<div class="db-note" style="margin-bottom:8px">채점되면 복습지가 「발행 대기」로 만들어집니다. 인쇄해서 나눠 줄 때 「발행」하면 그때부터 학생 시험탭에 OMR이 열리고 48시간이 시작됩니다.</div>';
       h += '<div style="margin-bottom:8px">';
+      h += '<button class="db-btn g" id="db-gen-sel" ' + (p ? '' : 'disabled') + '>선택한 학생 복습지 생성 · 갱신</button>';
       h += '<button class="db-btn g" id="db-gen" ' + (p ? '' : 'disabled') + '>복습지 일괄 생성 · 갱신</button>';
       h += '<button class="db-btn p" id="db-print-sel" ' + (p ? '' : 'disabled') + '>🖨 선택한 학생 복습지 인쇄</button>';
       h += '<button class="db-btn g" id="db-pub-sel">📮 선택한 학생 발행</button>';
@@ -470,10 +471,8 @@
           }).catch(function (e) { val.innerHTML = '<div class="db-err">저장 실패: ' + esc(e.message) + '</div>'; });
         });
       };
-      var g = document.getElementById('db-gen');
-      if (g) g.onclick = function () {
-        g.disabled = true; g.textContent = '생성 중...';
-        var list = state.sessions.filter(function (s) { return s.status === 'graded'; });
+      function genFor(btn, list) {
+        btn.disabled = true; btn.textContent = '생성 중...';
         var res = { created: 0, updated: 0, unchanged: 0, skip: [] };
         var chain = Promise.resolve();
         list.forEach(function (s) {
@@ -485,9 +484,17 @@
           });
         });
         chain.then(function () {
-          alert('복습지 생성 완료\n새로 생성 ' + res.created + ' · 갱신 ' + res.updated + ' · 변경 없음 ' + res.unchanged + (res.skip.length ? '\n\n건너뜀:\n' + res.skip.join('\n') : ''));
+          alert('복습지 생성 완료\n새로 생성 ' + res.created + ' · 갱신 ' + res.updated + ' · 변경 없음 ' + res.unchanged + (res.skip.length ? '\n\n건너뜀:\n' + res.skip.join('\n') : '') + '\n\n만들어진 복습지는 「발행 대기」 상태입니다. 나눠 줄 때 발행해 주세요.');
           load();
         });
+      }
+      var g = document.getElementById('db-gen');
+      if (g) g.onclick = function () { genFor(g, state.sessions.filter(function (s) { return s.status === 'graded'; })); };
+      var gs = document.getElementById('db-gen-sel');
+      if (gs) gs.onclick = function () {
+        var ids = Array.prototype.map.call(document.querySelectorAll('.db-chk-row:checked'), function (c) { return c.value; });
+        if (!ids.length) { alert('복습지를 만들 학생을 선택해 주세요.'); return; }
+        genFor(gs, state.sessions.filter(function (s) { return s.status === 'graded' && ids.indexOf(s.id) >= 0; }));
       };
       var all = document.getElementById('db-allchk');
       if (all) all.onchange = function () { document.querySelectorAll('.db-chk-row').forEach(function (c) { c.checked = all.checked; }); };
