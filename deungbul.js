@@ -403,17 +403,17 @@
       h += '<button class="db-btn g" id="db-pub-sel">📮 선택한 학생 발행</button>';
       h += '<button class="db-btn g" id="db-pub-all"' + (pendingN ? '' : ' disabled') + '>📮 발행 대기 ' + pendingN + '명 일괄 발행</button>';
       h += '<button class="db-btn" id="db-remind">🔔 미제출 학생 알림</button></div>';
-      h += '<div class="db-scroll"><table class="db-tbl"><thead><tr><th><input type="checkbox" id="db-allchk"></th><th>이름</th><th>선택</th><th>점수</th><th>오답</th><th>모름</th><th>상태</th><th>마감</th><th>쌍둥이</th><th>제출</th><th>인쇄</th></tr></thead><tbody>';
+      h += '<div class="db-scroll"><table class="db-tbl"><thead><tr><th><input type="checkbox" id="db-allchk" style="width:18px;height:18px;accent-color:#7B1D1D;cursor:pointer" title="전체 선택"></th><th>이름</th><th>선택</th><th>점수</th><th>오답</th><th>모름</th><th>상태</th><th>마감</th><th>쌍둥이</th><th>제출</th><th>인쇄</th></tr></thead><tbody>';
       rows.forEach(function (r) {
         var sh = r.sh;
-        h += '<tr><td>' + (sh ? '<input type="checkbox" class="db-chk-row" value="' + r.s.id + '">' : '') + '</td>' +
+        h += '<tr><td>' + (r.s.status === 'graded' ? '<input type="checkbox" class="db-chk-row" value="' + r.s.id + '" style="width:18px;height:18px;accent-color:#7B1D1D;cursor:pointer">' : '') + '</td>' +
           '<td class="l"><b>' + esc(r.name) + '</b></td><td>' + esc(sh ? (sh.elective === '화법과 작문' ? '화작' : sh.elective === '언어와 매체' ? '언매' : '-') : '-') + '</td>' +
           '<td>' + (sh ? num(sh.score) : '-') + '</td><td>' + (sh ? num(sh.wrongCount) : '-') + '</td><td>' + (sh ? num(sh.unknownCount) : '-') + '</td>' +
           '<td><span class="db-badge ' + r.cls + '">' + esc(r.st) + '</span>' + (sh && sh.needsResubmit ? '<br><span class="db-badge db-b-wait">재채점으로 문항 추가됨</span>' : '') + '</td>' +
           '<td>' + (sh && sh.dueAtMs ? fmtDT(sh.dueAtMs) : '-') + '</td>' +
           '<td>' + (sh && sh.status === 'submitted' ? (num(sh.twinCorrect) + '/' + num(sh.twinTotal)) : '-') + '</td>' +
           '<td>' + (sh && sh.submittedAtMs ? fmtDT(sh.submittedAtMs) : '-') + '</td>' +
-          '<td>' + (sh ? '<button class="db-btn" style="margin:0;padding:5px 9px" data-print="' + r.s.id + '">🖨</button>' + (sh.printedAtMs ? '<div class="db-note" style="font-size:10px">' + fmtDT(sh.printedAtMs) + '</div>' : '') : '') + '</td></tr>';
+          '<td>' + (r.s.status === 'graded' ? '<button class="db-btn" style="margin:0;padding:5px 9px" data-print="' + r.s.id + '">🖨</button>' + (sh && sh.printedAtMs ? '<div class="db-note" style="font-size:10px">' + fmtDT(sh.printedAtMs) + '</div>' : '') : '') + '</td></tr>';
       });
       h += '</tbody></table></div></div>';
 
@@ -494,6 +494,9 @@
         printSheets(state, ids, load);
       };
       function pubConfirm(ids) {
+        ensureMissing(state, ids).then(function () { pubConfirm2(ids); }).catch(function (e) { alert('복습지 생성 실패: ' + e.message); });
+      }
+      function pubConfirm2(ids) {
         var pend = ids.filter(function (id) { return state.sheets[id] && state.sheets[id].status === 'pending'; });
         if (!pend.length) { alert('발행 대기 중인 학생이 없습니다. (이미 발행했거나 복습 문항이 없는 학생은 제외됩니다)'); return; }
         var names = pend.map(function (id) { var sh = state.sheets[id]; return state.names[sh.uid] || sh.studentName || '?'; });
@@ -985,9 +988,26 @@
       'window.DB_PAGES=n;document.getElementById("db-pstat").textContent="총 "+n+"쪽 · A4 · 여백 없음(배경 그래픽 켜기)으로 인쇄하세요";var b=document.getElementById("db-pbtn");b.disabled=false;b.onclick=function(){window.print();};}catch(e){window.DB_PAGES=-1;document.getElementById("db-pstat").textContent="조판 오류: "+e.message;}})();<\/script></body></html>';
   }
 
+  // 선택했지만 아직 복습지가 없는 학생(등불 데이터를 올리기 전에 채점된 학생)은 그 자리에서 만든다
+  function ensureMissing(state, ids) {
+    var F = fb();
+    var miss = ids.filter(function (id) { return !state.sheets[id]; });
+    if (!miss.length) return Promise.resolve();
+    var chain = Promise.resolve();
+    miss.forEach(function (id) {
+      chain = chain.then(function () {
+        var sess = (state.sessions || []).filter(function (x) { return x.id === id; })[0];
+        return ensureSheet(id, { studentName: sess ? state.names[sess.studentUid] : undefined }).then(function (r) {
+          if (r.status === 'no-pack') throw new Error('먼저 「등불 데이터 올리기」로 문항 데이터를 올려 주세요.');
+          return F.getDoc(F.doc(F.db, 'reviewSheets', id)).then(function (d) { if (d.exists()) state.sheets[id] = d.data(); });
+        });
+      });
+    });
+    return chain;
+  }
   function printSheets(state, sessionIds, onChanged) {
     var w = preparePrintWindow(); if (!w) return;
-    loadPack(state.examId, true).then(function (pack) {
+    ensureMissing(state, sessionIds).then(function () { return loadPack(state.examId, true); }).then(function (pack) {
       if (!pack) { w.close(); alert('등불 데이터가 없습니다.'); return; }
       var books = [];
       sessionIds.forEach(function (sid) {
@@ -1001,6 +1021,7 @@
       addPublishButton(w, state, sessionIds, onChanged);
       var F = fb(), t = now();
       sessionIds.forEach(function (sid) { if (state.sheets[sid]) F.updateDoc(F.doc(F.db, 'reviewSheets', sid), { printedAtMs: t }).catch(function () {}); });
+      if (onChanged) setTimeout(function () { try { onChanged(); } catch (e) {} }, 800);
     }).catch(function (e) { try { w.close(); } catch (x) {} alert('인쇄 준비 실패: ' + e.message); });
   }
   function addPublishButton(w, state, sessionIds, onChanged) {
