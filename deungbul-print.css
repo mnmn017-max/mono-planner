@@ -367,3 +367,19 @@ body{overflow-wrap:break-word}
 .tpg b{color:var(--burg);margin:0 .5mm}
 .qcm .pg{font-size:9pt;color:var(--burg)}
 .page.full.blank{background:#fff}
+
+/* ---- 수학 ---- */
+.katex{font-size:1.04em}
+.katex-display{margin:1.6mm 0;overflow:visible}
+.solp .katex-display,.tex .katex-display{text-align:left;padding-left:4mm}
+.ansline{margin:2.4mm 0 0;font-size:10pt;font-weight:700;color:var(--burg)}
+.ansline .blank{display:inline-block;min-width:28mm;border-bottom:.8pt solid var(--tx3);margin-left:2mm;height:5mm;vertical-align:-1mm}
+.memo.big{height:46mm}
+.solp{white-space:pre-line}
+.a-tans.first{padding-top:3mm}
+.a-tans .tex{margin-bottom:1.2mm}
+.a-tans.tail{padding-bottom:3.6mm;border-bottom:.5pt solid var(--line);margin-bottom:1mm}
+.a-sol + .a-sol{margin-top:0}
+.solp.more{padding-top:1mm}
+.a-memo{margin-bottom:5mm}.memo.big{height:40mm}
+.katex span{text-wrap:inherit!important}.katex .base,.katex-display>.katex{text-wrap:nowrap!important}
