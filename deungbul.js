@@ -244,18 +244,35 @@
         };
         if (!existing) {
           var t = now();
+          // 채점 직후에는 '발행 대기'로만 만들어 둔다. 학생 OMR·48시간은 선생님이 발행하는 순간 시작.
           // 복습할 문항이 없으면(전부 맞히고 '모름'도 없음) 제출 대상이 아님
-          Object.assign(doc, { status: data.items.length ? 'assigned' : 'clear', createdAtMs: t, dueAtMs: t + DUE_MS, reviewAnswers: {}, createdAt: F.serverTimestamp() });
+          Object.assign(doc, { status: data.items.length ? 'pending' : 'clear', createdAtMs: t, dueAtMs: null, reviewAnswers: {}, createdAt: F.serverTimestamp() });
           if (opts.studentName) doc.studentName = opts.studentName;
           return F.setDoc(F.doc(F.db, 'reviewSheets', sessionId), doc).then(function () { return { status: 'created', items: data.items.length }; });
         }
         // 재채점 등으로 내용이 바뀐 경우: 기존 응답·기한은 유지, 문항 목록만 갱신
-        if (existing.status === 'clear' && data.items.length) { doc.status = 'assigned'; doc.dueAtMs = now() + DUE_MS; }
+        if (existing.status === 'clear' && data.items.length) { doc.status = 'pending'; doc.dueAtMs = null; }
         if (!data.items.length && existing.status !== 'submitted') doc.status = 'clear';
         if (existing.status === 'submitted') doc.needsResubmit = data.items.some(function (x) { return !(existing.reviewAnswers || {})[x.k]; });
         return F.updateDoc(F.doc(F.db, 'reviewSheets', sessionId), doc).then(function () { return { status: 'updated', items: data.items.length }; });
       });
     }).catch(function (e) { console.warn('[등불] 복습지 생성 실패', sessionId, e); return { status: 'error', error: e.message }; });
+  }
+
+  // 선생님 발행: 발행 대기 → 학생 시험탭 OMR 열림 + 48시간 시작 + 알림
+  function publishSheets(sheets, ids, examTitle) {
+    var F = fb(), c = ctx(), t = now();
+    var targets = ids.filter(function (id) { return sheets[id] && sheets[id].status === 'pending'; });
+    return Promise.all(targets.map(function (id) {
+      var upd = { status: 'assigned', issuedAtMs: t, dueAtMs: t + DUE_MS, issuedBy: (c.user && c.user.uid) || null };
+      return F.updateDoc(F.doc(F.db, 'reviewSheets', id), upd).then(function () { Object.assign(sheets[id], upd); return id; });
+    })).then(function (done) {
+      var uids = done.map(function (id) { return sheets[id].uid; }).filter(Boolean);
+      if (uids.length && window.MP_push) {
+        try { window.MP_push(uids, '🏮 등불 복습지가 도착했어요', '「' + (examTitle || '') + '」 복습 OMR이 시험탭에 열렸어요. ' + fmtDT(t + DUE_MS) + '까지 제출해 주세요.', { type: 'deungbul' }); } catch (e) {}
+      }
+      return done.length;
+    });
   }
 
   // 채점 직후 index.html에서 호출됨
@@ -367,6 +384,7 @@
         if (s.status !== 'graded') { st = s.status === 'not_started' ? '미응시' : '응시중/채점 전'; cls = 'db-b-none'; }
         else if (!sh) { st = '복습지 미생성'; cls = 'db-b-none'; }
         else if (sh.status === 'clear') { st = '복습 문항 없음'; cls = 'db-b-ok'; }
+        else if (sh.status === 'pending') { st = '발행 대기'; cls = 'db-b-none'; }
         else if (sh.status === 'submitted') { st = sh.late ? '지연 제출' : '제출 완료'; cls = sh.late ? 'db-b-late' : 'db-b-ok'; }
         else if (now() > sh.dueAtMs) { st = '미제출 · 기한 지남'; cls = 'db-b-over'; }
         else { st = '진행 중 · ' + fmtLeft(sh.dueAtMs - now()); cls = 'db-b-wait'; }
@@ -375,11 +393,15 @@
       var submitted = rows.filter(function (r) { return r.sh && r.sh.status === 'submitted'; });
       var late = submitted.filter(function (r) { return r.sh.late; }).length;
       var missing = graded.filter(function (s) { return !state.sheets[s.id]; }).length;
+      var pendingN = rows.filter(function (r) { return r.sh && r.sh.status === 'pending'; }).length;
       h += '<div class="db-sec"><h4>② 학생별 복습 현황</h4>';
-      h += '<div class="db-note" style="margin-bottom:8px">채점 완료 ' + graded.length + '명 · 복습지 ' + Object.keys(state.sheets).length + '건 · 제출 ' + submitted.length + '명(지연 ' + late + ') · 복습지 미생성 ' + missing + '명</div>';
+      h += '<div class="db-note" style="margin-bottom:8px">채점 완료 ' + graded.length + '명 · 복습지 ' + Object.keys(state.sheets).length + '건 · 제출 ' + submitted.length + '명(지연 ' + late + ') · 발행 대기 ' + pendingN + '명 · 복습지 미생성 ' + missing + '명</div>';
+      h += '<div class="db-note" style="margin-bottom:8px">채점되면 복습지가 「발행 대기」로 만들어집니다. 인쇄해서 나눠 줄 때 「발행」하면 그때부터 학생 시험탭에 OMR이 열리고 48시간이 시작됩니다.</div>';
       h += '<div style="margin-bottom:8px">';
       h += '<button class="db-btn g" id="db-gen" ' + (p ? '' : 'disabled') + '>복습지 일괄 생성 · 갱신</button>';
       h += '<button class="db-btn p" id="db-print-sel" ' + (p ? '' : 'disabled') + '>🖨 선택한 학생 복습지 인쇄</button>';
+      h += '<button class="db-btn g" id="db-pub-sel">📮 선택한 학생 발행</button>';
+      h += '<button class="db-btn g" id="db-pub-all"' + (pendingN ? '' : ' disabled') + '>📮 발행 대기 ' + pendingN + '명 일괄 발행</button>';
       h += '<button class="db-btn" id="db-remind">🔔 미제출 학생 알림</button></div>';
       h += '<div class="db-scroll"><table class="db-tbl"><thead><tr><th><input type="checkbox" id="db-allchk"></th><th>이름</th><th>선택</th><th>점수</th><th>오답</th><th>모름</th><th>상태</th><th>마감</th><th>쌍둥이</th><th>제출</th><th>인쇄</th></tr></thead><tbody>';
       rows.forEach(function (r) {
@@ -388,7 +410,7 @@
           '<td class="l"><b>' + esc(r.name) + '</b></td><td>' + esc(sh ? (sh.elective === '화법과 작문' ? '화작' : sh.elective === '언어와 매체' ? '언매' : '-') : '-') + '</td>' +
           '<td>' + (sh ? num(sh.score) : '-') + '</td><td>' + (sh ? num(sh.wrongCount) : '-') + '</td><td>' + (sh ? num(sh.unknownCount) : '-') + '</td>' +
           '<td><span class="db-badge ' + r.cls + '">' + esc(r.st) + '</span>' + (sh && sh.needsResubmit ? '<br><span class="db-badge db-b-wait">재채점으로 문항 추가됨</span>' : '') + '</td>' +
-          '<td>' + (sh && sh.status !== 'clear' ? fmtDT(sh.dueAtMs) : '-') + '</td>' +
+          '<td>' + (sh && sh.dueAtMs ? fmtDT(sh.dueAtMs) : '-') + '</td>' +
           '<td>' + (sh && sh.status === 'submitted' ? (num(sh.twinCorrect) + '/' + num(sh.twinTotal)) : '-') + '</td>' +
           '<td>' + (sh && sh.submittedAtMs ? fmtDT(sh.submittedAtMs) : '-') + '</td>' +
           '<td>' + (sh ? '<button class="db-btn" style="margin:0;padding:5px 9px" data-print="' + r.s.id + '">🖨</button>' + (sh.printedAtMs ? '<div class="db-note" style="font-size:10px">' + fmtDT(sh.printedAtMs) + '</div>' : '') : '') + '</td></tr>';
@@ -464,13 +486,28 @@
       };
       var all = document.getElementById('db-allchk');
       if (all) all.onchange = function () { document.querySelectorAll('.db-chk-row').forEach(function (c) { c.checked = all.checked; }); };
-      body.querySelectorAll('[data-print]').forEach(function (b) { b.onclick = function () { printSheets(state, [b.getAttribute('data-print')]); }; });
+      body.querySelectorAll('[data-print]').forEach(function (b) { b.onclick = function () { printSheets(state, [b.getAttribute('data-print')], load); }; });
       var ps = document.getElementById('db-print-sel');
       if (ps) ps.onclick = function () {
         var ids = Array.prototype.map.call(document.querySelectorAll('.db-chk-row:checked'), function (c) { return c.value; });
         if (!ids.length) { alert('인쇄할 학생을 선택해 주세요.'); return; }
-        printSheets(state, ids);
+        printSheets(state, ids, load);
       };
+      function pubConfirm(ids) {
+        var pend = ids.filter(function (id) { return state.sheets[id] && state.sheets[id].status === 'pending'; });
+        if (!pend.length) { alert('발행 대기 중인 학생이 없습니다. (이미 발행했거나 복습 문항이 없는 학생은 제외됩니다)'); return; }
+        var names = pend.map(function (id) { var sh = state.sheets[id]; return state.names[sh.uid] || sh.studentName || '?'; });
+        if (!confirm(pend.length + '명에게 복습지를 발행할까요?\n' + names.join(', ') + '\n\n지금부터 48시간(' + fmtDT(now() + DUE_MS) + ' 마감) 카운트가 시작되고 학생에게 알림이 갑니다.')) return;
+        publishSheets(state.sheets, pend, state.exam.title).then(function (n) { alert(n + '명 발행 완료'); load(); }).catch(function (e) { alert('발행 실패: ' + e.message); });
+      }
+      var pbs = document.getElementById('db-pub-sel');
+      if (pbs) pbs.onclick = function () {
+        var ids = Array.prototype.map.call(document.querySelectorAll('.db-chk-row:checked'), function (c) { return c.value; });
+        if (!ids.length) { alert('발행할 학생을 선택해 주세요.'); return; }
+        pubConfirm(ids);
+      };
+      var pba = document.getElementById('db-pub-all');
+      if (pba) pba.onclick = function () { pubConfirm(Object.keys(state.sheets)); };
       body.querySelectorAll('[data-tprint]').forEach(function (b) { b.onclick = function () { printTeacherBook(state, b.getAttribute('data-tprint')); }; });
       var rm = document.getElementById('db-remind');
       if (rm) rm.onclick = function () {
@@ -491,7 +528,7 @@
     if (!host || !c.user) return;
     var F = fb();
     F.getDocs(F.query(F.collection(F.db, 'reviewSheets'), F.where('uid', '==', c.user.uid))).then(function (snap) {
-      var list = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }).filter(function (x) { return x.status !== 'clear'; });
+      var list = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }).filter(function (x) { return x.status !== 'clear' && x.status !== 'pending'; });
       if (!list.length) { host.innerHTML = ''; return; }
       list.sort(function (a, b) { return (a.status === 'submitted') - (b.status === 'submitted') || (b.createdAtMs || 0) - (a.createdAtMs || 0); });
       host.innerHTML = list.map(function (sh) {
@@ -512,6 +549,7 @@
     var st = {};
     F.getDoc(F.doc(F.db, 'reviewSheets', sheetId)).then(function (sd) {
       if (!sd.exists()) throw new Error('복습지를 찾을 수 없습니다');
+      if (sd.data().status === 'pending') throw new Error('아직 선생님이 발행하지 않은 복습지입니다.');
       st.sh = sd.data(); st.ans = JSON.parse(JSON.stringify(st.sh.reviewAnswers || {}));
       var ph = document.querySelector('#db-omr .db-ph h3');
       if (ph) ph.innerHTML = '등불 복습 OMR<small>' + esc(st.sh.examTitle) + ' · 마감 ' + fmtDT(st.sh.dueAtMs) + '</small>';
@@ -777,7 +815,7 @@
     return full('<img class="bgimg" src="' + ASSET + '/greeting.jpg"><div class="gtext"><div class="kick">등불을 펼친 너에게</div><h2>모든 오답은<br>암초가 있는 자리를 알려 주는 표지입니다.</h2>' +
       '<p>한 번 비춘 암초에는 다시 부딪히지 않습니다. 이 등불이 비추는 곳만 정확히 보고 가세요. 정답을 확인하는 데서 멈추지 말고, <b>시험장에서 어디를 보고 무엇을 떠올렸어야 했는지</b>를 되짚는 것이 이 책의 목적입니다.</p>' +
       '<div class="howto"><div class="kick">이렇게 쓰세요</div><ol>' +
-      '<li><b>48시간 안에</b> — ' + (due ? '이 복습지의 제출 기한은 <b>' + esc(fmtDT(due)) + '</b>입니다. ' : '시험이 끝난 뒤 이틀 안에 복기를 끝내세요. ') + '다음 시험과 겹치면 복습이 밀립니다.</li>' +
+      '<li><b>48시간 안에</b> — ' + (due ? '이 복습지의 제출 기한은 <b>' + esc(fmtDT(due)) + '</b>입니다. ' : '복습지를 받은 순간 모노플래너 시험탭에 OMR이 열리고, 그때부터 48시간 안에 제출해야 합니다. ') + '다음 시험과 겹치면 복습이 밀립니다.</li>' +
       '<li><b>출제 포인트 → 풀이 전략</b> — 정답보다 먼저, 이 문항이 무엇을 물었고 어디서 실마리를 잡았어야 했는지 읽습니다.</li>' +
       '<li><b>모든 선지의 근거</b> — 근거가 흐릿했던 선지가 있다면 그 줄을 다시 확인합니다.</li>' +
       '<li><b>쌍둥이 문항</b> — 원 시험지를 펴 둔 채 풉니다. 답은 모노플래너 시험탭의 「등불 복습 OMR」에 입력하고 제출하세요.</li></ol></div></div>', 'greet');
@@ -947,7 +985,7 @@
       'window.DB_PAGES=n;document.getElementById("db-pstat").textContent="총 "+n+"쪽 · A4 · 여백 없음(배경 그래픽 켜기)으로 인쇄하세요";var b=document.getElementById("db-pbtn");b.disabled=false;b.onclick=function(){window.print();};}catch(e){window.DB_PAGES=-1;document.getElementById("db-pstat").textContent="조판 오류: "+e.message;}})();<\/script></body></html>';
   }
 
-  function printSheets(state, sessionIds) {
+  function printSheets(state, sessionIds, onChanged) {
     var w = preparePrintWindow(); if (!w) return;
     loadPack(state.examId, true).then(function (pack) {
       if (!pack) { w.close(); alert('등불 데이터가 없습니다.'); return; }
@@ -960,9 +998,28 @@
       });
       if (!books.length) { w.close(); alert('인쇄할 복습 문항이 있는 학생이 없습니다(전부 맞힌 학생은 복습지가 비어 있습니다).'); return; }
       if (!fillPrintWindow(w, books, '등불 개인 복습지 (' + books.length + '명)')) return;
+      addPublishButton(w, state, sessionIds, onChanged);
       var F = fb(), t = now();
       sessionIds.forEach(function (sid) { if (state.sheets[sid]) F.updateDoc(F.doc(F.db, 'reviewSheets', sid), { printedAtMs: t }).catch(function () {}); });
     }).catch(function (e) { try { w.close(); } catch (x) {} alert('인쇄 준비 실패: ' + e.message); });
+  }
+  function addPublishButton(w, state, sessionIds, onChanged) {
+    var pend = sessionIds.filter(function (id) { var sh = state.sheets[id]; return sh && sh.status === 'pending' && (sh.items || []).length; });
+    var bar = w.document.getElementById('db-printbar'); if (!bar) return;
+    var b = w.document.createElement('button');
+    b.id = 'db-pubbtn';
+    b.style.cssText = 'margin-left:8px;background:#2F5D50;color:#fff;border:0;border-radius:8px;padding:9px 16px;font-weight:700;cursor:pointer';
+    if (!pend.length) { b.textContent = '✔ 이미 발행된 복습지'; b.disabled = true; b.style.opacity = '.6'; bar.appendChild(b); return; }
+    b.textContent = '📮 인쇄한 학생 바로 발행 (' + pend.length + '명)';
+    b.onclick = function () {
+      if (!w.confirm(pend.length + '명에게 지금 발행할까요?\n학생 시험탭에 OMR이 열리고 48시간(' + fmtDT(now() + DUE_MS) + ' 마감)이 시작됩니다.')) return;
+      b.disabled = true; b.textContent = '발행 중…';
+      publishSheets(state.sheets, pend, state.exam.title).then(function (n) {
+        b.textContent = '✔ ' + n + '명 발행 완료'; b.style.opacity = '.7';
+        if (onChanged) try { onChanged(); } catch (e) {}
+      }).catch(function (e) { b.disabled = false; b.textContent = '📮 다시 시도 (발행 실패: ' + e.message + ')'; });
+    };
+    bar.appendChild(b);
   }
   function printTeacherBook(state, elective) {
     var w = preparePrintWindow(); if (!w) return;
@@ -974,5 +1031,5 @@
   }
 
   // 테스트·외부 사용을 위한 노출
-  window.DB_internal = { uploadPack: uploadPack, ensureSheet: ensureSheet, loadPack: loadPack, buildPrintHtml: buildPrintHtml, flattenUnits: flattenUnits, validatePack: validatePack, buildSheetData: buildSheetData, nb: nb, personalParts: personalParts, teacherParts: teacherParts, PAGINATE: PAGINATE, examKoInfo: examKoInfo, itemIndex: itemIndex };
+  window.DB_internal = { uploadPack: uploadPack, ensureSheet: ensureSheet, loadPack: loadPack, buildPrintHtml: buildPrintHtml, flattenUnits: flattenUnits, validatePack: validatePack, buildSheetData: buildSheetData, nb: nb, personalParts: personalParts, teacherParts: teacherParts, PAGINATE: PAGINATE, examKoInfo: examKoInfo, itemIndex: itemIndex, publishSheets: publishSheets };
 })();
