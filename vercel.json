@@ -3,13 +3,20 @@
     {
       "path": "/api/cleanup",
       "schedule": "0 18 * * *"
+    },
+    {
+      "path": "/api/deungbul-reminders",
+      "schedule": "0 0 * * *"
     }
   ],
   "headers": [
     {
       "source": "/firebase-messaging-sw.js",
       "headers": [
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
       ]
     }
   ]
