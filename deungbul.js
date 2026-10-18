@@ -1238,28 +1238,37 @@
 
   // ------------------------------------------------------------ PDF 바로 받기
   // 인쇄 창에서 조판이 끝난 HTML을 서버(api/deungbul-pdf)로 보내 쪽 범위별 PDF를 받고, 여기서 하나로 합쳐 내려받는다.
-  var PDF_CHUNK = 20, PDF_PARALLEL = 6;
+  var PDF_CHUNK = 16, PDF_PARALLEL = 6;
   function addDownloadButton(w, title) {
     var bar = w.document.getElementById('db-printbar'); if (!bar) return;
-    var b = w.document.createElement('button');
-    b.id = 'db-dlbtn'; b.disabled = true; b.textContent = '⬇ PDF 바로 받기';
-    b.style.cssText = 'background:#1F3A5F;color:#fff;border:0;border-radius:8px;padding:9px 16px;font-weight:700;cursor:pointer;opacity:.6';
-    bar.insertBefore(b, w.document.getElementById('db-pbtn'));
+    var pbtn = w.document.getElementById('db-pbtn');
+    function mk(id, label, bg) {
+      var b = w.document.createElement('button');
+      b.id = id; b.disabled = true; b.textContent = label;
+      b.style.cssText = 'background:' + bg + ';color:#fff;border:0;border-radius:8px;padding:9px 16px;font-weight:700;cursor:pointer;opacity:.6';
+      bar.insertBefore(b, pbtn); return b;
+    }
+    var bPrint = mk('db-pdfprint', '🖨 PDF로 인쇄', '#7B1D1D');
+    var bDl = mk('db-dlbtn', '⬇ PDF 바로 받기', '#1F3A5F');
+    // 기존 브라우저 인쇄는 쪽이 많으면 미리보기가 멈출 수 있어 보조 버튼으로 둔다
+    if (pbtn) { pbtn.textContent = '브라우저로 직접 인쇄(느림)'; pbtn.style.background = '#555'; pbtn.style.fontWeight = '400'; }
     var tm = setInterval(function () {
       if (w.closed) return clearInterval(tm);
       if (w.DB_PAGES === undefined) return;
       clearInterval(tm);
-      if (w.DB_PAGES > 0) { b.disabled = false; b.style.opacity = '1'; }
+      if (w.DB_PAGES > 0) [bPrint, bDl].forEach(function (b) { b.disabled = false; b.style.opacity = '1'; });
     }, 300);
-    b.onclick = function () {
-      b.disabled = true; b.style.opacity = '.7';
-      downloadPdf(w, title, function (msg) { b.textContent = msg; }).then(function () {
-        b.textContent = '✔ PDF 받기 완료 (다시 받기)'; b.disabled = false; b.style.opacity = '1';
+    function run(btn, mode, idle) {
+      [bPrint, bDl].forEach(function (b) { b.disabled = true; b.style.opacity = '.7'; });
+      downloadPdf(w, title, function (msg) { btn.textContent = msg; }, mode).then(function () {
+        if (mode === 'download') { btn.textContent = '✔ 받기 완료 (다시 받기)'; [bPrint, bDl].forEach(function (b) { b.disabled = false; b.style.opacity = '1'; }); }
       }).catch(function (e) {
-        b.textContent = '⬇ PDF 다시 시도'; b.disabled = false; b.style.opacity = '1';
-        w.alert('PDF 만들기 실패: ' + e.message + '\n\n급하면 오른쪽 「인쇄 / PDF 저장」을 이용해 주세요.');
+        btn.textContent = idle; [bPrint, bDl].forEach(function (b) { b.disabled = false; b.style.opacity = '1'; });
+        w.alert('PDF 만들기 실패: ' + e.message + '\n\n잠시 뒤 다시 눌러 주세요. 계속 실패하면 이 문구를 알려 주세요.');
       });
-    };
+    }
+    bPrint.onclick = function () { run(bPrint, 'open', '🖨 PDF로 인쇄'); };
+    bDl.onclick = function () { run(bDl, 'download', '⬇ PDF 바로 받기'); };
   }
   function loadScriptOnce(src, globalName) {
     if (window[globalName]) return Promise.resolve(window[globalName]);
@@ -1274,24 +1283,28 @@
     if (typeof CompressionStream === 'undefined') return Promise.resolve(new Blob([text]));
     return new Response(new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))).blob();
   }
-  function bookHtmlForPdf(w) {
+  // 조판이 끝난 쪽은 서로 독립(쪽 번호·머리말까지 박혀 있음)이라, 요청마다 그 범위의 쪽만 보낸다
+  function bookHtmlForPdf(w, from, to) {
     var root = w.document.documentElement.cloneNode(true);
     Array.prototype.forEach.call(root.querySelectorAll('script, #db-printbar'), function (x) { x.remove(); });
+    if (from) Array.prototype.forEach.call(root.querySelectorAll('#book > .page'), function (pg, i) { if (i + 1 < from || i + 1 > to) pg.remove(); });
     return '<!doctype html>' + root.outerHTML;
   }
-  function downloadPdf(w, title, progress) {
+  function downloadPdf(w, title, progress, mode) {
     var total = w.DB_PAGES;
     if (!(total > 0)) return Promise.reject(new Error('조판이 아직 끝나지 않았습니다.'));
     var user = ctx().user;
     if (!user || !user.getIdToken) return Promise.reject(new Error('로그인 정보가 없습니다. 앱에서 다시 로그인해 주세요.'));
     progress('PDF 준비 중…');
-    return Promise.all([user.getIdToken(), gzipText(bookHtmlForPdf(w)), loadScriptOnce('/assets/vendor/pdf-lib.min.js', 'PDFLib')]).then(function (r) {
-      var token = r[0], body = r[1], PDFLib = r[2];
+    return Promise.all([user.getIdToken(), loadScriptOnce('/assets/vendor/pdf-lib.min.js', 'PDFLib')]).then(function (r) {
+      var token = r[0], PDFLib = r[1];
       var queue = [], results = [], done = 0;
       for (var a = 1; a <= total; a += PDF_CHUNK) queue.push([a, Math.min(total, a + PDF_CHUNK - 1)]);
       var parts = queue.length;
       function fetchRange(rg, tries) {
-        return fetch('/api/deungbul-pdf', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'X-Pages': rg[0] + '-' + rg[1], 'Content-Type': 'application/octet-stream' }, body: body }).then(function (resp) {
+        return gzipText(bookHtmlForPdf(w, rg[0], rg[1])).then(function (body) {
+          return fetch('/api/deungbul-pdf', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'X-Pages': rg[0] + '-' + rg[1], 'X-Count': String(rg[1] - rg[0] + 1), 'Content-Type': 'application/octet-stream' }, body: body });
+        }).then(function (resp) {
           if (resp.status === 413 && rg[1] > rg[0]) {
             var mid = Math.floor((rg[0] + rg[1]) / 2); parts += 1;
             return Promise.all([fetchRange([rg[0], mid], 0), fetchRange([mid + 1, rg[1]], 0)]).then(function () {});
@@ -1327,10 +1340,15 @@
       }).then(function (bytes) {
         var blob = new Blob([bytes], { type: 'application/pdf' });
         var url = URL.createObjectURL(blob);
+        if (mode === 'open') {
+          // 이 창을 PDF 보기 화면으로 바꾼다 → 크롬 PDF 뷰어에서 바로 인쇄(Ctrl+P)·저장 가능
+          w.location.href = url;
+          return;
+        }
         var a = w.document.createElement('a');
         a.href = url; a.download = String(title || '등불').replace(/[\\/:*?"<>|]/g, '_') + '.pdf';
         w.document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 120000);
       });
     });
   }

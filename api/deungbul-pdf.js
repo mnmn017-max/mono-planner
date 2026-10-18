@@ -2,10 +2,10 @@
  * MONO PLANNER - 등불 PDF 만들기 (Vercel Serverless Function)
  * ============================================================
  * 선생님 앱의 인쇄 창에서 이미 조판이 끝난 등불 HTML을 받아, 서버의 크롬으로 PDF를 만들어 돌려준다.
- *  - 응답 크기 제한(약 4.5MB) 때문에 쪽 범위(pages: "1-24")로 나누어 요청받고, 앱에서 하나로 합친다
+ *  - 응답 크기 제한(약 4.5MB) 때문에 앱이 16쪽씩 잘라 그 쪽들만 담은 HTML을 보내고, 받은 PDF를 앱에서 하나로 합친다
  *  - 범위 PDF가 너무 크면 413을 돌려주고, 앱은 범위를 반으로 나눠 다시 요청한다
  *  - 선생님·마스터 계정만 사용 가능 (Firebase ID 토큰 확인)
- * 요청: POST, 헤더 Authorization: Bearer <idToken>, X-Pages: "1-24"
+ * 요청: POST, 헤더 Authorization: Bearer <idToken>, X-Pages: "1-16"(표시용), X-Count: 쪽 수
  *       본문: gzip으로 압축한 HTML (Content-Type: application/octet-stream)
  * 필요한 환경변수: FIREBASE_SERVICE_ACCOUNT (기존 API와 동일)
  */
@@ -84,23 +84,32 @@ module.exports = async function handler(req, res) {
   }
   if (!html || html.indexOf("<html") < 0) return res.status(400).json({ error: "HTML이 비어 있습니다." });
 
-  // 3) PDF 만들기
+  // 3) PDF 만들기 — 받은 HTML에는 이 범위의 쪽만 들어 있다(앱이 잘라서 보냄)
+  const t0 = Date.now();
+  const count = parseInt(req.headers["x-count"] || "0", 10) || 0;
   let page;
   try {
     const browser = await getBrowser();
+    const t1 = Date.now();
     page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0", timeout: 40000 });
-    await page.evaluate(async () => {
-      await document.fonts.ready;
-      await Promise.all(Array.prototype.map.call(document.images, (i) => (i.complete ? 1 : new Promise((r) => { i.onload = i.onerror = r; }))));
+    await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 25000 });
+    // 글꼴·이미지를 기다리되, 최대 25초가 지나면 그대로 진행(무한 대기 방지)
+    await page.evaluate(() => {
+      const imgs = Promise.all(Array.prototype.map.call(document.images, (i) => (i.complete ? 1 : new Promise((r) => { i.onload = i.onerror = r; }))));
+      const cap = new Promise((r) => setTimeout(r, 25000));
+      return Promise.race([Promise.all([imgs, document.fonts.ready]), cap]);
     });
-    const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true, pageRanges: pages, timeout: 45000 });
+    const t2 = Date.now();
+    const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true, timeout: 40000 });
+    const t3 = Date.now();
+    res.setHeader("X-Timing", "launch=" + (t1 - t0) + ";load=" + (t2 - t1) + ";pdf=" + (t3 - t2));
     if (pdf.length > MAX_PDF_BYTES) return res.status(413).json({ error: "too-large", bytes: pdf.length });
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Length", pdf.length);
+    if (count) res.setHeader("X-Expected-Pages", String(count));
     return res.status(200).send(Buffer.from(pdf));
   } catch (e) {
-    return res.status(500).json({ error: "PDF 생성 실패: " + e.message });
+    return res.status(500).json({ error: "PDF 생성 실패(" + pages + "쪽): " + e.message });
   } finally {
     if (page) page.close().catch(() => {});
   }
