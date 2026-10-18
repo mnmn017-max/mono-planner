@@ -1270,13 +1270,15 @@
     bPrint.onclick = function () { run(bPrint, 'open', '🖨 PDF로 인쇄'); };
     bDl.onclick = function () { run(bDl, 'download', '⬇ PDF 바로 받기'); };
   }
-  function loadScriptOnce(src, globalName) {
-    if (window[globalName]) return Promise.resolve(window[globalName]);
+  // win 창 안에 스크립트를 올린다(합치기는 사용자가 보고 있는 인쇄 창에서 돌려야 크롬의 백그라운드 탭 지연을 받지 않음)
+  function loadScriptOnce(src, globalName, win) {
+    win = win || window;
+    if (win[globalName]) return Promise.resolve(win[globalName]);
     return new Promise(function (res, rej) {
-      var s = document.createElement('script'); s.src = src;
-      s.onload = function () { window[globalName] ? res(window[globalName]) : rej(new Error(globalName + ' 로드 실패')); };
+      var s = win.document.createElement('script'); s.src = new URL(src, location.origin).href;
+      s.onload = function () { win[globalName] ? res(win[globalName]) : rej(new Error(globalName + ' 로드 실패')); };
       s.onerror = function () { rej(new Error(src + ' 로드 실패')); };
-      document.head.appendChild(s);
+      win.document.head.appendChild(s);
     });
   }
   function gzipText(text) {
@@ -1296,7 +1298,7 @@
     var user = ctx().user;
     if (!user || !user.getIdToken) return Promise.reject(new Error('로그인 정보가 없습니다. 앱에서 다시 로그인해 주세요.'));
     progress('PDF 준비 중…');
-    return Promise.all([user.getIdToken(), loadScriptOnce('/assets/vendor/pdf-lib.min.js', 'PDFLib')]).then(function (r) {
+    return Promise.all([user.getIdToken(), loadScriptOnce('/assets/vendor/pdf-lib.min.js', 'PDFLib', w)]).then(function (r) {
       var token = r[0], PDFLib = r[1];
       var queue = [], results = [], done = 0;
       for (var a = 1; a <= total; a += PDF_CHUNK) queue.push([a, Math.min(total, a + PDF_CHUNK - 1)]);
@@ -1326,15 +1328,17 @@
         results.sort(function (x, y) { return x.from - y.from; });
         return PDFLib.PDFDocument.create().then(function (out) {
           var chain = Promise.resolve();
-          results.forEach(function (r) {
-            chain = chain.then(function () { return PDFLib.PDFDocument.load(r.buf); }).then(function (src) {
+          results.forEach(function (r, ri) {
+            chain = chain.then(function () { progress('PDF 합치는 중… ' + (ri + 1) + '/' + results.length); return PDFLib.PDFDocument.load(new w.Uint8Array(r.buf), { parseSpeed: Infinity, updateMetadata: false }); }).then(function (src) {
               return out.copyPages(src, src.getPageIndices()).then(function (pgs) { pgs.forEach(function (p) { out.addPage(p); }); });
             });
           });
           return chain.then(function () {
             if (out.getPageCount() !== total) throw new Error('쪽 수가 맞지 않습니다(' + out.getPageCount() + '/' + total + ').');
             out.setTitle(title);
-            return out.save();
+            progress('PDF 저장 중…');
+            // objectsPerTick: Infinity → 중간에 타이머로 쉬지 않고 한 번에 저장(백그라운드 지연 방지)
+            return out.save({ objectsPerTick: Infinity });
           });
         });
       }).then(function (bytes) {
