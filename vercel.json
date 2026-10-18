@@ -19,5 +19,11 @@
         }
       ]
     }
-  ]
+  ],
+  "functions": {
+    "api/deungbul-pdf.js": {
+      "maxDuration": 60,
+      "includeFiles": "node_modules/@sparticuz/chromium/bin/**"
+    }
+  }
 }

@@ -84,7 +84,7 @@ section,article{position:relative}
 
 /* ---------- 세트 오프너 ---------- */
 
-.banner img{width:100%;height:16mm;object-fit:cover;object-position:center 50%;display:block;opacity:.9}
+.banner img{width:100%;height:auto;aspect-ratio:11/1;display:block}
 .op-head{display:flex;gap:6mm;align-items:flex-end;margin:3mm 0 5mm;padding-bottom:4mm;border-bottom:1pt solid var(--burg)}
 .op-range{font-family:var(--serif);font-weight:700;font-size:30pt;line-height:.95;color:var(--burg);white-space:nowrap}
 .op-range small{display:block;font-family:var(--sans);font-size:7.6pt;letter-spacing:.14em;color:var(--gold);font-weight:700;margin-bottom:2mm}

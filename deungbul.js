@@ -836,7 +836,7 @@
     var pm = pms.map(function (p) { return '<li style="--lw:' + Math.round(Math.min(40, Math.max(15, 2 + 3.2 * maxL))) + 'mm"><b>' + E(p.part) + '</b><span>' + E(p.summary) + '</span></li>'; }).join('');
     var cons = (u.concepts || []).map(function (c) { return '<span class="ctag">' + E(c.name) + '</span>'; }).join('');
     var chips = [u.area, u.recommended_time ? '권장 ' + u.recommended_time : null].filter(Boolean).map(function (x) { return '<span class="chip">' + E(x) + '</span>'; }).join('');
-    var head = '<div class="banner"><img src="' + ASSET + '/banner.png"></div><div class="op-head"><div class="op-range"><small>' + E(u.section) + '</small>' + E(u.range) + '</div>' +
+    var head = '<div class="banner"><img src="' + ASSET + '/banner.jpg"></div><div class="op-head"><div class="op-range"><small>' + E(u.section) + '</small>' + E(u.range) + '</div>' +
       '<div class="op-title"><div class="op-chips">' + chips + '</div><h2>' + String(u.title || '').split(' / ').map(E).join('<br>') + '</h2>' +
       '<div class="op-meta"><div>원 시험지 · ' + E(u.orig_location) + '</div><div>' + E(u.source_note) + '</div></div></div></div>';
     var how = '<div class="card how">' + (MM ? secTitle('compass', '이 묶음 공략법', '시험장 운영법') : secTitle('compass', '이 지문을 읽는 법', '그날의 항해법')) + '<p>' + E(u.reading_strategy) + '</p><div class="cons"><div class="kick">' + (MM ? '이 묶음의 핵심 도구' : '이 세트의 핵심 개념') + '</div>' + cons + '</div></div>';
@@ -1210,7 +1210,7 @@
       if (p.classList.contains('full')) return;
       var n = +p.dataset.no, even = n % 2 === 0, bk = books[+p.dataset.book] || {};
       var run = p.dataset.run || lastRun; lastRun = run;
-      var bg = p.querySelector('[data-mark="MAPPAGE"]') ? 'map_bg.png' : (even ? 'body_bg_L.png' : 'body_bg.png');
+      var bg = p.querySelector('[data-mark="MAPPAGE"]') ? 'map_bg.jpg' : (even ? 'body_bg_L.jpg' : 'body_bg.jpg');
       p.insertAdjacentHTML('afterbegin', '<img class="ovbg" src="' + window.DB_ASSET + '/' + bg + '">');
       p.insertAdjacentHTML('beforeend', '<div class="ovh ' + (even ? 'ev' : 'od') + '"><span class="ovb1">등불<span class="ovsep"></span><span class="ovex"></span></span><span class="ovb2"></span></div><div class="ovf ' + (even ? 'ev' : 'od') + '"><span class="pnum">' + n + '</span><span class="ovt"></span></div>');
       p.querySelector('.ovex').textContent = bk.short || ''; p.querySelector('.ovt').textContent = bk.foot || ''; p.querySelector('.ovb2').textContent = run;
@@ -1232,7 +1232,107 @@
   function fillPrintWindow(w, books, title) {
     if (!w || w.closed) return false;
     w.document.open(); w.document.write(buildPrintHtml(books, title, location.origin)); w.document.close();
+    addDownloadButton(w, title);
     return true;
+  }
+
+  // ------------------------------------------------------------ PDF 바로 받기
+  // 인쇄 창에서 조판이 끝난 HTML을 서버(api/deungbul-pdf)로 보내 쪽 범위별 PDF를 받고, 여기서 하나로 합쳐 내려받는다.
+  var PDF_CHUNK = 20, PDF_PARALLEL = 6;
+  function addDownloadButton(w, title) {
+    var bar = w.document.getElementById('db-printbar'); if (!bar) return;
+    var b = w.document.createElement('button');
+    b.id = 'db-dlbtn'; b.disabled = true; b.textContent = '⬇ PDF 바로 받기';
+    b.style.cssText = 'background:#1F3A5F;color:#fff;border:0;border-radius:8px;padding:9px 16px;font-weight:700;cursor:pointer;opacity:.6';
+    bar.insertBefore(b, w.document.getElementById('db-pbtn'));
+    var tm = setInterval(function () {
+      if (w.closed) return clearInterval(tm);
+      if (w.DB_PAGES === undefined) return;
+      clearInterval(tm);
+      if (w.DB_PAGES > 0) { b.disabled = false; b.style.opacity = '1'; }
+    }, 300);
+    b.onclick = function () {
+      b.disabled = true; b.style.opacity = '.7';
+      downloadPdf(w, title, function (msg) { b.textContent = msg; }).then(function () {
+        b.textContent = '✔ PDF 받기 완료 (다시 받기)'; b.disabled = false; b.style.opacity = '1';
+      }).catch(function (e) {
+        b.textContent = '⬇ PDF 다시 시도'; b.disabled = false; b.style.opacity = '1';
+        w.alert('PDF 만들기 실패: ' + e.message + '\n\n급하면 오른쪽 「인쇄 / PDF 저장」을 이용해 주세요.');
+      });
+    };
+  }
+  function loadScriptOnce(src, globalName) {
+    if (window[globalName]) return Promise.resolve(window[globalName]);
+    return new Promise(function (res, rej) {
+      var s = document.createElement('script'); s.src = src;
+      s.onload = function () { window[globalName] ? res(window[globalName]) : rej(new Error(globalName + ' 로드 실패')); };
+      s.onerror = function () { rej(new Error(src + ' 로드 실패')); };
+      document.head.appendChild(s);
+    });
+  }
+  function gzipText(text) {
+    if (typeof CompressionStream === 'undefined') return Promise.resolve(new Blob([text]));
+    return new Response(new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))).blob();
+  }
+  function bookHtmlForPdf(w) {
+    var root = w.document.documentElement.cloneNode(true);
+    Array.prototype.forEach.call(root.querySelectorAll('script, #db-printbar'), function (x) { x.remove(); });
+    return '<!doctype html>' + root.outerHTML;
+  }
+  function downloadPdf(w, title, progress) {
+    var total = w.DB_PAGES;
+    if (!(total > 0)) return Promise.reject(new Error('조판이 아직 끝나지 않았습니다.'));
+    var user = ctx().user;
+    if (!user || !user.getIdToken) return Promise.reject(new Error('로그인 정보가 없습니다. 앱에서 다시 로그인해 주세요.'));
+    progress('PDF 준비 중…');
+    return Promise.all([user.getIdToken(), gzipText(bookHtmlForPdf(w)), loadScriptOnce('/assets/vendor/pdf-lib.min.js', 'PDFLib')]).then(function (r) {
+      var token = r[0], body = r[1], PDFLib = r[2];
+      var queue = [], results = [], done = 0;
+      for (var a = 1; a <= total; a += PDF_CHUNK) queue.push([a, Math.min(total, a + PDF_CHUNK - 1)]);
+      var parts = queue.length;
+      function fetchRange(rg, tries) {
+        return fetch('/api/deungbul-pdf', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'X-Pages': rg[0] + '-' + rg[1], 'Content-Type': 'application/octet-stream' }, body: body }).then(function (resp) {
+          if (resp.status === 413 && rg[1] > rg[0]) {
+            var mid = Math.floor((rg[0] + rg[1]) / 2); parts += 1;
+            return Promise.all([fetchRange([rg[0], mid], 0), fetchRange([mid + 1, rg[1]], 0)]).then(function () {});
+          }
+          if (!resp.ok) {
+            return resp.json().catch(function () { return {}; }).then(function (j) {
+              if (tries < 1 && resp.status >= 500) return fetchRange(rg, tries + 1);
+              throw new Error((j && j.error) || ('서버 오류 ' + resp.status));
+            });
+          }
+          return resp.arrayBuffer().then(function (buf) { results.push({ from: rg[0], buf: buf }); done += 1; progress('PDF 만드는 중… ' + done + '/' + parts); });
+        });
+      }
+      function worker() { var rg = queue.shift(); if (!rg) return Promise.resolve(); return fetchRange(rg, 0).then(worker); }
+      progress('PDF 만드는 중… 0/' + parts);
+      var ws = []; for (var i = 0; i < PDF_PARALLEL; i++) ws.push(worker());
+      return Promise.all(ws).then(function () {
+        progress('PDF 합치는 중…');
+        results.sort(function (x, y) { return x.from - y.from; });
+        return PDFLib.PDFDocument.create().then(function (out) {
+          var chain = Promise.resolve();
+          results.forEach(function (r) {
+            chain = chain.then(function () { return PDFLib.PDFDocument.load(r.buf); }).then(function (src) {
+              return out.copyPages(src, src.getPageIndices()).then(function (pgs) { pgs.forEach(function (p) { out.addPage(p); }); });
+            });
+          });
+          return chain.then(function () {
+            if (out.getPageCount() !== total) throw new Error('쪽 수가 맞지 않습니다(' + out.getPageCount() + '/' + total + ').');
+            out.setTitle(title);
+            return out.save();
+          });
+        });
+      }).then(function (bytes) {
+        var blob = new Blob([bytes], { type: 'application/pdf' });
+        var url = URL.createObjectURL(blob);
+        var a = w.document.createElement('a');
+        a.href = url; a.download = String(title || '등불').replace(/[\\/:*?"<>|]/g, '_') + '.pdf';
+        w.document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+      });
+    });
   }
   function buildPrintHtml(books, title, origin) {
     var src = books.map(function (b) { return '<div class="bookinfo" data-short="' + H(b.short) + '" data-foot="' + H(b.foot) + '"></div>' + b.parts.join(''); }).join('');
@@ -1240,7 +1340,7 @@
     return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>' + esc(title) + '</title><base href="' + origin + '/">' +
       '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
       '<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@400;700&family=Cormorant+Garamond:ital,wght@0,600;1,600&family=Bebas+Neue&family=DM+Mono:wght@500&display=block" rel="stylesheet">' +
-      '<link rel="stylesheet" href="' + origin + '/deungbul-print.css?v=6">' +
+      '<link rel="stylesheet" href="' + origin + '/deungbul-print.css?v=7">' +
       (hasMath ? '<style>*{text-wrap-style:auto!important}</style><link rel="stylesheet" href="' + origin + '/assets/katex/katex.min.css"><script src="' + origin + '/assets/katex/katex.min.js"><\/script><script src="' + origin + '/assets/katex/contrib/auto-render.min.js"><\/script>' : '') +
       '</head><body><div id="db-printbar"><span id="db-pstat">페이지를 조판하는 중입니다… (글꼴·이미지 로딩)</span><button id="db-pbtn" disabled>🖨 인쇄 / PDF 저장</button></div><div id="book"></div><div id="src" style="display:none">' + src + '</div>' +
       '<script>window.DB_ASSET=' + JSON.stringify(ASSET) + ';var PAG=' + PAGINATE.toString() + ';' +
@@ -1316,5 +1416,5 @@
   }
 
   // 테스트·외부 사용을 위한 노출
-  window.DB_internal = { uploadPack: uploadPack, ensureSheet: ensureSheet, loadPack: loadPack, buildPrintHtml: buildPrintHtml, flattenUnits: flattenUnits, validatePack: validatePack, buildSheetData: buildSheetData, nb: nb, personalParts: personalParts, teacherParts: teacherParts, PAGINATE: PAGINATE, examKoInfo: examKoInfo, examSubjInfos: examSubjInfos, normEl: normEl, itemIndex: itemIndex, twinOrder: twinOrder, publishSheets: publishSheets };
+  window.DB_internal = { uploadPack: uploadPack, ensureSheet: ensureSheet, loadPack: loadPack, buildPrintHtml: buildPrintHtml, flattenUnits: flattenUnits, validatePack: validatePack, buildSheetData: buildSheetData, nb: nb, personalParts: personalParts, teacherParts: teacherParts, PAGINATE: PAGINATE, examKoInfo: examKoInfo, examSubjInfos: examSubjInfos, normEl: normEl, itemIndex: itemIndex, twinOrder: twinOrder, publishSheets: publishSheets, bookHtmlForPdf: bookHtmlForPdf, downloadPdf: downloadPdf, fillPrintWindow: fillPrintWindow };
 })();
