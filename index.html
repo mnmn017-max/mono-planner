@@ -4151,6 +4151,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/fireba
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, deleteField, collection, query, where, orderBy, onSnapshot, serverTimestamp, getDocs, limit, arrayUnion, increment } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
+import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDnAr8er9NTegYGfIeVErrC96zvO9JlvgQ",
@@ -4184,12 +4185,43 @@ function _chatFileIcon(fileName){
 }
 // 실제 파일 업로드 - Cloudinary 응답에 secure_url이 없으면(업로드 프리셋이 그 파일
 // 형식을 막아둔 경우 등) 조용히 깨진 메시지를 만들지 않고 명확히 실패를 알림
+// 채팅 첨부 용량: 10MB 이하는 기존처럼 Cloudinary(무료 요금제 파일당 10MB 한도),
+// 10MB 초과~100MB는 Firebase Storage(chatFiles/{방}/...)로 올린다.
+var CHAT_CLOUDINARY_MAX = 10*1024*1024, CHAT_FILE_MAX = 100*1024*1024;
+function _chatFileTooBig(file){
+  if (file.size <= CHAT_FILE_MAX) return false;
+  alert('⚠️ 파일 용량이 너무 큽니다 ('+(file.size/1024/1024).toFixed(1)+'MB)\n채팅에는 100MB 이하 파일만 보낼 수 있습니다. 압축하거나 나눠서 보내주세요.');
+  return true;
+}
+// 큰 파일을 Firebase Storage에 올리고 {url, path}를 돌려줌. onProgress(0~100)
+function _uploadBigChatFile(file, roomId, onProgress){
+  var safe = String(file.name || 'file').replace(/[\\/#?\[\]*]/g, '_').slice(-120);
+  var path = 'chatFiles/' + roomId + '/' + Date.now() + '_' + safe;
+  var meta = { contentType: file.type || 'application/octet-stream',
+    contentDisposition: "attachment; filename*=UTF-8''" + encodeURIComponent(file.name || 'file'),
+    customMetadata: { uploader: (currentUser && currentUser.uid) || '' } };
+  return new Promise(function(resolve, reject){
+    var task = uploadBytesResumable(storageRef(storage, path), file, meta);
+    task.on('state_changed', function(snap){
+      if (onProgress && snap.totalBytes) onProgress(Math.round(snap.bytesTransferred / snap.totalBytes * 100));
+    }, function(err){
+      var m = (err && err.code === 'storage/unauthorized') ? '저장소 권한이 없습니다(관리자: Firebase Storage 규칙 확인 필요)' : (err && err.message) || '알 수 없는 오류';
+      reject(new Error(m));
+    }, function(){
+      getDownloadURL(task.snapshot.ref).then(function(url){ resolve({ url: url, path: path }); }, reject);
+    });
+  });
+}
 function _uploadChatFileAndSend(file, roomId, onDone){
-  // Cloudinary 무서명(unsigned) 업로드는 일반적으로 raw 파일 10MB 제한이 있어서,
-  // PPT처럼 큰 파일은 업로드 시도 전에 미리 걸러서 명확히 안내함 (그냥 시도했다가
-  // 서버에서 거절당하면 "왜 안 되는지" 알기 어려움)
-  if (file.size > 10*1024*1024) {
-    alert('⚠️ 파일 용량이 너무 큽니다 (10MB 초과: '+(file.size/1024/1024).toFixed(1)+'MB)\n10MB 이하로 압축하거나 나눠서 보내주세요.');
+  if (_chatFileTooBig(file)) return;
+  if (file.size > CHAT_CLOUDINARY_MAX) {
+    _uploadBigChatFile(file, roomId).then(function(r){
+      addDoc(collection(db,'chats',roomId,'messages'), {
+        fileUrl: r.url, filePath: r.path, fileName: file.name,
+        senderUid: currentUser.uid, senderName: currentProfile.name, createdAt: serverTimestamp()
+      });
+      if (onDone) onDone();
+    }).catch(function(e){ alert('⚠️ 파일 업로드 실패: ' + e.message); });
     return;
   }
   var fd = new FormData();
@@ -4218,6 +4250,7 @@ function _uploadChatFileAndSend(file, roomId, onDone){
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app);
 // [등불] deungbul.js가 사용할 Firestore 헬퍼 노출
 window.MP_FB = { db: db, doc: doc, getDoc: getDoc, setDoc: setDoc, addDoc: addDoc, updateDoc: updateDoc, deleteDoc: deleteDoc, deleteField: deleteField, collection: collection, query: query, where: where, getDocs: getDocs, serverTimestamp: serverTimestamp };
 const messaging = getMessaging(app);
@@ -16132,10 +16165,32 @@ window.sendKChatMsg = function() {
   }
 
   if (_selectedFileForChat) {
-    if (_selectedFileForChat.size > 10*1024*1024) {
-      alert('⚠️ 파일 용량이 너무 큽니다 (10MB 초과: '+(_selectedFileForChat.size/1024/1024).toFixed(1)+'MB)\n10MB 이하로 압축하거나 나눠서 보내주세요.');
-      return;
-    }
+    if (_chatFileTooBig(_selectedFileForChat)) return;
+    if (_selectedFileForChat.size > CHAT_CLOUDINARY_MAX) {
+      // 10MB 초과: Firebase Storage로 업로드(진행률 표시는 기존 UI 재사용)
+      var bigFile = _selectedFileForChat, bigName = bigFile.name;
+      var bPct = document.getElementById('kchat-file-percent'), bTrack = document.getElementById('kchat-file-progress-track');
+      var bFill = document.getElementById('kchat-file-progress-fill'), bCancel = document.getElementById('kchat-file-cancel-btn');
+      var bName = document.getElementById('kchat-file-name'), bPrev = document.getElementById('kchat-file-prev');
+      if (bPrev) bPrev.style.display = 'flex';
+      if (bName) bName.textContent = '⬆ 업로드 중... ' + bigName;
+      if (bPct) { bPct.style.display = 'inline'; bPct.textContent = '0%'; }
+      if (bTrack) { bTrack.style.display = 'block'; bTrack.classList.remove('kchat-progress-indeterminate'); }
+      if (bFill) bFill.style.width = '0%';
+      if (bCancel) { bCancel.disabled = true; bCancel.style.opacity = '0.4'; bCancel.style.cursor = 'not-allowed'; }
+      var bRoom = _curChatRoomId;
+      _uploadBigChatFile(bigFile, bRoom, function(pct){
+        if (bFill) bFill.style.width = pct + '%';
+        if (bPct) bPct.textContent = pct + '%';
+      }).then(function(r){
+        var msg = {fileUrl:r.url, filePath:r.path, fileName:bigName, senderUid:currentUser.uid, senderName:currentProfile.name, senderAvatar:currentProfile.avatar||null, readBy:[currentUser.uid], createdAt:serverTimestamp()};
+        addDoc(collection(db, 'chatRooms', bRoom, 'messages'), msg).then(function(){ if (bRoom === _curChatRoomId) _afterSend(msg); });
+        cancelKChatFile();
+      }).catch(function(e){
+        alert('파일 업로드 실패: ' + e.message);
+        resetKChatFileUploadUI();
+      });
+    } else {
     var fd = new FormData(); fd.append('file', _selectedFileForChat); fd.append('upload_preset', CLOUDINARY_PRESET); fd.append('resource_type','auto');
     var fname = _selectedFileForChat.name;
 
@@ -16212,6 +16267,7 @@ window.sendKChatMsg = function() {
 
     xhr.timeout = 120000; // 2분 제한
     xhr.send(fd);
+    }
   }
 
   var input = document.getElementById('kchat-input');

@@ -21,6 +21,7 @@ const admin = require("firebase-admin");
 const { v2: cloudinary } = require("cloudinary");
 
 const RETENTION_DAYS = 30;
+const STORAGE_BUCKET = "mono-planner-75a60.firebasestorage.app";
 
 // Firebase Admin 초기화 (콜드스타트마다 한 번만)
 function ensureFirebaseAdmin() {
@@ -85,20 +86,25 @@ async function runCleanup() {
       if (!data.fileUrl) continue;
       stats.scanned++;
 
-      const info = extractPublicId(data.fileUrl);
-      if (!info) {
-        stats.errors++;
-        continue;
-      }
-
       try {
-        await cloudinary.uploader.destroy(info.publicId, {
-          resource_type: info.resourceType,
-          invalidate: true,
-        });
+        if (data.filePath) {
+          // 10MB 초과 파일은 Firebase Storage에 있음(chatFiles/...)
+          await admin.storage().bucket(STORAGE_BUCKET).file(data.filePath).delete({ ignoreNotFound: true });
+        } else {
+          const info = extractPublicId(data.fileUrl);
+          if (!info) {
+            stats.errors++;
+            continue;
+          }
+          await cloudinary.uploader.destroy(info.publicId, {
+            resource_type: info.resourceType,
+            invalidate: true,
+          });
+        }
         await msgDoc.ref.update({
           fileUrl: admin.firestore.FieldValue.delete(),
           fileName: admin.firestore.FieldValue.delete(),
+          filePath: admin.firestore.FieldValue.delete(),
           text: data.text || "📎 (첨부파일 - 30일 경과로 자동 삭제됨)",
           fileExpired: true,
         });

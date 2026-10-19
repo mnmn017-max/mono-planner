@@ -1,0 +1,35 @@
+rules_version = '2';
+// MONO PLANNER - Firebase Storage 보안 규칙
+// 채팅에서 10MB를 넘는 첨부파일(최대 100MB)만 여기에 저장된다. (10MB 이하는 Cloudinary)
+// 경로: chatFiles/{채팅방ID}/{시각_파일명}
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() { return request.auth != null; }
+    // 앱 회원(users 문서가 있는 사람)
+    function isMember() {
+      return signedIn() && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid));
+    }
+    // 그 채팅방의 참여자인가 (새 채팅: chatRooms.participants / 옛 1:1 채팅: 방 ID가 '학생UID_선생님UID')
+    function inRoom(roomId) {
+      return (firestore.exists(/databases/(default)/documents/chatRooms/$(roomId))
+              && request.auth.uid in firestore.get(/databases/(default)/documents/chatRooms/$(roomId)).data.participants)
+          || roomId.split('_').hasAny([request.auth.uid]);
+    }
+
+    match /chatFiles/{roomId}/{fileName} {
+      // 받기: 그 방 참여자 (앱의 다운로드 링크는 토큰이 붙어 있어 링크를 받은 사람만 열 수 있음)
+      allow read: if isMember() && inRoom(roomId);
+      // 올리기: 그 방 참여자, 100MB 미만, 새 파일만(덮어쓰기 금지)
+      allow create: if isMember() && inRoom(roomId)
+                    && request.resource.size < 100 * 1024 * 1024
+                    && resource == null;
+      // 수정·삭제는 서버(30일 자동 정리, 관리자 권한)만
+      allow update, delete: if false;
+    }
+
+    // 그 밖의 경로는 모두 막음
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
