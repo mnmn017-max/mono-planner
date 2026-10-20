@@ -773,7 +773,17 @@
   function E(s) {
     s = String(s == null ? '' : s);
     if (s.indexOf('**') >= 0) return E(s.replace(/\*\*/g, '\u0001')).replace(/\u0001([^\u0001]*)\u0001/g, '<b>$1</b>').replace(/\u0001/g, '');
-    if (s.indexOf('$') < 0 || !MM) return esc(nb(s));
+    if (!MM) {
+      // 성염색체 유전자형 표기 X^A, X^aB → 위첨자 (A, a, B 등은 대립유전자, Y는 Y 염색체)
+      var sup = s.indexOf('^') >= 0;
+      if (sup) s = s.replace(/([XY])\^((?:(?!X\^)[A-XZa-z])+\*?)/g, '$1\uE000$2\uE001');
+      var o = esc(nb(s));
+      if (sup) o = o.replace(/\uE000([^\uE001]*)\uE001/g, function (m, a) { return '<sup class="gt">' + a.replace(/\u2060/g, '') + '</sup>'; });
+      // 수학 책과 함께 인쇄될 때 금액 표기($15 등)가 수식으로 읽히지 않게 $를 따로 감싼다
+      if (o.indexOf('$') >= 0) o = o.replace(/\$/g, function () { return '<span>$</span>'; });
+      return o;
+    }
+    if (s.indexOf('$') < 0) return esc(nb(s));
     // 수식($...$)은 줄바꿈 처리(nb) 없이 그대로 두고 KaTeX가 그린다
     return s.split(/(\$\$[\s\S]+?\$\$|\$[^$]+?\$)/).map(function (p, i) { return i % 2 ? esc(p) : esc(nb(p)); }).join('');
   }
