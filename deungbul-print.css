@@ -396,3 +396,9 @@ body{overflow-wrap:break-word}
 .tbox.psg{border:0;padding:0;margin:1.5mm 0 2.4mm;font-family:"Noto Serif KR",serif;font-size:10pt;line-height:1.75;text-align:justify}
 .ctab .btab{margin:1.2mm 0 .6mm;font-size:8.8pt}
 .a-opt .orow.mk .on{font-family:var(--serif);font-weight:700;color:var(--burg)}
+/* 영어 쌍둥이: 주어진 문장·주어진 글·요약문 상자, 밑줄 */
+.tbox.given{border:.7pt solid var(--tx2,#444);padding:2.6mm 3.6mm;margin:1.5mm 0 4.2mm;font-family:"Noto Serif KR",serif;font-size:10pt;line-height:1.75;text-align:justify}
+.tbox.given .bl{font-size:10pt;line-height:1.75}
+.tbox.given.sum{margin-top:1mm}
+.sumarrow{text-align:center;font-size:12pt;line-height:1;margin:1mm 0 1.2mm;color:var(--tx2,#444)}
+u.ul{text-decoration:underline;text-decoration-thickness:.6pt;text-underline-offset:1.6pt}

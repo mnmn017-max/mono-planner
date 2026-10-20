@@ -775,9 +775,12 @@
     if (s.indexOf('**') >= 0) return E(s.replace(/\*\*/g, '\u0001')).replace(/\u0001([^\u0001]*)\u0001/g, '<b>$1</b>').replace(/\u0001/g, '');
     if (!MM) {
       // 성염색체 유전자형 표기 X^A, X^aB → 위첨자 (A, a, B 등은 대립유전자, Y는 Y 염색체)
+      var ul = s.indexOf('<u>') >= 0;
+      if (ul) s = s.replace(/<u>/g, '\uE002').replace(/<\/u>/g, '\uE003');
       var sup = s.indexOf('^') >= 0;
       if (sup) s = s.replace(/([XY])\^((?:(?!X\^)[A-XZa-z])+\*?)/g, '$1\uE000$2\uE001');
       var o = esc(nb(s));
+      if (ul) o = o.replace(/\uE002/g, '<u class="ul">').replace(/\uE003/g, '</u>');
       if (sup) o = o.replace(/\uE000([^\uE001]*)\uE001/g, function (m, a) { return '<sup class="gt">' + a.replace(/\u2060/g, '') + '</sup>'; });
       // 수학 책과 함께 인쇄될 때 금액 표기($15 등)가 수식으로 읽히지 않게 $를 따로 감싼다
       if (o.indexOf('$') >= 0) o = o.replace(/\$/g, function () { return '<span>$</span>'; });
@@ -914,7 +917,25 @@
   }
   function twinChoices(t) {
     if (t.type === 'short' || !(t.choices || []).length) return '<div class="ansline">답 <span class="blank"></span></div>';
+    if ((t.choices || []).every(function (c) { return /^\s*[①-⑤]\s*$/.test(c); })) return ''; // 번호가 지문 안에 있는 유형(문장 삽입·무관한 문장)
     return '<ol class="choices">' + (t.choices || []).map(function (c) { return '<li>' + E(c) + '</li>'; }).join('') + '</ol>';
+  }
+  // 영어 쌍둥이 지문: 문장 삽입은 [주어진 문장]을 상자로, 순서 배열은 주어진 글을 상자로, 요약문은 ↓ 아래 상자로
+  function engPsg(t, bx) {
+    var stem = String(t.stem || ''), m;
+    if ((m = bx.match(/^\[주어진 문장\]\s*([\s\S]*?)\n\s*\n([\s\S]*)$/))) {
+      return '<div class="tbox given">' + boxHtml(m[1].trim()) + '</div><div class="tbox psg">' + boxHtml(m[2].trim()) + '</div>';
+    }
+    if (/주어진 글 다음에/.test(stem) && (m = bx.match(/^([\s\S]*?)\n\s*\n(\(A\)[\s\S]*)$/))) {
+      return '<div class="tbox given">' + boxHtml(m[1].trim()) + '</div><div class="tbox psg">' + boxHtml(m[2].trim()) + '</div>';
+    }
+    if (/주어진 글 \(A\)에/.test(stem) && (m = bx.match(/^\(A\)\s*\n([\s\S]*?)\n\s*\n(\(B\)[\s\S]*)$/))) {
+      return '<div class="tbox given"><div class="bl">(A)</div>' + boxHtml(m[1].trim()) + '</div><div class="tbox psg">' + boxHtml(m[2].trim()) + '</div>';
+    }
+    if ((m = bx.match(/^([\s\S]*?)\n\s*\n→\s*([\s\S]*)$/))) {
+      return '<div class="tbox psg">' + boxHtml(m[1].trim()) + '</div><div class="sumarrow">↓</div><div class="tbox given sum">' + boxHtml(m[2].trim()) + '</div>';
+    }
+    return '<div class="tbox psg">' + boxHtml(bx) + '</div>';
   }
   function twinAtoms(u, items) {
     var pm = (u.passage_map || []).map(function (p) { return '<em>' + E(p.part) + '</em>'; }).join('<i>→</i>');
@@ -922,7 +943,7 @@
     return items.map(function (it, k) {
       var t = it.twin_a, bx = String(t.box || '').trim(), box = '';
       if (bx.indexOf('(원 시험지') === 0) box = '<div class="refbox"><b>원 시험지 자료를 보고 답하세요</b><span>' + E(bx.replace(/^\(|\)$/g, '')) + '</span></div>';
-      else if (bx) box = (EM ? '<div class="tbox psg">' : TM ? '<div class="tbox">' : '<div class="tbox"><div class="tbl">&lt;보기&gt;</div>') + boxHtml(bx) + '</div>';
+      else if (bx) box = (EM ? engPsg(t, bx) : (TM ? '<div class="tbox">' : '<div class="tbox"><div class="tbl">&lt;보기&gt;</div>') + boxHtml(bx) + '</div>');
       var tw = '<div class="twin"><div class="twh"><span class="tno">' + it.no + '<small>-쌍둥이</small></span><span class="tfrom">원 ' + it.no + '번과 같은 출제 포인트</span></div><div class="stem">' + E(t.stem) + '</div>' + box + twinChoices(t) + (MM ? '' : '<div class="memo"><span>풀이 메모</span></div>') + '</div>';
       var ta = atom((k === 0 ? head : '') + tw, { run: '쌍둥이 문항 · ' + u.section + ' ' + u.range + '번', newpage: k === 0, cls: 'a-twin' });
       return MM ? ta + atom('<div class="memo big"><span>' + it.no + '-쌍둥이 풀이 메모</span></div>', { run: '쌍둥이 문항 · ' + u.section + ' ' + u.range + '번', cls: 'a-memo' }) : ta;
@@ -991,7 +1012,7 @@
       var ref = unitOf(o.k); if (!ref) return;
       var u = ref.unit, t = ref.item.twin_a, bx = String(t.box || '').trim(), box = '';
       if (bx.indexOf('(원 시험지') === 0) box = '<div class="refbox"><b>원 시험지 자료를 보고 답하세요</b><span>' + E(bx.replace(/^\(|\)$/g, '')) + '</span></div>';
-      else if (bx) box = (EM ? '<div class="tbox psg">' : TM ? '<div class="tbox">' : '<div class="tbox"><div class="tbl">&lt;보기&gt;</div>') + boxHtml(bx) + '</div>';
+      else if (bx) box = (EM ? engPsg(t, bx) : (TM ? '<div class="tbox">' : '<div class="tbox"><div class="tbl">&lt;보기&gt;</div>') + boxHtml(bx) + '</div>');
       var tw = '<div class="twin"><div class="twh"><span class="tno">T' + o.t + '</span><span class="tfrom">' + (TM ? E(u.section) : EM ? E(areaGroup(u)) : MM ? E(u.section === '공통' ? '공통과목' : u.section) : '원 시험지 · ' + E(u.section + ' ' + u.range) + '번 지문을 펴고 푸세요') + '</span></div><div class="stem">' + E(t.stem) + '</div>' + box + twinChoices(t) + (MM ? '' : '<div class="memo"><span>풀이 메모</span></div>') + '</div>';
       A.push(atom(tw, { run: '섞어 푸는 쌍둥이 문항', cls: 'a-twin' }));
       if (MM) A.push(atom('<div class="memo big"><span>T' + o.t + ' 풀이 메모</span></div>', { run: '섞어 푸는 쌍둥이 문항', cls: 'a-memo' }));
@@ -1009,10 +1030,10 @@
   }
   function vocabAtoms(list, test) {
     if (!list.length) return [];
-    var run = test ? '단어 테스트' : '부록 · 나의 단어장';
+    var run = test ? '단어 테스트' : inUnitsAll ? '부록 · 단어장' : '나의 단어장';
     var A = [atom(test
-      ? '<div class="kick">뜻 쓰기</div><h2 class="pt">단어 테스트</h2><p class="lead">이번 복습 문항에서 나온 단어입니다. 지문 속에서 쓰인 뜻을 적고, 부록 「나의 단어장」으로 채점하세요.</p>'
-      : '<div class="kick">단어</div><h2 class="pt">' + (inUnitsAll ? '단어장' : '나의 단어장') + '</h2><p class="lead">뜻은 그 지문에서 쓰인 뜻(문맥상 의미)입니다. 문항 번호를 보고 원 지문에서 다시 확인하세요.</p>',
+      ? '<div class="kick">뜻 쓰기</div><h2 class="pt">단어 테스트</h2><p class="lead">이번 복습 문항에서 나온 단어입니다. 앞의 「나의 단어장」을 가린 채 지문 속에서 쓰인 뜻을 적고, 단어장으로 채점하세요.</p>'
+      : '<div class="kick">단어</div><h2 class="pt">' + (inUnitsAll ? '단어장' : '나의 단어장') + '</h2><p class="lead">뜻은 그 지문에서 쓰인 뜻(문맥상 의미)입니다. 문항 번호를 보고 원 지문에서 다시 확인하세요.' + (inUnitsAll ? '' : ' 먼저 외운 뒤, 바로 다음의 단어 테스트로 확인하세요.') + '</p>',
       { run: run, mark: test ? 'VTEST' : 'VOCAB', newpage: true })];
     for (var i = 0; i < list.length; i += 2) {
       var pair = list.slice(i, i + 2).map(function (v, j) {
@@ -1118,10 +1139,10 @@
     var unitOf = function (k) { return idx[k]; };
     P = P.concat(mixedTwinAtoms(order, unitOf));
     var vl = vocabList(track, inc); inUnitsAll = false;
-    if (vl.length) P = P.concat(vocabAtoms(vl, true));
+    if (vl.length) P = P.concat(vocabAtoms(vl, false)).concat(vocabAtoms(vl, true));
     P.push(divider('div_common2.jpg', '부록', '항해 일지', '개념 총정리 · 확인 질문 정답 · 쌍둥이 해설'));
     var cqs = []; track.forEach(function (u) { pick(u).forEach(function (it) { if (it.check_a) cqs.push({ label: secShort(u.section) + it.no + '번', a: it.check_a }); }); });
-    P = P.concat(conceptAtoms(track, inc)).concat(checkAnsAtoms(cqs)).concat(mixedTansAtoms(order, unitOf)).concat(vocabAtoms(vl, false));
+    P = P.concat(conceptAtoms(track, inc)).concat(checkAnsAtoms(cqs)).concat(mixedTansAtoms(order, unitOf));
     P.push(backCover());
     return { parts: P, short: disp.short || '', foot: name + ' · ' + trackLabel + ' · 개인 복습지', math: MM };
   }
@@ -1372,7 +1393,7 @@
     return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>' + esc(title) + '</title><base href="' + origin + '/">' +
       '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
       '<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@400;700&family=Cormorant+Garamond:ital,wght@0,600;1,600&family=Bebas+Neue&family=DM+Mono:wght@500&display=block" rel="stylesheet">' +
-      '<link rel="stylesheet" href="' + origin + '/deungbul-print.css?v=7">' +
+      '<link rel="stylesheet" href="' + origin + '/deungbul-print.css?v=8">' +
       (hasMath ? '<style>*{text-wrap-style:auto!important}</style><link rel="stylesheet" href="' + origin + '/assets/katex/katex.min.css"><script src="' + origin + '/assets/katex/katex.min.js"><\/script><script src="' + origin + '/assets/katex/contrib/auto-render.min.js"><\/script>' : '') +
       '</head><body><div id="db-printbar"><span id="db-pstat">페이지를 조판하는 중입니다… (글꼴·이미지 로딩)</span><button id="db-pbtn" disabled>🖨 인쇄 / PDF 저장</button></div><div id="book"></div><div id="src" style="display:none">' + src + '</div>' +
       '<script>window.DB_ASSET=' + JSON.stringify(ASSET) + ';var PAG=' + PAGINATE.toString() + ';' +
