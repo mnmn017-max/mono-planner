@@ -3770,26 +3770,86 @@ C.ttValidate = function(blocks){
 
 /* ───────── 자동 배정 알고리즘 ─────────
    목표: 수능 준비에 효율적인 배치 — 단순 등간격이 아니라 아래를 함께 고려한다.
-   1) 같은 과목 시험은 서로 멀리(복기·오답 정리·약점 보완 시간 확보), 서로 다른 과목은 번갈아
-   2) 하루 부담 분산(한 날 1개 기본, 주말만 2개까지), 긴 시험(≥100분) 연속일 회피
+   [순서] order
+     chrono(기본) : 기출은 시행 시점순(과거→최근, 같은 해는 3·4월→6월→7월→9월→10월→수능), 사설·자체 시험은 회차순,
+                    기출과 사설이 섞이면 기출 먼저(평가원 기준 기본기 → 사설로 응용·고난도)
+     recent       : 최근 기출부터(기간이 짧거나 중간에 끊길 수 있어 최근 경향을 먼저 확보해야 할 때)
+     title        : 시험 이름 순(예전 방식)
+     과목별 시험 수가 달라도 각 과목이 기간 전체에 고르게 퍼지도록, 과목 안 진행률(순위/개수)로 전체 순서를 섞는다.
+   [밀도] pace
+     even   균등형     : 간격 일정 — 응시·복기 리듬이 일정해 장기 계획에 적합
+     ramp   후반 집중형 : 마감(실제 시험)에 가까울수록 촘촘 — 앞쪽은 약점 보완 시간, 뒤쪽은 실전 감각
+     front  전반 집중형 : 초반에 촘촘 — 빨리 진단하고 후반은 오답·약점 보완(학기 초·새 과정 진입)
+     weekend 주말 실전형: 주말(쉬는 날)에 몰아 응시, 평일은 복기 — 학교 다니는 학생에게 현실적인 응시-복기 주기
+     set    실전 세트형 : 같은 회차(같은 시행 시점) 여러 과목을 하루에 수능 시간표대로 — 수능 하루 체력·전환 훈련
+   [공통]
+   1) 같은 과목 시험은 서로 멀리(복기·오답 정리 시간 확보), 서로 다른 과목은 번갈아(교차 학습)
+   2) 하루 부담 분산(설정 한도 안에서 가급적 적게), 긴 시험(≥100분) 연속일 회피
    3) 시험 시각은 수능 시간대(국어 08:40·수학 10:30·영어 13:10·한국사 14:50·탐구 15:35)에 맞춤
    4) 평일 학교 가는 학생은 하교 후 시간대만 사용, 긴 시험·같은 날 2개 시험은 주말 우선
    5) 마감일 당일은 가급적 비워 복기 시간 확보, 오늘 이미 지난 시각은 사용 안 함
-   6) 후반으로 갈수록 시험 간격이 조금씩 촘촘해지는 배치(앞쪽은 오답·약점 보완 시간, 뒤쪽은 실전 감각) — pace:'even'이면 균등
-   7) 학생의 기존 일정(시간 겹침·같은 날·같은 과목 간격)을 반영 */
+   6) 학생의 기존 일정(시간 겹침·같은 날·같은 과목 간격)을 반영 */
 var SUNEUNG_T = {ko:520, ma:630, en:790, hi:890, sc:935, so:935};
 C.SUNEUNG_T = SUNEUNG_T;
 C.isSchoolGrade = function(g){ g=String(g||''); return g.indexOf('중학교')===0 || g.indexOf('고등학교')===0; };
 C.gradeShort = function(g){ g=String(g||''); if(g==='N수') return 'N수'; if(g==='성인') return '성인'; if(g.indexOf('고등학교')===0) return '고'+g.replace(/[^0-9]/g,''); if(g.indexOf('중학교')===0) return '중'+g.replace(/[^0-9]/g,''); return g||'-'; };
 function ceil10(m){ return Math.ceil(m/10)*10; }
-C.interleaveExams = function(exams){
-  var groups={}, order=[];
-  exams.forEach(function(e){ var k=e.subj||'x'; if(!groups[k]){ groups[k]=[]; order.push(k); } groups[k].push(e); });
-  order.forEach(function(k){ groups[k].sort(function(a,b){ return String(a.title||'').localeCompare(String(b.title||''),'ko',{numeric:true}); }); });
-  order.sort(function(a,b){ return groups[b].length-groups[a].length; });
-  var out=[], more=true, r=0;
-  while(more){ more=false; order.forEach(function(k){ if(groups[k][r]){ out.push(groups[k][r]); more=true; } }); r++; }
-  return out;
+/* 시험 이름에서 시행 시점을 읽는다 → {t:연*12+월, ym:'2023.11', kind:'P'(평가원형)|'O'(교육청형)} 또는 null
+   - '2025학년도 수능' → 2024.11 시행 / '2025학년도 6월 모의평가' → 2024.06 시행
+   - 연도만 있으면: 수능·모평(평가원)은 학년도로, 학력평가(교육청)는 시행연도로 본다(흔한 표기 관례)
+   - '24학년도'처럼 두 자리도 인식 */
+C.examTime = function(title, src){
+  var t=String(title||''), m, hy=null, y=null, mon=null;
+  var isSuneung=/수능|대학수학능력/.test(t), isMopyeong=/모의평가|모평|평가원/.test(t)||src==='pyeongga'||src==='평가원';
+  var isHakpyeong=/학력평가|학평|교육청|전국연합/.test(t)||src==='office'||src==='교육청';
+  if((m=t.match(/(20\d{2}|\d{2})\s*학년도/))) hy=+m[1]<100?2000+(+m[1]):+m[1];
+  else if((m=t.match(/(?:^|[^\d])(20\d{2})(?!\d)/))) y=+m[1];
+  else if((m=t.match(/(?:^|[^\d])(\d{2})\s*(?:년|수능|모평)/))) y=2000+(+m[1]);
+  if(isSuneung) mon=11; else if((m=t.match(/(?:^|[^\d])(1[0-2]|[1-9])\s*월/))) mon=+m[1];
+  if(mon==null) return null;
+  if(hy==null&&y==null) return isSuneung?null:{t:mon, ym:mon+'월', kind:'M'};  /* 연도 없는 월별 사설(더프 10월 등): 월 순서만 */
+  if(hy==null){ hy=(isHakpyeong&&!isSuneung&&!isMopyeong)?null:y; if(hy==null) return {t:y*12+mon, ym:y+'.'+String(mon).padStart(2,'0'), kind:'O'}; }
+  var yy=hy-1; /* 학년도 → 시행연도 */
+  return {t:yy*12+mon, ym:yy+'.'+String(mon).padStart(2,'0'), kind:(isHakpyeong&&!isMopyeong&&!isSuneung)?'O':'P'};
+};
+/* 회차: '서바이벌 9회' → {series:'서바이벌', round:9} */
+C.examRound = function(title){
+  var t=String(title||''), m=t.match(/(\d+)\s*회/); if(!m) return null;
+  var series=t.replace(/\[[^\]]*\]|\([^)]*\)/g,' ').replace(/\d+\s*회.*$/,'').replace(/국어|수학|영어|한국사|탐구|사회|과학|화법과\s*작문|언어와\s*매체|확률과\s*통계|미적분|기하|\s+/g,' ').trim();
+  return {series:series, round:+m[1]};
+};
+/* 같은 과목 안의 정렬 기준 */
+C.examSortKey = function(e, order){
+  var tm=C.examTime(e.title, e.src), rd=tm?null:C.examRound(e.title);
+  if(order==='title') return [0, 0, String(e.title||'')];
+  if(tm&&tm.kind==='M') return [1, tm.t, String(e.title||'')];
+  if(tm) return [0, order==='recent'?-tm.t:tm.t, String(e.title||'')];
+  if(rd) return [1, rd.round, rd.series+'|'+String(e.title||'')];
+  return [2, 0, String(e.title||'')];
+};
+function cmpKey(a,b){ for(var i=0;i<a.length;i++){ if(a[i]===b[i]) continue; if(typeof a[i]==='number') return a[i]-b[i]; return String(a[i]).localeCompare(String(b[i]),'ko',{numeric:true}); } return 0; }
+/* 과목별로 정렬한 뒤, 과목 안 진행률((순위+0.5)/개수) 순으로 전체를 섞는다 → 시험 수가 다른 과목도 기간 전체에 고르게 */
+C.interleaveExams = function(exams, order){
+  var groups={}, keys=[];
+  exams.forEach(function(e){ var k=e.subj||'x'; if(!groups[k]){ groups[k]=[]; keys.push(k); } groups[k].push(e); });
+  keys.forEach(function(k){ groups[k].sort(function(a,b){ return cmpKey(C.examSortKey(a,order),C.examSortKey(b,order)); }); });
+  keys.sort(function(a,b){ return groups[b].length-groups[a].length; });
+  var out=[];
+  keys.forEach(function(k,ki){ var n=groups[k].length; groups[k].forEach(function(e,i){ out.push({e:e, f:(i+0.5)/n, ki:ki}); }); });
+  out.sort(function(a,b){ return a.f-b.f || a.ki-b.ki; });
+  return out.map(function(x){ return x.e; });
+};
+/* 실전 세트형: 같은 시행 시점(또는 같은 회차)의 여러 과목을 한 묶음으로 */
+C.examSetKey = function(e){
+  var tm=C.examTime(e.title, e.src); if(tm) return 'T'+tm.kind+tm.t;
+  var rd=C.examRound(e.title); if(rd) return 'R'+rd.series+'#'+rd.round;
+  return 'X'+e.id;
+};
+/* 밀도 곡선: 순서상 위치 x(0~1) → 기간상 위치(0~1) */
+C.paceWarp = function(x, pace){
+  if(pace==='ramp') return Math.pow(x, 0.6);      /* 뒤로 갈수록 간격이 좁아짐 */
+  if(pace==='front') return Math.pow(x, 1.65);    /* 앞쪽이 촘촘 */
+  return x;
 };
 /* opt: {exams:[{id,title,subj,dur}], start,end,today,nowMin, school(bool), schoolStart(min), late(min), excluded[], existing:[{date,startMin,durationMin,subj}], prefer:{examId:date},
           maxPerDay, vacation(bool)} → {items:[{examId,date,startMin,notes[]}], unplaced:[{examId,reason}], days:n} */
@@ -3810,15 +3870,26 @@ C.autoPlan = function(opt){
   var all=(opt.existing||[]).filter(function(s){return s.subj;}).map(function(s){return {date:s.date,subj:s.subj};});
   var res={items:[],unplaced:[],days:days.length};
   if(!days.length){ (opt.exams||[]).forEach(function(e){ res.unplaced.push({examId:e.id,reason:'배정 가능한 날짜가 없어요(기간·제외 날짜 확인)'}); }); return res; }
-  var seq=C.interleaveExams(opt.exams||[]), M=seq.length, N=days.length;
+  var pace=opt.pace||'even', order=opt.order||'chrono';
+  if(pace==='set') return C.autoPlanSets(opt, days, info, idxOf, all, res);
+  var seq=C.interleaveExams(opt.exams||[], order), M=seq.length, N=days.length;
   var cntSubj={}; seq.forEach(function(e){ cntSubj[e.subj]=(cntSubj[e.subj]||0)+1; });
+  var hasWeekend=days.some(function(d){ return info[d].weekend; });
+  /* 같은 과목 안 순위 → 그 과목의 기대 간격(밀도 곡선 반영). 같은 과목은 순서를 반드시 지킨다(앞 회차보다 늦게). */
+  var rankIn={}, seen={}; seq.forEach(function(e){ seen[e.subj]=(seen[e.subj]||0); rankIn[e.id]=seen[e.subj]++; });
+  var lastIdx={};
   seq.forEach(function(e,i){
-    var ideal=(opt.prefer&&opt.prefer[e.id]&&idxOf[opt.prefer[e.id]]!=null)?idxOf[opt.prefer[e.id]]:Math.min(N-1,Math.floor(Math.pow((i+0.5)/M,(opt.pace==='even'||M<4)?1:0.85)*N));
+    var ideal=(opt.prefer&&opt.prefer[e.id]&&idxOf[opt.prefer[e.id]]!=null)?idxOf[opt.prefer[e.id]]:Math.min(N-1,Math.floor(C.paceWarp((i+0.5)/M, M<3?'even':pace)*N));
     var perSub=(cntSubj[e.subj]||1)+all.filter(function(a){return a.subj===e.subj;}).length;
-    var minGap=Math.max(2,Math.min(7,Math.floor(N/perSub)));
+    var nS=cntSubj[e.subj]||1, rk=rankIn[e.id], wp=M<3?'even':(pace==='weekend'?'even':pace);
+    var localGap=(C.paceWarp(Math.min(1,(rk+1.5)/nS),wp)-C.paceWarp((rk+0.5)/nS,wp))*N;
+    if(nS<2) localGap=N/perSub;
+    var minGap=Math.max(localGap>=3?2:1,Math.min(7,Math.floor(localGap*0.7)));
+    var after=lastIdx[e.subj]!=null?lastIdx[e.subj]:-1;   /* 같은 과목 앞 회차가 놓인 날 */
     var best=null;
     days.forEach(function(d,di){
       var D=info[d]; if(D.list.length>=D.cap) return;
+
       /* 시각 후보 */
       var pref=D.school?D.wo:(SUNEUNG_T[e.subj]!=null?SUNEUNG_T[e.subj]:9*60), s=null, t;
       function fits(st){ if(st<D.wo||st+e.dur>D.wc) return false; return D.list.every(function(x){ return st+e.dur+20<=x.s || x.e+20<=st; }); }
@@ -3830,22 +3901,35 @@ C.autoPlan = function(opt){
       all.concat(res.items.filter(function(it){return it._subj===e.subj;}).map(function(it){return {date:it.date,subj:it._subj};})).forEach(function(a){
         if(a.subj!==e.subj) return; var g=Math.abs(C.diffDays(a.date,d)); if(g<minGap) c+=(minGap-g)*12+(g===0?40:0); });
       c+=D.list.length*14;
+      if(di<=after) c+=25;   /* 같은 과목 앞 회차보다 앞서면 감점(최종 순서는 아래에서 바로잡음) */
       var load=D.list.reduce(function(a,x){return a+x.dur;},0)+e.dur; if(load>300) c+=40;
       if(D.school) c+=(e.dur>=100?6:0)+(D.list.length?25:0);
       if(opt.school&&!D.school&&e.dur>=100) c-=8;
       [-1,1].forEach(function(k){ var nb=days[di+k]; if(nb&&C.diffDays(d,nb)===k&&info[nb].list.some(function(x){return x.dur>=100;})&&e.dur>=100) c+=6; });
       if(d===days[N-1]&&N>1) c+=10;
       if(d===today) c+=4;
+      if(pace==='weekend'&&hasWeekend&&!D.weekend) c+=30;   /* 주말 실전형: 평일은 복기용으로 비움 */
       c+=di*0.01;
       if(!best||c<best.c) best={c:c,d:d,s:s,di:di,pref:pref};
     });
     if(!best){ res.unplaced.push({examId:e.id,reason:'남은 날에 시간이 없어요 — 기간을 늘리거나 하루 최대 시험 수를 늘려 보세요'}); return; }
     var D=info[best.d]; D.list.push({s:best.s,e:best.s+e.dur,dur:e.dur,subj:e.subj});
+    lastIdx[e.subj]=Math.max(best.di, lastIdx[e.subj]!=null?lastIdx[e.subj]:-1);
     var notes=[];
     if(D.school) notes.push('평일 하교 후 '+C.minToHHMM(best.s)+' 시작');
     else if(best.s===best.pref&&SUNEUNG_T[e.subj]!=null) notes.push((D.weekend?'주말 ':'')+'수능 시간대('+C.minToHHMM(best.s)+')');
     else notes.push(C.minToHHMM(best.s)+' 시작');
     res.items.push({examId:e.id,date:best.d,startMin:best.s,notes:notes,_subj:e.subj,_dur:e.dur});
+  });
+  /* 같은 과목은 정한 순서(시행 시점·회차)대로: 그 과목이 차지한 날짜·시각 칸을 순서대로 다시 나눠 준다(시험 시간이 같을 때) */
+  var seqPos={}; seq.forEach(function(e,i){ seqPos[e.id]=i; });
+  var bySub={}; res.items.forEach(function(it){ (bySub[it._subj]=bySub[it._subj]||[]).push(it); });
+  Object.keys(bySub).forEach(function(k){
+    var L=bySub[k]; if(L.length<2) return;
+    var durs={}; L.forEach(function(it){ durs[it._dur]=1; }); if(Object.keys(durs).length>1) return;
+    var slots=L.map(function(it){ return {date:it.date,startMin:it.startMin,notes:it.notes}; }).sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:a.startMin-b.startMin; });
+    var ex=L.slice().sort(function(a,b){ return seqPos[a.examId]-seqPos[b.examId]; });
+    ex.forEach(function(it,i){ it.date=slots[i].date; it.startMin=slots[i].startMin; it.notes=slots[i].notes; });
   });
   /* 설명: 같은 과목 사이 간격 */
   res.items.forEach(function(it){
@@ -3855,6 +3939,98 @@ C.autoPlan = function(opt){
   });
   res.items.sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:a.startMin-b.startMin; });
   return res;
+};
+/* 실전 세트형: 같은 시행 시점·회차의 여러 과목 시험을 하루에 수능 시간표 순서로 배치
+   - 묶음끼리는 기간 전체에 고르게(같은 과목 간격은 자연히 확보)
+   - 학교 가는 평일은 하루에 여러 과목을 볼 수 없으므로 주말·쉬는 날 우선
+   - 하루에 다 안 들어가면(시간·한도) 남는 과목은 가까운 날에 따로 배치 */
+C.autoPlanSets = function(opt, days, info, idxOf, all, res){
+  var N=days.length, groups={}, gkeys=[], order=opt.order||'chrono';
+  (opt.exams||[]).forEach(function(e){
+    var k=C.examSetKey(e), j=0;
+    /* 같은 묶음에 같은 과목이 또 있으면(중복 시험) 다음 묶음으로 */
+    while(groups[k+(j?'#'+j:'')]&&groups[k+(j?'#'+j:'')].some(function(x){return x.subj===e.subj;})) j++;
+    var kk=k+(j?'#'+j:''); if(!groups[kk]){ groups[kk]=[]; gkeys.push(kk); } groups[kk].push(e);
+  });
+  function gsort(k){ var e=groups[k][0]; return C.examSortKey(e, order).concat([k.indexOf('#')>=0?+k.split('#').pop():0]); }
+  gkeys.sort(function(a,b){ return cmpKey(gsort(a),gsort(b)); });
+  var subjT=function(e){ return SUNEUNG_T[e.subj]!=null?SUNEUNG_T[e.subj]:9*60; };
+  var G=gkeys.length, lastIdx={}, remain={};
+  (opt.exams||[]).forEach(function(e){ remain[e.subj]=(remain[e.subj]||0)+1; });
+  function slotIn(D, e, trial){
+    var p=Math.max(D.school?D.wo:subjT(e), D.wo), t;
+    function fits(st){ if(st<D.wo||st+e.dur>D.wc) return false; return trial.every(function(x){ return st+e.dur+20<=x.s||x.e+20<=st; }); }
+    for(t=ceil10(p); t+e.dur<=D.wc; t+=10){ if(fits(t)) return t; }
+    for(t=ceil10(D.wo); t+e.dur<=D.wc; t+=10){ if(fits(t)) return t; }
+    return null;
+  }
+  function put(e, d, di, st, notes){
+    var D=info[d]; D.list.push({s:st,e:st+e.dur,dur:e.dur,subj:e.subj});
+    lastIdx[e.subj]=di; remain[e.subj]--;
+    res.items.push({examId:e.id,date:d,startMin:st,notes:notes,_subj:e.subj,_dur:e.dur});
+  }
+  gkeys.forEach(function(k,gi){
+    var mem=groups[k].slice().sort(function(a,b){ return subjT(a)-subjT(b); });
+    var pref=opt.prefer&&mem.map(function(e){return opt.prefer[e.id];}).filter(Boolean)[0];
+    var ideal=(pref&&idxOf[pref]!=null)?idxOf[pref]:Math.min(N-1,Math.floor((gi+0.5)/G*N));
+    var after=Math.max.apply(null,[-1].concat(mem.map(function(e){ return lastIdx[e.subj]!=null?lastIdx[e.subj]:-1; })));
+    var need=Math.max.apply(null,[0].concat(mem.map(function(e){ return remain[e.subj]-1; })));
+    var best=null;
+    days.forEach(function(d,di){
+      if(di<=after) return;
+      if(di>N-1-need&&di>after+1) return;
+      var D=info[d], cap=D.school?D.cap:Math.max(D.cap, mem.length), room=cap-D.list.length; if(room<=0) return;
+      var trial=D.list.slice(), slots=[];
+      mem.forEach(function(e){ if(slots.length>=room) return; var st=slotIn(D,e,trial); if(st==null) return; trial.push({s:st,e:st+e.dur}); slots.push({e:e,s:st}); });
+      if(!slots.length) return;
+      var c=3*Math.abs(di-ideal)+(mem.length-slots.length)*40+D.list.length*14;
+      if(d===days[N-1]&&N>1) c+=10;
+      if(D.school&&mem.length>1) c+=20;
+      if(!best||c<best.c) best={c:c,d:d,di:di,slots:slots};
+    });
+    if(!best){
+      /* 순서를 지킬 수 있는 날이 없으면, 순서보다 배정을 우선해 남은 날 중 가장 알맞은 날로 */
+      days.forEach(function(d,di){
+        var D=info[d], cap=D.school?D.cap:Math.max(D.cap, mem.length), room=cap-D.list.length; if(room<=0) return;
+        var trial=D.list.slice(), slots=[];
+        mem.forEach(function(e){ if(slots.length>=room) return; var st=slotIn(D,e,trial); if(st==null) return; trial.push({s:st,e:st+e.dur}); slots.push({e:e,s:st}); });
+        if(!slots.length) return;
+        var c=3*Math.abs(di-ideal)+(mem.length-slots.length)*40+D.list.length*14;
+        if(!best||c<best.c) best={c:c,d:d,di:di,slots:slots};
+      });
+    }
+    if(!best){ mem.forEach(function(e){ res.unplaced.push({examId:e.id,reason:'남은 날에 시간이 없어요 — 기간을 늘리거나 하루 최대 시험 수를 늘려 보세요'}); remain[e.subj]--; }); return; }
+    var done={};
+    best.slots.forEach(function(x){ done[x.e.id]=1; put(x.e, best.d, best.di, x.s, ['실전 세트('+best.slots.length+'과목)', (info[best.d].school?'하교 후 ':'수능 시간대 ')+C.minToHHMM(x.s)]); });
+    /* 세트 날에 다 못 들어간 과목: 순서를 지키며 가장 가까운 뒷날에 */
+    mem.forEach(function(e){
+      if(done[e.id]) return;
+      var b2=null;
+      days.forEach(function(d,di){
+        var D=info[d]; if(D.list.length>=D.cap) return;
+        var st=slotIn(D,e,D.list); if(st==null) return;
+        var c=Math.abs(di-best.di)*3+D.list.length*14+(di<=(lastIdx[e.subj]!=null?lastIdx[e.subj]:-1)?60:0);
+        if(!b2||c<b2.c) b2={c:c,d:d,di:di,s:st};
+      });
+      if(!b2){ res.unplaced.push({examId:e.id,reason:'세트 날에 시간이 없고 다른 날도 비어 있지 않아요'}); remain[e.subj]--; return; }
+      put(e, b2.d, b2.di, b2.s, ['세트 날에 다 못 들어가 따로 배치', C.minToHHMM(b2.s)+' 시작']);
+    });
+  });
+  res.items.sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:a.startMin-b.startMin; });
+  return res;
+};
+/* 배치 방식·순서 설명(화면 안내용) */
+C.PACE_INFO = {
+  even:{name:'균등형', when:'기간이 2주 이상이고 꾸준한 리듬이 필요할 때(기본 추천)', why:'시험 사이 간격이 일정해 매번 같은 양의 복기 시간이 생깁니다. 응시→채점→오답 정리→다음 응시의 순환이 안정적으로 돌아가 장기 계획에 가장 무난합니다.'},
+  ramp:{name:'후반 집중형', when:'마감일이 실제 시험(수능·학평) 직전일 때', why:'앞쪽은 간격을 넓혀 약점 보완에 시간을 쓰고, 시험이 가까워질수록 촘촘하게 풀어 실전 감각과 시간 운영을 끌어올립니다. 직전 몇 주의 회복 시간이 짧아지므로 체력·복기 여유를 함께 확인하세요.'},
+  front:{name:'전반 집중형', when:'학기·방학 초, 새로 관리하는 학생, 약점을 빨리 찾아야 할 때', why:'초반에 여러 회를 몰아 풀어 현재 실력과 약점을 빨리 진단하고, 후반은 간격을 넓혀 오답·개념 보완에 씁니다. 후반에 양이 몰리지 않는 방식입니다.'},
+  weekend:{name:'주말 실전형', when:'학교 다니는 학생, 평일엔 긴 시험이 어려울 때', why:'긴 실전은 주말·쉬는 날에 보고 평일은 채점·오답 정리에 씁니다. 주 단위로 응시→복기 주기가 반복되어 현실적으로 지키기 쉽습니다.'},
+  set:{name:'실전 세트형', when:'수능 1~2개월 전, 실전 하루 체력과 과목 전환 연습이 필요할 때', why:'같은 회차(같은 시행 시점)의 여러 과목을 하루에 수능 시간표 순서대로 봅니다. 과목 사이 집중력 전환과 하루 전체 체력 배분을 실제와 같이 훈련합니다. 세트 사이 간격은 고르게 둡니다.'}
+};
+C.ORDER_INFO = {
+  chrono:{name:'시행 순서 (과거 → 최근)', why:'기출은 과거부터 풀어 최근 출제 경향을 마지막(실제 시험에 가장 가까운 때)에 만나게 합니다. 같은 해는 3·4월→6월→9월→수능 순, 사설·자체 시험은 회차 순이며, 기출과 사설이 섞이면 기출을 먼저 둡니다.'},
+  recent:{name:'최근 기출부터', why:'기간이 짧거나 중간에 계획이 끊길 수 있을 때, 가장 최근 경향의 기출을 먼저 확보합니다.'},
+  title:{name:'시험 이름 순', why:'시험 이름의 글자·숫자 순서대로 배정합니다(예전 방식).'}
 };
 /* 기본안 → 학생별 조정안 비교 */
 C.diffPlans = function(base, mine){
@@ -18808,14 +18984,14 @@ window._egcCopyToAll=function(si,ei){
    시험 선택 → 기간 → 기본 배정안 확인 → 학생 선택 → 학생별 조정안 확인 → 배정
    ====================================================================== */
 var _mpA=null; Object.defineProperty(window,'_mpA',{get:function(){return _mpA;},set:function(v){_mpA=v;},configurable:true});
-function mpaInfo(e){ return {id:e.id,title:e.title||'',subj:mpSubjectKey(e)||'ko',dur:mpExamDuration(e)}; }
+function mpaInfo(e){ return {id:e.id,title:e.title||'',subj:mpSubjectKey(e)||'ko',dur:mpExamDuration(e),src:e.examSource||''}; }
 function mpaStu(uid){ return _mpT.students.find(function(s){return s.uid===uid;})||{uid:uid,name:uid}; }
 function mpaGradeTag(s){ var g=MPC.gradeShort(s.grade); return '<span class="mp-gtag '+(MPC.isSchoolGrade(s.grade)?'sch':'free')+'">'+mpE(g)+'</span>'; }
 function mpaStarted(uid,examId){ var se=_mpT.sess[mpSessKey(examId,uid)]; return !!(se&&['in_progress','break','waiting','submitted','graded'].indexOf(se.status)>=0); }
 window.mpOpenAuto=function(){
   if(!_mpT.exams||!_mpT.exams.length){ alert('먼저 시험을 만들어 주세요.'); return; }
   var n=mpNow();
-  _mpA={step:1,sel:{},q:'',start:n.today,end:MPC.addDays(n.today,28),excluded:[],schoolStart:'19:00',late:'22:30',maxPer:2,maxSchool:1,vacation:false,pace:'ramp',base:null,unplaced:[],ssel:{},sq:'',fsrc:'',fsub:'',fsch:'',fgr:'',fsc:'',view:'cal',incUn:false,pick:null,plans:null,lock:false,ov:null};
+  _mpA={step:1,sel:{},q:'',start:n.today,end:MPC.addDays(n.today,28),excluded:[],schoolStart:'19:00',late:'22:30',maxPer:2,maxSchool:1,vacation:false,pace:'even',order:'chrono',base:null,unplaced:[],ssel:{},sq:'',fsrc:'',fsub:'',fsch:'',fgr:'',fsc:'',view:'cal',incUn:false,pick:null,plans:null,lock:false,ov:null};
   var ov=mpSheet('<div id="mpa-root"></div>'); ov.firstChild.classList.add('mp-wide'); _mpA.ov=ov; mpaDraw();
 };
 var MPA_STEPS=['시험 선택','기간 설정','배정안 확인','학생 선택','조정·배정'];
@@ -18855,7 +19031,7 @@ function mpaS1(){
   var h='<div class="mp-lblrow"><div class="mp-lbl">배정할 시험 <span class="mp-sub">(선택 '+n+'개)</span></div><div class="acts"><button type="button" class="mp-pill" onclick="mpaAllEx(true)"><i class="mpi mpi-check"></i>보이는 시험 전체</button><button type="button" class="mp-pill" onclick="mpaAllEx(false)">전체 해제</button></div></div>'
    +mpaExFilterHtml()
    +'<div class="mp-exlist" id="mpa-exl">'+mpaExRows(list)+'</div>'
-   +'<div class="mp-sub" style="margin-top:8px">같은 과목 시험은 제목의 회차 순서(01회 → 02회)를 지켜서 배정돼요.</div>';
+   +'<div class="mp-sub" style="margin-top:8px">시험 이름에서 시행 시점(예: 2025학년도 6월 모의평가 → 2024년 6월 시행)과 회차(예: 서바이벌 9회)를 읽어, 같은 과목은 그 순서대로 배정해요. 순서 기준은 다음 단계에서 고를 수 있어요.</div>';
   return mpaFrame(h,'<button class="mp-btn" onclick="mpaClose()">닫기</button><button class="mp-btn pri" onclick="mpaNext()">다음 · 기간 설정</button>');
 }
 function mpaExRows(list){ return list.map(function(e){ var k=mpSubKey((e.subjects||[])[0]); return '<label class="mp-chk"><input type="checkbox" '+(_mpA.sel[e.id]?'checked':'')+' onchange="mpaTogEx(\''+e.id+'\',this.checked)"><span>'+mpE(e.title)+'</span> <span class="mp-sub">· '+mpE(mpSubLabel(k||'ko'))+' '+mpExamDuration(e)+'분'+(e.examSource?' · '+mpE(mpSrcLabel(e.examSource)):'')+' · 배정 학생 '+((e.assignedTo||[]).length)+'명</span></label>'; }).join('')||'<div class="mp-sub" style="padding:10px">검색 결과가 없어요</div>'; }
@@ -18873,12 +19049,20 @@ function mpaS2(){
    +'<div class="mp-chips" id="mpa-xs">'+mpaXChips()+'</div>'
    +'<div class="mp-filter-grid" style="margin-top:12px"><div><div class="mp-lbl">중·고등학생 평일 시작 가능 시각</div><input type="time" step="600" class="mp-in sm" id="mpa-ss" value="'+A.schoolStart+'"></div><div><div class="mp-lbl">시험 종료 제한 시각</div><input type="time" step="600" class="mp-in sm" id="mpa-late" value="'+A.late+'"></div></div>'
    +'<div class="mp-filter-grid" style="margin-top:12px"><div><div class="mp-lbl">하루 최대 시험 수 <span class="mp-sub">(주말·N수·방학)</span></div><select class="mp-in sm" id="mpa-mp">'+mpaCapOpts(A.maxPer)+'</select></div>'
-   +'<div><div class="mp-lbl">배치 방식</div><select class="mp-in sm" id="mpa-pace"><option value="ramp"'+(A.pace==='ramp'?' selected':'')+'>후반 집중형 (추천)</option><option value="even"'+(A.pace==='even'?' selected':'')+'>균등형</option></select></div></div>'
+   +'<div><div class="mp-lbl">배치 방식</div><select class="mp-in sm" id="mpa-pace" onchange="mpaPaceInfo()">'+['even','ramp','front','weekend','set'].map(function(k){ return '<option value="'+k+'"'+(A.pace===k?' selected':'')+'>'+MPC.PACE_INFO[k].name+(k==='even'?' (기본)':'')+'</option>'; }).join('')+'</select></div></div>'
+   +'<div class="mp-filter-grid" style="margin-top:12px"><div><div class="mp-lbl">순서 기준</div><select class="mp-in sm" id="mpa-order" onchange="mpaPaceInfo()">'+['chrono','recent','title'].map(function(k){ return '<option value="'+k+'"'+(A.order===k?' selected':'')+'>'+MPC.ORDER_INFO[k].name+(k==='chrono'?' (추천)':'')+'</option>'; }).join('')+'</select></div><div></div></div>'
+   +'<div class="mp-pinfo" id="mpa-pinfo" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(184,132,26,.08);font-size:12.5px;line-height:1.7">'+mpaPaceInfoHtml(A.pace,A.order)+'</div>'
    +'<div class="mp-filter-grid" style="margin-top:12px"><div><div class="mp-lbl">학교 가는 평일 하루 최대 <span class="mp-sub">(중·고등학생)</span></div><select class="mp-in sm" id="mpa-ms">'+mpaCapOpts(A.maxSchool)+'</select></div><div></div></div>'
    +'<label class="mp-chk" style="margin-top:10px"><input type="checkbox" id="mpa-vac" '+(A.vacation?'checked':'')+'>방학 기간이에요 (중·고등학생도 평일에 학교 안 감)</label>'
-   +'<div class="mp-sub" style="margin-top:10px;line-height:1.7"><b>배정 원칙</b> · 같은 과목은 서로 멀리, 과목은 번갈아 · 하루 시험 수는 설정한 한도 안에서 가급적 적게 · 시험 시각은 수능 시간대(국어 08:40, 수학 10:30, 영어 13:10, 한국사 14:50, 탐구 15:35) · 학교 가는 평일은 하교 후만 사용, 긴 시험은 주말 우선 · 마감일 당일은 복기용으로 비움 · 후반으로 갈수록 간격이 조금씩 촘촘해짐</div>';
+   +'<div class="mp-sub" style="margin-top:10px;line-height:1.7"><b>배정 원칙</b> · 같은 과목은 서로 멀리, 과목은 번갈아 · 하루 시험 수는 설정한 한도 안에서 가급적 적게 · 시험 시각은 수능 시간대(국어 08:40, 수학 10:30, 영어 13:10, 한국사 14:50, 탐구 15:35) · 학교 가는 평일은 하교 후만 사용, 긴 시험은 주말 우선 · 마감일 당일은 복기용으로 비움 · 같은 과목은 시행 시점·회차 순서를 지킴</div>';
   return mpaFrame(h,'<button class="mp-btn" onclick="mpaPrev()">이전</button><button class="mp-btn pri" onclick="mpaNext()">자동 배정안 만들기</button>');
 }
+function mpaPaceInfoHtml(pace, order){
+  var P=MPC.PACE_INFO[pace]||MPC.PACE_INFO.even, O=MPC.ORDER_INFO[order]||MPC.ORDER_INFO.chrono;
+  return '<div><b>'+mpE(P.name)+'</b> — <span class="mp-sub">이럴 때: '+mpE(P.when)+'</span></div><div>'+mpE(P.why)+'</div>'
+    +'<div style="margin-top:6px"><b>'+mpE(O.name)+'</b> — '+mpE(O.why)+'</div>';
+}
+window.mpaPaceInfo=function(){ var p=(document.getElementById('mpa-pace')||{}).value, o=(document.getElementById('mpa-order')||{}).value, el=document.getElementById('mpa-pinfo'); if(el) el.innerHTML=mpaPaceInfoHtml(p,o); };
 function mpaCapOpts(cur){ var o=''; for(var i=1;i<=6;i++) o+='<option value="'+i+'"'+(+cur===i?' selected':'')+'>'+i+'개</option>'; o+='<option value="9"'+(+cur===9?' selected':'')+'>제한 없음 (시간이 되는 만큼)</option>'; return o; }
 function mpaXChips(){ return _mpA.excluded.map(function(d){ return '<span class="mp-chip">'+mpE(mpDateLabel(d))+'<button type="button" onclick="mpaDelX(\''+d+'\')"><i class="mpi mpi-x"></i></button></span>'; }).join('')||'<span class="mp-sub">없음</span>'; }
 window.mpaAddX=function(){ var v=document.getElementById('mpa-x').value; if(v&&_mpA.excluded.indexOf(v)<0){ _mpA.excluded.push(v); _mpA.excluded.sort(); } document.getElementById('mpa-xs').innerHTML=mpaXChips(); document.getElementById('mpa-x').value=''; };
@@ -18886,11 +19070,11 @@ window.mpaDelX=function(d){ _mpA.excluded=_mpA.excluded.filter(function(x){retur
 function mpaReadS2(){
   var A=_mpA, g=function(i){var e=document.getElementById(i); return e?e.value:null;};
   A.start=g('mpa-s')||A.start; A.end=g('mpa-e')||A.end; A.schoolStart=g('mpa-ss')||A.schoolStart; A.late=g('mpa-late')||A.late;
-  A.maxPer=+g('mpa-mp')||2; A.maxSchool=+g('mpa-ms')||1; A.pace=g('mpa-pace')||'ramp'; A.vacation=!!(document.getElementById('mpa-vac')||{}).checked;
+  A.maxPer=+g('mpa-mp')||2; A.maxSchool=+g('mpa-ms')||1; A.pace=g('mpa-pace')||'even'; A.order=g('mpa-order')||'chrono'; A.vacation=!!(document.getElementById('mpa-vac')||{}).checked;
 }
 function mpaOpt(extra){
   var A=_mpA, n=mpNow(), exams=_mpT.exams.filter(function(e){return A.sel[e.id];}).map(mpaInfo);
-  return Object.assign({exams:exams,start:A.start,end:A.end,today:n.today,nowMin:n.nowMin>=1440?1439:n.nowMin,schoolStart:MPC.hhmmToMin(A.schoolStart),late:MPC.hhmmToMin(A.late),excluded:A.excluded,maxPerDay:A.maxPer,maxPerDaySchool:A.maxSchool,vacation:A.vacation,pace:A.pace,school:false,existing:[],prefer:null},extra||{});
+  return Object.assign({exams:exams,start:A.start,end:A.end,today:n.today,nowMin:n.nowMin>=1440?1439:n.nowMin,schoolStart:MPC.hhmmToMin(A.schoolStart),late:MPC.hhmmToMin(A.late),excluded:A.excluded,maxPerDay:A.maxPer,maxPerDaySchool:A.maxSchool,vacation:A.vacation,pace:A.pace,order:A.order,school:false,existing:[],prefer:null},extra||{});
 }
 function mpaMakeBase(){ var r=MPC.autoPlan(mpaOpt()); _mpA.base=r.items; _mpA.unplaced=r.unplaced; _mpA.days=r.days; }
 /* 3. 기본안 */
@@ -18898,12 +19082,27 @@ function mpaS3(){
   var A=_mpA, byId={}; _mpT.exams.forEach(function(e){byId[e.id]=e;});
   var h='<div class="mp-sub" style="margin-bottom:8px">평일에도 자유롭게 올 수 있는 학생(N수) 기준 <b>기본 배정안</b>이에요. 날짜·시간은 직접 고칠 수 있고, 학교 가는 학생과 기존 일정은 다음 단계에서 학생별로 자동 반영돼요.</div>';
   if(A.unplaced.length) h+='<div class="mp-warn"><b>배정하지 못한 시험 '+A.unplaced.length+'개</b><br>'+A.unplaced.map(function(u){return mpE((byId[u.examId]||{}).title)+' — '+mpE(u.reason);}).join('<br>')+'</div>';
-  h+='<div id="mpa-sum">'+mpaSummary(A.base)+'</div>'+mpaViewToggle();
+  h+='<div id="mpa-sum">'+mpaSummary(A.base)+'</div>'+mpaOrderHtml(A.base, byId)+mpaViewToggle();
   if(A.view==='cal') h+='<div class="mp-sub" style="margin:6px 0">시험을 누른 뒤 옮길 날짜를 누르거나, 끌어다 놓으면 날짜를 바꿀 수 있어요. 시간은 아래 칸에서 고쳐요.</div><div id="mpa-cal-base">'+mpaCalHtml('base')+'</div>'+mpaCalLegend(false);
   else h+='<div class="mp-aplist">'+A.base.map(function(it,i){ var e=byId[it.examId]||{}; var k=mpSubKey((e.subjects||[])[0]);
     return '<div class="mp-ar"><div class="dt"><input type="date" class="mp-in sm" value="'+it.date+'" onchange="mpaBaseSet('+i+',\'date\',this.value)"><input type="time" step="600" class="mp-in sm" value="'+MPC.minToHHMM(it.startMin)+'" onchange="mpaBaseSet('+i+',\'startMin\',this.value)"><span class="dw">'+MPC.dowKo(it.date)+'</span></div>'
       +'<div class="nm"><b>'+mpE(e.title)+'</b> <span class="mp-sub">'+mpE(mpSubLabel(k||'ko'))+' · '+mpExamDuration(e)+'분</span><div class="mp-sub">'+mpE(it.notes.join(' · '))+'</div></div></div>'; }).join('')+'</div>';
   return mpaFrame(h,'<button class="mp-btn" onclick="mpaPrev()">이전</button><button type="button" class="mp-pill" onclick="mpaRegen()"><i class="mpi mpi-refresh"></i>다시 자동 배정</button><button class="mp-btn pri" onclick="mpaNext()">다음 · 학생 선택</button>');
+}
+/* 인식한 순서 보여 주기: 과목별로 날짜순, 시행 시점·회차 표시, 인식 못 한 시험은 표시 */
+function mpaOrderHtml(items, byId){
+  var by={}, miss=0;
+  items.forEach(function(it){ (by[it._subj]=by[it._subj]||[]).push(it); });
+  var rows=Object.keys(by).map(function(k){
+    var L=by[k].slice().sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:a.startMin-b.startMin; });
+    return '<div style="margin:3px 0"><b>'+mpE(mpSubLabel(k))+'</b> '+L.map(function(it){
+      var e=byId[it.examId]||{}, tm=MPC.examTime(e.title,e.examSource), rd=tm?null:MPC.examRound(e.title);
+      var tag=tm?(tm.kind==='M'?tm.ym:tm.ym+' 시행'):(rd?rd.round+'회':'');
+      if(!tag) miss++;
+      return '<span class="mp-sub">'+mpE(MPC.mdLabel?MPC.mdLabel(it.date):it.date.slice(5))+'</span> '+mpE(e.title||'')+(tag?' <span class="mp-sub">('+mpE(tag)+')</span>':' <span style="color:#B45309">(순서 정보 없음)</span>');
+    }).join(' → ')+'</div>';
+  }).join('');
+  return '<details class="mp-ord" style="margin:6px 0 4px"><summary style="cursor:pointer;font-size:12.5px"><b>배정 순서 확인</b> <span class="mp-sub">· '+mpE((MPC.ORDER_INFO[_mpA.order]||{}).name||'')+' · '+mpE((MPC.PACE_INFO[_mpA.pace]||{}).name||'')+(miss?' · 순서 정보 없는 시험 '+miss+'개(이름 순으로 배치)':'')+'</span></summary><div style="font-size:12px;line-height:1.7;margin-top:4px">'+rows+'</div></details>';
 }
 function mpaSummary(items){
   var by={}; items.forEach(function(it){ (by[it._subj]=by[it._subj]||[]).push(it.date); });
