@@ -127,6 +127,7 @@ service cloud.firestore {
     // ---------- 선생님 전용 ----------
     match /studentWatch/{id}             { allow read, write: if isStaff(); }
     match /studentCardPrefs/{id}         { allow read, write: if isStaff(); }
+    match /cardArchive/{id}              { allow read, write: if isStaff(); }  // 생성한 성적표 보관함(학생 접근 불가, 주로 /api/card-archive 경유)
     match /ttsCustomAudioLibrary/{id}    { allow read, write: if isStaff(); }
     match /examSourceOptions/{id}        { allow read: if isMember(); allow write: if isStaff(); }
     match /electiveSubjectOptions/{id}   { allow read: if isMember(); allow write: if isStaff(); }

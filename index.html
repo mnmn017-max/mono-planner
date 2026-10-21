@@ -652,10 +652,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .kchat-placeholder{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 24px;text-align:center;}
 .kchat-file-prev{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--surface2);border-top:1px solid var(--border);}
 
-.kchat-input-area{display:flex;gap:6px;align-items:center;padding:9px 10px;background:var(--surface);border-top:1px solid var(--border);flex-shrink:0;}
+.kchat-input-area{display:flex;gap:6px;align-items:flex-end;padding:9px 10px;background:var(--surface);border-top:1px solid var(--border);flex-shrink:0;}
 .kchat-attach{background:none;border:none;color:var(--tx3);cursor:pointer;padding:6px;display:flex;align-items:center;justify-content:center;border-radius:50%;flex-shrink:0;}
 
-.kchat-input{flex:1;padding:10px 14px;background:var(--surface2);border:none;border-radius:20px;color:var(--tx1);font-size:14px;outline:none;}
+.kchat-input{flex:1;padding:10px 14px;background:var(--surface2);border:none;border-radius:20px;color:var(--tx1);font-size:14px;outline:none;resize:none;font-family:inherit;line-height:1.4;max-height:120px;overflow-y:auto;display:block;}
 .kchat-input::placeholder{color:var(--tx4);}
 .kchat-input:focus{background:var(--surface);box-shadow:0 0 0 1px var(--burg);}
 .kchat-send{width:36px;height:36px;border-radius:50%;background:var(--burg);border:none;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
@@ -1619,6 +1619,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 }
 .exam-report-qcell.correct{background:var(--green);}
 .exam-report-qcell.wrong{background:var(--red);}
+.exam-report-qcell.unk{position:relative;box-shadow:inset 0 0 0 2px #e0a526}
+.exam-report-qcell.unk i{position:absolute;top:-6px;right:-5px;width:13px;height:13px;border-radius:50%;background:#e0a526;color:#fff;font-size:9px;font-style:normal;font-weight:800;line-height:13px;text-align:center}
+.unkmark{display:inline-block;min-width:16px;height:16px;border-radius:50%;background:#e0a526;color:#fff;font-size:10px;font-weight:800;line-height:16px;text-align:center;margin-right:4px}
+.omr-sheet-qno-cell .unkq{color:#c58a10;font-weight:800;margin-left:2px}
 .exam-report-legend{display:flex;gap:14px;font-size:11px;color:var(--tx3);}
 .exam-report-legend .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle;}
 .exam-report-legend .dot.correct{background:var(--green);}
@@ -2934,22 +2938,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
   <div class="modal-label">과목별 점수 / 등급</div>
   <div style="background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:6px">
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="subject-tag subj-ko" style="width:52px;text-align:center">국어</span><select class="modal-select" id="edit-gs-ko-opt" style="flex:1;margin-bottom:0;font-size:12px"><option value="">선택과목 없음</option></select></div>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--tx3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-ko-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-ko-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--tx3);width:52px">점수/등급</span><input class="modal-input" type="number" step="any" id="edit-gs-ko-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-ko-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
     <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--tx3);width:52px">오답</span><input class="modal-input" id="edit-wrong-ko" placeholder="오답 문항 (예: 3,7,15)" style="flex:1;margin-bottom:0"/></div>
   </div>
   <div style="background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:6px">
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span class="subject-tag subj-en" style="width:52px;text-align:center">영어</span></div>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--tx3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-en-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-en-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--tx3);width:52px">점수/등급</span><input class="modal-input" type="number" step="any" id="edit-gs-en-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-en-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
     <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--tx3);width:52px">오답</span><input class="modal-input" id="edit-wrong-en" placeholder="오답 문항 (예: 23,30)" style="flex:1;margin-bottom:0"/></div>
   </div>
   <div style="background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:6px">
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="subject-tag subj-ma" style="width:52px;text-align:center">수학</span><select class="modal-select" id="edit-gs-ma-opt" style="flex:1;margin-bottom:0;font-size:12px"><option value="">선택과목 없음</option></select></div>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--tx3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-ma-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-ma-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--tx3);width:52px">점수/등급</span><input class="modal-input" type="number" step="any" id="edit-gs-ma-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-ma-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
     <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--tx3);width:52px">오답</span><input class="modal-input" id="edit-wrong-ma" placeholder="오답 문항 (예: 21,29,30)" style="flex:1;margin-bottom:0"/></div>
   </div>
   <div style="background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:6px">
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span class="subject-tag subj-hi" style="width:52px;text-align:center">한국사</span></div>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--tx3);width:52px">점수/등급</span><input class="modal-input" type="number" id="edit-gs-hi-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-hi-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:11px;color:var(--tx3);width:52px">점수/등급</span><input class="modal-input" type="number" step="any" id="edit-gs-hi-score" placeholder="점수" style="flex:1;margin-bottom:0"/><input class="modal-input" type="number" id="edit-gs-hi-grade" placeholder="등급" style="width:60px;margin-bottom:0"/></div>
     <div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--tx3);width:52px">오답</span><input class="modal-input" id="edit-wrong-hi" placeholder="오답 문항" style="flex:1;margin-bottom:0"/></div>
   </div>
   <!-- 과탐/사탐 동적 영역 -->
@@ -2962,7 +2966,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
     </div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px">
       <span style="font-size:11px;color:var(--tx3);width:52px">점수/등급</span>
-      <input class="modal-input" type="number" id="edit-tan1-score" placeholder="점수" style="flex:1;margin-bottom:0"/>
+      <input class="modal-input" type="number" step="any" id="edit-tan1-score" placeholder="점수" style="flex:1;margin-bottom:0"/>
       <input class="modal-input" type="number" id="edit-tan1-grade" placeholder="등급" style="width:60px;margin-bottom:0"/>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
@@ -2978,7 +2982,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
     </div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px">
       <span style="font-size:11px;color:var(--tx3);width:52px">점수/등급</span>
-      <input class="modal-input" type="number" id="edit-tan2-score" placeholder="점수" style="flex:1;margin-bottom:0"/>
+      <input class="modal-input" type="number" step="any" id="edit-tan2-score" placeholder="점수" style="flex:1;margin-bottom:0"/>
       <input class="modal-input" type="number" id="edit-tan2-grade" placeholder="등급" style="width:60px;margin-bottom:0"/>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
@@ -4358,7 +4362,7 @@ function barH(r){ if(r.score==null) return ''; var p=Math.max(0,Math.min(100,r.s
 function heroH(r,prev){
   var m=rmax(r), d=delta(r,prev), w=wn(r), wc=w.length||r.wrong;
   return '<div class="card hero"><div style="padding-right:26px"><div style="display:flex;align-items:baseline;gap:10px"><span style="font-family:'+SERIF+';font-weight:700;font-size:16px;letter-spacing:.06em">'+esc(r.label)+'</span><span class="cap">Raw Score</span></div>'
-   +'<div class="big">'+(r.score==null?'–':r.score)+'<small>/ '+m+'</small></div>'+barH(r)+'</div>'
+   +'<div class="big">'+(r.score==null?'–':r.score)+'<small>/ '+m+'</small></div>'+barH(r)+((r.unkNums||[]).length?'<div style="font-size:10.5px;margin-top:10px;opacity:.8">모름(?) 표시 <span style="font-family:'+SERIF+';margin-left:4px">'+r.unkNums.join(' · ')+'</span></div>':'')+'</div>'
    +'<div class="stats"><div class="st"><span>등급</span><b>'+(r.grade!=null?r.grade+'<em>등급</em>':'–')+'</b></div>'
    +'<div class="st"><span>오답</span><b>'+(wc!=null?wc+'<em>문항</em>':'–')+'</b></div>'
    +'<div class="st"><span>'+(d==null?'놓친 점수':'지난 시험 대비')+'</span><b>'+(d==null?(r.score==null?'–':(m-r.score)+'<em>점</em>'):dh(d,'<em>점</em>'))+'</b></div></div></div>';
@@ -4367,7 +4371,7 @@ function cardH(r,prev,dense){
   var d=delta(r,prev), w=wn(r);
   return '<div class="card sc'+(dense?' dz':'')+'"><div class="top"><span class="lb">'+esc(C.clip(r.label,10))+'</span><span class="gd">'+(r.grade!=null?'<b>'+r.grade+'</b>등급':'')+'</span></div>'
    +'<div class="num">'+(r.score==null?'–':r.score)+'<small>/ '+rmax(r)+'</small><span class="dl">'+dh(d,'')+'</span></div>'+barH(r)
-   +'<div class="wl">오답 <span style="font-family:'+SERIF+';letter-spacing:.03em;margin-left:4px">'+(w.length?w.join(' · '):(r.wrong!=null?(r.wrong?r.wrong+'문항':'없음'):'–'))+'</span></div></div>';
+   +'<div class="wl">오답 <span style="font-family:'+SERIF+';letter-spacing:.03em;margin-left:4px">'+(w.length?w.join(' · '):(r.wrong!=null?(r.wrong?r.wrong+'문항':'없음'):'–'))+'</span>'+((r.unkNums||[]).length?'<span style="margin-left:10px;opacity:.85">모름(?) <span style="font-family:'+SERIF+';margin-left:3px">'+r.unkNums.join(' · ')+'</span></span>':'')+'</div></div>';
 }
 function dc(c,d){ return d==='하'?c.ac:d==='중'?'#9b958a':d==='상'?c.ink:c.ink; }
 function strip(r,c,W,H,lab){
@@ -4375,7 +4379,9 @@ function strip(r,c,W,H,lab){
   var segs=an.segs||[], wm={}; wn(r).forEach(function(n){ wm[n]=(an.w&&an.w[n])||['']; });
   segs.forEach(function(s,j){ if(j){ var x=(X(s[0]-1)+X(s[0]))/2; g+='<line x1="'+x+'" x2="'+x+'" y1="'+(cy-12)+'" y2="'+(cy+8)+'" stroke="#000" stroke-opacity=".2" stroke-dasharray="2 2"/>'; } if(lab&&s[2]) g+='<text x="'+((X(s[0])+X(s[1]))/2)+'" y="'+(H-2)+'" font-size="9" text-anchor="middle" fill="'+c.ink+'" fill-opacity=".6">'+esc(s[2])+' '+s[0]+'–'+s[1]+'</text>'; });
   g+='<line x1="'+pl+'" x2="'+(W-pr)+'" y1="'+cy+'" y2="'+cy+'" stroke="#000" stroke-opacity=".12"/>';
-  for(var i=1;i<=N;i++){ var w=wm[i]; if(w) g+='<circle cx="'+X(i)+'" cy="'+cy+'" r="'+(lab?5:3.6)+'" fill="'+dc(c,w[0])+'"'+(w[0]?'':' fill-opacity=".75"')+'/>'+(lab?'<text x="'+X(i)+'" y="'+(cy-9)+'" font-size="8.5" text-anchor="middle" fill="'+c.ink+'" fill-opacity=".85">'+i+'</text>':''); else g+='<line x1="'+X(i)+'" x2="'+X(i)+'" y1="'+(cy-2.5)+'" y2="'+(cy+2.5)+'" stroke="#000" stroke-opacity=".22"/>'; }
+  var um={}; (r.unkNums||[]).forEach(function(n){ um[n]=1; });
+  for(var i=1;i<=N;i++){ var w=wm[i]; if(um[i]) g+='<circle cx="'+X(i)+'" cy="'+cy+'" r="'+(lab?8:5.6)+'" fill="none" stroke="'+c.ac+'" stroke-width="1.2"'+(w?'':' stroke-dasharray="2 1.5"')+'/>'+(!w&&lab?'<text x="'+X(i)+'" y="'+(cy-11)+'" font-size="8.5" text-anchor="middle" fill="'+c.ac+'">'+i+'?</text>':'');
+    if(w) g+='<circle cx="'+X(i)+'" cy="'+cy+'" r="'+(lab?5:3.6)+'" fill="'+dc(c,w[0])+'"'+(w[0]?'':' fill-opacity=".75"')+'/>'+(lab?'<text x="'+X(i)+'" y="'+(cy-9)+'" font-size="8.5" text-anchor="middle" fill="'+c.ink+'" fill-opacity=".85">'+i+'</text>':''); else g+='<line x1="'+X(i)+'" x2="'+X(i)+'" y1="'+(cy-2.5)+'" y2="'+(cy+2.5)+'" stroke="#000" stroke-opacity=".22"/>'; }
   return '<svg width="100%" viewBox="0 0 '+W+' '+H+'" style="display:block">'+g+'</svg>';
 }
 function leg(c){ return '<span class="leg2"><span><i style="background:'+c.ac+'"></i>쉬움</span><span><i style="background:#9b958a"></i>보통</span><span><i style="background:'+c.ink+'"></i>어려움</span></span>'; }
@@ -4388,7 +4394,7 @@ function anal1(r,c){
   if(a.pack){ tiles.push(['Easy Misses',ptsD(r,'하')+'<em>점</em>','쉬운 문항 '+cntD(r,'하')+'개에서 놓친 점수']); tiles.push(['Hard Items',(a.hard-cntD(r,'상'))+'<em>/ '+a.hard+'</em>','고난도 문항 중 맞힌 개수']); }
   var h='<div class="card">';
   if(tiles.length) h+='<div class="tiles" style="grid-template-columns:repeat('+tiles.length+',1fr)">'+tiles.map(function(t){return '<div class="tile"><span class="cap">'+t[0]+'</span><b>'+t[1]+'</b><small>'+t[2]+'</small></div>';}).join('')+'</div>';
-  if(wn(r).length) h+='<div class="amap"'+(tiles.length?'':' style="border-top:0"')+'><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span class="cap">Wrong Item Map · 오답 지도</span>'+(a.pack?leg(c):'')+'</div>'+strip(r,c,620,62,true)+'<div class="howto">읽는 법 · 가로줄은 1번부터 '+((r.an&&r.an.N)||'마지막')+'번까지 문항을 차례로 놓은 것이에요. 점이 찍힌 자리가 틀린 문항(위 숫자가 문항 번호)'+(a.pack?'이고, 점 색은 그 문항의 난이도예요':'이에요')+'.'+(a.segs&&a.segs.length>1?' 점선은 영역이 바뀌는 곳이에요.':'')+'</div></div>';
+  if(wn(r).length) h+='<div class="amap"'+(tiles.length?'':' style="border-top:0"')+'><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span class="cap">Wrong Item Map · 오답 지도</span>'+(a.pack?leg(c):'')+'</div>'+strip(r,c,620,62,true)+'<div class="howto">읽는 법 · 가로줄은 1번부터 '+((r.an&&r.an.N)||'마지막')+'번까지 문항을 차례로 놓은 것이에요. 점이 찍힌 자리가 틀린 문항(위 숫자가 문항 번호)'+(a.pack?'이고, 점 색은 그 문항의 난이도예요':'이에요')+'.'+(a.segs&&a.segs.length>1?' 점선은 영역이 바뀌는 곳이에요.':'')+((r.unkNums||[]).length?' 동그라미 고리는 시험 중 모름(?)으로 표시한 문항이에요(점선 고리는 맞혔지만 모름).':'')+'</div></div>';
   if(a.pack&&a.segs&&a.segs.length>1&&wn(r).length){
     var tot=wn(r).length;
     h+='<div class="areas" style="grid-template-columns:repeat('+a.segs.length+',1fr)">'+a.segs.map(function(s){ var cn=0,pt=0; wn(r).forEach(function(x){ if(x>=s[0]&&x<=s[1]){ cn++; pt+=((a.w[x]||[])[2]||2); } }); return '<div class="ar"><b>'+esc(s[2])+'</b><span>'+cn+'문항 · '+pt+'점</span><div class="tr"><i style="width:'+(tot?cn/tot*100:0).toFixed(0)+'%"></i></div></div>'; }).join('')+'</div>';
@@ -4404,7 +4410,7 @@ function analN(rows,c){
      +(hasNext?'<td>'+(nx?(nx.keep?'<i style="margin:0">1등급 유지</i>':'<b>'+nx.need+'</b><i>점</i>'):'<i style="margin:0">–</i>')+'</td>':'')
      +(hasPack?(a.pack?'<td><b>'+ptsD(r,'하')+'</b><i>점</i></td><td><b>'+(a.hard-cntD(r,'상'))+'</b><i>/ '+a.hard+'</i></td>':'<td><i style="margin:0">–</i></td><td><i style="margin:0">–</i></td>'):'')
      +(hasW?'<td class="mp">'+(wn(r).length?strip(r,c,300,20,false):'<i style="margin:0">'+(r.wrong===0?'오답 없음':'–')+'</i>')+'</td>':'')+'</tr>';
-  }).join('')+'</table>'+(hasW?'<div class="howto" style="padding:8px 12px 0">오답 지도 읽는 법 · 가로줄은 1번부터 마지막 번호까지의 문항, 점이 찍힌 자리가 틀린 문항이에요'+(hasPack?'(색은 난이도)':'')+'. 점선은 영역이 바뀌는 곳이에요.</div>':'')+'</div>';
+  }).join('')+'</table>'+(hasW?'<div class="howto" style="padding:8px 12px 0">오답 지도 읽는 법 · 가로줄은 1번부터 마지막 번호까지의 문항, 점이 찍힌 자리가 틀린 문항이에요'+(hasPack?'(색은 난이도)':'')+'. 점선은 영역이 바뀌는 곳이에요.'+(rows.some(function(r){return (r.unkNums||[]).length;})?' 고리는 시험 중 모름(?)으로 표시한 문항이에요(점선 고리는 맞혔지만 모름).':'')+'</div>':'')+'</div>';
 }
 function minreqH(M,c){
   if(!M||!M.items||!M.items.length) return '';
@@ -5490,7 +5496,7 @@ window.runExamForceSubmitNow = function(filterExamId, filterUid){
               return updateDoc(doc(db,'examSessions',s.id), {status:'graded', subjectResults:results, currentAnswers:{}})
                 .then(function(){ return _getPrevSubjectScores(sess.studentUid, exam.gradeType, examSourceLabel(exam.examSource)); })
                 .then(function(prevScores){
-                  return _writeExamResultToGrades(sess.studentUid, s.id, exam, results, sess.electiveChoices).then(function(){
+                  return _writeExamResultToGrades(sess.studentUid, s.id, exam, results, sess.electiveChoices, sess.unknownBySubj).then(function(){
                     _awardExamRewards(sess.studentUid, exam, results, prevScores, sess.electiveChoices);
                   });
                 })
@@ -5594,7 +5600,7 @@ function examCardHtml(ex){
   var subjName = subj ? _resolveSubjDisplayName(subj) : '';
   var multiLabel = (ex.subjects && ex.subjects.length > 1) ? (ex.subjects.length+'과목') : '';
   var qCount = subj && subj.questions ? subj.questions.length : 0;
-  var totalScore = subj && subj.questions ? subj.questions.reduce(function(s,q){return s+(q.point||0);},0) : 0;
+  var totalScore = subj && subj.questions ? _r2(subj.questions.reduce(function(s,q){return s+(q.point||0);},0)) : 0;
   var assignedCount = (ex.assignedTo||[]).length;
   var sourceLabel = examSourceLabel(ex.examSource);
   return '<div class="exam-card" data-exam-id="'+ex.id+'" data-exam-source="'+escapeHtml(sourceLabel)+'" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px;">'
@@ -5996,6 +6002,21 @@ function _defaultGradeCutoffs(){
   ];
 }
 
+// 시험 중 '모름(?)'으로 표시한 문항 (성적탭 카드용)
+function _unknownHtml(g){
+  var u=g&&g.unknownBySubj; if(!u||!Object.keys(u).length) return '';
+  var sc=g.scores||{};
+  return '<div style="margin-top:8px"><div style="font-size:11px;color:var(--tx3);margin-bottom:6px">모름(?) 표시한 문항 <span style="color:var(--tx4)">· 맞힌 문항도 포함</span></div>'
+    +Object.keys(u).sort(function(a,b){ var O=['ko','ma','en','hi','sc','so']; var ia=O.indexOf(a.replace(/\d+$/,'')), ib=O.indexOf(b.replace(/\d+$/,'')); return ((ia<0?9:ia)-(ib<0?9:ib))||a.localeCompare(b); }).map(function(k){
+      var e=sc[k]||{}, label=e.label||(subjectNames[k]||k), grp=e.group||k.replace(/\d+/g,'');
+      var wrong=String((g.wrongBySubj||{})[k]||'').split(',').map(function(x){return x.trim();});
+      return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px"><span class="subject-tag subj-'+grp+'" style="font-size:10px;flex-shrink:0">'+escapeHtml(label)+'</span><div style="display:flex;gap:4px;flex-wrap:wrap">'
+        +String(u[k]).split(',').map(function(n){ n=n.trim(); var w=wrong.indexOf(n)>=0; return '<span title="'+(w?'모름 · 틀림':'모름 · 맞힘')+'" style="background:var(--gold-l);border:1px solid rgba(184,132,26,0.35);border-radius:4px;padding:2px 7px;font-size:12px;color:#8a6410">?'+n+'번'+(w?'':' ✓')+'</span>'; }).join('')+'</div></div>';
+    }).join('')+'</div>';
+}
+// 배점 소수점 허용: 합계는 소수 둘째 자리에서 반올림(부동소수 오차 제거)
+function _r2(x){ return Math.round((+x||0)*100)/100; }
+window._r2=_r2;
 function computeGradeFromCutoffs(cutoffs, score){
   if (!cutoffs || !cutoffs.length) return '';
   var sorted = cutoffs.slice().sort(function(a,b){ return b.min - a.min; });
@@ -6376,7 +6397,7 @@ window.renderExamSubjectBlocks = function(){
       +   '<span class="exam-bulk-label">일괄 적용</span>'
       +   '<div class="exam-bulk-field"><span>주관식 유형</span><select id="exam-bulk-shortmode-'+idx+'" class="exam-bulk-select"><option value="simple">단순입력</option><option value="digit">자릿수클릭</option></select></div>'
       +   '<button type="button" onclick="applyBulkShortMode('+idx+')" class="exam-bulk-add-btn">주관식 전체 적용</button>'
-      +   '<div class="exam-bulk-field" style="margin-left:auto;"><span>배점</span><input type="number" min="0" value="3" id="exam-bulk-point-'+idx+'" class="exam-bulk-input"/><span>점</span></div>'
+      +   '<div class="exam-bulk-field" style="margin-left:auto;"><span>배점</span><input type="number" min="0" step="0.1" value="3" id="exam-bulk-point-'+idx+'" class="exam-bulk-input"/><span>점</span></div>'
       +   '<button type="button" onclick="applyBulkPoint('+idx+')" class="exam-bulk-add-btn">전체 배점 적용</button>'
       + '</div>'
       + '<div class="exam-quick-answer-box" id="exam-quick-answer-box-'+idx+'"></div>'
@@ -6416,7 +6437,8 @@ window.updateExamQuestionField = function(blockIdx, idx, field, value){
   if (!block) return;
   var q = block.questions[idx];
   if (!q) return;
-  if (field === 'point' || field === 'choices') q[field] = parseInt(value,10)||0;
+  if (field === 'point') q[field] = _r2(parseFloat(value)||0);
+  else if (field === 'choices') q[field] = parseInt(value,10)||0;
   else if (field === 'answer' && q.type === 'mc') q[field] = parseInt(value,10)||1; // select의 value는 항상 문자열이라 숫자로 변환 필요 (안 하면 화면 표시/채점 둘 다 어긋남)
   else q[field] = value;
   if (field === 'point') updateExamScoreCheck(blockIdx);
@@ -6473,7 +6495,7 @@ window.renderExamQuestionBuilder = function(blockIdx){
         + '<span class="exam-q-type-badge">'+typeLabel+'</span>'
         + rowExtra
         + '<span class="exam-q-point-label">배점</span>'
-        + '<input type="number" min="0" class="exam-q-point-input" value="'+q.point+'" oninput="updateExamQuestionField('+blockIdx+','+idx+',\'point\',this.value)"/>'
+        + '<input type="number" min="0" step="0.1" class="exam-q-point-input" value="'+q.point+'" oninput="updateExamQuestionField('+blockIdx+','+idx+',\'point\',this.value)"/>'
         + '<button class="exam-q-remove-btn" onclick="removeExamQuestion('+blockIdx+','+idx+')">✕</button>'
         + '</div>';
     }).join('');
@@ -6524,7 +6546,7 @@ window.applyBulkPoint = function(blockIdx){
   var block = _examSubjectBlocks[blockIdx];
   if (!block) return;
   var input = document.getElementById('exam-bulk-point-'+blockIdx);
-  var point = parseInt(input ? input.value : 0, 10);
+  var point = _r2(parseFloat(input ? input.value : 0));
   if (isNaN(point) || point < 0) { alert('올바른 배점을 입력해주세요'); return; }
   if (!block.questions.length) { alert('적용할 문항이 없습니다'); return; }
   block.questions.forEach(function(q){ q.point = point; });
@@ -6861,7 +6883,7 @@ window.updateExamScoreCheck = function(blockIdx){
   var block = _examSubjectBlocks[blockIdx];
   var el = document.getElementById('exam-score-check-'+blockIdx);
   if (!el || !block) return;
-  var total = block.questions.reduce(function(s,q){return s+(q.point||0);},0);
+  var total = _r2(block.questions.reduce(function(s,q){return s+(q.point||0);},0));
   var ok = total === 100;
   el.className = 'exam-score-check ' + (ok ? 'ok' : 'warn');
   el.innerHTML = '<span>배점 합계 <span class="exam-score-check-value" style="color:'+(ok?'var(--green)':'var(--red)')+';">'+total+'</span> / 100점 '+(ok?'✓':'')+'</span>'
@@ -7015,7 +7037,7 @@ window.saveExam = function(){
     var block = _examSubjectBlocks[bi];
     if (!block.questions.length) { alert((bi+1)+'번째 과목에 문항을 1개 이상 추가해주세요'); return; }
     if (!block.durationMin || block.durationMin<=0) { alert((bi+1)+'번째 과목의 시험 시간을 입력해주세요'); return; }
-    var total = block.questions.reduce(function(s,q){return s+(q.point||0);},0);
+    var total = _r2(block.questions.reduce(function(s,q){return s+(q.point||0);},0));
     if (total !== 100) {
       if (!confirm((bi+1)+'번째 과목의 배점 합계가 100점이 아닙니다 (현재 '+total+'점).\n\n이대로 저장하시겠습니까?')) return;
     }
@@ -7566,7 +7588,7 @@ function _renderExamListStudent(){
   el.innerHTML = rows.map(function(r){
         var sess = r.sess, exam = r.exam;
         var subj0 = exam.subjects && exam.subjects[0];
-        var subjName = subj0 ? (subjectNames[subj0.subject]||subj0.subject) : '';
+        var subjName = subj0 ? _resolveSubjDisplayName(subj0) : '';
         var statusInfo = {
           not_started: {label:'응시 전', color:'var(--tx3)', btn:'응시하기'},
           waiting: {label:'대기중(출석)', color:'var(--gold)', btn:'대기실 입장'},
@@ -7699,6 +7721,43 @@ function _resolveSubjDisplayName(subj){
     return subj.exCategory === 'sc' ? '과학탐구' : (subj.exCategory === 'so' ? '사회탐구' : '탐구');
   }
   return subjectNames[subj.subject] || subj.subject;
+}
+// 채점 결과(r) 하나의 과목명: 탐구(ex1·ex2)는 학생이 고른 선택과목명, 선택과목 있는 과목은 "수학 (미적분)"
+function _resultSubjName(r, exam, choices){
+  if (!r) return '';
+  var sd = exam && exam.subjects && exam.subjects[r.subjectIndex];
+  var el = choices && (choices[r.subjectIndex] || choices[String(r.subjectIndex)]);
+  var code = (sd && sd.subject) || r.subject;
+  if (/^ex\d+$/.test(code||'')) return el || (sd ? _resolveSubjDisplayName(sd) : '탐구');
+  var base = subjectNames[code] || code;
+  return el ? base+' ('+el+')' : base;
+}
+window._resultSubjName = _resultSubjName;
+// 학생이 그 과목에서 '모름(?)' 표시한 문항 번호 집합
+function _unkSet(sess, idx){ var u=sess&&sess.unknownBySubj, a=u&&(u[idx]||u[String(idx)]); var m={}; (a||[]).forEach(function(n){ m[parseInt(n,10)]=true; }); return m; }
+window._unkSet = _unkSet;
+// 예전에 채점된 성적에는 '모름(?)' 기록이 성적 문서에 없어서, 선생님 계정 접속 시 한 번 응시 기록에서 채워 넣는다(지점별 1회)
+async function _backfillUnknownGrades(){
+  // (1) '모름(?)' 기록 채우기  (2) 예전 결과 수정 기능 때문에 탐구가 ex1·ex2 키/이름으로 저장된 성적 바로잡기
+  if (!currentProfile || (currentProfile.role!=='teacher' && currentProfile.role!=='master')) return;
+  var flag='unkBackfill_v2_'+getBranch(); try{ if(localStorage.getItem(flag)) return; }catch(e){}
+  var ss=await getDocs(query(collection(db,'examSessions'), where('branch','==',getBranch())));
+  var exams={}, n=0, f=0;
+  for (var i=0;i<ss.docs.length;i++){
+    var sd=ss.docs[i], sess=sd.data(); if(!sess.subjectResults||!sess.subjectResults.length) continue;
+    var hasUnk=sess.unknownBySubj&&Object.keys(sess.unknownBySubj).length;
+    var gs=await getDocs(query(collection(db,'grades'), where('examSessionId','==',sd.id))); if(gs.empty) continue;
+    var g=gs.docs[0], gd=g.data(), broken=Object.keys(gd.scores||{}).some(function(k){return /^ex\d+$/.test(k);});
+    if(!broken&&(!hasUnk||gd.unknownBySubj)) continue;
+    if(!(sess.examId in exams)){ var ed=await getDoc(doc(db,'exams',sess.examId)); exams[sess.examId]=ed.exists()?Object.assign({id:sess.examId},ed.data()):null; }
+    var ex=exams[sess.examId]; if(!ex) continue;
+    var built=_buildGradesScoresFromResults(ex, sess.subjectResults, sess.electiveChoices||{}, sess.unknownBySubj);
+    var upd={}; if(hasUnk&&Object.keys(built.unknownBySubj).length) upd.unknownBySubj=built.unknownBySubj;
+    if(broken){ upd.scores=built.scores; upd.wrongBySubj=built.wrongBySubj; f++; }
+    if(Object.keys(upd).length){ await updateDoc(doc(db,'grades',g.id),upd); n++; }
+  }
+  try{ localStorage.setItem(flag, String(Date.now())); }catch(e){}
+  if(n) console.log('[성적 보정] '+n+'건 (ex1·ex2 이름 수정 '+f+'건)');
 }
 
 // 시험 전체 시작 전, 딱 한 번만 - 이 시험에 포함된 모든 과목 중 선택과목(탐구 등)이
@@ -8468,8 +8527,8 @@ function _examTodayDateStr(){
 // 채점 결과(results)를 성적탭이 쓰는 scores/wrongBySubj 형태로 변환하는 공통 로직.
 // 새로 채점해서 저장할 때(_writeExamResultToGrades)와, 나중에 "다시 채점하기"로
 // 기존 성적을 업데이트할 때 둘 다 이 함수를 재사용해서 완전히 같은 규칙을 따르게 함.
-function _buildGradesScoresFromResults(exam, results, electiveChoices){
-  var scores = {}, wrongBySubj = {};
+function _buildGradesScoresFromResults(exam, results, electiveChoices, unknownBySubjIdx){
+  var scores = {}, wrongBySubj = {}, unknownBySubj = {};
   var usedExploreKeys = [];
   results.forEach(function(r){
     if (!r) return;
@@ -8500,12 +8559,15 @@ function _buildGradesScoresFromResults(exam, results, electiveChoices){
     if (r.wrongNumbers && r.wrongNumbers.length) {
       wrongBySubj[key] = r.wrongNumbers.join(', ');
     }
+    // 학생이 시험 중 '모름(?)'으로 표시한 문항 (맞혔어도 표시) - 성적탭·성적표·답안 보기에서 함께 보여 줌
+    var unk = unknownBySubjIdx && (unknownBySubjIdx[r.subjectIndex] || unknownBySubjIdx[String(r.subjectIndex)]);
+    if (unk && unk.length) unknownBySubj[key] = unk.slice().sort(function(a,b){return a-b;}).join(', ');
   });
-  return { scores: scores, wrongBySubj: wrongBySubj };
+  return { scores: scores, wrongBySubj: wrongBySubj, unknownBySubj: unknownBySubj };
 }
 
-function _writeExamResultToGrades(studentUid, sessionId, exam, results, electiveChoices){
-  var built = _buildGradesScoresFromResults(exam, results, electiveChoices);
+function _writeExamResultToGrades(studentUid, sessionId, exam, results, electiveChoices, unknownBySubjIdx){
+  var built = _buildGradesScoresFromResults(exam, results, electiveChoices, unknownBySubjIdx);
   return addDoc(collection(db,'grades'), {
     uid: studentUid,
     type: exam.gradeType || 'mock',
@@ -8513,6 +8575,7 @@ function _writeExamResultToGrades(studentUid, sessionId, exam, results, elective
     examDate: _examTodayDateStr(),
     scores: built.scores,
     wrongBySubj: built.wrongBySubj,
+    unknownBySubj: built.unknownBySubj,
     examSessionId: sessionId,
     examId: exam.id || null,
     examSource: examSourceLabel(exam.examSource) || null,
@@ -8560,7 +8623,7 @@ function _getPrevSubjectScores(studentUid, gradeType, examSource){
     docs.forEach(function(g){
       if (!g.scores) return;
       Object.keys(g.scores).forEach(function(key){
-        var s = (g.scores[key] && g.scores[key].score != null) ? parseInt(g.scores[key].score, 10) : null;
+        var s = (g.scores[key] && g.scores[key].score != null) ? parseFloat(g.scores[key].score) : null;
         if (s == null) return;
         if (maxBySubj[key] === undefined || s > maxBySubj[key]) maxBySubj[key] = s;
       });
@@ -8602,7 +8665,7 @@ function _awardExamRewards(studentUid, exam, results, prevScores, electiveChoice
   results.forEach(function(r){
     if (!r) return;
     var subj = r.subject;
-    var subjName = subjectNames[subj] || subj;
+    var subjName = _resultSubjName(r, exam, electiveChoices);
     var subjDef = (exam.subjects && exam.subjects[r.subjectIndex]) || null;
 
     // 2) 이전 시험 대비 점수 상승 시 과목당 +10
@@ -8666,7 +8729,7 @@ function _finalizeExamSubmit(sessionId, exam, subj, subjIdx, answers, autoSubmit
       }).then(function(){
         var studentUid = sess.studentUid || currentUser.uid;
         return _getPrevSubjectScores(studentUid, exam.gradeType, examSourceLabel(exam.examSource)).then(function(prevScores){
-          return _writeExamResultToGrades(studentUid, sessionId, exam, results, sess.electiveChoices).then(function(){
+          return _writeExamResultToGrades(studentUid, sessionId, exam, results, sess.electiveChoices, sess.unknownBySubj).then(function(){
             _awardExamRewards(studentUid, exam, results, prevScores, sess.electiveChoices);
           });
         }).then(function(){
@@ -8674,7 +8737,7 @@ function _finalizeExamSubmit(sessionId, exam, subj, subjIdx, answers, autoSubmit
           return MP_onExamCompleted(studentUid, exam.id, results, exam);
         });
       }).then(function(){
-        var totalScore = results.reduce(function(s,r){return s + (r?r.score:0);}, 0);
+        var totalScore = _r2(results.reduce(function(s,r){return s + (r?r.score:0);}, 0));
         _enterReflectionScreen(sessionId, exam, results, totalScore, function(){
           alert('제출 완료!\n총점: ' + totalScore + '점\n\n성적탭(' + (exam.gradeType==='school'?'내신':'모의고사') + ')에 자동으로 저장되었습니다. (주관식은 선생님 검토 후 최종 반영될 수 있습니다)');
           showScreen(currentProfile.role==='student' ? 'screen-student' : 'screen-teacher');
@@ -8906,7 +8969,7 @@ window.openReflectionForPastExam = function(sessionId){
     getDoc(doc(db,'exams',sess.examId)).then(function(examDoc){
       if (!examDoc.exists()) { alert('시험 정보를 찾을 수 없습니다'); return; }
       var exam = Object.assign({id:sess.examId}, examDoc.data());
-      var totalScore = sess.subjectResults.reduce(function(s,r){return s+(r?r.score:0);}, 0);
+      var totalScore = _r2(sess.subjectResults.reduce(function(s,r){return s+(r?r.score:0);}, 0));
       _enterReflectionScreen(sessionId, exam, sess.subjectResults, totalScore, function(){
         alert('저장되었습니다!');
         showScreen('screen-student');
@@ -9755,7 +9818,7 @@ window._recoverMissingGrade = function(idx, btnEl){
   var results = m.session.subjectResults || [];
   console.log('[성적복구] 시작 - 학생:', m.studentName, '시험:', m.exam.title, '세션ID:', m.session._id);
   _getPrevSubjectScores(m.session.studentUid, m.exam.gradeType, examSourceLabel(m.exam.examSource)).then(function(prevScores){
-    return _writeExamResultToGrades(m.session.studentUid, m.session._id, m.exam, results, m.session.electiveChoices).then(function(docRef){
+    return _writeExamResultToGrades(m.session.studentUid, m.session._id, m.exam, results, m.session.electiveChoices, m.session.unknownBySubj).then(function(docRef){
       _awardExamRewards(m.session.studentUid, m.exam, results, prevScores, m.session.electiveChoices);
       return docRef;
     });
@@ -9785,7 +9848,7 @@ window._recoverAllMissingGrades = function(){
     chain = chain.then(function(){
       var results = m.session.subjectResults || [];
       return _getPrevSubjectScores(m.session.studentUid, m.exam.gradeType, examSourceLabel(m.exam.examSource)).then(function(prevScores){
-        return _writeExamResultToGrades(m.session.studentUid, m.session._id, m.exam, results, m.session.electiveChoices).then(function(docRef){
+        return _writeExamResultToGrades(m.session.studentUid, m.session._id, m.exam, results, m.session.electiveChoices, m.session.unknownBySubj).then(function(docRef){
           _awardExamRewards(m.session.studentUid, m.exam, results, prevScores, m.session.electiveChoices);
           // 개별 복구와 마찬가지로, 원본이든 합쳐진 형태든 실제로 커버되고 있는지 재확인함
           return _isSessionCoveredByGrades(m.exam.id, m.session._id).then(function(covered){
@@ -10048,7 +10111,7 @@ window.openExamFullRanking = function(examId, examTitle){
       Object.keys(g.scores||{}).forEach(function(k){
         if (!bySubj[k]) bySubj[k] = [];
         var sc = g.scores[k];
-        bySubj[k].push({ uid: g.uid, score: parseInt(sc.score,10)||0, label: sc.label || subjectNames[k] || k });
+        bySubj[k].push({ uid: g.uid, score: parseFloat(sc.score)||0, label: sc.label || subjectNames[k] || k });
       });
     });
 
@@ -10107,7 +10170,7 @@ window.reGradeExamSessions = function(examId, examTitle){
             });
           });
 
-          var built = _buildGradesScoresFromResults(exam, newResults, sess.electiveChoices);
+          var built = _buildGradesScoresFromResults(exam, newResults, sess.electiveChoices, sess.unknownBySubj);
 
           return updateDoc(doc(db,'examSessions',sessDoc.id), { subjectResults: newResults }).then(function(){
             // [등불] 다시 채점으로 정오가 바뀌면 개인 복습지도 갱신
@@ -10117,7 +10180,7 @@ window.reGradeExamSessions = function(examId, examTitle){
           }).then(function(gradeSnap){
             if (gradeSnap.empty) return; // 성적탭에 반영된 적 없으면 세션만 갱신하고 끝
             var gradeDocRef = doc(db,'grades',gradeSnap.docs[0].id);
-            return updateDoc(gradeDocRef, { scores: built.scores, wrongBySubj: built.wrongBySubj });
+            return updateDoc(gradeDocRef, { scores: built.scores, wrongBySubj: built.wrongBySubj, unknownBySubj: built.unknownBySubj });
           }).then(function(){ successCount++; })
             .catch(function(e){ console.error('재채점 실패', sessDoc.id, e); failCount++; });
         });
@@ -10209,7 +10272,7 @@ function gradeExamAnswers(subj, answers){
   });
 
   return {
-    score: score, totalScore: totalScore, correctCount: correctCount,
+    score: _r2(score), totalScore: _r2(totalScore), correctCount: correctCount,
     wrongNumbers: wrongNumbers, details: details,
     mcAccuracy: mcTotal ? Math.round(mcCorrect/mcTotal*100) : null,
     shortAccuracy: shortTotal ? Math.round(shortCorrect/shortTotal*100) : null
@@ -10225,6 +10288,8 @@ window.openManualReviewModal = function(sessionId){
   getDoc(doc(db,'examSessions',sessionId)).then(function(sessDoc){
     var sess = sessDoc.data();
     window._reviewStudentUid = sess.studentUid;
+    window._reviewChoices = sess.electiveChoices || {};
+    window._reviewUnknown = sess.unknownBySubj || {};
     // 깊은 복사 - 저장 누르기 전까지는 로컬에서만 편집
     window._reviewAllResults = (sess.subjectResults || []).map(function(r){
       return r ? Object.assign({}, r, { answers: r.answers.map(function(a){ return Object.assign({}, a); }) }) : r;
@@ -10244,15 +10309,16 @@ function renderManualReviewModal(){
   var tabsHtml = '';
   if (results.length > 1) {
     tabsHtml = '<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">' + results.map(function(r,i){
-      var name = r ? (subjectNames[r.subject]||r.subject) : '?';
+      var name = r ? _resultSubjName(r, null, window._reviewChoices) : '?';
       var sc = r ? r.score : 0;
       return '<button type="button" onclick="switchManualReviewSubject('+i+')" style="padding:6px 12px;border-radius:8px;border:1px solid '+(i===idx?'var(--burg)':'var(--border)')+';background:'+(i===idx?'var(--burg)':'var(--surface)')+';color:'+(i===idx?'#fff':'var(--tx2)')+';font-size:12px;font-weight:600;cursor:pointer;">'+escapeHtml(name)+' ('+sc+'점)</button>';
     }).join('') + '</div>';
   }
 
   scoreEl.textContent = subj0.score + ' / ' + subj0.totalScore + '점';
+  var UNKR = _unkSet({unknownBySubj: window._reviewUnknown}, subj0.subjectIndex);
   var rows = subj0.answers.map(function(a, i){
-    var badge = a.isCorrect ? '<span style="color:var(--green);font-weight:700;">정답</span>' : '<span style="color:var(--red);font-weight:700;">오답</span>';
+    var badge = (UNKR[a.no] ? '<span class="unkmark" title="학생이 모름(?) 표시">?</span>' : '') + (a.isCorrect ? '<span style="color:var(--green);font-weight:700;">정답</span>' : '<span style="color:var(--red);font-weight:700;">오답</span>');
     var typeLabel = a.type==='mc' ? '객관식' : (a.shortMode==='digit'?'주관식(자릿수)':'주관식');
     var editedTag = a.gradingMode==='manual' ? '<span style="font-size:9px;color:var(--gold);font-weight:700;">(수정됨)</span>' : '';
     return '<div style="display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid var(--border2);font-size:13px;">'
@@ -10309,7 +10375,7 @@ window.editManualAnswer = function(idx){
 
   a.earned = a.isCorrect ? a.point : 0;
   a.gradingMode = 'manual';
-  subj.score = subj.answers.reduce(function(s,x){return s+x.earned;},0);
+  subj.score = _r2(subj.answers.reduce(function(s,x){return s+x.earned;},0));
   subj.wrongNumbers = subj.answers.filter(function(x){return !x.isCorrect;}).map(function(x){return x.no;});
   subj.correctCount = subj.answers.filter(function(x){return x.isCorrect;}).length;
   renderManualReviewModal();
@@ -10324,7 +10390,7 @@ window.toggleManualCorrect = function(idx){
   a.isCorrect = !a.isCorrect;
   a.earned = a.isCorrect ? a.point : 0;
   a.gradingMode = 'manual';
-  subj.score = subj.answers.reduce(function(s,x){return s+x.earned;},0);
+  subj.score = _r2(subj.answers.reduce(function(s,x){return s+x.earned;},0));
   subj.wrongNumbers = subj.answers.filter(function(x){return !x.isCorrect;}).map(function(x){return x.no;});
   subj.correctCount = subj.answers.filter(function(x){return x.isCorrect;}).length;
   renderManualReviewModal(); // 서버 재조회 없이 로컬 상태로만 재렌더 (뒤집기 버그 수정 지점)
@@ -10339,43 +10405,35 @@ window.saveManualReview = function(){
     return updateDoc(doc(db,'examSessions',sessionId), { subjectResults: results }).then(function(){
       // [등불] 선생님 수동 검토로 정오가 바뀌면 개인 복습지도 갱신
       try { if (window.DB_onExamGraded) window.DB_onExamGraded(sessionId); } catch(e) {}
-      return _syncGradesAfterManualReview(sessionId, results);
+      return _syncGradesAfterManualReview(sessionId, results, sess);
     }).then(function(){
       closeModal('modal-manual-review');
-      var totalScore = results.reduce(function(s,r){return s + (r?r.score:0);}, 0);
+      var totalScore = _r2(results.reduce(function(s,r){return s + (r?r.score:0);}, 0));
       alert('검토 결과가 저장되었습니다 (총 ' + totalScore + '점)');
       openExamMonitor(sess.examId);
     });
   }).catch(function(e){ alert('저장 실패: ' + e.message); });
 };
 
-function _syncGradesAfterManualReview(sessionId, results){
+function _syncGradesAfterManualReview(sessionId, results, sess){
+  // 처음 채점 때와 같은 규칙(_buildGradesScoresFromResults)으로 다시 만든다 - 예전엔 탐구가 ex1·ex2 키/이름으로 덮어써지고
+  // 선택과목 등급표가 빠지던 문제가 있었음
   return getDocs(query(collection(db,'grades'), where('examSessionId','==',sessionId))).then(function(snap){
     if (snap.empty) return;
     var gDoc = snap.docs[0];
     var gData = gDoc.data();
     var examId = gData.examId;
     return (examId ? getDoc(doc(db,'exams',examId)) : Promise.resolve(null)).then(function(examDoc){
-      var exam = (examDoc && examDoc.exists()) ? examDoc.data() : null;
-      var scores = {}, wrongBySubj = {};
-      results.forEach(function(r){
-        if (!r) return;
-        var subjDef = (exam && exam.subjects && exam.subjects[r.subjectIndex]) || null;
-        // 기존에 저장돼 있던 이 과목의 label(원래 채점 때 어떤 선택과목이었는지)을 참고해서
-        // 선택과목별 등급컷이 있으면 그걸 우선 씀
-        var oldLabel = gData.scores && gData.scores[r.subject] && gData.scores[r.subject].label;
-        var cutoffsSource2 = (subjDef && oldLabel && subjDef.gradeCutoffsByElective && subjDef.gradeCutoffsByElective[oldLabel]) ? subjDef.gradeCutoffsByElective[oldLabel] : (subjDef ? subjDef.gradeCutoffs : null);
-        var cutoffs = (subjDef && subjDef.gradeCutoffsEnabled) ? cutoffsSource2 : null;
-        var grade = cutoffs ? computeGradeFromCutoffs(cutoffs, r.score) : '';
-        var subjName = subjectNames[r.subject]||r.subject;
-        scores[r.subject] = { score: r.score, grade: grade, label: subjName, group:r.subject };
-        if (r.wrongNumbers && r.wrongNumbers.length) wrongBySubj[r.subject] = r.wrongNumbers.join(', ');
-        // 결과 수정으로 등급이 바뀐 경우에도 등급 상점 반영 (이미 지급됐으면 중복 지급 안 됨)
-        if (grade) {
-          _awardGradeLevelReward(gData.uid, gData.branch||getBranch(), subjName, grade, gData.examName||(exam&&exam.title)||'', gData.examDate||_examTodayDateStr());
-        }
+      var exam = (examDoc && examDoc.exists()) ? Object.assign({id:examId}, examDoc.data()) : null;
+      if (!exam) return;
+      var built = _buildGradesScoresFromResults(exam, results, (sess && sess.electiveChoices) || {}, sess && sess.unknownBySubj);
+      Object.keys(built.scores).forEach(function(k){
+        var sc = built.scores[k];
+        if (sc.grade) _awardGradeLevelReward(gData.uid, gData.branch||getBranch(), sc.label, sc.grade, gData.examName||exam.title||'', gData.examDate||_examTodayDateStr());
       });
-      return updateDoc(doc(db,'grades',gDoc.id), { scores: scores, wrongBySubj: wrongBySubj });
+      var upd = { scores: built.scores, wrongBySubj: built.wrongBySubj };
+      if (built.unknownBySubj) upd.unknownBySubj = built.unknownBySubj;
+      return updateDoc(doc(db,'grades',gDoc.id), upd);
     });
   });
 }
@@ -10511,7 +10569,7 @@ function _buildOmrMcBlocks(mcAnswers){
         if (isCorrectChoice && !isStudent) cls += ' correct-hint';
         return '<td><span class="'+cls+'">'+n+'</span></td>';
       }).join('');
-      return '<tr><td class="omr-sheet-qno-cell">'+a.no+'</td>'+cells+'</tr>';
+      return '<tr><td class="omr-sheet-qno-cell">'+a.no+(a._unk?'<span class="unkq">?</span>':'')+'</td>'+cells+'</tr>';
     }).join('');
     var maxChoiceInChunk = Math.max.apply(null, chunk.map(function(a){return a.choices||5;}));
     var headCells = Array.from({length:maxChoiceInChunk},function(){return '<th></th>';}).join('');
@@ -10543,7 +10601,9 @@ function _buildOmrDigitBlocks(digitAnswers){
   return '<div class="omr-sheet-digit-wrap">'+blocksHtml+'</div>';
 }
 
-function _buildOmrReplayHtml(subjName, answers){
+function _buildOmrReplayHtml(subjName, answers, unk){
+  unk = unk || {};
+  answers = (answers||[]).map(function(a){ return unk[a.no] ? Object.assign({}, a, {_unk:true}) : a; });
   var mcAnswers = (answers||[]).filter(function(a){ return a.type === 'mc'; });
   var digitAnswers = (answers||[]).filter(function(a){ return a.type !== 'mc' && a.shortMode === 'digit'; });
   var textAnswers = (answers||[]).filter(function(a){ return a.type !== 'mc' && a.shortMode !== 'digit'; });
@@ -10551,7 +10611,7 @@ function _buildOmrReplayHtml(subjName, answers){
   var textRows = textAnswers.map(function(a){
     var myAns = (a.studentAnswer!=null && a.studentAnswer!=='') ? a.studentAnswer : '무응답';
     return '<div class="omr-sheet-textrow">'
-      + '<span class="omr-sheet-qno-cell">'+a.no+'번</span>'
+      + '<span class="omr-sheet-qno-cell">'+a.no+'번'+(a._unk?'<span class="unkq">?</span>':'')+'</span>'
       + '<span style="'+(a.isCorrect?'color:#1a1a1a;':'color:#b91c1c;')+'">내 답: '+escapeHtml(String(myAns))+'</span>'
       + '<span style="margin-left:auto;color:#555;">정답: '+escapeHtml(String(a.correctAnswer))+'</span>'
       + '</div>';
@@ -10566,7 +10626,9 @@ function _buildOmrReplayHtml(subjName, answers){
     +   '<span><i class="omr-sheet-legend-mark ok"></i>정답으로 마킹</span>'
     +   '<span><i class="omr-sheet-legend-mark ng"></i>오답으로 마킹</span>'
     +   '<span><i class="omr-sheet-legend-mark hint"></i>정답 (미마킹)</span>'
+    +   (Object.keys(unk).length ? '<span><b style="color:#c58a10">?</b> 모름 표시</span>' : '')
     + '</div>'
+    + (Object.keys(unk).length ? '<div style="font-size:11px;color:#8a6410;padding:2px 10px 6px">모름(?) 표시한 문항: '+Object.keys(unk).sort(function(a,b){return a-b;}).join(', ')+'번</div>' : '')
     + '<div class="omr-sheet-body">'
     +   (mcAnswers.length ? _buildOmrMcBlocks(mcAnswers) : '')
     +   (digitAnswers.length ? _buildOmrDigitBlocks(digitAnswers) : '')
@@ -10583,8 +10645,8 @@ window.openExamOmrReplay = function(sessionId){
     var results = sess.subjectResults || [];
     var html = results.map(function(r){
       if (!r) return '';
-      var subjName = subjectNames[r.subject]||r.subject;
-      return _buildOmrReplayHtml(subjName, r.answers);
+      var subjName = _resultSubjName(r, null, sess.electiveChoices);
+      return _buildOmrReplayHtml(subjName, r.answers, _unkSet(sess, r.subjectIndex));
     }).join('<div style="height:20px;"></div>');
     window._lastOmrReplayHtml = html; // 확대보기에서 재사용
     document.getElementById('omr-replay-body').innerHTML = html
@@ -10628,8 +10690,8 @@ window.openOmrZoomView = function(){
 
 function _renderExamReportCard(sess, exam){
   var results = sess.subjectResults || [];
-  var totalScore = results.reduce(function(s,r){return s+(r?r.score:0);},0);
-  var totalMax = results.reduce(function(s,r){return s+(r?r.totalScore:0);},0);
+  var totalScore = _r2(results.reduce(function(s,r){return s+(r?r.score:0);},0));
+  var totalMax = _r2(results.reduce(function(s,r){return s+(r?r.totalScore:0);},0));
   var studentName = (currentProfile && currentProfile.name) || '';
   var lastResult = results[results.length-1];
   var dateStr = (lastResult && lastResult.submittedAtMs) ? new Date(lastResult.submittedAtMs).toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric'}) : '';
@@ -10648,12 +10710,13 @@ function _renderExamReportCard(sess, exam){
 
   var subjectCards = results.map(function(r){
     if (!r) return '';
-    var subjName = subjectNames[r.subject]||r.subject;
+    var subjName = _resultSubjName(r, exam, sess.electiveChoices);
     var pct = r.totalScore ? Math.round(r.score/r.totalScore*100) : 0;
+    var UNK = _unkSet(sess, r.subjectIndex);
     var questionGrid = (r.answers||[]).map(function(a){
-      var cls = a.isCorrect ? 'correct' : 'wrong';
-      var tip = a.no+'번 · 내 답: '+(a.studentAnswer!=null&&a.studentAnswer!==''?a.studentAnswer:'무응답')+' · 정답: '+a.correctAnswer;
-      return '<div class="exam-report-qcell '+cls+'" title="'+escapeHtml(String(tip))+'">'+a.no+'</div>';
+      var cls = (a.isCorrect ? 'correct' : 'wrong') + (UNK[a.no] ? ' unk' : '');
+      var tip = a.no+'번 · 내 답: '+(a.studentAnswer!=null&&a.studentAnswer!==''?a.studentAnswer:'무응답')+' · 정답: '+a.correctAnswer+(UNK[a.no]?' · 모름(?) 표시':'');
+      return '<div class="exam-report-qcell '+cls+'" title="'+escapeHtml(String(tip))+'">'+a.no+(UNK[a.no]?'<i>?</i>':'')+'</div>';
     }).join('');
     // 호버 툴팁은 모바일에서는 볼 수 없어서, 문항번호/내 답/정답을 눈에 바로 보이는
     // 목록으로도 같이 보여줌 (특히 틀린 문항은 강조)
@@ -10663,6 +10726,7 @@ function _renderExamReportCard(sess, exam){
         + '<span class="qno">'+a.no+'번</span>'
         + '<span class="myans">내 답 '+escapeHtml(String(myAns))+'</span>'
         + '<span class="correctans">정답 '+escapeHtml(String(a.correctAnswer))+'</span>'
+        + (UNK[a.no] ? '<span class="unkmark" title="모름(?) 표시">?</span>' : '')
         + '<span class="mark">'+(a.isCorrect?'✓':'✕')+'</span>'
         + '</div>';
     }).join('');
@@ -10856,10 +10920,12 @@ function getUserSubjects() {
 function getSubjectNamesMap() {
   var m = {};
   getUserSubjects().forEach(function(s){ m[s.key] = s.name; });
+  // 시험의 탐구 칸 코드(ex1·ex2)가 그대로 보이지 않게 기본 이름을 둔다(선택과목명을 알면 그쪽이 우선)
+  if (!m.ex1) m.ex1 = '탐구1'; if (!m.ex2) m.ex2 = '탐구2';
   return m;
 }
 // 전역 - 기존 코드 호환
-var subjectNames = {ko:'국어',en:'영어',ma:'수학',hi:'한국사',sc:'과학탐구',so:'사회탐구'};
+var subjectNames = {ko:'국어',en:'영어',ma:'수학',hi:'한국사',sc:'과학탐구',so:'사회탐구',ex1:'탐구1',ex2:'탐구2'};
 function refreshSubjectNames() {
   subjectNames = getSubjectNamesMap();
   return subjectNames;
@@ -11172,7 +11238,7 @@ function _doGoToScreen(user) {
           registerFCMToken(user.uid);
           setTimeout(function() { autoWeeklyPoints(); autoPlannerPenalty(); autoTop5EntryPoints(); resumeActiveTimer(); _maybeShowInstallNudge(); }, 3000);
         } else if (currentProfile.role === 'teacher' || currentProfile.role === 'master') {
-          showScreen('screen-teacher'); syncTeacherUI(); listenChatNotifs();
+          showScreen('screen-teacher'); syncTeacherUI(); listenChatNotifs(); setTimeout(function(){ try{ _backfillUnknownGrades(); }catch(e){} }, 8000);
           registerFCMToken(user.uid);
           buildTeacherTabs(currentProfile.role === 'master'); renderTeacher(0);
         } else { signOut(auth); showScreen('screen-login'); }
@@ -13324,7 +13390,7 @@ function _renderGradeList(){
           }).join('')
           + '</div>';
       }
-      return '<div class="score-card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-size:14px;font-weight:600">'+g.examName+(g.examSessionId?' <span style="font-size:9px;font-weight:700;color:var(--burg);background:var(--burg-l);padding:2px 6px;border-radius:4px;">자동채점</span>':'')+'</div><div style="font-size:11px;color:var(--tx3)">'+g.examDate+'</div></div><div class="score-subjects">'+subjHtml+'</div>'+wrongHtml+refHtml+minReqHtml+'<div style="margin-top:10px;display:flex;gap:6px;">'+(g.examSessionId?'<button onclick="viewExamResult(\''+g.examSessionId+'\')" style="padding:6px 12px;background:var(--burg-l);border:1px solid var(--burg-l2);border-radius:6px;color:var(--burg);font-size:11px;cursor:pointer;flex:1;">📄 문항별 결과 보기</button>':'')+'<button onclick="loadExamStats(\''+encodeURIComponent(g.examName)+'\',\'exam-stats-'+encodeURIComponent(g.examName)+'-'+g.examDate+'\')" style="padding:6px 12px;background:rgba(74,127,255,0.1);border:1px solid rgba(74,127,255,0.2);border-radius:6px;color:var(--blue);font-size:11px;cursor:pointer;flex:1;">📊 같은 시험 전체 통계 보기</button><button onclick="openGradeMemoModal(\''+g._id+'\')" style="padding:6px 12px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;flex:1;">📝 메모</button></div><div id="exam-stats-'+encodeURIComponent(g.examName)+'-'+g.examDate+'" style="display:none"></div></div>';
+      return '<div class="score-card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-size:14px;font-weight:600">'+g.examName+(g.examSessionId?' <span style="font-size:9px;font-weight:700;color:var(--burg);background:var(--burg-l);padding:2px 6px;border-radius:4px;">자동채점</span>':'')+'</div><div style="font-size:11px;color:var(--tx3)">'+g.examDate+'</div></div><div class="score-subjects">'+subjHtml+'</div>'+wrongHtml+_unknownHtml(g)+refHtml+minReqHtml+'<div style="margin-top:10px;display:flex;gap:6px;">'+(g.examSessionId?'<button onclick="viewExamResult(\''+g.examSessionId+'\')" style="padding:6px 12px;background:var(--burg-l);border:1px solid var(--burg-l2);border-radius:6px;color:var(--burg);font-size:11px;cursor:pointer;flex:1;">📄 문항별 결과 보기</button>':'')+'<button onclick="loadExamStats(\''+encodeURIComponent(g.examName)+'\',\'exam-stats-'+encodeURIComponent(g.examName)+'-'+g.examDate+'\')" style="padding:6px 12px;background:rgba(74,127,255,0.1);border:1px solid rgba(74,127,255,0.2);border-radius:6px;color:var(--blue);font-size:11px;cursor:pointer;flex:1;">📊 같은 시험 전체 통계 보기</button><button onclick="openGradeMemoModal(\''+g._id+'\')" style="padding:6px 12px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;flex:1;">📝 메모</button></div><div id="exam-stats-'+encodeURIComponent(g.examName)+'-'+g.examDate+'" style="display:none"></div></div>';
   }).join('');
 }
 
@@ -13978,7 +14044,7 @@ window.addGradeRow = function(type) {
     +'</div>'
     +'<div style="display:flex;gap:8px;align-items:center;margin-bottom:7px">'
     +'<span style="font-size:11px;color:var(--tx3);width:52px;flex-shrink:0">점수/등급</span>'
-    +'<input class="modal-input" type="number" data-rid="'+id+'" data-field="score" placeholder="점수" style="flex:1;margin-bottom:0"/>'
+    +'<input class="modal-input" type="number" step="any" data-rid="'+id+'" data-field="score" placeholder="점수" style="flex:1;margin-bottom:0"/>'
     +'<input class="modal-input" type="number" data-rid="'+id+'" data-field="grade" placeholder="등급" min="1" max="9" style="width:60px;margin-bottom:0"/>'
     +'</div>'
     +'<div style="display:flex;gap:8px;align-items:center">'
@@ -15047,7 +15113,7 @@ window.loadExamStats=function(encodedName, targetId){
     sameExam.forEach(function(d){var g=d.data();Object.values(g.wrongBySubj||{}).forEach(function(v){v.split(',').forEach(function(n){var k=n.trim();if(k)wrongCount[k]=(wrongCount[k]||0)+1;});});});
     var top5=Object.keys(wrongCount).sort(function(a,b){return wrongCount[b]-wrongCount[a];}).slice(0,5);
     var bySubj={};
-    sameExam.forEach(function(d){var g=d.data();Object.keys(g.scores||{}).forEach(function(k){if(!bySubj[k])bySubj[k]=[];bySubj[k].push({uid:g.uid,score:parseInt(g.scores[k].score)||0,grade:g.scores[k].grade});});});
+    sameExam.forEach(function(d){var g=d.data();Object.keys(g.scores||{}).forEach(function(k){if(!bySubj[k])bySubj[k]=[];bySubj[k].push({uid:g.uid,score:parseFloat(g.scores[k].score)||0,grade:g.scores[k].grade});});});
     var rankHtml=Object.keys(bySubj).slice(0,6).map(function(k){
       var arr=bySubj[k].sort(function(a,b){return b.score-a.score;}); // 항상 점수 높은 순 (등급 유무에 따라 기준이 뒤섞이던 버그 수정)
       return '<div style="font-size:12px;margin-bottom:4px"><span class="subject-tag subj-'+k.replace(/\d+$/,'')+'" style="font-size:10px">'+( subjectNames[k]||k)+'</span> '
@@ -15111,7 +15177,7 @@ window.loadStudentGrades=function(uid){
         var lbl=s.label||(subjectNames[k]||k);
         var base=k.replace(/\d+$/,'');
         if(!subjTrend[lbl]){ subjTrend[lbl]=[]; subjTrendBase[lbl]=base; }
-        subjTrend[lbl].push({date:g.examDate,score:parseInt(s.score)||0,grade:s.grade,exam:g.examName});
+        subjTrend[lbl].push({date:g.examDate,score:parseFloat(s.score)||0,grade:s.grade,exam:g.examName});
       });
     });
 
@@ -15191,7 +15257,7 @@ window.loadStudentGrades=function(uid){
           var curIdx=arr.findIndex(function(x){return x.date===g.examDate&&x.exam===g.examName;});
           var diff='';
           if(curIdx>0){
-            var pv=arr[curIdx-1].score,cv=parseInt(s.score||0);
+            var pv=arr[curIdx-1].score,cv=parseFloat(s.score||0);
             if(!isNaN(pv)&&cv!==pv) diff='<span style="font-size:10px;margin-left:3px;color:'+(cv>pv?'var(--green)':'var(--red)')+'">'+( cv>pv?'▲':'▼')+Math.abs(cv-pv)+'</span>';
           }
           var sv=(s.score!==null&&s.score!==undefined&&s.score!=='')?s.score:'-';
@@ -15243,8 +15309,8 @@ window.loadStudentGrades=function(uid){
       if(idx<grades.length-1&&hasScores){
         var prev=grades[idx+1];var diffs=[];
         Object.keys(scores).forEach(function(k){
-          var cv=parseInt((scores[k]||{}).score||0);
-          var pv=parseInt(((prev.scores||{})[k]||{}).score||0);
+          var cv=parseFloat((scores[k]||{}).score||0);
+          var pv=parseFloat(((prev.scores||{})[k]||{}).score||0);
           var lb=(scores[k]&&scores[k].label)||(subjectNames[k]||k);
           if(!isNaN(cv)&&!isNaN(pv)&&pv>0) diffs.push({label:lb,diff:cv-pv});
         });
@@ -15271,7 +15337,7 @@ window.loadStudentGrades=function(uid){
         +'<button onclick="deleteGrade(\''+g._id+'\',\''+uid+'\')" style="padding:5px 10px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:6px;color:var(--red);font-size:11px;cursor:pointer">삭제</button>'
         +'</div></div>'
         +'<div class="score-subjects">'+subjHtml+'</div>'
-        +wrongHtml+refHtml+prevHtml+statsBtn+'</div>';
+        +wrongHtml+_unknownHtml(g)+refHtml+prevHtml+statsBtn+'</div>';
     }).join('');
 
     var mergeBar = (currentProfile.role==='teacher'||currentProfile.role==='master')
@@ -15539,7 +15605,7 @@ window.loadExamStatsForTeacher=function(encodedName,targetUid,examKey){
       var g=d.data();
       Object.keys(g.scores||{}).forEach(function(k){
         if(!bySubj[k]) bySubj[k]=[];
-        bySubj[k].push({uid:g.uid,score:parseInt(g.scores[k].score)||0,grade:g.scores[k].grade,label:g.scores[k].label||(subjectNames[k]||k)});
+        bySubj[k].push({uid:g.uid,score:parseFloat(g.scores[k].score)||0,grade:g.scores[k].grade,label:g.scores[k].label||(subjectNames[k]||k)});
       });
     });
     // 과목별 오답 TOP5 HTML 생성
@@ -16186,7 +16252,7 @@ function buildKakaoChatPage() {
     +'<div class="kchat-input-area">'
     +'<input type="file" id="kchat-file-input" style="display:none;" onchange="handleKChatFile(this)"/>'
     +'<button class="kchat-attach" onclick="document.getElementById(\'kchat-file-input\').click()"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>'
-    +'<input id="kchat-input" class="kchat-input" placeholder="메시지 입력" onkeydown="if(event.key===\'Enter\')sendKChatMsg()"/>'
+    +'<textarea id="kchat-input" class="kchat-input" rows="1" placeholder="메시지 입력" onkeydown="kchatKey(event)" oninput="kchatGrow(this)"></textarea>'
     +'<button class="kchat-send" onclick="sendKChatMsg()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>'
     +'</div>'
     +'</div>'
@@ -16748,13 +16814,23 @@ window.sendKChatMsg = function() {
   }
 
   var input = document.getElementById('kchat-input');
-  var text = input ? input.value.trim() : '';
+  var text = input ? input.value.replace(/^\s*\n+|\s+$/g,'') : '';
+  if (text && !text.trim()) text = '';
   if (text) {
     var msg = {text:text, senderUid:currentUser.uid, senderName:currentProfile.name, senderAvatar:currentProfile.avatar||null, readBy:[currentUser.uid], createdAt:serverTimestamp()};
     addDoc(collection(db, 'chatRooms', _curChatRoomId, 'messages'), msg).then(function(){ _afterSend(msg); });
-    if (input) input.value = '';
+    if (input) { input.value = ''; kchatGrow(input); }
   }
 };
+// 채팅 입력: 줄바꿈 지원 - PC는 Enter 전송·Shift+Enter 줄바꿈, 휴대폰은 Enter가 줄바꿈이고 전송 버튼으로 보냄.
+// 한글 조합 중(isComposing) Enter는 무시해야 마지막 글자가 두 번 보내지지 않음
+window.kchatKey = function(e){
+  if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
+  var touch = window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+  if (e.shiftKey || touch) return;
+  e.preventDefault(); sendKChatMsg();
+};
+window.kchatGrow = function(el){ if(!el) return; el.style.height='auto'; el.style.height=Math.min(120, el.scrollHeight)+'px'; };
 
 // 메시지 렌더 (그룹핑 + 읽음 표시)
 function renderKChatMessages(msgs) {
@@ -18453,7 +18529,7 @@ function mpCell(D,st,ex,n){
   var sch=D.schByKey[ex.id+'|'+st.uid], se=D.sess[mpSessKey(ex.id,st.uid)]||null;
   if(!sch&&!se) return null;
   var status=sch?MPC.scheduleStatus(sch,se,n.today,n.nowMin):MPC.noScheduleStatus(se);
-  var score=null; if(se&&se.subjectResults&&(se.status==='graded'||se.status==='submitted')){ score=se.subjectResults.reduce(function(s,r){return s+(r?(r.score||0):0);},0); }
+  var score=null; if(se&&se.subjectResults&&(se.status==='graded'||se.status==='submitted')){ score=_r2(se.subjectResults.reduce(function(s,r){return s+(r?(r.score||0):0);},0)); }
   var rc=D.refl[st.uid+'|'+ex.id]||0;
   return {sch:sch,se:se,status:status,score:score,refl:rc};
 }
@@ -18770,7 +18846,7 @@ function mpMountPreview(host,pages,width){
   try{ MPR.fit(host); }catch(e){}
 }
 window.mpBigPreview=function(i){
-  var host=document.querySelector('#mp-r-prev, #mp-c-prev, #mp-sv-prev'); if(!host||!host._pages) return;
+  var host=document.querySelector('#mp-r-prev, #mp-c-prev, #mp-sv-prev, #mp-av-prev'); if(!host||!host._pages) return;
   var k=Math.min(1,(window.innerWidth-40)/794);
   var ov=mpSheet('<div style="overflow:auto"><div style="width:'+(794*k)+'px;height:'+(1123*k)+'px;margin:0 auto"><div style="width:794px;height:1123px;transform:scale('+k+');transform-origin:0 0">'+host._pages[i]+'</div></div></div><button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>');
   ov.firstChild.style.maxWidth='860px';
@@ -18791,9 +18867,9 @@ window.mpReportInit=async function(){
 window.mpRepTab=function(t){ _mpR.tab=t; mpRepShell(); };
 function mpRepShell(){
   var host=document.getElementById('mp-rep'); if(!host) return;
-  var h='<div class="mp-card"><div class="mp-h"><div class="mp-title">📄 리포트 · 성적표</div><div class="mp-seg"><button class="'+(_mpR.tab==='report'?'on':'')+'" onclick="mpRepTab(\'report\')">✨ 별자리 리포트</button><button class="'+(_mpR.tab==='card'?'on':'')+'" onclick="mpRepTab(\'card\')">🎓 성적표 만들기</button></div></div><div id="mp-rep-body"></div></div>';
+  var h='<div class="mp-card"><div class="mp-h"><div class="mp-title">📄 리포트 · 성적표</div><div class="mp-seg"><button class="'+(_mpR.tab==='report'?'on':'')+'" onclick="mpRepTab(\'report\')">✨ 별자리 리포트</button><button class="'+(_mpR.tab==='card'?'on':'')+'" onclick="mpRepTab(\'card\')">🎓 성적표 만들기</button><button class="'+(_mpR.tab==='archive'?'on':'')+'" onclick="mpRepTab(\'archive\')">🗂 생성된 성적표</button></div></div><div id="mp-rep-body"></div></div>';
   host.innerHTML=h;
-  if(_mpR.tab==='report') mpReportPanel(); else mpCardPanel();
+  if(_mpR.tab==='report') mpReportPanel(); else if(_mpR.tab==='archive') mpArchivePanel(); else mpCardPanel();
 }
 /* ── 별자리 리포트 ── */
 function mpReportPanel(){
@@ -18873,26 +18949,40 @@ window.mpCardLoadExams=async function(){
     var gs=await Promise.all(uids.map(function(u){return getDocs(query(collection(db,'grades'),where('uid','==',u)));}));
     var byUid={}, keys={};
     uids.forEach(function(u,i){ byUid[u]=gs[i].docs.map(function(d){return Object.assign({_id:d.id},d.data());}).filter(function(g){return g.examName&&g.examDate&&g.scores;});
-      byUid[u].forEach(function(g){ var k=g.examName+'|'+g.examDate; (keys[k]=keys[k]||{name:g.examName,date:g.examDate,n:0}).n++; }); });
+      byUid[u].forEach(function(g){ var k=g.examName+'|'+g.examDate; var e=(keys[k]=keys[k]||{name:g.examName,date:g.examDate,n:0,cat:''}); e.n++; if(!e.cat) e.cat=(g.type==='school'?'내신':(examSourceLabel(g.examSource)||'')); }); });
     var list=Object.keys(keys).map(function(k){return Object.assign({key:k},keys[k]);}).sort(function(a,b){return a.date<b.date?1:-1;});
     var pref=null; if(uids.length===1){ try{ var pd=await getDoc(doc(db,'studentCardPrefs',uids[0])); if(pd.exists()) pref=pd.data(); }catch(e){} }
     var plansByUid={}; await Promise.all(uids.map(async function(u){ try{ var pd2=await getDoc(doc(db,'admissionPlans',u)); if(pd2.exists()) plansByUid[u]=pd2.data(); }catch(e){} }));
     _mpR.cardCtx={uids:uids,byUid:byUid,list:list,plans:plansByUid,themeId:pref&&pref.themeId?pref.themeId:7,include:Object.assign({cover:true,inner:true,back:true,comment:true,chart:true,memo:true,minreq:true},pref?pref.include:{})};
-    mpCardStep2(body);
+    mpCardStep2(body); try{ mpCardFilter(); }catch(e){}
   }catch(e){ body.innerHTML='<div class="mp-warn">불러오기 실패: '+mpE(e.message)+'</div>'; }
 };
 function mpCardStep2(body){
   var X=_mpR.cardCtx, inc=X.include;
   if(!X.list.length){ body.innerHTML='<div class="mp-warn">선택한 학생들에게 저장된 성적이 없어요.</div>'; return; }
-  body.innerHTML='<div class="mp-lbl">시험 선택 — 여러 개 선택 가능 (칸에 학생 수가 표시돼요)</div><div style="max-height:200px;overflow:auto;border:1px solid var(--border2);border-radius:8px;padding:6px">'
-   +X.list.map(function(e,i){return '<label class="mp-chk"><input type="checkbox" class="mp-cx" value="'+mpE(e.key)+'" onchange="mpCardRefresh()">'+mpE(e.name)+' <span class="mp-sub">'+e.date+' · '+e.n+'명</span></label>';}).join('')+'</div>'
+  var cats=[]; X.list.forEach(function(e){ var c=e.cat||'기타'; if(cats.indexOf(c)<0) cats.push(c); });
+  body.innerHTML='<div class="mp-lbl">시험 선택 — 여러 개 선택 가능 (칸에 학생 수가 표시돼요)</div>'
+   +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"><input id="mp-cx-q" class="mp-in" style="flex:1;min-width:140px;margin:0" placeholder="🔍 시험 이름 검색 (예: 10월, 학평, 수학)" oninput="mpCardFilter()">'
+   +'<select id="mp-cx-cat" class="mp-in" style="width:auto;margin:0" onchange="mpCardFilter()"><option value="">전체 분류</option>'+cats.map(function(c){return '<option>'+mpE(c)+'</option>';}).join('')+'</select>'
+   +'<select id="mp-cx-per" class="mp-in" style="width:auto;margin:0" onchange="mpCardFilter()"><option value="">전체 기간</option><option value="30">최근 1개월</option><option value="90">최근 3개월</option><option value="180">최근 6개월</option></select></div>'
+   +'<div style="display:flex;gap:10px;align-items:center;margin-bottom:4px;font-size:11px"><span id="mp-cx-cnt" class="mp-sub"></span><a href="javascript:void 0" onclick="mpCardCheckVisible(true)" style="color:var(--burg)">보이는 시험 모두 선택</a><a href="javascript:void 0" onclick="mpCardCheckVisible(false)" style="color:var(--tx3)">선택 해제</a></div>'
+   +'<div id="mp-cx-list" style="max-height:220px;overflow:auto;border:1px solid var(--border2);border-radius:8px;padding:6px">'
+   +X.list.map(function(e,i){return '<label class="mp-chk" data-q="'+mpE((e.name+' '+e.date+' '+(e.cat||'')).toLowerCase())+'" data-cat="'+mpE(e.cat||'기타')+'" data-date="'+e.date+'"><input type="checkbox" class="mp-cx" value="'+mpE(e.key)+'" onchange="mpCardRefresh()">'+mpE(e.name)+' <span class="mp-sub">'+e.date+(e.cat?' · '+mpE(e.cat):'')+' · '+e.n+'명</span></label>';}).join('')+'<div id="mp-cx-none" class="mp-sub" style="display:none;padding:8px">조건에 맞는 시험이 없어요</div></div>'
    +'<div class="mp-lbl">3. 디자인 선택</div><div class="mp-sub" style="margin:0 0 6px">새 디자인</div><div class="mp-theme">'+MPR.THEMES.map(mpThemeTile).join('')+'</div><div class="mp-sub" style="margin:12px 0 6px">기존 디자인</div><div class="mp-theme">'+(MPR.OLD_THEMES||[]).map(mpThemeTile).join('')+'</div>'
    +'<div class="mp-lbl">포함 항목</div><div style="display:flex;flex-wrap:wrap;gap:4px 14px">'+[['cover','표지'],['inner','내지(쪽수 자동)'],['back','뒷표지'],['comment','선생님 한마디'],['chart','성적 흐름 그래프'],['minreq','수시 수능최저 충족']].map(function(x){return '<label class="mp-chk"><input type="checkbox" class="mp-ci" data-k="'+x[0]+'" '+(inc[x[0]]!==false?'checked':'')+' onchange="mpCardRefresh()">'+x[1]+'</label>';}).join('')+'</div>'
    +'<div class="mp-lbl">선생님 한마디 (선택 · 선택한 모든 학생에게 같이 들어가요)</div><textarea id="mp-c-cm" class="mp-in" rows="3" placeholder="비워 두면 선생님 한마디 칸은 만들어지지 않아요" oninput="mpCardRefresh()"></textarea>'
    +'<label class="mp-chk" style="margin-top:8px"><input type="checkbox" id="mp-c-save" checked>이 디자인을 선택한 학생들의 기본 디자인으로 저장</label>'
-   +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0"><button class="mp-btn pri" onclick="mpCardExport(\'png\')">🖼 PNG 저장</button><button class="mp-btn pri" onclick="mpCardExport(\'pdf\')">📄 PDF 저장</button><button class="mp-btn gold" onclick="mpCardPublish()">👀 학생에게 공개</button><span id="mp-c-stat" class="mp-sub" style="align-self:center"></span></div><div id="mp-c-prevname" class="mp-sub"></div><div id="mp-c-prev"></div>';
+   +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0"><button class="mp-btn pri" onclick="mpCardExport(\'png\')">🖼 PNG 저장</button><button class="mp-btn pri" onclick="mpCardExport(\'pdf\')">📄 PDF 저장</button><button class="mp-btn pri" onclick="mpCardArchive()" style="background:var(--navy,#1d2a4a);border-color:var(--navy,#1d2a4a)">💾 성적표 생성(보관함 저장)</button><button class="mp-btn gold" onclick="mpCardPublish()">👀 학생에게 공개</button><span id="mp-c-stat" class="mp-sub" style="align-self:center"></span></div><div id="mp-c-prevname" class="mp-sub"></div><div id="mp-c-prev"></div>';
 }
 function mpThemeTile(t){ var X=_mpR.cardCtx||{}; return '<div class="th'+(X.themeId===t.n?' on':'')+'" data-n="'+t.n+'" onclick="mpCardTheme('+t.n+')"><img loading="lazy" src="'+MPR.img(t.cov)+'" alt=""><b>'+mpE(t.nm)+'</b>'+(t.dark?'<small>인쇄 잉크 많이 듦</small>':'')+'</div>'; }
+window.mpCardFilter=function(){
+  var q=((document.getElementById('mp-cx-q')||{}).value||'').trim().toLowerCase().split(/\s+/).filter(Boolean), cat=(document.getElementById('mp-cx-cat')||{}).value||'', per=+((document.getElementById('mp-cx-per')||{}).value||0);
+  var lim=per?MPC.addDays(getPlannerDate(),-per):'', shown=0, rows=document.querySelectorAll('#mp-cx-list .mp-chk');
+  rows.forEach(function(el){ var ok=q.every(function(w){return el.getAttribute('data-q').indexOf(w)>=0;})&&(!cat||el.getAttribute('data-cat')===cat)&&(!lim||el.getAttribute('data-date')>=lim); el.style.display=ok?'':'none'; if(ok) shown++; });
+  var none=document.getElementById('mp-cx-none'); if(none) none.style.display=shown?'none':'block';
+  var cnt=document.getElementById('mp-cx-cnt'); if(cnt) cnt.textContent=shown+' / '+rows.length+'개 표시 · 선택 '+document.querySelectorAll('.mp-cx:checked').length+'개';
+};
+window.mpCardCheckVisible=function(on){ document.querySelectorAll('#mp-cx-list .mp-chk').forEach(function(el){ if(el.style.display!=='none'){ var c=el.querySelector('.mp-cx'); if(c) c.checked=on; } }); if(!on) document.querySelectorAll('.mp-cx').forEach(function(c){ c.checked=false; }); mpCardFilter(); mpCardRefresh(); };
 window.mpCardTheme=function(n){ _mpR.cardCtx.themeId=n; document.querySelectorAll('.mp-theme .th').forEach(function(el){ el.classList.toggle('on',+el.getAttribute('data-n')===n); }); mpCardRefresh(); };
 function mpReadCardCfg(){
   var X=_mpR.cardCtx; if(!X) return null;
@@ -18960,7 +19050,8 @@ function mpCardPayloadFor(uid,X){
   var exams=docs.filter(function(g){return X.sel.indexOf(g.examName+'|'+g.examDate)>=0;}).sort(function(a,b){return a.examDate<b.examDate?-1:1;}).map(function(g){
     var rows=Object.keys(g.scores).map(function(k){ var v=g.scores[k]||{}; var grp=v.group||k; var w=g.wrongBySubj&&g.wrongBySubj[k]; var label=v.label||subjectNames[grp]||k;
       var nums=w?String(w).split(',').map(function(x){return parseInt(x,10);}).filter(function(x){return x>0;}).sort(function(a,b){return a-b;}):[];
-      return {key:grp,label:label,score:(v.score==null||v.score===''?null:Number(v.score)),grade:(v.grade?parseInt(v.grade,10):null),wrong:w?nums.length:null,wrongNums:nums,an:mpRowAnalysis(g,k,v,grp,label)}; });
+      var uk=g.unknownBySubj&&g.unknownBySubj[k], unums=uk?String(uk).split(',').map(function(x){return parseInt(x,10);}).filter(function(x){return x>0;}).sort(function(a,b){return a-b;}):[];
+      return {key:grp,label:label,score:(v.score==null||v.score===''?null:Number(v.score)),grade:(v.grade?parseInt(v.grade,10):null),wrong:w?nums.length:null,wrongNums:nums,unkNums:unums,an:mpRowAnalysis(g,k,v,grp,label)}; });
     rows.sort(function(a,b){var ia=_mpGradeOrder.indexOf(a.key),ib=_mpGradeOrder.indexOf(b.key); return (ia<0?99:ia)-(ib<0?99:ib);});
     return {name:g.examName,date:g.examDate,rows:rows,_g:g};
   });
@@ -18988,7 +19079,7 @@ function mpMinReqFor(g,planDoc){
 }
 var _mpCardSeq=0;
 window.mpCardRefresh=async function(){
-  var X=mpReadCardCfg(); if(!X) return; var host=document.getElementById('mp-c-prev'); if(!host) return;
+  var X=mpReadCardCfg(); if(!X) return; try{ var _c=document.getElementById('mp-cx-cnt'); if(_c) mpCardFilter(); }catch(e){} var host=document.getElementById('mp-c-prev'); if(!host) return;
   if(!X.sel.length){ host.innerHTML='<div class="mp-sub">시험을 선택하면 미리보기가 나타나요</div>'; return; }
   var seq=++_mpCardSeq; try{ await mpCardEnsureMeta(X); }catch(e){} if(seq!==_mpCardSeq) return;
   var P=null; for(var i=0;i<X.uids.length&&!P;i++){ P=mpCardPayloadFor(X.uids[i],X); }
@@ -19035,6 +19126,60 @@ window.MP_renderStudentReports=async function(){
       return '<div class="mp-row" style="cursor:pointer" onclick="mpOpenSaved(\''+x.id+'\')"><div style="font-size:22px">'+(x.kind==='card'?'🎓':'✨')+'</div><div class="m"><div class="a">'+mpE(x.title)+'</div><div class="b">'+(x.createdAt?x.createdAt.toDate().toLocaleDateString('ko-KR'):'')+' · '+mpE(x.createdBy||'')+'</div></div><span class="mp-chip mp-c-blue">보기</span></div>';
     }).join('')+'</div>';
   }catch(e){ host.innerHTML=''; }
+};
+/* ───────── 생성된 성적표 보관함 (선생님·마스터 전용, /api/card-archive) ───────── */
+async function mpArchiveApi(body){
+  var tok=await currentUser.getIdToken();
+  var r=await fetch('/api/card-archive',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify(Object.assign({branch:getBranch()},body))});
+  var j=await r.json().catch(function(){return {};}); if(!r.ok||!j.ok) throw new Error(j.error||('서버 오류 '+r.status)); return j;
+}
+window.mpCardArchive=async function(){
+  var sets=await mpCardSets(); if(!sets) return; var st=document.getElementById('mp-c-stat');
+  if(!confirm(sets.length+'명의 성적표를 생성해 보관함에 저장할까요?\n(선생님·마스터 계정에서만 보여요. 학생에게는 보이지 않아요)')) return;
+  try{
+    if(st) st.textContent='저장하는 중...';
+    var items=sets.map(function(x){ var P=x.payload; return {studentUid:x.uid,studentName:P.student.name,title:'성적표 · '+(P.exams.length===1?P.exams[0].name:P.periodLabel),themeId:P.themeId,examCount:P.exams.length,payload:mpClean(P)}; });
+    for(var i=0;i<items.length;i+=20) await mpArchiveApi({action:'create',items:items.slice(i,i+20)});
+    await mpSaveCardPrefs(sets);
+    if(st) st.textContent='✓ '+sets.length+'명 성적표를 보관함에 저장했어요';
+    if(confirm('저장했어요. "생성된 성적표" 탭으로 이동할까요?')) mpRepTab('archive');
+  }catch(e){ if(st) st.textContent=''; alert('저장 실패: '+e.message); }
+};
+var _mpArc={list:null,q:''};
+function mpArchivePanel(){
+  var b=document.getElementById('mp-rep-body');
+  b.innerHTML='<div class="mp-sub" style="margin-bottom:8px">"성적표 만들기"에서 생성한 성적표가 모두 모여요. 선생님·마스터 계정에서만 보이고 학생에게는 보이지 않아요.</div>'
+   +'<div style="display:flex;gap:6px;margin-bottom:8px"><input id="mp-arc-q" class="mp-in" style="margin:0;flex:1" placeholder="🔍 학생 이름·시험·만든 사람 검색" oninput="_mpArc.q=this.value;mpArchiveDraw()" value="'+mpE(_mpArc.q)+'"><button class="mp-btn sm" onclick="mpArchiveLoad()">새로고침</button></div><div id="mp-arc-list"><div class="mp-sub">불러오는 중...</div></div>';
+  mpArchiveLoad();
+}
+window.mpArchiveLoad=async function(){
+  try{ var j=await mpArchiveApi({action:'list'}); _mpArc.list=j.list||[]; mpArchiveDraw(); }
+  catch(e){ var el=document.getElementById('mp-arc-list'); if(el) el.innerHTML='<div class="mp-warn">불러오기 실패: '+mpE(e.message)+'</div>'; }
+};
+window.mpArchiveDraw=function(){
+  var el=document.getElementById('mp-arc-list'); if(!el||!_mpArc.list) return;
+  var q=String(_mpArc.q||'').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  var L=_mpArc.list.filter(function(x){ var t=(x.studentName+' '+x.title+' '+x.createdByName).toLowerCase(); return q.every(function(w){return t.indexOf(w)>=0;}); });
+  if(!L.length){ el.innerHTML='<div class="mp-sub" style="padding:10px 0">'+(_mpArc.list.length?'검색 결과가 없어요':'아직 생성한 성적표가 없어요')+'</div>'; return; }
+  el.innerHTML='<div class="mp-sub" style="margin-bottom:6px">'+L.length+'건</div>'+L.map(function(x){
+    var d=x.createdAt?new Date(x.createdAt):null, ds=d?(d.getFullYear()+'.'+(d.getMonth()+1)+'.'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')):'';
+    return '<div class="mp-row" style="cursor:pointer" onclick="mpArchiveOpen(\''+x.id+'\')"><div style="font-size:22px">🎓</div><div class="m"><div class="a">'+mpE(x.studentName)+' · '+mpE(x.title)+'</div><div class="b">'+ds+' · 만든 사람 '+mpE(x.createdByName||'-')+(x.examCount>1?' · 시험 '+x.examCount+'개':'')+'</div></div><span class="mp-chip mp-c-blue">보기</span></div>';
+  }).join('');
+};
+window.mpArchiveOpen=async function(id){
+  var ov=mpSheet('<div class="mp-sub">불러오는 중...</div>');
+  try{
+    var j=await mpArchiveApi({action:'get',id:id}), x=j.item; await mpEnsureFonts();
+    var pages=MPR.cardPages(x.payload), d=x.createdAt?new Date(x.createdAt).toLocaleString('ko-KR'):'';
+    ov.querySelector('.mp-sheet').innerHTML='<h3>'+mpE(x.studentName)+' · '+mpE(x.title)+'</h3><div class="mp-sub" style="margin-bottom:8px">'+mpE(d)+' · 만든 사람 '+mpE(x.createdByName||'-')+'</div>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"><button class="mp-btn pri sm" id="mp-av-png">🖼 PNG 저장</button><button class="mp-btn pri sm" id="mp-av-pdf">📄 PDF 저장</button><button class="mp-btn gold sm" id="mp-av-pub">👀 학생에게 공개</button><button class="mp-btn sm" id="mp-av-del" style="color:var(--red)">삭제</button><span id="mp-av-stat" class="mp-sub" style="align-self:center"></span></div><div id="mp-av-prev"></div><button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>';
+    mpMountPreview(ov.querySelector('#mp-av-prev'),pages,Math.min(330,window.innerWidth-60));
+    var st=ov.querySelector('#mp-av-stat');
+    function run(kind){ mpExportSets([{name:x.studentName,pages:pages}],kind,'성적표',function(a,t){st.textContent='만드는 중 '+a+'/'+t;}).then(function(){st.textContent='✓ 저장했어요';}).catch(function(e){st.textContent='';alert('저장 실패: '+e.message);}); }
+    ov.querySelector('#mp-av-png').onclick=function(){run('png');}; ov.querySelector('#mp-av-pdf').onclick=function(){run('pdf');};
+    ov.querySelector('#mp-av-pub').onclick=async function(){ if(!confirm(x.studentName+' 학생에게 이 성적표를 공개할까요?')) return; try{ await addDoc(collection(db,'studentReports'),{uid:x.studentUid,kind:'card',title:x.title,branch:getBranch(),createdAt:serverTimestamp(),createdBy:currentProfile.name,payload:x.payload}); st.textContent='✓ 공개했어요'; }catch(e){ alert('공개 실패: '+e.message); } };
+    ov.querySelector('#mp-av-del').onclick=async function(){ if(!confirm('이 성적표를 보관함에서 삭제할까요?')) return; try{ await mpArchiveApi({action:'delete',id:id}); mpCloseSheets(); _mpArc.list=(_mpArc.list||[]).filter(function(y){return y.id!==id;}); mpArchiveDraw(); }catch(e){ alert('삭제 실패: '+e.message); } };
+  }catch(e){ ov.querySelector('.mp-sheet').innerHTML='<div class="mp-warn">불러오기 실패: '+mpE(e.message)+'</div><button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>'; }
 };
 window.mpOpenSaved=async function(id){
   var x=window._mpSv&&window._mpSv[id]; if(!x) return;
