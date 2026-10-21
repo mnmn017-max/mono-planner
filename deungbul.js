@@ -991,6 +991,7 @@
     return A;
   }
   function tansAtoms(units, pick) {
+    TRSEEN = {};
     var A = [atom('<div class="kick">거울 너머의 답</div><h2 class="pt">쌍둥이 문항 정답과 해설</h2>', { run: '부록 · 쌍둥이 문항 정답과 해설', mark: 'TANS', newpage: true })];
     units.forEach(function (u) {
       var its = pick(u).filter(function (it) { return it.twin_a; }); if (!its.length) return;
@@ -1052,12 +1053,24 @@
     return A;
   }
   // 쌍둥이 해설: 머리 + 풀이 단계들 + 선지 노트 + 닻 (길면 쪽을 넘김)
+  var TRSEEN = {};
   function tansParts(headInner, t, label) {
     var run = '부록 · 쌍둥이 문항 정답과 해설';
     var ex = String(t.explanation || '').split(/\n\s*\n/).filter(function (x) { return x.trim(); });
     var A = [];
     ex.forEach(function (sp, i) { A.push(atom((i === 0 ? '<div class="tah">' + headInner + '</div>' : '') + '<p class="tex">' + E(sp) + '</p>', { run: run, cls: 'a-tans cont' + (i === 0 ? ' first' : ''), cont: label + ' 해설 (이어서)' })); });
     if (!ex.length) A.push(atom('<div class="tah">' + headInner + '</div>', { run: run, cls: 'a-tans' }));
+    // 영어 쌍둥이 지문 해석(같은 지문을 쓰는 문항끼리는 한 번만)
+    if (t.translation) {
+      var trk = String(t.translation);
+      if (TRSEEN[trk]) A.push(atom('<p class="trnote">지문 해석은 앞의 ' + E(TRSEEN[trk]) + ' 해설에 있습니다.</p>', { run: run, cls: 'a-tans' }));
+      else {
+        TRSEEN[trk] = label;
+        trk.split(/\n\s*\n/).filter(function (x) { return x.trim(); }).forEach(function (tp, i) {
+          A.push(atom((i === 0 ? '<div class="trh">지문 해석</div>' : '') + '<p class="trp">' + E(tp).replace(/\n/g, '<br>') + '</p>', { run: run, cls: 'a-tans cont', cont: label + ' 지문 해석 (이어서)' }));
+        });
+      }
+    }
     var tail = ((t.option_notes || []).length ? '<ul class="tnotes">' + t.option_notes.map(function (n) { return '<li>' + E(n) + '</li>'; }).join('') + '</ul>' : '') +
       '<div class="anchor">' + icon('anchor') + '<div><div class="kick">다시 내릴 닻 · 복습 처방</div><p>' + E(t.review_comment) + '</p></div></div>';
     A.push(atom(tail, { run: run, cls: 'a-tans tail cont kwp', cont: label + ' 해설 (이어서)' }));
@@ -1065,6 +1078,7 @@
   }
   function mixedTansAtoms(order, unitOf) {
     if (!order.length) return [];
+    TRSEEN = {};
     var A = [atom('<div class="kick">거울 너머의 답</div><h2 class="pt">쌍둥이 문항 정답과 해설</h2><p class="lead">여기서 처음으로 각 T번호가 원래 몇 번의 쌍둥이인지 밝힙니다. 틀린 문항은 「다시 내릴 닻」을 읽고 원 문항 해설로 돌아가세요.</p>', { run: '부록 · 쌍둥이 문항 정답과 해설', mark: 'TANS', newpage: true })];
     order.forEach(function (o) {
       var ref = unitOf(o.k); if (!ref) return;
@@ -1393,7 +1407,7 @@
     return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>' + esc(title) + '</title><base href="' + origin + '/">' +
       '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
       '<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@400;700&family=Cormorant+Garamond:ital,wght@0,600;1,600&family=Bebas+Neue&family=DM+Mono:wght@500&display=block" rel="stylesheet">' +
-      '<link rel="stylesheet" href="' + origin + '/deungbul-print.css?v=8">' +
+      '<link rel="stylesheet" href="' + origin + '/deungbul-print.css?v=9">' +
       (hasMath ? '<style>*{text-wrap-style:auto!important}</style><link rel="stylesheet" href="' + origin + '/assets/katex/katex.min.css"><script src="' + origin + '/assets/katex/katex.min.js"><\/script><script src="' + origin + '/assets/katex/contrib/auto-render.min.js"><\/script>' : '') +
       '</head><body><div id="db-printbar"><span id="db-pstat">페이지를 조판하는 중입니다… (글꼴·이미지 로딩)</span><button id="db-pbtn" disabled>🖨 인쇄 / PDF 저장</button></div><div id="book"></div><div id="src" style="display:none">' + src + '</div>' +
       '<script>window.DB_ASSET=' + JSON.stringify(ASSET) + ';var PAG=' + PAGINATE.toString() + ';' +

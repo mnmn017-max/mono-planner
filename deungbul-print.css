@@ -402,3 +402,7 @@ body{overflow-wrap:break-word}
 .tbox.given.sum{margin-top:1mm}
 .sumarrow{text-align:center;font-size:12pt;line-height:1;margin:1mm 0 1.2mm;color:var(--tx2,#444)}
 u.ul{text-decoration:underline;text-decoration-thickness:.6pt;text-underline-offset:1.6pt}
+/* 영어 쌍둥이 지문 해석 */
+.trh{font-size:8.6pt;font-weight:700;color:var(--burg,#7B1D1D);letter-spacing:.04em;margin:2.2mm 0 1mm;padding-top:1.6mm;border-top:.4pt dashed var(--tx3,#999)}
+.trp{font-size:9.2pt;line-height:1.7;margin:0 0 1.6mm;color:var(--tx1,#222)}
+.trnote{font-size:8.6pt;color:var(--tx3,#777);margin:1.2mm 0}
