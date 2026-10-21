@@ -136,8 +136,21 @@
     var els = Object.keys(ak).filter(function (k) { return k !== '공통'; }).map(normEl);
     return code + '-' + (els[0] || '');
   }
-  function isMultiExam(exam) { return ((exam && exam.subjects) || []).length > 1; }
-  function packDocId(examId, exam, key) { return isMultiExam(exam) ? examId + '__' + key : examId; }
+  // 과목별로 데이터를 나눠야 하는 시험: 과목이 여러 개이거나, 한 과목(탐구 등) 안에서 학생이 과목을 골라 응시하는 경우
+  function isMultiExam(exam) {
+    var subs = (exam && exam.subjects) || [];
+    if (subs.length > 1) return true;
+    return subs.some(function (sb) {
+      var code = sb.exCategory || sb.subject;
+      if (code !== 'so' && code !== 'sc') return false;
+      var els = {};
+      (sb.electiveOptions || []).forEach(function (e) { if (e) els[normEl(e)] = 1; });
+      Object.keys(sb.questionsByElective || {}).forEach(function (e) { if ((sb.questionsByElective[e] || []).length) els[normEl(e)] = 1; });
+      return Object.keys(els).length > 1;
+    });
+  }
+  // 탐구 데이터는 선택과목마다 따로 둔다(한 시험에서 학생마다 다른 과목을 고르므로)
+  function packDocId(examId, exam, key) { return (isMultiExam(exam) || /^(so|sc)-/.test(key)) ? examId + '__' + key : examId; }
   function sheetDocId(sessionId, meta) {
     var pid = (meta && meta.packId) || '';
     return pid && meta.examId && pid !== meta.examId ? sessionId + '__' + (meta.packKey || packKeyOf(meta)) : sessionId;
