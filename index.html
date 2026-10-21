@@ -7302,11 +7302,20 @@ window.openExamReflections = function(examId, examTitle){
 
   Promise.all([
     getDocs(query(collection(db,'examReflections'), where('examId','==',examId))),
-    loadStudentList()
+    loadStudentList(),
+    getDoc(doc(db,'exams',examId)).catch(function(){ return null; }),
+    getDocs(query(collection(db,'examSessions'), where('examId','==',examId))).catch(function(){ return {docs:[]}; })
   ]).then(function(results){
     var reflSnap = results[0], students = results[1];
+    var _exSubs = (results[2] && results[2].exists && results[2].exists()) ? (results[2].data().subjects||[]) : [];
+    var _choiceBySess = {}; results[3].docs.forEach(function(d){ _choiceBySess[d.id] = d.data().electiveChoices || {}; });
     var nameMap = {}; students.forEach(function(s){ nameMap[s.uid]=s.name; });
     var reflections = reflSnap.docs.map(function(d){return d.data();});
+    // 과목 이름: 저장된 이름 → 학생이 고른 선택과목 → 시험 과목명 순으로 (예전 회고의 ex1·ex2 표시 해결)
+    reflections.forEach(function(r){
+      var sd = _exSubs[r.subjectIndex];
+      r._label = r.subjectLabel || (sd ? _reflSubjLabel(sd, r.subjectIndex, _choiceBySess[r.sessionId]) : '') || subjectNames[r.subject] || r.subject;
+    });
 
     if (!reflections.length) {
       document.getElementById('er-summary').textContent = '';
@@ -7317,8 +7326,8 @@ window.openExamReflections = function(examId, examTitle){
     // 과목별로 그룹
     var bySubject = {};
     reflections.forEach(function(r){
-      if (!bySubject[r.subject]) bySubject[r.subject] = [];
-      bySubject[r.subject].push(r);
+      if (!bySubject[r._label]) bySubject[r._label] = [];
+      bySubject[r._label].push(r);
     });
 
     // 복붙/반복 의심 탐지
@@ -7357,16 +7366,16 @@ window.openExamReflections = function(examId, examTitle){
             var nameA = nameMap[f.uidA]||'?';
             if (f.type==='cross') {
               var nameB = nameMap[f.uidB]||'?';
-              return '<div class="er-flag-item">'+escapeHtml(nameA)+' ↔ '+escapeHtml(nameB)+' · '+escapeHtml(subjectNames[f.subject]||f.subject)+' · "'+escapeHtml(f.q)+'" 답변 유사도 '+Math.round(f.sim*100)+'%</div>';
+              return '<div class="er-flag-item">'+escapeHtml(nameA)+' ↔ '+escapeHtml(nameB)+' · '+escapeHtml(f.subject)+' · "'+escapeHtml(f.q)+'" 답변 유사도 '+Math.round(f.sim*100)+'%</div>';
             } else {
-              return '<div class="er-flag-item">'+escapeHtml(nameA)+' · '+escapeHtml(subjectNames[f.subject]||f.subject)+' · 3개 답변 서로 유사(반복 작성 의심, 유사도 '+Math.round(f.sim*100)+'%)</div>';
+              return '<div class="er-flag-item">'+escapeHtml(nameA)+' · '+escapeHtml(f.subject)+' · 3개 답변 서로 유사(반복 작성 의심, 유사도 '+Math.round(f.sim*100)+'%)</div>';
             }
           }).join('')
         + '</div>';
     }
 
     var bodyHtml = Object.keys(bySubject).map(function(subj){
-      var subjName = subjectNames[subj]||subj;
+      var subjName = subj;
       var cards = bySubject[subj].map(function(r){
         var name = nameMap[r.uid]||'?';
         return '<div class="er-card">'
@@ -7831,6 +7840,7 @@ function _enterWaitingScreen(sessionId, exam, subj, subjIdx){
         return bt-at;
       });
     if (!prior.length) return;
+    prior = _reflPreferSame(prior, _resolveSubjDisplayName(subj));
     var slot = document.getElementById('exam-wait-strategy-slot');
     if (!slot) return;
     var subjName = _resolveSubjDisplayName(subj);
@@ -7845,7 +7855,7 @@ function _enterWaitingScreen(sessionId, exam, subj, subjIdx){
       + '</div>'
       + '<div class="refl-q" style="justify-content:center;">✍️ 이번 '+escapeHtml(subjName)+', 어떻게 풀어나갈 건가요? <span style="font-weight:400;color:var(--tx4);font-size:11px;">(대기 중 여유 있게 작성 - 시작 시각에 자동으로 넘어갑니다)</span></div>'
       + '<textarea id="exam-wait-strategy-input" class="refl-textarea" placeholder="예: 시간 배분을 다시 해서..."></textarea>'
-      + '<button type="button" class="exam-add-chip-btn" style="margin-top:8px;" onclick="_saveStrategyDuringWait(\''+exam.id+'\',\''+subj.subject+'\','+subjIdx+',\''+sessionId+'\')">전략 저장</button>'
+      + '<button type="button" class="exam-add-chip-btn" style="margin-top:8px;" onclick="_saveStrategyDuringWait(\''+exam.id+'\',\''+_reflSubjKey(exam, subjIdx)+'\','+subjIdx+',\''+sessionId+'\')">전략 저장</button>'
       + '<span id="exam-wait-strategy-saved" style="margin-left:10px;font-size:11px;color:var(--green);display:none;">✓ 저장됨</span>'
       + '</div>';
   }).catch(function(){});
@@ -7872,8 +7882,10 @@ window._saveStrategyDuringWait = function(examId, subject, subjIdx, sessionId){
   if (!text) { alert('전략을 입력해주세요'); return; }
   var uid = currentUser.uid;
   var docId = _reflectionDocId(uid, examId, subject);
+  var _ws = ExamEngine.exam && ExamEngine.exam.subjects && ExamEngine.exam.subjects[subjIdx];
   setDoc(doc(db,'examReflections',docId), {
-    uid: uid, examId: examId, examTitle: (ExamEngine.exam&&ExamEngine.exam.title)||'', subject: subject,
+    uid: uid, examId: examId, examTitle: (ExamEngine.exam&&ExamEngine.exam.title)||'', subject: String(subject).split('_')[0],
+    subjectKey: subject, subjectLabel: _ws ? _resolveSubjDisplayName(_ws) : '',
     subjectIndex: subjIdx, branch: getBranch(), sessionId: sessionId,
     strategy: text, strategyAt: serverTimestamp()
   }, {merge:true}).then(function(){
@@ -8644,7 +8656,7 @@ function _finalizeExamSubmit(sessionId, exam, subj, subjIdx, answers, autoSubmit
             studentTab(1);
             setTimeout(function(){ gradeSubTab(exam.gradeType==='school' ? 1 : 0); }, 50);
           }
-        });
+        }, null, null, sess.electiveChoices);
       });
     } else {
       // 다음 과목 있음 - 쉬는시간으로 전환. 예정 시각이 있는 시험은 일찍 제출해도
@@ -8685,11 +8697,16 @@ var REFLECTION_PROMPTS = [
 ];
 
 function _reflectionDocId(uid, examId, subject){ return uid+'_'+examId+'_'+subject; }
+// 한 시험에 같은 과목 코드(ex1 등)가 두 번 들어가면 회고 문서가 겹쳐 하나만 남던 문제 → 그 경우만 순번을 붙인다
+function _reflSubjKey(exam, idx){ var subs=(exam&&exam.subjects)||[], s=subs[idx]||{}; return subs.filter(function(x){return x.subject===s.subject;}).length>1 ? s.subject+'_'+idx : s.subject; }
+// 회고에 보일 과목명: 탐구는 학생이 고른 선택과목명(물리학Ⅰ 등), 없으면 과학탐구/사회탐구
+function _reflSubjLabel(subj, idx, choices){ var c=choices&&(choices[idx]||choices[String(idx)]); return c || _resolveSubjDisplayName(subj); }
+function _reflPreferSame(prior, label){ var same=prior.filter(function(r){ return r.subjectLabel && r.subjectLabel===label; }); return same.length?same:prior; }
 
 // 이 과목을 시작하기 전, 지난 시험 회고가 있으면 보여주고 이번 전략을 쓰게 함
 function _maybeShowStrategyThenStart(sessionId, exam, subj, subjIdx, proceedFn){
   var uid = currentUser.uid;
-  var docId = _reflectionDocId(uid, exam.id, subj.subject);
+  var docId = _reflectionDocId(uid, exam.id, _reflSubjKey(exam, subjIdx));
   getDoc(doc(db,'examReflections',docId)).then(function(curDoc){
     if (curDoc.exists() && curDoc.data().strategy) { proceedFn(); return; } // 이미 이번 시험 전략 작성함
 
@@ -8701,6 +8718,7 @@ function _maybeShowStrategyThenStart(sessionId, exam, subj, subjIdx, proceedFn){
           return bt-at;
         });
       if (!prior.length) { proceedFn(); return; }
+      prior = _reflPreferSame(prior, _resolveSubjDisplayName(subj));
       _enterStrategyScreen(sessionId, exam, subj, subjIdx, prior[0], proceedFn);
     }).catch(function(){ proceedFn(); });
   }).catch(function(){ proceedFn(); });
@@ -8741,9 +8759,10 @@ window._submitStrategyAndProceed = function(){
   var text = document.getElementById('refl-strategy-input').value.trim();
   if (!text) { alert('전략을 간단히라도 적어주세요'); return; }
   var uid = currentUser.uid;
-  var docId = _reflectionDocId(uid, ctx.exam.id, ctx.subj.subject);
+  var docId = _reflectionDocId(uid, ctx.exam.id, _reflSubjKey(ctx.exam, ctx.subjIdx));
   setDoc(doc(db,'examReflections',docId), {
     uid: uid, examId: ctx.exam.id, examTitle: ctx.exam.title, subject: ctx.subj.subject,
+    subjectKey: _reflSubjKey(ctx.exam, ctx.subjIdx), subjectLabel: _resolveSubjDisplayName(ctx.subj),
     subjectIndex: ctx.subjIdx, branch: getBranch(), sessionId: ctx.sessionId,
     strategy: text, strategyAt: serverTimestamp()
   }, {merge:true}).then(function(){
@@ -8752,23 +8771,24 @@ window._submitStrategyAndProceed = function(){
 };
 
 // 시험(모든 과목) 종료 직후 - 과목별 회고 3문항 작성
-function _enterReflectionScreen(sessionId, exam, results, totalScore, proceedFn, existingReflections, backFn){
+function _enterReflectionScreen(sessionId, exam, results, totalScore, proceedFn, existingReflections, backFn, electiveChoices){
   showScreen('screen-exam');
   var el = document.getElementById('screen-exam');
   var subjectsWithResults = exam.subjects.map(function(subj, idx){ return {subj:subj, idx:idx, result:results[idx]}; }).filter(function(x){ return x.result; });
   existingReflections = existingReflections || {};
 
+  subjectsWithResults.forEach(function(x){ x.key = _reflSubjKey(exam, x.idx); x.label = _reflSubjLabel(x.subj, x.idx, electiveChoices); });
   var dots = subjectsWithResults.map(function(x, si){
-    var subjName = subjectNames[x.subj.subject] || x.subj.subject;
+    var subjName = x.label;
     return '<div class="refl-step-dot" id="refl-dot-'+si+'" onclick="_reflGoToStep('+si+')">'
       + '<span class="refl-step-dot-num">'+(si+1)+'</span><span class="refl-step-dot-label">'+escapeHtml(subjName)+'</span>'
       + '</div>';
   }).join('<div class="refl-step-connector"></div>');
 
   var panels = subjectsWithResults.map(function(x, si){
-    var subjName = subjectNames[x.subj.subject] || x.subj.subject;
+    var subjName = x.label;
     var isLast = si === subjectsWithResults.length - 1;
-    var existing = existingReflections[x.subj.subject] || {};
+    var existing = existingReflections[x.key] || {};
     return '<div class="refl-panel" id="refl-panel-'+si+'" style="display:'+(si===0?'block':'none')+';">'
       + '<div class="refl-subject-heading">'+escapeHtml(subjName)+' <span class="refl-subject-score">'+x.result.score+'점</span></div>'
       + REFLECTION_PROMPTS.map(function(p,i){
@@ -8854,7 +8874,7 @@ window.openReflectionForPastExam = function(sessionId){
     var existingBySubject = {};
     reflSnap.docs.forEach(function(d){
       var data = d.data();
-      existingBySubject[data.subject] = data;
+      existingBySubject[data.subjectKey || data.subject] = data;
     });
 
     getDoc(doc(db,'exams',sess.examId)).then(function(examDoc){
@@ -8868,7 +8888,7 @@ window.openReflectionForPastExam = function(sessionId){
       }, existingBySubject, function(){
         showScreen('screen-student');
         studentTab(4);
-      });
+      }, sess.electiveChoices);
     });
   }).catch(function(e){
     alert('불러오기 실패: ' + e.message);
@@ -8888,16 +8908,16 @@ window._submitReflectionAndProceed = function(){
       var elInput = document.getElementById('refl-input-'+si+'-'+p.key);
       var v = elInput ? elInput.value.trim() : '';
       if (v.length < 10) {
-        var subjName = subjectNames[x.subj.subject]||x.subj.subject;
+        var subjName = x.label;
         alert('"'+subjName+'" 과목의 "'+p.label+'" 항목을 조금 더 구체적으로 적어주세요 (최소 10자)');
         _reflGoToStep(si);
         return;
       }
       values[p.key] = v;
     }
-    var docId = _reflectionDocId(uid, ctx.exam.id, x.subj.subject);
+    var docId = _reflectionDocId(uid, ctx.exam.id, x.key);
     payloads.push({docId:docId, values:Object.assign({
-      uid: uid, examId: ctx.exam.id, examTitle: ctx.exam.title, subject: x.subj.subject,
+      uid: uid, examId: ctx.exam.id, examTitle: ctx.exam.title, subject: x.subj.subject, subjectKey: x.key, subjectLabel: x.label,
       subjectIndex: x.idx, branch: getBranch(), sessionId: ctx.sessionId,
       reflectionAt: serverTimestamp()
     }, values)});
