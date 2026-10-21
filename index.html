@@ -4412,7 +4412,7 @@ function barH(r){ if(r.score==null) return ''; var p=Math.max(0,Math.min(100,r.s
 function heroH(r,prev){
   var m=rmax(r), d=delta(r,prev), w=wn(r), wc=w.length||r.wrong;
   return '<div class="card hero"><div style="padding-right:26px"><div style="display:flex;align-items:baseline;gap:10px"><span style="font-family:'+SERIF+';font-weight:700;font-size:16px;letter-spacing:.06em">'+esc(r.label)+'</span><span class="cap">Raw Score</span></div>'
-   +'<div class="big">'+(r.score==null?'–':r.score)+'<small>/ '+m+'</small></div>'+barH(r)+((r.unkNums||[]).length?'<div style="font-size:10.5px;margin-top:10px;color:var(--ac)">모름(?) 표시 <span style="font-family:'+SERIF+';margin-left:4px">'+r.unkNums.map(function(n){return n+'?';}).join(' · ')+'</span></div>':'')+'</div>'
+   +'<div class="big">'+(r.score==null?'–':r.score)+'<small>/ '+m+'</small></div>'+barH(r)+((r.unkNums||[]).length?'<div style="font-size:10.5px;margin-top:10px;color:var(--ac)">모름(?) 표시 <span style="font-family:'+SERIF+';margin-left:4px">'+r.unkNums.join(' · ')+'</span></div>':'')+'</div>'
    +'<div class="stats"><div class="st"><span>등급</span><b>'+(r.grade!=null?r.grade+'<em>등급</em>':'–')+'</b></div>'
    +'<div class="st"><span>오답</span><b>'+(wc!=null?wc+'<em>문항</em>':'–')+'</b></div>'
    +'<div class="st"><span>'+(d==null?'놓친 점수':'지난 시험 대비')+'</span><b>'+(d==null?(r.score==null?'–':(m-r.score)+'<em>점</em>'):dh(d,'<em>점</em>'))+'</b></div></div></div>';
@@ -4422,7 +4422,7 @@ function cardH(r,prev,dense){
   return '<div class="card sc'+(dense?' dz':'')+'"><div class="top"><span class="lb">'+esc(C.clip(r.label,10))+'</span><span class="gd">'+(r.grade!=null?'<b>'+r.grade+'</b>등급':'')+'</span></div>'
    +'<div class="num">'+(r.score==null?'–':r.score)+'<small>/ '+rmax(r)+'</small><span class="dl">'+dh(d,'')+'</span></div>'+barH(r)
    +'<div class="wl"><span class="wk">오답</span><span style="font-family:'+SERIF+';letter-spacing:.03em">'+(w.length?w.join(' · '):(r.wrong!=null?(r.wrong?r.wrong+'문항':'없음'):'–'))+'</span></div>'
-   +((r.unkNums||[]).length?'<div class="wl uk"><span class="wk">모름</span><span style="font-family:'+SERIF+';letter-spacing:.03em">'+r.unkNums.map(function(n){return n+'?';}).join(' · ')+'</span></div>':'')+'</div>';
+   +((r.unkNums||[]).length?'<div class="wl uk"><span class="wk">모름</span><span style="font-family:'+SERIF+';letter-spacing:.03em">'+r.unkNums.join(' · ')+'</span></div>':'')+'</div>';
 }
 /* 오답 지도 난이도 색: 테마와 무관하게 확실히 구분되는 3색(초록·주황·진홍) */
 var DCOL={'하':'#3E9B6E','중':'#E39A1F','상':'#B8323F'};
