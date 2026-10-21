@@ -4424,18 +4424,20 @@ function cardH(r,prev,dense){
    +'<div class="wl"><span class="wk">오답</span><span style="font-family:'+SERIF+';letter-spacing:.03em">'+(w.length?w.join(' · '):(r.wrong!=null?(r.wrong?r.wrong+'문항':'없음'):'–'))+'</span></div>'
    +((r.unkNums||[]).length?'<div class="wl uk"><span class="wk">모름</span><span style="font-family:'+SERIF+';letter-spacing:.03em">'+r.unkNums.map(function(n){return n+'?';}).join(' · ')+'</span></div>':'')+'</div>';
 }
-function dc(c,d){ return d==='하'?c.ac:d==='중'?'#9b958a':d==='상'?c.ink:c.ink; }
+/* 오답 지도 난이도 색: 테마와 무관하게 확실히 구분되는 3색(초록·주황·진홍) */
+var DCOL={'하':'#3E9B6E','중':'#E39A1F','상':'#B8323F'};
+function dc(c,d){ return DCOL[d]||c.ink; }
 function strip(r,c,W,H,lab){
   var an=r.an||{}, N=an.N||Math.max.apply(null,[DEFN[r.key]||20].concat(wn(r))), pl=6,pr=6, X=function(i){return pl+(i-1)*(W-pl-pr)/Math.max(1,N-1);}, g='', cy=lab?(H-14)/2+4:H/2;
   var segs=an.segs||[], wm={}; wn(r).forEach(function(n){ wm[n]=(an.w&&an.w[n])||['']; });
   segs.forEach(function(s,j){ if(j){ var x=(X(s[0]-1)+X(s[0]))/2; g+='<line x1="'+x+'" x2="'+x+'" y1="'+(cy-12)+'" y2="'+(cy+8)+'" stroke="#000" stroke-opacity=".2" stroke-dasharray="2 2"/>'; } if(lab&&s[2]) g+='<text x="'+((X(s[0])+X(s[1]))/2)+'" y="'+(H-2)+'" font-size="9" text-anchor="middle" fill="'+c.ink+'" fill-opacity=".6">'+esc(s[2])+' '+s[0]+'–'+s[1]+'</text>'; });
   g+='<line x1="'+pl+'" x2="'+(W-pr)+'" y1="'+cy+'" y2="'+cy+'" stroke="#000" stroke-opacity=".12"/>';
   var um={}; (r.unkNums||[]).forEach(function(n){ um[n]=1; });
-  for(var i=1;i<=N;i++){ var w=wm[i]; if(um[i]) g+='<circle cx="'+X(i)+'" cy="'+cy+'" r="'+(lab?8:5.6)+'" fill="none" stroke="'+c.ac+'" stroke-width="1.2"'+(w?'':' stroke-dasharray="2 1.5"')+'/>'+(!w&&lab?'<text x="'+X(i)+'" y="'+(cy-11)+'" font-size="8.5" text-anchor="middle" fill="'+c.ac+'">'+i+'?</text>':'');
+  for(var i=1;i<=N;i++){ var w=wm[i]; if(um[i]) g+='<circle cx="'+X(i)+'" cy="'+cy+'" r="'+(lab?8:5.6)+'" fill="none" stroke="'+c.ink+'" stroke-width="1.3"'+(w?'':' stroke-dasharray="2 1.5"')+'/>'+(!w&&lab?'<text x="'+X(i)+'" y="'+(cy-11)+'" font-size="8.5" text-anchor="middle" fill="'+c.ink+'">'+i+'?</text>':'');
     if(w) g+='<circle cx="'+X(i)+'" cy="'+cy+'" r="'+(lab?5:3.6)+'" fill="'+dc(c,w[0])+'"'+(w[0]?'':' fill-opacity=".75"')+'/>'+(lab?'<text x="'+X(i)+'" y="'+(cy-9)+'" font-size="8.5" text-anchor="middle" fill="'+c.ink+'" fill-opacity=".85">'+i+'</text>':''); else g+='<line x1="'+X(i)+'" x2="'+X(i)+'" y1="'+(cy-2.5)+'" y2="'+(cy+2.5)+'" stroke="#000" stroke-opacity=".22"/>'; }
   return '<svg width="100%" viewBox="0 0 '+W+' '+H+'" style="display:block">'+g+'</svg>';
 }
-function leg(c){ return '<span class="leg2"><span><i style="background:'+c.ac+'"></i>쉬움</span><span><i style="background:#9b958a"></i>보통</span><span><i style="background:'+c.ink+'"></i>어려움</span></span>'; }
+function leg(c){ return '<span class="leg2"><span><i style="background:'+DCOL['하']+'"></i>쉬움</span><span><i style="background:'+DCOL['중']+'"></i>보통</span><span><i style="background:'+DCOL['상']+'"></i>어려움</span></span>'; }
 function nextOf(r){ var a=r.an; if(r.grade===1) return {keep:1}; if(!a||!a.next||r.score==null) return null; var need=a.next.min-r.score; return need>0?{need:need,g:a.next.g,min:a.next.min}:null; }
 function cntD(r,d){ var a=r.an, n=0; if(!a||!a.w) return 0; wn(r).forEach(function(x){ var w=a.w[x]; if(w&&w[0]===d) n++; }); return n; }
 function ptsD(r,d){ var a=r.an, n=0; if(!a||!a.w) return 0; wn(r).forEach(function(x){ var w=a.w[x]; if(w&&w[0]===d) n+=(w[2]||2); }); return n; }
@@ -19025,11 +19027,13 @@ function mpCardStep2(body){
    +X.list.map(function(e,i){return '<label class="mp-chk" data-q="'+mpE((e.name+' '+e.date+' '+(e.cat||'')).toLowerCase())+'" data-cat="'+mpE(e.cat||'기타')+'" data-date="'+e.date+'"><input type="checkbox" class="mp-cx" value="'+mpE(e.key)+'" onchange="mpCardRefresh()">'+mpE(e.name)+' <span class="mp-sub">'+e.date+(e.cat?' · '+mpE(e.cat):'')+' · '+e.n+'명</span></label>';}).join('')+'<div id="mp-cx-none" class="mp-sub" style="display:none;padding:8px">조건에 맞는 시험이 없어요</div></div>'
    +'<div class="mp-lbl">3. 디자인 선택</div><div class="mp-sub" style="margin:0 0 6px">새 디자인</div><div class="mp-theme">'+MPR.THEMES.map(mpThemeTile).join('')+'</div><div class="mp-sub" style="margin:12px 0 6px">기존 디자인</div><div class="mp-theme">'+(MPR.OLD_THEMES||[]).map(mpThemeTile).join('')+'</div>'
    +'<div class="mp-lbl">포함 항목</div><div style="display:flex;flex-wrap:wrap;gap:4px 14px">'+[['cover','표지'],['inner','내지(쪽수 자동)'],['back','뒷표지'],['comment','선생님 한마디'],['chart','성적 흐름 그래프'],['minreq','수시 수능최저 충족']].map(function(x){return '<label class="mp-chk"><input type="checkbox" class="mp-ci" data-k="'+x[0]+'" '+(inc[x[0]]!==false?'checked':'')+' onchange="mpCardRefresh()">'+x[1]+'</label>';}).join('')+'</div>'
-   +'<div class="mp-lbl">선생님 한마디 (선택 · 선택한 모든 학생에게 같이 들어가요)</div><textarea id="mp-c-cm" class="mp-in" rows="3" placeholder="비워 두면 선생님 한마디 칸은 만들어지지 않아요" oninput="mpCardRefresh()"></textarea>'
+   +'<div class="mp-lbl">선생님 한마디 (선택 · 선택한 모든 학생에게 같이 들어가요)</div><textarea id="mp-c-cm" class="mp-in" rows="3" style="resize:vertical;min-height:72px;overflow:hidden" placeholder="비워 두면 선생님 한마디 칸은 만들어지지 않아요" oninput="mpAutoGrow(this);mpCardRefresh()"></textarea>'
    +'<label class="mp-chk" style="margin-top:8px"><input type="checkbox" id="mp-c-save" checked>이 디자인을 선택한 학생들의 기본 디자인으로 저장</label>'
    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0"><button class="mp-btn pri" onclick="mpCardExport(\'png\')">🖼 PNG 저장</button><button class="mp-btn pri" onclick="mpCardExport(\'pdf\')">📄 PDF 저장</button><button class="mp-btn" onclick="mpCardArchive()" style="background:#1d2a4a;border:1px solid #1d2a4a;color:#fff;font-weight:700">💾 성적표 생성(보관함 저장)</button><button class="mp-btn gold" onclick="mpCardPublish()">👀 학생에게 공개</button><span id="mp-c-stat" class="mp-sub" style="align-self:center"></span></div><div id="mp-c-prevname" class="mp-sub"></div><div id="mp-c-prev"></div>';
 }
 function mpThemeTile(t){ var X=_mpR.cardCtx||{}; return '<div class="th'+(X.themeId===t.n?' on':'')+'" data-n="'+t.n+'" onclick="mpCardTheme('+t.n+')"><img loading="lazy" src="'+MPR.img(t.cov)+'" alt=""><b>'+mpE(t.nm)+'</b>'+(t.dark?'<small>인쇄 잉크 많이 듦</small>':'')+'</div>'; }
+// 내용이 많아지면 입력칸이 따라 커지게(최대 화면 높이의 60%, 그 이상은 칸 안에서 스크롤)
+window.mpAutoGrow=function(el){ if(!el) return; el.style.height='auto'; var mx=Math.round(window.innerHeight*0.6); el.style.height=Math.min(el.scrollHeight+2,mx)+'px'; el.style.overflowY=el.scrollHeight+2>mx?'auto':'hidden'; };
 window.mpCardFilter=function(){
   var q=((document.getElementById('mp-cx-q')||{}).value||'').trim().toLowerCase().split(/\s+/).filter(Boolean), cat=(document.getElementById('mp-cx-cat')||{}).value||'', per=+((document.getElementById('mp-cx-per')||{}).value||0);
   var lim=per?MPC.addDays(getPlannerDate(),-per):'', shown=0, rows=document.querySelectorAll('#mp-cx-list .mp-chk');
@@ -19255,7 +19259,7 @@ window.mpArchiveOpen=async function(id){
       +(canEdit?'<div id="mp-av-form" style="display:none;border:1px solid var(--border2);border-radius:10px;padding:10px;margin-bottom:10px">'
         +'<div class="mp-lbl">디자인</div><select id="mp-av-theme" class="mp-in">'+THS.map(function(t){return '<option value="'+t[0]+'"'+(+P.themeId===t[0]?' selected':'')+'>'+mpE(t[1])+'</option>';}).join('')+'</select>'
         +'<div class="mp-lbl">포함 항목</div><div style="display:flex;flex-wrap:wrap;gap:4px 14px">'+INC.map(function(k){return '<label class="mp-chk"><input type="checkbox" class="mp-av-inc" data-k="'+k[0]+'" '+((P.include||{})[k[0]]!==false?'checked':'')+'>'+k[1]+'</label>';}).join('')+'</div>'
-        +'<div class="mp-lbl">선생님 한마디</div><textarea id="mp-av-cm" class="mp-in" rows="4">'+mpE(P.comment||'')+'</textarea>'
+        +'<div class="mp-lbl">선생님 한마디</div><textarea id="mp-av-cm" class="mp-in" rows="4" style="resize:vertical;min-height:90px;overflow:hidden" oninput="mpAutoGrow(this)">'+mpE(P.comment||'')+'</textarea>'
         +'<div style="display:flex;gap:6px;margin-top:8px"><button class="mp-btn sm" id="mp-av-apply">미리보기 반영</button><button class="mp-btn pri sm" id="mp-av-save">수정 저장</button><button class="mp-btn sm" id="mp-av-cancel">취소</button></div></div>':'')
       +'<div id="mp-av-prev"></div><button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>';
     var prev=ov.querySelector('#mp-av-prev'), st=ov.querySelector('#mp-av-stat');
@@ -19268,7 +19272,7 @@ window.mpArchiveOpen=async function(id){
       var form=ov.querySelector('#mp-av-form');
       function readForm(){ var inc={}; form.querySelectorAll('.mp-av-inc').forEach(function(c){ inc[c.getAttribute('data-k')]=c.checked; }); return {themeId:+form.querySelector('#mp-av-theme').value,include:inc,comment:form.querySelector('#mp-av-cm').value.trim()}; }
       function apply(){ var f=readForm(); P.themeId=f.themeId; P.include=Object.assign({},P.include||{},f.include); P.comment=f.comment; mount(); }
-      ov.querySelector('#mp-av-edit').onclick=function(){ form.style.display=form.style.display==='none'?'block':'none'; };
+      ov.querySelector('#mp-av-edit').onclick=function(){ form.style.display=form.style.display==='none'?'block':'none'; mpAutoGrow(form.querySelector('#mp-av-cm')); };
       ov.querySelector('#mp-av-apply').onclick=apply;
       form.querySelector('#mp-av-theme').onchange=apply; form.querySelectorAll('.mp-av-inc').forEach(function(c){ c.onchange=apply; });
       ov.querySelector('#mp-av-cancel').onclick=function(){ P=JSON.parse(JSON.stringify(x.payload)); form.style.display='none'; mount(); };
