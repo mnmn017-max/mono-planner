@@ -9193,18 +9193,19 @@ function _tryMergeGradesForUid(groupId, group, examIds, gradesForUid, uid){
   if (existingMerged) {
     // 이미 합쳐진 기록이 있으면, 새로 들어온 시험만 그 위에 이어붙임
     var mergedScores = Object.assign({}, existingMerged.scores);
-    var mergedWrong = Object.assign({}, existingMerged.wrongBySubj);
+    var mergedWrong = Object.assign({}, existingMerged.wrongBySubj), mergedUnk = Object.assign({}, existingMerged.unknownBySubj);
     var newMergedFrom = (existingMerged.mergedFrom||[]).slice();
     var newSourceExamIds = (existingMerged.sourceExamIds||[]).slice();
     var newSourceSessionIds = (existingMerged.sourceExamSessionIds||[]).slice();
     newOnes.forEach(function(g){
       Object.keys(g.scores||{}).forEach(function(k){ if (mergedScores[k]===undefined) mergedScores[k] = g.scores[k]; });
       Object.keys(g.wrongBySubj||{}).forEach(function(k){ if (mergedWrong[k]===undefined) mergedWrong[k] = g.wrongBySubj[k]; });
+      Object.keys(g.unknownBySubj||{}).forEach(function(k){ if (mergedUnk[k]===undefined) mergedUnk[k] = g.unknownBySubj[k]; });
       newMergedFrom.push(g._id);
       if (g.examId && newSourceExamIds.indexOf(g.examId) === -1) newSourceExamIds.push(g.examId);
       if (g.examSessionId && newSourceSessionIds.indexOf(g.examSessionId) === -1) newSourceSessionIds.push(g.examSessionId);
     });
-    var p1 = updateDoc(doc(db,'grades',existingMerged._id), { scores: mergedScores, wrongBySubj: mergedWrong, mergedFrom: newMergedFrom, sourceExamIds: newSourceExamIds, sourceExamSessionIds: newSourceSessionIds })
+    var p1 = updateDoc(doc(db,'grades',existingMerged._id), { scores: mergedScores, wrongBySubj: mergedWrong, unknownBySubj: mergedUnk, mergedFrom: newMergedFrom, sourceExamIds: newSourceExamIds, sourceExamSessionIds: newSourceSessionIds })
       .then(function(){ return Promise.all(newOnes.map(function(g){ return deleteDoc(doc(db,'grades',g._id)); })); });
     _pendingMergeTasks.push(p1);
     return true;
@@ -9214,12 +9215,13 @@ function _tryMergeGradesForUid(groupId, group, examIds, gradesForUid, uid){
   // 그냥 그 성적 그대로 두고 다음 시험이 나올 때까지 기다림)
   if (newOnes.length < 2) return false;
 
-  var mergedScores2 = {}, mergedWrong2 = {};
+  var mergedScores2 = {}, mergedWrong2 = {}, mergedUnk2 = {};
   var sourceExamIds2 = [];
   var sourceSessionIds2 = [];
   newOnes.forEach(function(g){
     Object.keys(g.scores||{}).forEach(function(k){ if (mergedScores2[k]===undefined) mergedScores2[k] = g.scores[k]; });
     Object.keys(g.wrongBySubj||{}).forEach(function(k){ if (mergedWrong2[k]===undefined) mergedWrong2[k] = g.wrongBySubj[k]; });
+    Object.keys(g.unknownBySubj||{}).forEach(function(k){ if (mergedUnk2[k]===undefined) mergedUnk2[k] = g.unknownBySubj[k]; });
     if (g.examId && sourceExamIds2.indexOf(g.examId) === -1) sourceExamIds2.push(g.examId);
     if (g.examSessionId && sourceSessionIds2.indexOf(g.examSessionId) === -1) sourceSessionIds2.push(g.examSessionId);
   });
@@ -9228,7 +9230,7 @@ function _tryMergeGradesForUid(groupId, group, examIds, gradesForUid, uid){
 
   var p2 = addDoc(collection(db,'grades'), {
     uid: uid, type: base.type||'mock', examName: group.mergedTitle, examDate: earliestDate,
-    scores: mergedScores2, wrongBySubj: mergedWrong2, examSource: base.examSource||null,
+    scores: mergedScores2, wrongBySubj: mergedWrong2, unknownBySubj: mergedUnk2, examSource: base.examSource||null,
     source: 'merged_group', mergedFrom: newOnes.map(function(g){return g._id;}), mergeGroupId: groupId,
     // 원본 시험 ID들을 따로 기록해둠 - 나중에 그중 한 시험의 분류(examSource)가 바뀌었을 때
     // 이 합쳐진 성적도 같이 찾아서 업데이트할 수 있게 하기 위함 (합쳐지면 examId 필드
@@ -15398,10 +15400,11 @@ window.confirmMergeGrades = function(){
 
   // 과목별 점수(scores)와 오답(wrongBySubj)을 전부 하나로 합침. 같은 과목 키가 이미
   // 있으면(예: 둘 다 국어를 갖고 있는 이상 상황) 나중 것으로 덮어쓰지 않고 먼저 값 유지.
-  var mergedScores = {}, mergedWrong = {};
+  var mergedScores = {}, mergedWrong = {}, mergedUnk = {};
   grades.forEach(function(g){
     Object.keys(g.scores||{}).forEach(function(k){ if (mergedScores[k]===undefined) mergedScores[k] = g.scores[k]; });
     Object.keys(g.wrongBySubj||{}).forEach(function(k){ if (mergedWrong[k]===undefined) mergedWrong[k] = g.wrongBySubj[k]; });
+    Object.keys(g.unknownBySubj||{}).forEach(function(k){ if (mergedUnk[k]===undefined) mergedUnk[k] = g.unknownBySubj[k]; });
   });
   var earliestDate = grades.map(function(g){return g.examDate;}).sort()[0];
   var baseGrade = grades[0];
@@ -15413,6 +15416,7 @@ window.confirmMergeGrades = function(){
     examDate: earliestDate,
     scores: mergedScores,
     wrongBySubj: mergedWrong,
+    unknownBySubj: mergedUnk,
     examSource: baseGrade.examSource || null,
     source: 'merged',
     mergedFrom: grades.map(function(g){return g._id;}),
@@ -18972,7 +18976,7 @@ function mpCardStep2(body){
    +'<div class="mp-lbl">포함 항목</div><div style="display:flex;flex-wrap:wrap;gap:4px 14px">'+[['cover','표지'],['inner','내지(쪽수 자동)'],['back','뒷표지'],['comment','선생님 한마디'],['chart','성적 흐름 그래프'],['minreq','수시 수능최저 충족']].map(function(x){return '<label class="mp-chk"><input type="checkbox" class="mp-ci" data-k="'+x[0]+'" '+(inc[x[0]]!==false?'checked':'')+' onchange="mpCardRefresh()">'+x[1]+'</label>';}).join('')+'</div>'
    +'<div class="mp-lbl">선생님 한마디 (선택 · 선택한 모든 학생에게 같이 들어가요)</div><textarea id="mp-c-cm" class="mp-in" rows="3" placeholder="비워 두면 선생님 한마디 칸은 만들어지지 않아요" oninput="mpCardRefresh()"></textarea>'
    +'<label class="mp-chk" style="margin-top:8px"><input type="checkbox" id="mp-c-save" checked>이 디자인을 선택한 학생들의 기본 디자인으로 저장</label>'
-   +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0"><button class="mp-btn pri" onclick="mpCardExport(\'png\')">🖼 PNG 저장</button><button class="mp-btn pri" onclick="mpCardExport(\'pdf\')">📄 PDF 저장</button><button class="mp-btn pri" onclick="mpCardArchive()" style="background:var(--navy,#1d2a4a);border-color:var(--navy,#1d2a4a)">💾 성적표 생성(보관함 저장)</button><button class="mp-btn gold" onclick="mpCardPublish()">👀 학생에게 공개</button><span id="mp-c-stat" class="mp-sub" style="align-self:center"></span></div><div id="mp-c-prevname" class="mp-sub"></div><div id="mp-c-prev"></div>';
+   +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0"><button class="mp-btn pri" onclick="mpCardExport(\'png\')">🖼 PNG 저장</button><button class="mp-btn pri" onclick="mpCardExport(\'pdf\')">📄 PDF 저장</button><button class="mp-btn" onclick="mpCardArchive()" style="background:#1d2a4a;border:1px solid #1d2a4a;color:#fff;font-weight:700">💾 성적표 생성(보관함 저장)</button><button class="mp-btn gold" onclick="mpCardPublish()">👀 학생에게 공개</button><span id="mp-c-stat" class="mp-sub" style="align-self:center"></span></div><div id="mp-c-prevname" class="mp-sub"></div><div id="mp-c-prev"></div>';
 }
 function mpThemeTile(t){ var X=_mpR.cardCtx||{}; return '<div class="th'+(X.themeId===t.n?' on':'')+'" data-n="'+t.n+'" onclick="mpCardTheme('+t.n+')"><img loading="lazy" src="'+MPR.img(t.cov)+'" alt=""><b>'+mpE(t.nm)+'</b>'+(t.dark?'<small>인쇄 잉크 많이 듦</small>':'')+'</div>'; }
 window.mpCardFilter=function(){
@@ -19005,6 +19009,24 @@ async function mpCardEnsureMeta(X){
       m.packs=await Promise.all(ps.docs.map(async function(pd){ var us=[]; try{ var u=await getDocs(collection(db,'deungbulPacks',pd.id,'units')); us=u.docs.map(function(x){return x.data();}); }catch(e){} return {meta:pd.data(),units:us}; }));
     }catch(e){}
     _mpExamMeta[id]=m;
+  }));
+  /* 모름(?) 기록이 성적 문서에 아직 없으면(예전 채점·묶은 시험) 응시 기록에서 바로 계산해 채운다 */
+  var need=[];
+  X.uids.forEach(function(u){ (X.byUid[u]||[]).forEach(function(g){ if(X.sel.indexOf(g.examName+'|'+g.examDate)>=0&&!g.unknownBySubj&&!g._unkTried) need.push(g); }); });
+  await Promise.all(need.map(async function(g){
+    g._unkTried=1;
+    var sids=g.examSessionId?[g.examSessionId]:(g.sourceExamSessionIds||[]), unk={}, any=false;
+    for(var i=0;i<sids.length;i++){
+      try{
+        var sd=await getDoc(doc(db,'examSessions',sids[i])); if(!sd.exists()) continue; var se=sd.data();
+        if(!se.unknownBySubj||!Object.keys(se.unknownBySubj).length||!se.subjectResults) continue;
+        var M=_mpExamMeta[se.examId]; if(!M){ var ed=await getDoc(doc(db,'exams',se.examId)); M=_mpExamMeta[se.examId]={exam:ed.exists()?ed.data():null,packs:[]}; }
+        if(!M.exam) continue;
+        var b=_buildGradesScoresFromResults(Object.assign({id:se.examId},M.exam), se.subjectResults, se.electiveChoices||{}, se.unknownBySubj);
+        Object.keys(b.unknownBySubj).forEach(function(k){ if(unk[k]===undefined){ unk[k]=b.unknownBySubj[k]; any=true; } });
+      }catch(e){}
+    }
+    if(any){ g.unknownBySubj=unk; try{ if(g._id) await updateDoc(doc(db,'grades',g._id),{unknownBySubj:unk}); }catch(e){} }
   }));
 }
 function mpNormEl(s){ return String(s||'').replace(/\s/g,'').replace(/II$/,'Ⅱ').replace(/I$/,'Ⅰ').replace(/2$/,'Ⅱ').replace(/1$/,'Ⅰ'); }
@@ -19163,22 +19185,45 @@ window.mpArchiveDraw=function(){
   if(!L.length){ el.innerHTML='<div class="mp-sub" style="padding:10px 0">'+(_mpArc.list.length?'검색 결과가 없어요':'아직 생성한 성적표가 없어요')+'</div>'; return; }
   el.innerHTML='<div class="mp-sub" style="margin-bottom:6px">'+L.length+'건</div>'+L.map(function(x){
     var d=x.createdAt?new Date(x.createdAt):null, ds=d?(d.getFullYear()+'.'+(d.getMonth()+1)+'.'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')):'';
-    return '<div class="mp-row" style="cursor:pointer" onclick="mpArchiveOpen(\''+x.id+'\')"><div style="font-size:22px">🎓</div><div class="m"><div class="a">'+mpE(x.studentName)+' · '+mpE(x.title)+'</div><div class="b">'+ds+' · 만든 사람 '+mpE(x.createdByName||'-')+(x.examCount>1?' · 시험 '+x.examCount+'개':'')+'</div></div><span class="mp-chip mp-c-blue">보기</span></div>';
+    return '<div class="mp-row" style="cursor:pointer" onclick="mpArchiveOpen(\''+x.id+'\')"><div style="font-size:22px">🎓</div><div class="m"><div class="a">'+mpE(x.studentName)+' · '+mpE(x.title)+'</div><div class="b">'+ds+' · 만든 사람 '+mpE(x.createdByName||'-')+(x.examCount>1?' · 시험 '+x.examCount+'개':'')+(x.updatedByName?' · 수정 '+mpE(x.updatedByName):'')+'</div></div><span class="mp-chip mp-c-blue">보기</span></div>';
   }).join('');
 };
 window.mpArchiveOpen=async function(id){
   var ov=mpSheet('<div class="mp-sub">불러오는 중...</div>');
   try{
     var j=await mpArchiveApi({action:'get',id:id}), x=j.item; await mpEnsureFonts();
-    var pages=MPR.cardPages(x.payload), d=x.createdAt?new Date(x.createdAt).toLocaleString('ko-KR'):'';
-    ov.querySelector('.mp-sheet').innerHTML='<h3>'+mpE(x.studentName)+' · '+mpE(x.title)+'</h3><div class="mp-sub" style="margin-bottom:8px">'+mpE(d)+' · 만든 사람 '+mpE(x.createdByName||'-')+'</div>'
-      +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"><button class="mp-btn pri sm" id="mp-av-png">🖼 PNG 저장</button><button class="mp-btn pri sm" id="mp-av-pdf">📄 PDF 저장</button><button class="mp-btn gold sm" id="mp-av-pub">👀 학생에게 공개</button><button class="mp-btn sm" id="mp-av-del" style="color:var(--red)">삭제</button><span id="mp-av-stat" class="mp-sub" style="align-self:center"></span></div><div id="mp-av-prev"></div><button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>';
-    mpMountPreview(ov.querySelector('#mp-av-prev'),pages,Math.min(330,window.innerWidth-60));
-    var st=ov.querySelector('#mp-av-stat');
+    var canEdit=(currentProfile&&currentProfile.role==='master')||(currentUser&&x.createdBy===currentUser.uid);
+    var P=JSON.parse(JSON.stringify(x.payload)), pages=MPR.cardPages(P);
+    var d=x.createdAt?new Date(x.createdAt).toLocaleString('ko-KR'):'', ud=x.updatedAt?new Date(x.updatedAt).toLocaleString('ko-KR'):'';
+    var THS=MPR.THEMES.map(function(t){return [t.n,'새 · '+t.nm];}).concat((MPR.OLD_THEMES||[]).map(function(t){return [t.n,'기존 · '+t.nm];}));
+    var INC=[['cover','표지'],['inner','내지'],['back','뒷표지'],['comment','선생님 한마디'],['chart','성적 흐름 그래프'],['minreq','수시 수능최저']];
+    ov.querySelector('.mp-sheet').innerHTML='<h3>'+mpE(x.studentName)+' · '+mpE(x.title)+'</h3><div class="mp-sub" style="margin-bottom:8px">'+mpE(d)+' · 만든 사람 '+mpE(x.createdByName||'-')+(x.updatedByName?' · 마지막 수정 '+mpE(x.updatedByName)+' ('+mpE(ud)+')':'')+'</div>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"><button class="mp-btn pri sm" id="mp-av-png">🖼 PNG 저장</button><button class="mp-btn pri sm" id="mp-av-pdf">📄 PDF 저장</button><button class="mp-btn gold sm" id="mp-av-pub">👀 학생에게 공개</button>'
+      +(canEdit?'<button class="mp-btn sm" id="mp-av-edit">✏️ 수정</button><button class="mp-btn sm" id="mp-av-del" style="color:var(--red)">삭제</button>':'<span class="mp-sub" style="align-self:center">수정·삭제는 작성자와 마스터만 할 수 있어요</span>')
+      +'<span id="mp-av-stat" class="mp-sub" style="align-self:center"></span></div>'
+      +(canEdit?'<div id="mp-av-form" style="display:none;border:1px solid var(--border2);border-radius:10px;padding:10px;margin-bottom:10px">'
+        +'<div class="mp-lbl">디자인</div><select id="mp-av-theme" class="mp-in">'+THS.map(function(t){return '<option value="'+t[0]+'"'+(+P.themeId===t[0]?' selected':'')+'>'+mpE(t[1])+'</option>';}).join('')+'</select>'
+        +'<div class="mp-lbl">포함 항목</div><div style="display:flex;flex-wrap:wrap;gap:4px 14px">'+INC.map(function(k){return '<label class="mp-chk"><input type="checkbox" class="mp-av-inc" data-k="'+k[0]+'" '+((P.include||{})[k[0]]!==false?'checked':'')+'>'+k[1]+'</label>';}).join('')+'</div>'
+        +'<div class="mp-lbl">선생님 한마디</div><textarea id="mp-av-cm" class="mp-in" rows="4">'+mpE(P.comment||'')+'</textarea>'
+        +'<div style="display:flex;gap:6px;margin-top:8px"><button class="mp-btn sm" id="mp-av-apply">미리보기 반영</button><button class="mp-btn pri sm" id="mp-av-save">수정 저장</button><button class="mp-btn sm" id="mp-av-cancel">취소</button></div></div>':'')
+      +'<div id="mp-av-prev"></div><button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>';
+    var prev=ov.querySelector('#mp-av-prev'), st=ov.querySelector('#mp-av-stat');
+    function mount(){ pages=MPR.cardPages(P); mpMountPreview(prev,pages,Math.min(330,window.innerWidth-60)); }
+    mount();
     function run(kind){ mpExportSets([{name:x.studentName,pages:pages}],kind,'성적표',function(a,t){st.textContent='만드는 중 '+a+'/'+t;}).then(function(){st.textContent='✓ 저장했어요';}).catch(function(e){st.textContent='';alert('저장 실패: '+e.message);}); }
     ov.querySelector('#mp-av-png').onclick=function(){run('png');}; ov.querySelector('#mp-av-pdf').onclick=function(){run('pdf');};
-    ov.querySelector('#mp-av-pub').onclick=async function(){ if(!confirm(x.studentName+' 학생에게 이 성적표를 공개할까요?')) return; try{ await addDoc(collection(db,'studentReports'),{uid:x.studentUid,kind:'card',title:x.title,branch:getBranch(),createdAt:serverTimestamp(),createdBy:currentProfile.name,payload:x.payload}); st.textContent='✓ 공개했어요'; }catch(e){ alert('공개 실패: '+e.message); } };
-    ov.querySelector('#mp-av-del').onclick=async function(){ if(!confirm('이 성적표를 보관함에서 삭제할까요?')) return; try{ await mpArchiveApi({action:'delete',id:id}); mpCloseSheets(); _mpArc.list=(_mpArc.list||[]).filter(function(y){return y.id!==id;}); mpArchiveDraw(); }catch(e){ alert('삭제 실패: '+e.message); } };
+    ov.querySelector('#mp-av-pub').onclick=async function(){ if(!confirm(x.studentName+' 학생에게 이 성적표를 공개할까요?')) return; try{ await addDoc(collection(db,'studentReports'),{uid:x.studentUid,kind:'card',title:x.title,branch:getBranch(),createdAt:serverTimestamp(),createdBy:currentProfile.name,payload:P}); st.textContent='✓ 공개했어요'; }catch(e){ alert('공개 실패: '+e.message); } };
+    if(canEdit){
+      var form=ov.querySelector('#mp-av-form');
+      function readForm(){ var inc={}; form.querySelectorAll('.mp-av-inc').forEach(function(c){ inc[c.getAttribute('data-k')]=c.checked; }); return {themeId:+form.querySelector('#mp-av-theme').value,include:inc,comment:form.querySelector('#mp-av-cm').value.trim()}; }
+      function apply(){ var f=readForm(); P.themeId=f.themeId; P.include=Object.assign({},P.include||{},f.include); P.comment=f.comment; mount(); }
+      ov.querySelector('#mp-av-edit').onclick=function(){ form.style.display=form.style.display==='none'?'block':'none'; };
+      ov.querySelector('#mp-av-apply').onclick=apply;
+      form.querySelector('#mp-av-theme').onchange=apply; form.querySelectorAll('.mp-av-inc').forEach(function(c){ c.onchange=apply; });
+      ov.querySelector('#mp-av-cancel').onclick=function(){ P=JSON.parse(JSON.stringify(x.payload)); form.style.display='none'; mount(); };
+      ov.querySelector('#mp-av-save').onclick=async function(){ apply(); try{ st.textContent='저장하는 중...'; await mpArchiveApi({action:'update',id:id,patch:{themeId:P.themeId,include:P.include,comment:P.comment}}); x.payload=JSON.parse(JSON.stringify(P)); st.textContent='✓ 수정했어요'; form.style.display='none'; mpArchiveLoad(); }catch(e){ st.textContent=''; alert('수정 실패: '+e.message); } };
+      ov.querySelector('#mp-av-del').onclick=async function(){ if(!confirm('이 성적표를 보관함에서 삭제할까요?')) return; try{ await mpArchiveApi({action:'delete',id:id}); mpCloseSheets(); _mpArc.list=(_mpArc.list||[]).filter(function(y){return y.id!==id;}); mpArchiveDraw(); }catch(e){ alert('삭제 실패: '+e.message); } };
+    }
   }catch(e){ ov.querySelector('.mp-sheet').innerHTML='<div class="mp-warn">불러오기 실패: '+mpE(e.message)+'</div><button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>'; }
 };
 window.mpOpenSaved=async function(id){
