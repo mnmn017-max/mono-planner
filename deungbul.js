@@ -115,6 +115,7 @@
     return F.getDoc(F.doc(F.db, 'deungbulPacks', examId)).then(function (snap) {
       if (!snap.exists()) { _packCache[examId] = null; return null; }
       var meta = snap.data();
+      if (!meta.packId) meta.packId = examId;
       if (!withUnits) { _packCache[examId] = { meta: meta }; return _packCache[examId]; }
       return F.getDocs(F.collection(F.db, 'deungbulPacks', examId, 'units')).then(function (us) {
         var units = us.docs.map(function (d) { return d.data(); });
@@ -122,6 +123,38 @@
         _packCache[examId] = { meta: meta, units: units };
         return _packCache[examId];
       });
+    });
+  }
+  // 한 시험에 과목이 여러 개(국어·수학·영어·탐구…)면 과목마다 등불 데이터를 따로 둔다.
+  //  - 단일 과목 시험: deungbulPacks/{examId}, 복습지 reviewSheets/{sessionId} (예전과 같음)
+  //  - 여러 과목 시험: deungbulPacks/{examId}__{과목키}, 복습지 reviewSheets/{sessionId}__{과목키}
+  //    과목키 = 과목 코드(ko·ma·en), 탐구는 코드-선택과목(예: sc-생명과학Ⅰ)
+  function packKeyOf(p) {
+    var code = (p && p.subject) || 'ko';
+    if (code !== 'so' && code !== 'sc') return code;
+    var ak = p.answer_key || p.answerKey || {};
+    var els = Object.keys(ak).filter(function (k) { return k !== '공통'; }).map(normEl);
+    return code + '-' + (els[0] || '');
+  }
+  function isMultiExam(exam) { return ((exam && exam.subjects) || []).length > 1; }
+  function packDocId(examId, exam, key) { return isMultiExam(exam) ? examId + '__' + key : examId; }
+  function sheetDocId(sessionId, meta) {
+    var pid = (meta && meta.packId) || '';
+    return pid && meta.examId && pid !== meta.examId ? sessionId + '__' + (meta.packKey || packKeyOf(meta)) : sessionId;
+  }
+  function packLabel(meta) {
+    var S = subjOf(meta);
+    if (S.commonMax === 0) return (meta.electives || [])[0] || S.name;
+    return S.name;
+  }
+  // 이 시험에 연결된 등불 데이터 전부(예전 단일 문서 포함)
+  function listPacks(examId) {
+    var F = fb();
+    return F.getDocs(F.query(F.collection(F.db, 'deungbulPacks'), F.where('examId', '==', examId))).then(function (snap) {
+      var out = snap.docs.map(function (d) { var m = d.data(); if (!m.packId) m.packId = d.id; return { id: d.id, meta: m }; });
+      var order = { ko: 1, ma: 2, en: 3, so: 4, sc: 5 };
+      out.sort(function (a, b) { return (order[a.meta.subject] || 9) - (order[b.meta.subject] || 9) || String(a.id).localeCompare(String(b.id)); });
+      return out;
     });
   }
   function itemIndex(units) {
@@ -223,27 +256,28 @@
     return report;
   }
 
-  function uploadPack(examId, exam, pack, report) {
+  function uploadPack(examId, exam, pack, report, packId) {
     var F = fb(), c = ctx();
     var units = flattenUnits(pack);
+    packId = packId || examId;
     var meta = {
-      examId: examId, branch: c.branch || null, examTitle: exam.title || '', format: pack.format || 'deungbul-pack/1',
+      examId: examId, packId: packId, packKey: packKeyOf(pack), branch: c.branch || null, examTitle: exam.title || '', format: pack.format || 'deungbul-pack/1',
       packVersion: pack.version || '', subject: pack.subject || 'ko', display: pack.display || { line1: exam.title || '', line2: subjOf(pack).name + ' 영역', short: exam.title || '' },
       answerKey: pack.answer_key, electives: report.electives, singleElective: report.singleElective || null,
       unitIndex: units.map(function (u, i) { return { id: u.set_id, order: i, section: u.section || '', range: u.range || '', area: u.area || '', title: u.title || '', nos: (u.items || []).map(function (x) { return x.no; }) }; }),
       uploadedAt: F.serverTimestamp(), uploadedBy: c.user ? c.user.uid : null, uploadedByName: c.profile ? c.profile.name : ''
     };
     // 이전 단위 문서 정리 후 새로 기록
-    return F.getDocs(F.collection(F.db, 'deungbulPacks', examId, 'units')).then(function (old) {
+    return F.getDocs(F.collection(F.db, 'deungbulPacks', packId, 'units')).then(function (old) {
       return Promise.all(old.docs.map(function (d) { return F.deleteDoc(d.ref); }));
     }).then(function () {
       return Promise.all(units.map(function (u, i) {
         var data = Object.assign({}, u, { _order: i });
-        return F.setDoc(F.doc(F.db, 'deungbulPacks', examId, 'units', u.set_id), data);
+        return F.setDoc(F.doc(F.db, 'deungbulPacks', packId, 'units', u.set_id), data);
       }));
     }).then(function () {
-      return F.setDoc(F.doc(F.db, 'deungbulPacks', examId), meta);
-    }).then(function () { delete _packCache[examId]; });
+      return F.setDoc(F.doc(F.db, 'deungbulPacks', packId), meta);
+    }).then(function () { delete _packCache[packId]; return packId; });
   }
 
   // ------------------------------------------------------------ 복습지 생성
@@ -291,22 +325,29 @@
       if (sess.status !== 'graded') return { status: 'not-graded' };
       return Promise.all([
         F.getDoc(F.doc(F.db, 'exams', sess.examId)),
-        loadPack(sess.examId, false),
-        F.getDoc(F.doc(F.db, 'reviewSheets', sessionId))
-      ]).then(function (res) {
+        loadPack(opts.packId || sess.examId, false)
+      ]).then(function (res0) {
+        var pack = res0[1];
+        if (!pack) return [res0[0], null, null];
+        var sid = sheetDocId(sessionId, pack.meta);
+        return F.getDoc(F.doc(F.db, 'reviewSheets', sid)).then(function (d) { return [res0[0], pack, d, sid]; });
+      }).then(function (res) {
         if (!res[0].exists()) return { status: 'no-exam' };
         var exam = Object.assign({ id: res[0].id }, res[0].data());
         var pack = res[1];
         if (!pack) return { status: 'no-pack' };
+        var sheetId = res[3];
         var data = buildSheetData(sess, exam, pack.meta);
         if (!data) return { status: 'no-ko' };
         if (data.skip) return { status: 'skip', reason: data.skip };
         var existing = res[2].exists() ? res[2].data() : null;
         var sig = data.items.map(function (x) { return x.k + x.status; }).join('|') + '#' + data.all.map(function (x) { return x.my; }).join(',');
-        if (existing && existing.sig === sig && !opts.force) return { status: 'unchanged' };
+        if (existing && existing.sig === sig && !opts.force) return { status: 'unchanged', sheetId: sheetId };
         var c = ctx();
         var doc = {
-          uid: sess.studentUid, branch: sess.branch || c.branch || null, sessionId: sessionId, examId: sess.examId, examTitle: exam.title || '',
+          uid: sess.studentUid, branch: sess.branch || c.branch || null, sessionId: sessionId, examId: sess.examId,
+          packId: pack.meta.packId || sess.examId, packKey: pack.meta.packKey || packKeyOf(pack.meta), subjLabel: packLabel(pack.meta),
+          examTitle: (exam.title || '') + (isMultiExam(exam) ? ' · ' + packLabel(pack.meta) : ''),
           elective: data.elective, items: data.items, all: data.all, score: data.score, totalScore: data.totalScore,
           wrongCount: data.items.filter(function (x) { return x.status !== 'unknown'; }).length,
           unknownCount: data.items.filter(function (x) { return x.status !== 'wrong'; }).length,
@@ -318,13 +359,13 @@
           // 복습할 문항이 없으면(전부 맞히고 '모름'도 없음) 제출 대상이 아님
           Object.assign(doc, { status: data.items.length ? 'pending' : 'clear', createdAtMs: t, dueAtMs: null, reviewAnswers: {}, createdAt: F.serverTimestamp() });
           if (opts.studentName) doc.studentName = opts.studentName;
-          return F.setDoc(F.doc(F.db, 'reviewSheets', sessionId), doc).then(function () { return { status: 'created', items: data.items.length }; });
+          return F.setDoc(F.doc(F.db, 'reviewSheets', sheetId), doc).then(function () { return { status: 'created', items: data.items.length, sheetId: sheetId }; });
         }
         // 재채점 등으로 내용이 바뀐 경우: 기존 응답·기한은 유지, 문항 목록만 갱신
         if (existing.status === 'clear' && data.items.length) { doc.status = 'pending'; doc.dueAtMs = null; }
         if (!data.items.length && existing.status !== 'submitted') doc.status = 'clear';
         if (existing.status === 'submitted') doc.needsResubmit = data.items.some(function (x) { return !(existing.reviewAnswers || {})[x.k]; });
-        return F.updateDoc(F.doc(F.db, 'reviewSheets', sessionId), doc).then(function () { return { status: 'updated', items: data.items.length }; });
+        return F.updateDoc(F.doc(F.db, 'reviewSheets', sheetId), doc).then(function () { return { status: 'updated', items: data.items.length, sheetId: sheetId }; });
       });
     }).catch(function (e) { console.warn('[등불] 복습지 생성 실패', sessionId, e); return { status: 'error', error: e.message }; });
   }
@@ -335,7 +376,7 @@
     var targets = ids.filter(function (id) { return sheets[id] && sheets[id].status === 'pending'; });
     return Promise.all(targets.map(function (id) {
       var upd = { status: 'assigned', issuedAtMs: t, dueAtMs: t + DUE_MS, issuedBy: (c.user && c.user.uid) || null };
-      return F.updateDoc(F.doc(F.db, 'reviewSheets', id), upd).then(function () { Object.assign(sheets[id], upd); return id; });
+      return F.updateDoc(F.doc(F.db, 'reviewSheets', sheets[id]._doc || id), upd).then(function () { Object.assign(sheets[id], upd); return id; });
     })).then(function (done) {
       var uids = done.map(function (id) { return sheets[id].uid; }).filter(Boolean);
       if (uids.length && window.MP_push) {
@@ -347,7 +388,22 @@
 
   // 채점 직후 index.html에서 호출됨
   window.DB_onExamGraded = function (sessionId) {
-    try { return ensureSheet(sessionId).then(function (r) { if (r && r.status === 'created') console.log('[등불] 복습지 생성', sessionId, r); return r; }); }
+    try {
+      var F = fb();
+      return F.getDoc(F.doc(F.db, 'examSessions', sessionId)).then(function (ss) {
+        if (!ss.exists()) return { status: 'no-session' };
+        return listPacks(ss.data().examId).catch(function () { return []; }).then(function (packs) {
+          if (!packs.length) return ensureSheet(sessionId);
+          var out = [], chain = Promise.resolve();
+          packs.forEach(function (p) { chain = chain.then(function () { return ensureSheet(sessionId, { packId: p.id }).then(function (r) { out.push(r); }); }); });
+          return chain.then(function () {
+            var made = out.filter(function (r) { return r && r.status === 'created'; });
+            if (made.length) console.log('[등불] 복습지 생성', sessionId, made);
+            return made[0] || out[0];
+          });
+        });
+      });
+    }
     catch (e) { console.warn('[등불] onExamGraded', e); }
   };
 
@@ -417,15 +473,24 @@
       body.innerHTML = '<div class="db-note">불러오는 중...</div>';
       return Promise.all([
         F.getDoc(F.doc(F.db, 'exams', examId)),
-        loadPack(examId, false).catch(function () { return null; }),
+        listPacks(examId).catch(function () { return []; }),
         F.getDocs(F.query(F.collection(F.db, 'examSessions'), F.where('examId', '==', examId))),
         F.getDocs(F.query(F.collection(F.db, 'reviewSheets'), F.where('examId', '==', examId))),
         window.MP_loadStudentList ? window.MP_loadStudentList() : Promise.resolve([])
       ]).then(function (r) {
         state.exam = Object.assign({ id: examId }, r[0].data() || {});
-        state.pack = r[1];
+        state.packs = r[1] || [];
+        if (!state.packs.some(function (x) { return x.id === state.packId; })) state.packId = state.packs.length ? state.packs[0].id : null;
+        var sel = state.packs.filter(function (x) { return x.id === state.packId; })[0];
+        state.pack = sel ? { meta: sel.meta } : null;
         state.sessions = r[2].docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
-        state.sheets = {}; r[3].docs.forEach(function (d) { state.sheets[d.id] = d.data(); });
+        state.allSheetDocs = r[3].docs;
+        state.sheets = {};
+        r[3].docs.forEach(function (d) {
+          var x = d.data(); var pid = x.packId || x.examId;
+          if (state.packId && pid !== state.packId) return;
+          x._doc = d.id; state.sheets[x.sessionId || d.id] = x;
+        });
         state.names = {}; (r[4] || []).forEach(function (s) { state.names[s.uid] = s.name; });
         var ph = document.querySelector('#db-teacher .db-ph h3');
         if (ph) ph.innerHTML = '등불 · 복습 관리<small>' + esc(state.exam.title || '') + '</small>';
@@ -436,6 +501,13 @@
       var p = state.pack, h = '';
       // 1) 데이터 연결
       h += '<div class="db-sec"><h4>① 등불 데이터</h4>';
+      var multi = isMultiExam(state.exam);
+      if (multi) h += '<div class="db-note" style="margin-bottom:8px">이 시험에는 과목이 여러 개라 과목마다 등불 데이터를 따로 올립니다. 올린 파일의 과목을 자동으로 알아봅니다. 아래 과목을 누르면 그 과목의 복습 현황을 봅니다.</div>';
+      if ((state.packs || []).length > 1 || multi) {
+        h += '<div style="margin-bottom:8px">' + (state.packs || []).map(function (x) {
+          return '<button class="db-btn' + (x.id === state.packId ? ' p' : '') + '" data-pack="' + esc(x.id) + '">' + esc(packLabel(x.meta)) + '</button>';
+        }).join('') + ((state.packs || []).length ? '' : '<span class="db-note">아직 올린 과목이 없습니다.</span>') + '</div>';
+      }
       if (p) {
         var m = p.meta, at = m.uploadedAt && m.uploadedAt.toDate ? m.uploadedAt.toDate().getTime() : null;
         h += '<div class="db-ok">✔ 연결됨 · ' + esc(m.display && m.display.short || '') + ' · 버전 ' + esc(m.packVersion || '-') + ' · 업로드 ' + fmtDT(at) + (m.uploadedByName ? ' (' + esc(m.uploadedByName) + ')' : '') + '</div>';
@@ -443,14 +515,24 @@
       } else {
         h += '<div class="db-note">아직 연결된 등불 데이터가 없습니다. 「앱 업로드용 문항데이터.json」 파일을 올려 주세요. 올리는 즉시 시험 정답과 자동 대조합니다.</div>';
       }
-      h += '<div style="margin-top:10px"><label class="db-btn p" style="display:inline-block">' + (p ? '데이터 다시 올리기' : '등불 데이터 올리기') + '<input type="file" accept=".json,application/json" id="db-pack-file" style="display:none"></label>';
+      h += '<div style="margin-top:10px"><label class="db-btn p" style="display:inline-block">' + (multi ? '과목 등불 데이터 올리기' : (p ? '데이터 다시 올리기' : '등불 데이터 올리기')) + '<input type="file" accept=".json,application/json" id="db-pack-file" style="display:none"></label>';
       if (p && !(p.meta.electives || []).length) h += '<button class="db-btn" data-tprint="">🖨 선생님용 전체본(보기·인쇄)</button>';
       if (p) (p.meta.electives || []).forEach(function (el) { h += '<button class="db-btn" data-tprint="' + esc(el) + '">🖨 선생님용 전체본(보기·인쇄) · ' + esc(abbr(el)) + '</button>'; });
       h += '</div><div id="db-val"></div></div>';
 
       // 2) 학생 현황
-      var graded = state.sessions.filter(function (s) { return s.status === 'graded'; });
-      var rows = state.sessions.map(function (s) {
+      // 탐구처럼 과목을 골라 보는 경우, 이 과목을 고르지 않은 학생은 목록에서 뺀다
+      var takes = function (s) {
+        if (!p) return true;
+        var els = (p.meta.electives || []).map(normEl);
+        var ch = s.electiveChoices || {};
+        var picked = Object.keys(ch).map(function (k) { return normEl(ch[k]); }).filter(Boolean);
+        if (!els.length || !picked.length || subjOf(p.meta).commonMax > 0) return true;
+        return picked.some(function (e) { return els.indexOf(e) >= 0; });
+      };
+      var sessions = state.sessions.filter(takes);
+      var graded = sessions.filter(function (s) { return s.status === 'graded'; });
+      var rows = sessions.map(function (s) {
         var sh = state.sheets[s.id];
         var st, cls;
         if (s.status !== 'graded') { st = s.status === 'not_started' ? '미응시' : '응시중/채점 전'; cls = 'db-b-none'; }
@@ -466,7 +548,7 @@
       var late = submitted.filter(function (r) { return r.sh.late; }).length;
       var missing = graded.filter(function (s) { return !state.sheets[s.id]; }).length;
       var pendingN = rows.filter(function (r) { return r.sh && r.sh.status === 'pending'; }).length;
-      h += '<div class="db-sec"><h4>② 학생별 복습 현황</h4>';
+      h += '<div class="db-sec"><h4>② 학생별 복습 현황' + (p && multi ? ' · ' + esc(packLabel(p.meta)) : '') + '</h4>';
       h += '<div class="db-note" style="margin-bottom:8px">채점 완료 ' + graded.length + '명 · 복습지 ' + Object.keys(state.sheets).length + '건 · 제출 ' + submitted.length + '명(지연 ' + late + ') · 발행 대기 ' + pendingN + '명 · 복습지 미생성 ' + missing + '명</div>';
       h += '<div class="db-note" style="margin-bottom:8px">채점되면 복습지가 「발행 대기」로 만들어집니다. 인쇄해서 나눠 줄 때 「발행」하면 그때부터 학생 시험탭에 OMR이 열리고 48시간이 시작됩니다.</div>';
       h += '<div style="margin-bottom:8px">';
@@ -500,7 +582,7 @@
       Object.keys(state.sheets).forEach(function (sid) {
         var sh = state.sheets[sid];
         (sh.items || []).forEach(function (it) {
-          if (!/^(공통|화법과 작문|언어와 매체):\d+$/.test(String(it.k))) return;
+          if (!/^[^:]+:\d+$/.test(String(it.k))) return;
           var o = st[it.k] || (st[it.k] = { k: it.k, sec: it.sec, no: it.no, wrong: 0, unk: 0, twinX: 0, causes: {} });
           if (it.status !== 'unknown') o.wrong++;
           if (it.status !== 'wrong') o.unk++;
@@ -532,7 +614,12 @@
           var html = rep.errors.map(function (x) { return '<div class="db-err">✖ ' + esc(x) + '</div>'; }).join('') + rep.warnings.map(function (x) { return '<div class="db-note">⚠ ' + esc(x) + '</div>'; }).join('');
           if (!rep.ok) { val.innerHTML = html + '<div class="db-err" style="margin-top:6px">정답이 맞지 않아 업로드를 중단했습니다. 시험 정답 또는 데이터 파일을 확인해 주세요.</div>'; return; }
           val.innerHTML = html + '<div class="db-ok">✔ 시험 정답과 모두 일치합니다. 저장 중...</div>';
-          uploadPack(state.examId, state.exam, pack, rep).then(function () {
+          var key = packKeyOf(pack);
+          // 예전 방식으로 이 시험에 같은 과목이 이미 올라가 있으면 그 자리를 덮어쓴다
+          var same = (state.packs || []).filter(function (x) { return (x.meta.packKey || packKeyOf(x.meta)) === key; })[0];
+          var pid = same ? same.id : packDocId(state.examId, state.exam, key);
+          uploadPack(state.examId, state.exam, pack, rep, pid).then(function () {
+            state.packId = pid;
             val.innerHTML = '<div class="db-ok">✔ 저장 완료. 이제 「복습지 일괄 생성」을 눌러 이미 채점된 학생들의 복습지를 만드세요.</div>';
             return load();
           }).catch(function (e) { val.innerHTML = '<div class="db-err">저장 실패: ' + esc(e.message) + '</div>'; });
@@ -544,7 +631,7 @@
         var chain = Promise.resolve();
         list.forEach(function (s) {
           chain = chain.then(function () {
-            return ensureSheet(s.id, { studentName: state.names[s.studentUid] }).then(function (r) {
+            return ensureSheet(s.id, { studentName: state.names[s.studentUid], packId: state.packId }).then(function (r) {
               if (r.status === 'created') res.created++; else if (r.status === 'updated') res.updated++; else if (r.status === 'unchanged') res.unchanged++;
               else res.skip.push((state.names[s.studentUid] || '?') + ': ' + (r.reason || r.error || r.status));
             });
@@ -563,6 +650,7 @@
         if (!ids.length) { alert('복습지를 만들 학생을 선택해 주세요.'); return; }
         genFor(gs, state.sessions.filter(function (s) { return s.status === 'graded' && ids.indexOf(s.id) >= 0; }));
       };
+      body.querySelectorAll('[data-pack]').forEach(function (b) { b.onclick = function () { state.packId = b.getAttribute('data-pack'); load(); }; });
       var all = document.getElementById('db-allchk');
       if (all) all.onchange = function () { document.querySelectorAll('.db-chk-row').forEach(function (c) { c.checked = all.checked; }); };
       body.querySelectorAll('[data-print]').forEach(function (b) { b.onclick = function () { printSheets(state, [b.getAttribute('data-print')], load); }; });
@@ -635,7 +723,7 @@
       st.sh = sd.data(); st.ans = JSON.parse(JSON.stringify(st.sh.reviewAnswers || {}));
       var ph = document.querySelector('#db-omr .db-ph h3');
       if (ph) ph.innerHTML = '등불 복습 OMR<small>' + esc(st.sh.examTitle) + ' · 마감 ' + fmtDT(st.sh.dueAtMs) + '</small>';
-      return loadPack(st.sh.examId, true);
+      return loadPack(st.sh.packId || st.sh.examId, true);
     }).then(function (pack) {
       if (!pack) throw new Error('등불 데이터가 아직 연결되지 않았습니다');
       st.idx = itemIndex(pack.units);
@@ -1431,9 +1519,10 @@
     miss.forEach(function (id) {
       chain = chain.then(function () {
         var sess = (state.sessions || []).filter(function (x) { return x.id === id; })[0];
-        return ensureSheet(id, { studentName: sess ? state.names[sess.studentUid] : undefined }).then(function (r) {
+        return ensureSheet(id, { studentName: sess ? state.names[sess.studentUid] : undefined, packId: state.packId }).then(function (r) {
           if (r.status === 'no-pack') throw new Error('먼저 「등불 데이터 올리기」로 문항 데이터를 올려 주세요.');
-          return F.getDoc(F.doc(F.db, 'reviewSheets', id)).then(function (d) { if (d.exists()) state.sheets[id] = d.data(); });
+          var did = r.sheetId || (state.pack ? sheetDocId(id, state.pack.meta) : id);
+          return F.getDoc(F.doc(F.db, 'reviewSheets', did)).then(function (d) { if (d.exists()) { var x = d.data(); x._doc = did; state.sheets[id] = x; } });
         });
       });
     });
@@ -1441,7 +1530,7 @@
   }
   function printSheets(state, sessionIds, onChanged) {
     var w = preparePrintWindow(); if (!w) return;
-    ensureMissing(state, sessionIds).then(function () { return loadPack(state.examId, true); }).then(function (pack) {
+    ensureMissing(state, sessionIds).then(function () { return loadPack(state.packId || state.examId, true); }).then(function (pack) {
       if (!pack) { w.close(); alert('등불 데이터가 없습니다.'); return; }
       var books = [];
       sessionIds.forEach(function (sid) {
@@ -1454,7 +1543,7 @@
       if (!fillPrintWindow(w, books, '등불 개인 복습지 (' + books.length + '명)')) return;
       addPublishButton(w, state, sessionIds, onChanged);
       var F = fb(), t = now();
-      sessionIds.forEach(function (sid) { if (state.sheets[sid]) F.updateDoc(F.doc(F.db, 'reviewSheets', sid), { printedAtMs: t }).catch(function () {}); });
+      sessionIds.forEach(function (sid) { if (state.sheets[sid]) F.updateDoc(F.doc(F.db, 'reviewSheets', state.sheets[sid]._doc || sid), { printedAtMs: t }).catch(function () {}); });
       if (onChanged) setTimeout(function () { try { onChanged(); } catch (e) {} }, 800);
     }).catch(function (e) { try { w.close(); } catch (x) {} alert('인쇄 준비 실패: ' + e.message); });
   }
@@ -1478,7 +1567,7 @@
   }
   function printTeacherBook(state, elective) {
     var w = preparePrintWindow(); if (!w) return;
-    loadPack(state.examId, true).then(function (pack) {
+    loadPack(state.packId || state.examId, true).then(function (pack) {
       if (!pack) { w.close(); alert('등불 데이터가 없습니다.'); return; }
       if (elective && !pack.units.some(function (u) { return u.section === elective; })) { w.close(); alert('이 데이터에는 「' + elective + '」가 없습니다.'); return; }
       fillPrintWindow(w, [teacherParts(pack, elective)], '등불 선생님용 전체본 · ' + elective);
@@ -1486,5 +1575,5 @@
   }
 
   // 테스트·외부 사용을 위한 노출
-  window.DB_internal = { uploadPack: uploadPack, ensureSheet: ensureSheet, loadPack: loadPack, buildPrintHtml: buildPrintHtml, flattenUnits: flattenUnits, validatePack: validatePack, buildSheetData: buildSheetData, nb: nb, personalParts: personalParts, teacherParts: teacherParts, PAGINATE: PAGINATE, examKoInfo: examKoInfo, examSubjInfos: examSubjInfos, normEl: normEl, itemIndex: itemIndex, twinOrder: twinOrder, publishSheets: publishSheets, bookHtmlForPdf: bookHtmlForPdf, downloadPdf: downloadPdf, fillPrintWindow: fillPrintWindow };
+  window.DB_internal = { listPacks: listPacks, packKeyOf: packKeyOf, packDocId: packDocId, sheetDocId: sheetDocId, uploadPack: uploadPack, ensureSheet: ensureSheet, loadPack: loadPack, buildPrintHtml: buildPrintHtml, flattenUnits: flattenUnits, validatePack: validatePack, buildSheetData: buildSheetData, nb: nb, personalParts: personalParts, teacherParts: teacherParts, PAGINATE: PAGINATE, examKoInfo: examKoInfo, examSubjInfos: examSubjInfos, normEl: normEl, itemIndex: itemIndex, twinOrder: twinOrder, publishSheets: publishSheets, bookHtmlForPdf: bookHtmlForPdf, downloadPdf: downloadPdf, fillPrintWindow: fillPrintWindow };
 })();
