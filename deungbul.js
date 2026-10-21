@@ -778,7 +778,10 @@
       var ul = s.indexOf('<u>') >= 0;
       if (ul) s = s.replace(/<u>/g, '\uE002').replace(/<\/u>/g, '\uE003');
       var sup = s.indexOf('^') >= 0;
-      if (sup) s = s.replace(/([XY])\^((?:(?!X\^)[A-XZa-z])+\*?)/g, '$1\uE000$2\uE001');
+      if (sup) s = s.replace(/([XY])\^((?:(?!X\^)[A-XZa-z])+\*?)(?![+\-−a-z])/g, '$1\uE000$2\uE001')
+        // 지수·이온 전하: (광도)^(1/4) → 위첨자 1/4, B^b+ → 위첨자 b+, 10^3.5 → 위첨자 3.5
+        .replace(/\^\(([^)\n]{1,10})\)/g, '\uE000$1\uE001')
+        .replace(/\^([0-9a-z.]{1,4}[+\-−]?)/g, '\uE000$1\uE001');
       var o = esc(nb(s));
       if (ul) o = o.replace(/\uE002/g, '<u class="ul">').replace(/\uE003/g, '</u>');
       if (sup) o = o.replace(/\uE000([^\uE001]*)\uE001/g, function (m, a) { return '<sup class="gt">' + a.replace(/\u2060/g, '') + '</sup>'; });
