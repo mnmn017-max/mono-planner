@@ -4308,14 +4308,15 @@ function reportBack(P,A,days){
 var SERIF="'Noto Serif KR','Noto Serif CJK KR',serif";
 R.CATCH='너의 꾸준함과 우리의 치열함이<br>기적을 이루길';
 R.THEMES=[
-{n:1,k:'lh',nm:'등대',en:'Steady Light',ink:'#2E4258',ac:'#C9805F',top:.075,bot:.78,bk:330,phrase:'같은 자리에서 매일 켜 둔 불빛이,<br>결국 길이 된다'},
-{n:2,k:'rd',nm:'구름 위의 능선',en:'Step by Step',ink:'#33495A',ac:'#B8935A',top:.065,bot:.855,bk:250,phrase:'보이지 않던 정상도,<br>한 걸음씩 가까워진다'},
-{n:3,k:'ch',nm:'봄, 꽃가지',en:'After Winter',ink:'#58474A',ac:'#C27C86',top:.165,bot:.945,bk:430,phrase:'겨울을 견딘 가지에,<br>가장 먼저 봄이 온다'},
-{n:4,k:'lib',nm:'아침 서재',en:'Pages of Time',ink:'#463E33',ac:'#7E8654',top:.07,bot:.80,bk:330,phrase:'쌓인 시간은 사라지지 않는다,<br>실력이 될 뿐'},
-{n:5,k:'ar',nm:'아치와 계단',en:'The Open Door',ink:'#4E4034',ac:'#B0704F',top:.065,bot:.93,bk:270,phrase:'문은, 끝까지 걸어온 사람에게 열린다'},
-{n:6,k:'dn',nm:'새벽 직전',en:'Before Dawn',ink:'#46446A',ac:'#CF8D6E',top:.13,bot:.865,bk:200,phrase:'밤을 지나온 사람이,<br>가장 먼저 새벽을 본다'}];
+{n:7,k:'lh',nm:'등대',en:'Steady Light',ink:'#2E4258',ac:'#C9805F',top:.075,bot:.78,bk:330,phrase:'같은 자리에서 매일 켜 둔 불빛이,<br>결국 길이 된다'},
+{n:8,k:'rd',nm:'구름 위의 능선',en:'Step by Step',ink:'#33495A',ac:'#B8935A',top:.065,bot:.855,bk:250,phrase:'보이지 않던 정상도,<br>한 걸음씩 가까워진다'},
+{n:9,k:'ch',nm:'봄, 꽃가지',en:'After Winter',ink:'#58474A',ac:'#C27C86',top:.165,bot:.945,bk:430,phrase:'겨울을 견딘 가지에,<br>가장 먼저 봄이 온다'},
+{n:10,k:'lib',nm:'아침 서재',en:'Pages of Time',ink:'#463E33',ac:'#7E8654',top:.07,bot:.80,bk:330,phrase:'쌓인 시간은 사라지지 않는다,<br>실력이 될 뿐'},
+{n:11,k:'ar',nm:'아치와 계단',en:'The Open Door',ink:'#4E4034',ac:'#B0704F',top:.065,bot:.93,bk:270,phrase:'문은, 끝까지 걸어온 사람에게 열린다'},
+{n:12,k:'dn',nm:'새벽 직전',en:'Before Dawn',ink:'#46446A',ac:'#CF8D6E',top:.13,bot:.865,bk:200,phrase:'밤을 지나온 사람이,<br>가장 먼저 새벽을 본다'}];
 R.THEMES.forEach(function(t){ t.cov='v2/'+t.k+'_cov'; t.bkImg='v2/'+t.k+'_bk'; t.paper='v2/'+t.k+'_in'; });
 R.theme=function(id){ return R.THEMES.filter(function(t){return t.n===+id;})[0]||R.THEMES[0]; };
+R.isOldTheme=function(id){ return +id>=1&&+id<=6; };
 function bg(n){ return '<div class="mpr-bgi" style="background-image:url('+img(n)+')"></div>'; }
 function oneLine(s){ return String(s).replace(/<br>/g,' '); }
 function vars(c){ return '--ink:'+c.ink+';--ac:'+c.ac+';color:'+c.ink; }
@@ -4461,6 +4462,7 @@ R.fit=function(root){
   });
 };
 R.cardPages=function(P){
+  if(R.isOldTheme(P.themeId)&&R.oldCardPages) return R.oldCardPages(P);
   var c=R.theme(P.themeId), inc=P.include||{}, out=[];
   if(!P.year) P.year=String(P.issueLabel||'').slice(0,4);
   if(!P.coverLabel) P.coverLabel=P.exams.length===1?P.exams[0].name:P.periodLabel;
@@ -4469,6 +4471,101 @@ R.cardPages=function(P){
   if(inc.back!==false) out.push(cardBack(c));
   return out;
 };
+/* ───────── 성적표 (기존 디자인 · 1~6) ───────── */
+(function(){
+
+var THEMES=[
+{n:1,nm:'등대',cov:1,bk:2,paper:5,top:104,sc:.98,hr:1,ac:'#4b6a8a',tc:'#2f4560',sub:'#4a627c',fr:'rgba(255,255,255,.75)',lay:'top',btc:'#2f4560',bpos:'top',scrim:'rgba(255,255,255,.5)',tag:'길을 비추는 한 학기의 기록'},
+{n:2,nm:'구름 위의 능선',cov:6,bk:8,paper:9,top:106,sc:.92,hr:0,ac:'#4f7084',tc:'#2e4656',sub:'#3f5a6b',fr:'rgba(255,255,255,.7)',lay:'left',btc:'#2e4656',bpos:'top',scrim:'rgba(255,255,255,.45)',tag:'구름 위로 오르는<br>한 걸음의 기록'},
+{n:3,nm:'봄, 벚꽃길',cov:10,bk:16,paper:17,top:186,sc:.84,hr:1,ac:'#b0566c',tc:'#5a2a38',sub:'#7d4a58',fr:'rgba(255,255,255,.85)',lay:'bottom',btc:'#5a2a38',bpos:'top',scrim:'rgba(255,255,255,.5)',tag:'봄처럼 피어나는 노력의 기록'},
+{n:4,nm:'아침 도서관',cov:3,bk:7,paper:4,top:140,sc:.86,hr:0,ac:'#5f7a52',tc:'#34452a',sub:'#58694e',fr:'rgba(255,255,255,.8)',lay:'top',btc:'#34452a',bpos:'top',scrim:'rgba(255,255,255,.4)',tag:'한 장 한 장 쌓아 온 시간'},
+{n:5,nm:'아치와 계단',cov:18,bk:15,paper:14,top:100,sc:.88,hr:1,ac:'#8a7448',tc:'#3a3626',sub:'#5a5642',fr:'rgba(255,255,255,.7)',lay:'arch',btc:'#3b3626',bpos:'card',card:'rgba(255,253,246,.82)',tag:'열린 문 너머의 내일'},
+{n:6,nm:'고요한 밤',cov:13,bk:11,paper:12,top:108,sc:.9,hr:1,ac:'#34508a',tc:'#fff',sub:'#fff',fr:'rgba(255,255,255,.5)',lay:'night',btc:'#fff',bpos:'top',scrim:'rgba(10,18,50,.5)',tag:'밤이 깊을수록 또렷해지는 불빛',dark:true}];
+var theme=function(id){ return THEMES.filter(function(t){return t.n===+id;})[0]||THEMES[0]; };
+function bg(n){ return '<div class="mpr-bgi" style="background-image:url('+img(n)+')"></div>'; }
+function cardCover(c,P){
+  var tc=c.tc,sub=c.sub,t='';
+  var info='<div style="display:inline-flex;gap:18px;align-items:center;font-size:14px;letter-spacing:2px;white-space:nowrap"><span class="mpr-ser" style="font-size:22px;letter-spacing:6px">'+esc(P.student.name)+'</span><span style="opacity:.5">|</span><span>'+esc(P.student.grade||SCHOOL.replace('멘토즈 스터디카페 ',''))+'</span><span style="opacity:.5">|</span><span>'+esc(P.issueLabel)+'</span></div>';
+  var frame='<div class="mpr-ab" style="left:30px;top:30px;right:30px;bottom:30px;border:1px solid '+c.fr+'"></div><div class="mpr-ab" style="left:38px;top:38px;right:38px;bottom:38px;border:.6px solid '+c.fr+';opacity:.6"></div>';
+  var year=(P.issueLabel||'').slice(0,4);
+  if(c.lay==='top') t=frame+'<div class="mpr-ab" style="left:0;right:0;top:92px;text-align:center;color:'+tc+';font-size:13px;letter-spacing:8px">'+year+' · ACADEMIC RECORD</div><div class="mpr-ab mpr-ser" style="left:0;right:0;top:128px;text-align:center;font-size:118px;font-weight:700;color:'+tc+';letter-spacing:8px;text-indent:8px">성적표</div><div class="mpr-ab" style="left:0;right:0;top:290px;text-align:center;color:'+sub+';font-size:16px;letter-spacing:4px">'+c.tag+'</div><div class="mpr-ab" style="left:0;right:0;bottom:84px;text-align:center"><div style="display:inline-block;padding:16px 32px;background:rgba(255,255,255,.7);color:#2b3a4a;border:1px solid rgba(255,255,255,.8)">'+info+'</div></div>';
+  if(c.lay==='left') t=frame+'<div class="mpr-ab" style="left:78px;top:96px;color:'+tc+';font-size:13px;letter-spacing:6px;line-height:2">'+year+'<br>ACADEMIC RECORD</div><div class="mpr-ab mpr-ser" style="left:70px;top:176px;font-size:132px;font-weight:700;color:'+tc+';letter-spacing:2px">성적표</div><div class="mpr-ab" style="left:80px;top:350px;color:'+sub+';font-size:16px;line-height:2.1;letter-spacing:4px;border-left:1.5px solid '+tc+';padding-left:16px">'+c.tag+'</div><div class="mpr-ab" style="left:78px;bottom:90px;color:#fff;text-shadow:0 1px 8px rgba(0,0,0,.35)">'+info+'</div>';
+  if(c.lay==='bottom') t=frame+'<div class="mpr-ab" style="left:60px;right:60px;bottom:74px;padding:26px 30px;background:rgba(255,250,248,.86);border:1px solid rgba(255,255,255,.9);text-align:center;color:'+tc+'"><div style="font-size:12px;letter-spacing:8px;margin-bottom:6px">'+year+' · ACADEMIC RECORD</div><div class="mpr-ser" style="font-size:92px;font-weight:700;letter-spacing:8px;text-indent:8px;line-height:1.2">성적표</div><div style="color:'+sub+';font-size:14px;letter-spacing:4px;margin:4px 0 14px">'+c.tag+'</div><div style="border-top:1px solid rgba(0,0,0,.2);padding-top:14px;color:#3a2a30">'+info+'</div></div>';
+  if(c.lay==='arch') t='<div class="mpr-ab" style="left:0;right:0;top:150px;text-align:center;color:'+tc+';font-size:12px;letter-spacing:8px">'+year+' · ACADEMIC RECORD</div><div class="mpr-ab mpr-ser" style="left:0;right:0;top:180px;text-align:center;font-size:100px;font-weight:700;color:'+tc+';letter-spacing:6px;text-indent:6px">성적표</div><div class="mpr-ab" style="left:0;right:0;top:318px;text-align:center;color:'+sub+';font-size:14px;letter-spacing:4px">'+c.tag+'</div><div class="mpr-ab" style="left:60px;right:60px;bottom:60px;text-align:center"><div style="display:inline-block;padding:14px 28px;background:rgba(255,253,246,.88);color:#3b3626">'+info+'</div></div>';
+  if(c.lay==='night') t=frame+'<div class="mpr-ab" style="left:0;right:0;top:190px;text-align:center;color:#fff;font-size:12px;letter-spacing:9px;opacity:.9">'+year+' · ACADEMIC RECORD</div><div class="mpr-ab mpr-ser" style="left:0;right:0;top:220px;text-align:center;font-size:112px;font-weight:700;color:#fff;letter-spacing:8px;text-indent:8px;text-shadow:0 0 30px rgba(170,190,255,.45)">성적표</div><div class="mpr-ab" style="left:0;right:0;top:372px;text-align:center;color:rgba(255,255,255,.92);font-size:15px;letter-spacing:5px">'+c.tag+'</div><div class="mpr-ab" style="left:60px;right:60px;bottom:70px;text-align:center"><div style="display:inline-block;padding:14px 30px;background:rgba(18,24,58,.62);border:1px solid rgba(255,255,255,.55);color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.5)">'+info+'</div></div>';
+  return '<div class="mpr-pg mpr-card">'+bg(c.cov)+t+'</div>';
+}
+function cardBack(c){
+  var tc=c.btc,t='';
+  var msg='<div class="mpr-ser" style="font-size:24px;line-height:2;letter-spacing:3px">지금의 기록이<br>더 멀리, 더 높은 내일을 만듭니다.</div><div style="font-size:10.5px;letter-spacing:6px;margin-top:14px;opacity:.85;line-height:2">YOUR TODAY CREATES<br>A BRIGHTER TOMORROW</div>';
+  var sch='<div class="mpr-ser" style="font-size:20px;letter-spacing:3px">'+SCHOOL+'</div><div style="font-size:10px;letter-spacing:5px;margin-top:6px;opacity:.85">MENTORS STUDY CAFE · ULSAN SONGJEONG</div>';
+  if(c.bpos==='top') t='<div class="mpr-ab" style="left:0;right:0;top:0;height:560px;background:linear-gradient('+c.scrim+',transparent)"></div><div class="mpr-ab" style="left:0;right:0;bottom:0;height:300px;background:linear-gradient(to top,rgba(0,0,0,.5),transparent)"></div><div class="mpr-ab" style="left:0;right:0;top:150px;text-align:center;color:'+tc+'">'+msg+'</div><div class="mpr-ab" style="left:0;right:0;bottom:70px;text-align:center;color:#fff;text-shadow:0 1px 10px rgba(0,0,0,.5)">'+sch+'</div>';
+  else t='<div class="mpr-ab" style="left:90px;right:90px;top:120px;padding:34px 20px;text-align:center;background:'+c.card+';color:'+tc+';border:1px solid rgba(255,255,255,.7)">'+msg+'</div><div class="mpr-ab" style="left:90px;right:90px;bottom:70px;padding:18px;text-align:center;background:'+c.card+';color:'+tc+'">'+sch+'</div>';
+  return '<div class="mpr-pg mpr-card">'+bg(c.bk)+t+'</div>';
+}
+/* 성적 추이 차트 (시험 순서대로, 과목별 선) — exams: [{name,date,rows:[{key,label,score,grade}]}] */
+function cardChart(exams,h,ac){
+  var W=630,H=h,px=44,py=18,pb=28, ex=exams, n=ex.length;
+  var keys=[], lab={}; ex.forEach(function(e){ e.rows.forEach(function(r){ if(keys.indexOf(r.key)<0){ keys.push(r.key); lab[r.key]=r.label; } }); });
+  keys=keys.slice(0,5);
+  var gradeMode=ex.every(function(e){return e.rows.every(function(r){return r.grade!=null;});});
+  var vals=[]; ex.forEach(function(e){ e.rows.forEach(function(r){ var v=gradeMode?r.grade:r.score; if(v!=null) vals.push(v); }); });
+  if(!vals.length) return '';
+  var lo,hi,ticks=[];
+  if(gradeMode){ lo=1; hi=Math.max(4,Math.max.apply(null,vals)); for(var t=lo;t<=hi;t++) ticks.push(t); }
+  else { lo=Math.max(0,Math.floor((Math.min.apply(null,vals)-5)/10)*10); hi=Math.min(100,Math.ceil((Math.max.apply(null,vals)+3)/10)*10); if(hi-lo<20) hi=lo+20; for(var t2=lo;t2<=hi;t2+=10) ticks.push(t2); }
+  var Y=function(v){ return gradeMode? py+(H-py-pb)*(v-lo)/(hi-lo) : py+(H-py-pb)*(1-(v-lo)/(hi-lo)); };
+  var X=function(i){ return px+14+(n>1?i*(W-px-60)/(n-1):(W-px-60)/2); };
+  var cols=[ac,'#B8841A','#8a8a8a','#2f6d5b','#8a4a6a'], s='<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'">';
+  ticks.forEach(function(t){ var y=Y(t); s+='<path d="M'+px+' '+y.toFixed(1)+'H'+(W-30)+'" stroke="rgba(0,0,0,.18)" stroke-width=".8" stroke-dasharray="3 4"/><text x="'+(px-8)+'" y="'+(y+4).toFixed(1)+'" text-anchor="end" font-size="10.5" fill="#666">'+t+(gradeMode?'등급':'')+'</text>'; });
+  var step=Math.ceil(n/8);
+  ex.forEach(function(e,i){ if(i%step===0||i===n-1) s+='<text x="'+X(i).toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle" font-size="10.5" fill="#666">'+C.mdLabel(e.date)+'</text>'; });
+  keys.forEach(function(k,j){
+    var pts=[]; ex.forEach(function(e,i){ var r=e.rows.filter(function(x){return x.key===k;})[0]; if(!r) return; var v=gradeMode?r.grade:r.score; if(v==null) return; pts.push([X(i),Y(v)]); });
+    if(!pts.length) return;
+    if(pts.length>1) s+='<polyline points="'+pts.map(function(p){return p[0].toFixed(1)+','+p[1].toFixed(1);}).join(' ')+'" fill="none" stroke="'+cols[j]+'" stroke-width="2.2" stroke-linejoin="round"/>';
+    pts.forEach(function(p){ s+='<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="3.8" fill="#fff" stroke="'+cols[j]+'" stroke-width="2"/>'; });
+    s+='<rect x="'+(W-30-(keys.length-j)*64)+'" y="2" width="12" height="3" fill="'+cols[j]+'"/><text x="'+(W-14-(keys.length-j)*64)+'" y="8" font-size="10.5" font-weight="700" fill="'+cols[j]+'">'+esc(C.clip(lab[k],4))+'</text>';
+  });
+  return s+'</svg>';
+}
+function examBlock(e,showWrong){
+  return '<div class="blk" style="margin-bottom:12px"><h3><span style="font-family:inherit;font-size:14.5px;font-weight:700;color:#2b2b2b"><i>●</i>'+esc(C.clip(e.name,26))+'</span><span>'+esc(e.date)+'</span></h3><table><tr><th>과목</th><th>원점수</th><th>등급</th>'+(showWrong?'<th>오답</th>':'')+'</tr>'
+   +e.rows.map(function(r){ return '<tr><td class="l">'+esc(C.clip(r.label,12))+'</td><td>'+(r.score==null?'–':r.score)+'</td><td>'+(r.grade!=null?'<span class="gp">'+r.grade+'</span>':'–')+'</td>'+(showWrong?'<td>'+(r.wrong==null?'–':r.wrong+'개')+'</td>':'')+'</tr>'; }).join('')+'</table></div>';
+}
+/* 페이지 높이 추정치와 실제가 어긋나지 않도록 exam.rows 개수만 사용 */
+var cardLayout=function(P){
+  var c=theme(P.themeId), avail=C.cardAvail(c.top,c.sc);
+  var inc=P.include||{};
+  var exams=P.exams.map(function(e){ return {rows:e.rows.length}; });
+  var chart=inc.chart!==false && P.exams.length>=2 && P.exams.some(function(e){return e.rows.some(function(r){return r.score!=null||r.grade!=null;});});
+  var comment=!!(inc.comment&&P.comment&&P.comment.trim());
+  return {avail:avail,chart:chart,comment:comment,pages:C.layoutCard(exams,{avail:avail,chart:chart,comment:comment,memo:inc.memo!==false,info:true})};
+};
+R.oldCardPages=function(P){
+  var c=theme(P.themeId), inc=P.include||{}, L=cardLayout(P), out=[];
+  if(inc.cover!==false) out.push(cardCover(c,P));
+  if(inc.inner!==false){
+    var sorted=P.exams;
+    L.pages.forEach(function(pg,pi){
+      var body='';
+      pg.blocks.forEach(function(b){
+        if(b.t==='info') body+='<div class="blk"><h3><span style="font-family:inherit;font-size:14.5px"><i>01</i>학생 기본 정보</span></h3><table><tr><td class="l" style="width:14%">소속</td><td style="width:36%">'+esc(P.school||SCHOOL.replace('멘토즈 ',''))+'</td><td class="l" style="width:14%">학년</td><td>'+esc(P.student.grade||'–')+'</td></tr><tr><td class="l">이름</td><td>'+esc(P.student.name)+'</td><td class="l">담당</td><td>'+esc(P.teacher||'담당 선생님')+'</td></tr></table></div>';
+        else if(b.t==='exam') body+=examBlock(sorted[b.i],P.showWrong);
+        else if(b.t==='chart') body+='<div class="blk"><h3><span style="font-family:inherit;font-size:14.5px"><i>●</i>성적 변화 추이</span></h3><div class="chartbox">'+cardChart(sorted,b.h-54,c.ac)+'</div></div>';
+        else if(b.t==='comment') body+='<div class="blk"><h3><span style="font-family:inherit;font-size:14.5px"><i>●</i>종합 의견</span></h3><div class="cm">'+esc(P.comment).replace(/\n/g,'<br>')+'<div class="sg">담당 선생님 '+esc(P.teacher||'')+'</div></div></div>';
+        else if(b.t==='memo'){ var lines=Math.max(1,Math.floor((b.h-66)/30)); body+='<div class="blk" style="margin-bottom:0"><h3><span style="font-family:inherit;font-size:14.5px"><i>✎</i>다음 시험 목표</span></h3><div class="memo" style="height:'+(b.h-40)+'px;overflow:hidden">'+new Array(lines+1).join('<div class="ml"></div>')+'</div></div>'; }
+      });
+      var first=pi===0, hd=first?'<div class="hd"><div><small>'+esc(P.periodLabel||'')+'</small><h1>성적표</h1></div><div class="r" style="'+(c.hr?'visibility:hidden':'')+'">ACADEMIC<br>REPORT CARD</div></div>'
+        : '<div class="hd" style="padding-bottom:6px"><div><small>'+esc(P.student.name)+' · '+(pi+1)+'쪽</small></div><div class="r" style="'+(c.hr?'visibility:hidden':'')+'">REPORT CARD</div></div>';
+      out.push('<div class="mpr-pg mpr-card" style="--ac:'+c.ac+'">'+bg(c.paper)+'<div class="box" style="top:'+c.top+'px;width:'+(610/c.sc).toFixed(1)+'px;transform:scale('+c.sc+')">'+hd+body+'</div></div>');
+    });
+  }
+  if(inc.back!==false) out.push(cardBack(c));
+  return out;
+};
+R.OLD_THEMES=THEMES;
+})();
 root.MPRender=R;
 if(typeof module!=='undefined'&&module.exports) module.exports=R;
 })(typeof window!=='undefined'?window:this);
@@ -18728,7 +18825,7 @@ window.mpCardLoadExams=async function(){
       byUid[u].forEach(function(g){ var k=g.examName+'|'+g.examDate; (keys[k]=keys[k]||{name:g.examName,date:g.examDate,n:0}).n++; }); });
     var list=Object.keys(keys).map(function(k){return Object.assign({key:k},keys[k]);}).sort(function(a,b){return a.date<b.date?1:-1;});
     var pref=null; if(uids.length===1){ try{ var pd=await getDoc(doc(db,'studentCardPrefs',uids[0])); if(pd.exists()) pref=pd.data(); }catch(e){} }
-    _mpR.cardCtx={uids:uids,byUid:byUid,list:list,themeId:pref?pref.themeId:1,include:Object.assign({cover:true,inner:true,back:true,comment:true,chart:true,memo:true},pref?pref.include:{})};
+    _mpR.cardCtx={uids:uids,byUid:byUid,list:list,themeId:pref&&pref.themeId?pref.themeId:7,include:Object.assign({cover:true,inner:true,back:true,comment:true,chart:true,memo:true},pref?pref.include:{})};
     mpCardStep2(body);
   }catch(e){ body.innerHTML='<div class="mp-warn">불러오기 실패: '+mpE(e.message)+'</div>'; }
 };
@@ -18737,13 +18834,14 @@ function mpCardStep2(body){
   if(!X.list.length){ body.innerHTML='<div class="mp-warn">선택한 학생들에게 저장된 성적이 없어요.</div>'; return; }
   body.innerHTML='<div class="mp-lbl">시험 선택 — 여러 개 선택 가능 (칸에 학생 수가 표시돼요)</div><div style="max-height:200px;overflow:auto;border:1px solid var(--border2);border-radius:8px;padding:6px">'
    +X.list.map(function(e,i){return '<label class="mp-chk"><input type="checkbox" class="mp-cx" value="'+mpE(e.key)+'" onchange="mpCardRefresh()">'+mpE(e.name)+' <span class="mp-sub">'+e.date+' · '+e.n+'명</span></label>';}).join('')+'</div>'
-   +'<div class="mp-lbl">3. 디자인 선택</div><div class="mp-theme">'+MPR.THEMES.map(function(t){return '<div class="th'+(X.themeId===t.n?' on':'')+'" onclick="mpCardTheme('+t.n+')"><img loading="lazy" src="'+MPR.img(t.cov)+'" alt=""><b>'+t.n+'. '+mpE(t.nm)+'</b>'+(t.dark?'<small>인쇄 잉크 많이 듦</small>':'')+'</div>';}).join('')+'</div>'
+   +'<div class="mp-lbl">3. 디자인 선택</div><div class="mp-sub" style="margin:0 0 6px">새 디자인</div><div class="mp-theme">'+MPR.THEMES.map(mpThemeTile).join('')+'</div><div class="mp-sub" style="margin:12px 0 6px">기존 디자인</div><div class="mp-theme">'+(MPR.OLD_THEMES||[]).map(mpThemeTile).join('')+'</div>'
    +'<div class="mp-lbl">포함 항목</div><div style="display:flex;flex-wrap:wrap;gap:4px 14px">'+[['cover','표지'],['inner','내지(쪽수 자동)'],['back','뒷표지'],['comment','선생님 한마디'],['chart','성적 흐름 그래프']].map(function(x){return '<label class="mp-chk"><input type="checkbox" class="mp-ci" data-k="'+x[0]+'" '+(inc[x[0]]!==false?'checked':'')+' onchange="mpCardRefresh()">'+x[1]+'</label>';}).join('')+'</div>'
    +'<div class="mp-lbl">선생님 한마디 (선택 · 선택한 모든 학생에게 같이 들어가요)</div><textarea id="mp-c-cm" class="mp-in" rows="3" placeholder="비워 두면 선생님 한마디 칸은 만들어지지 않아요" oninput="mpCardRefresh()"></textarea>'
    +'<label class="mp-chk" style="margin-top:8px"><input type="checkbox" id="mp-c-save" checked>이 디자인을 선택한 학생들의 기본 디자인으로 저장</label>'
    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0"><button class="mp-btn pri" onclick="mpCardExport(\'png\')">🖼 PNG 저장</button><button class="mp-btn pri" onclick="mpCardExport(\'pdf\')">📄 PDF 저장</button><button class="mp-btn gold" onclick="mpCardPublish()">👀 학생에게 공개</button><span id="mp-c-stat" class="mp-sub" style="align-self:center"></span></div><div id="mp-c-prevname" class="mp-sub"></div><div id="mp-c-prev"></div>';
 }
-window.mpCardTheme=function(n){ _mpR.cardCtx.themeId=n; document.querySelectorAll('.mp-theme .th').forEach(function(el,i){ el.classList.toggle('on',i+1===n); }); mpCardRefresh(); };
+function mpThemeTile(t){ var X=_mpR.cardCtx||{}; return '<div class="th'+(X.themeId===t.n?' on':'')+'" data-n="'+t.n+'" onclick="mpCardTheme('+t.n+')"><img loading="lazy" src="'+MPR.img(t.cov)+'" alt=""><b>'+mpE(t.nm)+'</b>'+(t.dark?'<small>인쇄 잉크 많이 듦</small>':'')+'</div>'; }
+window.mpCardTheme=function(n){ _mpR.cardCtx.themeId=n; document.querySelectorAll('.mp-theme .th').forEach(function(el){ el.classList.toggle('on',+el.getAttribute('data-n')===n); }); mpCardRefresh(); };
 function mpReadCardCfg(){
   var X=_mpR.cardCtx; if(!X) return null;
   var sel=[].map.call(document.querySelectorAll('.mp-cx:checked'),function(c){return c.value;});
