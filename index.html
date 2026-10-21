@@ -385,6 +385,54 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 @media(min-width:1024px) and (orientation:landscape) and (max-height:700px){
   .dt-sidebar{overflow-y:auto;}
 }
+/* 가로모드 사이드바 잘림 방지 (2026-10): 선생님·마스터 탭이 15개 이상이라, 브라우저 주소창·작업표시줄을
+   빼고 남는 높이가 900px 안팎인 노트북·모니터(배율 125%)와 태블릿 가로에서 아래 항목(로그아웃·알림·프로필)이 잘렸음.
+   ① 모든 가로 구간에서 사이드바가 화면 높이를 넘지 않게 하고 넘치면 사이드바 안에서만 스크롤
+   ② 화면 높이에 맞춰 항목·로고 크기를 단계적으로 줄여 대부분의 화면에서는 스크롤 없이 다 보이게 */
+@media(min-width:600px) and (orientation:landscape){
+  .dt-sidebar{height:100vh;height:100dvh;max-height:100dvh;min-height:0;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:rgba(0,0,0,.18) transparent;box-sizing:border-box;}
+  .dt-sidebar::-webkit-scrollbar{width:4px}
+  .dt-sidebar::-webkit-scrollbar-thumb{background:rgba(0,0,0,.18);border-radius:4px}
+  .dt-sidebar > *{flex-shrink:0;}
+  .dt-sidebar .dt-sb-spacer{flex:1 1 0;min-height:4px;flex-shrink:1;}
+}
+@media(min-width:600px) and (orientation:landscape) and (max-height:1000px){
+  .dt-sidebar#teacher-sidebar{padding-top:10px;padding-bottom:8px;gap:1px;}
+  .dt-sidebar#teacher-sidebar .dt-sb-logo{height:58px;margin-bottom:6px;padding:6px 10px;}
+  #teacher-sidebar .dt-sb-item{min-height:40px !important;padding:4px 4px !important;gap:1px !important;}
+  #teacher-sidebar .dt-sb-item svg{width:16px !important;height:16px !important;}
+  #teacher-sidebar .dt-sb-item-label{font-size:9.5px !important;}
+  #teacher-sidebar .dt-sb-avatar{width:38px;height:38px;font-size:13px;margin-bottom:4px;}
+}
+@media(min-width:600px) and (orientation:landscape) and (max-height:860px){
+  .dt-sidebar#teacher-sidebar .dt-sb-logo{height:44px;margin-bottom:4px;padding:4px 8px;}
+  #teacher-sidebar .dt-sb-item{min-height:34px !important;padding:3px 4px !important;}
+  #teacher-sidebar .dt-sb-item svg{width:15px !important;height:15px !important;}
+  #teacher-sidebar .dt-sb-item-label{font-size:9px !important;line-height:1.05 !important;}
+  #teacher-sidebar .dt-sb-avatar{width:32px;height:32px;font-size:12px;}
+  .dt-sidebar:not(#teacher-sidebar) .dt-sb-logo{height:56px;margin-bottom:8px;}
+  .dt-sidebar:not(#teacher-sidebar) .dt-sb-item{min-height:46px;padding:5px 4px;}
+}
+@media(min-width:600px) and (orientation:landscape) and (max-height:780px){
+  .dt-sidebar#teacher-sidebar .dt-sb-logo{height:34px;}
+  #teacher-sidebar .dt-sb-item{min-height:30px !important;flex-direction:row !important;justify-content:flex-start !important;gap:6px !important;padding:3px 8px !important;}
+  #teacher-sidebar .dt-sb-item-label{font-size:10px !important;text-align:left !important;}
+  .dt-sidebar:not(#teacher-sidebar) .dt-sb-item{min-height:40px;}
+}
+@media(min-width:600px) and (orientation:landscape) and (max-height:690px){
+  .dt-sidebar#teacher-sidebar{padding-top:6px;padding-bottom:4px;}
+  .dt-sidebar#teacher-sidebar .dt-sb-logo{height:26px;margin-bottom:2px;padding:2px 6px;}
+  #teacher-sidebar .dt-sb-item{min-height:26px !important;padding:2px 8px !important;}
+  #teacher-sidebar .dt-sb-item svg{width:14px !important;height:14px !important;}
+  #teacher-sidebar .dt-sb-avatar{width:28px;height:28px;font-size:11px;margin-bottom:2px;}
+  .dt-sidebar:not(#teacher-sidebar) .dt-sb-logo{height:40px;margin-bottom:4px;}
+  .dt-sidebar:not(#teacher-sidebar) .dt-sb-item{min-height:36px;padding:3px 4px;}
+}
+@media(min-width:600px) and (orientation:landscape) and (max-height:590px){
+  .dt-sidebar#teacher-sidebar .dt-sb-logo{display:none;}
+  #teacher-sidebar .dt-sb-item{min-height:24px !important;padding:1px 8px !important;}
+  #teacher-sidebar .dt-sb-item-label{font-size:9.5px !important;}
+}
 
 /* ════════════════════════════════════════
    데스크탑 ≥1200px
