@@ -4436,7 +4436,7 @@ function metaH(P){
 }
 function noteH(P,no){ return '<div class="sec" style="margin-bottom:0">'+sh(pad(no),'선생님 한마디',"MENTOR'S NOTE")+'<div class="card cm"><span class="q">“</span>'+esc(P.comment).replace(/\n/g,'<br>')+(P.teacher?'<div class="sg">담당 '+esc(P.teacher)+'</div>':'')+'</div></div>'; }
 function footH(c){ return '<div style="flex:1"></div><div class="brandft"><span>MENTORS STUDY CAFE · TEAM MONO</span><span>'+esc(c.nm)+'</span></div>'; }
-function pageH(c,inner){ return '<div class="mpr-pg mpr-c2" style="'+vars(c)+'">'+bg(c.paper)+'<div class="c2box" data-h="'+Math.round((c.bot-c.top)*1123)+'" style="top:'+Math.round(c.top*1123)+'px;height:'+Math.round((c.bot-c.top)*1123)+'px">'+inner+'</div></div>'; }
+function pageH(c,inner){ return '<div class="mpr-pg mpr-c2" style="'+vars(c)+'">'+bg(c.paper)+'<div class="c2box" data-h="'+Math.round((c.bot-c.top)*1123)+'" data-w="'+(c.w||666)+'" style="left:'+(c.left||64)+'px;width:'+(c.w||666)+'px;top:'+Math.round(c.top*1123)+'px;height:'+Math.round((c.bot-c.top)*1123)+'px">'+inner+'</div></div>'; }
 R.cardInner=function(c,P){
   var inc=P.include||{}, ex=P.exams, cur=ex[ex.length-1], prev=ex.length>1?ex[ex.length-2]:null, rows=cur.rows, n=rows.length, multi=ex.length>1;
   var chart=multi&&inc.chart!==false, comment=inc.comment!==false&&P.comment&&String(P.comment).trim(), anal=hasAnal(rows), no=1;
@@ -4456,19 +4456,21 @@ R.cardInner=function(c,P){
 /* 페이지가 DOM에 붙은 뒤 내용이 넘치면 비율 그대로 축소 */
 R.fit=function(root){
   [].forEach.call((root||document).querySelectorAll('.c2box'),function(b){
-    var H=+b.getAttribute('data-h'); b.style.transform=''; b.style.width='666px'; b.style.height=H+'px';
-    var need=b.scrollHeight; if(need>H+1){ var k=H/need; b.style.height=need+'px'; b.style.width=(666/k).toFixed(1)+'px'; b.style.transform='scale('+k.toFixed(4)+')';
-      var need2=b.scrollHeight; if(need2>need+1){ k=H/need2; b.style.height=need2+'px'; b.style.width=(666/k).toFixed(1)+'px'; b.style.transform='scale('+k.toFixed(4)+')'; } }
+    var H=+b.getAttribute('data-h'), W0=+(b.getAttribute('data-w')||666); b.style.transform=''; b.style.width=W0+'px'; b.style.height=H+'px';
+    var need=b.scrollHeight; if(need>H+1){ var k=H/need; b.style.height=need+'px'; b.style.width=(W0/k).toFixed(1)+'px'; b.style.transform='scale('+k.toFixed(4)+')';
+      var need2=b.scrollHeight; if(need2>need+1){ k=H/need2; b.style.height=need2+'px'; b.style.width=(W0/k).toFixed(1)+'px'; b.style.transform='scale('+k.toFixed(4)+')'; } }
   });
 };
+var OLD_EN={1:'Lighthouse',2:'Above the Clouds',3:'Spring Path',4:'Morning Library',5:'Arch & Stairs',6:'Quiet Night'};
+/* 기존 디자인(1~6): 표지·뒷표지는 예전 그대로, 내지는 새 레이아웃을 예전 편지지 위에 */
+function oldAdapter(t){ return {n:t.n,k:'old'+t.n,nm:t.nm,en:OLD_EN[t.n]||'Academic Record',ink:t.lay==='night'?'#2f3550':t.tc,ac:t.ac,paper:t.paper,top:t.top/1123,bot:(1123-70)/1123,left:92,w:610}; }
 R.cardPages=function(P){
-  if(R.isOldTheme(P.themeId)&&R.oldCardPages) return R.oldCardPages(P);
-  var c=R.theme(P.themeId), inc=P.include||{}, out=[];
+  var old=R.isOldTheme(P.themeId)&&R.oldTheme, c=old?oldAdapter(R.oldTheme(P.themeId)):R.theme(P.themeId), inc=P.include||{}, out=[];
   if(!P.year) P.year=String(P.issueLabel||'').slice(0,4);
   if(!P.coverLabel) P.coverLabel=P.exams.length===1?P.exams[0].name:P.periodLabel;
-  if(inc.cover!==false) out.push(cardCover(c,P));
+  if(inc.cover!==false) out.push(old?R.oldCover(P):cardCover(c,P));
   if(inc.inner!==false&&P.exams.length) out=out.concat(R.cardInner(c,P));
-  if(inc.back!==false) out.push(cardBack(c));
+  if(inc.back!==false) out.push(old?R.oldBack(P):cardBack(c));
   return out;
 };
 /* ───────── 성적표 (기존 디자인 · 1~6) ───────── */
@@ -4565,6 +4567,9 @@ R.oldCardPages=function(P){
   return out;
 };
 R.OLD_THEMES=THEMES;
+R.oldCover=function(P){ return cardCover(theme(P.themeId),P); };
+R.oldBack=function(P){ return cardBack(theme(P.themeId)); };
+R.oldTheme=theme;
 })();
 root.MPRender=R;
 if(typeof module!=='undefined'&&module.exports) module.exports=R;
@@ -19219,7 +19224,7 @@ function egcRows(si,ei){
 window.renderEditGradeCutoffBody=function(){
   var el=document.getElementById('egc-body'); if(!el||!_egcSubjects) return;
   el.innerHTML=_egcSubjects.map(function(subj,si){
-    var nm=_resolveSubjDisplayName(subj), off=subj.gradeCutoffsEnabled?'':' <span style="font-size:11px;font-weight:400;color:var(--tx4);">(등급 사용 꺼짐 - 고쳐도 성적엔 등급이 안 붙어요)</span>';
+    var nm=_resolveSubjDisplayName(subj), off=' <label style="font-size:11px;font-weight:600;color:'+(subj.gradeCutoffsEnabled?'var(--burg)':'var(--tx4)')+';margin-left:8px;cursor:pointer;white-space:nowrap"><input type="checkbox" '+(subj.gradeCutoffsEnabled?'checked':'')+' onchange="_egcToggle('+si+',this.checked)" style="vertical-align:-2px"> 등급 사용'+(subj.gradeCutoffsEnabled?'':' (꺼져 있으면 성적에 등급이 안 붙어요)')+'</label>';
     var els=(subj.electiveOptions||[]);
     if(!els.length){
       return '<div class="exam-section" style="margin-bottom:10px;"><div class="exam-section-title" style="margin-bottom:8px;">'+escapeHtml(nm)+off+'</div><div>'+egcRows(si,-1)+'</div><button type="button" onclick="_egcAddCutoff('+si+',-1)" class="exam-add-chip-btn" style="margin-top:4px;">+ 등급 추가</button></div>';
@@ -19233,7 +19238,49 @@ window.renderEditGradeCutoffBody=function(){
       }).join('')+'</div>';
   }).join('');
 };
-window._egcUpdateCutoff=function(si,ei,ci,v){ var a=egcArr(si,ei); if(a&&a[ci]) a[ci].min=parseInt(v,10)||0; };
+window._egcUpdateCutoff=function(si,ei,ci,v){ var a=egcArr(si,ei); if(a&&a[ci]) a[ci].min=parseInt(v,10)||0; var sb=_egcSubjects[si]; if(sb&&!sb.gradeCutoffsEnabled){ sb.gradeCutoffsEnabled=true; renderEditGradeCutoffBody(); } };
+window._egcToggle=function(si,on){ if(_egcSubjects[si]){ _egcSubjects[si].gradeCutoffsEnabled=!!on; renderEditGradeCutoffBody(); } };
+/* 성적 문서의 과목 키 → 시험 과목 정의 찾기 (탐구 sc1/sc3·so1/so3 → ex1/ex2 블록, 선택과목 이름으로 매칭) */
+function egcNorm(x){ return String(x||'').replace(/\s/g,''); }
+function egcSubjFor(subjects,key,entry){
+  entry=entry||{};
+  var grp=entry.group||String(key).replace(/\d+$/,'');
+  if(grp==='sc'||grp==='so'){
+    var cands=subjects.filter(function(x){ return (x.subject==='ex1'||x.subject==='ex2')&&(x.exCategory||'sc')===grp; });
+    var byEl=cands.filter(function(x){ var els=(x.electiveOptions||[]).concat(Object.keys(x.questionsByElective||{})); return els.some(function(e){ return egcNorm(e)===egcNorm(entry.label); }); })[0];
+    return {def:cands[/3$/.test(key)?1:0]||byEl||cands[0]||null, elective:entry.label};
+  }
+  return {def:subjects.filter(function(x){ return x.subject===key; })[0]||null, elective:entry.option||null};
+}
+function egcCutoffsFor(def,elective){
+  if(!def) return null;
+  if(elective&&def.gradeCutoffsByElective){ var k=Object.keys(def.gradeCutoffsByElective).filter(function(e){ return egcNorm(e)===egcNorm(elective); })[0]; if(k&&def.gradeCutoffsByElective[k]&&def.gradeCutoffsByElective[k].length) return def.gradeCutoffsByElective[k]; }
+  return def.gradeCutoffs;
+}
+window.saveEditedGradeCutoff=async function(){
+  if(!_egcExamId||!_egcSubjects) return;
+  var newSubjects=_egcSubjects.map(function(x){ return Object.assign({},x); });
+  try{
+    await updateDoc(doc(db,'exams',_egcExamId),{subjects:newSubjects});
+    var a=await getDocs(query(collection(db,'grades'),where('examId','==',_egcExamId)));
+    var b=await getDocs(query(collection(db,'grades'),where('sourceExamIds','array-contains',_egcExamId))).catch(function(){ return {docs:[]}; });
+    var seen={}, docs=a.docs.concat(b.docs).filter(function(d){ if(seen[d.id]) return false; seen[d.id]=1; return true; });
+    var changed=0;
+    await Promise.all(docs.map(function(gDoc){
+      var g=gDoc.data(), scores=Object.assign({},g.scores), touched=false;
+      Object.keys(scores).forEach(function(key){
+        var e=scores[key]||{}, m=egcSubjFor(newSubjects,key,e); if(!m.def) return;
+        var sc=e.score==null||e.score===''?null:Number(e.score);
+        var grade=(m.def.gradeCutoffsEnabled&&sc!=null)?computeGradeFromCutoffs(egcCutoffsFor(m.def,m.elective),sc):'';
+        if(String(e.grade||'')!==String(grade)){ scores[key]=Object.assign({},e,{grade:grade}); touched=true; }
+      });
+      if(!touched) return null; changed++;
+      return updateDoc(doc(db,'grades',gDoc.id),{scores:scores});
+    }));
+    closeModal('modal-edit-grade-cutoff');
+    alert('등급표가 저장되었습니다'+(docs.length?' (기존 성적 '+docs.length+'건 중 '+changed+'건의 등급이 바뀌었어요)':''));
+  }catch(e){ alert('저장 실패: '+e.message); }
+};
 window._egcRemoveCutoff=function(si,ei,ci){ egcArr(si,ei).splice(ci,1); renderEditGradeCutoffBody(); };
 window._egcAddCutoff=function(si,ei){ var a=egcArr(si,ei); a.push({grade:a.length?Math.max.apply(null,a.map(function(c){return c.grade;}))+1:1,min:0}); renderEditGradeCutoffBody(); };
 window._egcCopyToAll=function(si,ei){
