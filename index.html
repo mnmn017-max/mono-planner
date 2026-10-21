@@ -1891,6 +1891,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .mpr-c2 .sc{padding:16px 16px 14px}
 .mpr-c2 .sc .top{display:flex;justify-content:space-between;align-items:baseline}
 .mpr-c2 .sc .lb{font-family:'Noto Serif KR','Noto Serif CJK KR',serif;font-weight:700;font-size:13.5px;letter-spacing:.04em}
+.mpr-c2 .sc .top{align-items:flex-start}
+.mpr-c2 .sc .lb .el{display:block;font-family:'Noto Sans KR','Noto Sans CJK KR',sans-serif;font-weight:500;font-size:10px;letter-spacing:.02em;opacity:.65;margin-top:2px}
+.mpr-c2 .el2{display:block;font-family:'Noto Sans KR','Noto Sans CJK KR',sans-serif;font-weight:400;font-size:9.5px;opacity:.65;margin-top:1px;letter-spacing:0}
 .mpr-c2 .sc .gd{font-size:11px}
 .mpr-c2 .sc .gd b{font-family:'Noto Serif KR','Noto Serif CJK KR',serif;font-size:17px;color:var(--ac);margin-right:1px}
 .mpr-c2 .sc .num{font-family:'Noto Serif KR','Noto Serif CJK KR',serif;font-weight:600;font-size:40px;line-height:1;margin:12px 0 6px}
@@ -4411,7 +4414,7 @@ function wn(r){ return r.wrongNums||[]; }
 function barH(r){ if(r.score==null) return ''; var p=Math.max(0,Math.min(100,r.score/rmax(r)*100)); return '<div class="bar"><i style="width:'+p.toFixed(1)+'%"></i><u style="left:'+p.toFixed(1)+'%"></u></div>'; }
 function heroH(r,prev){
   var m=rmax(r), d=delta(r,prev), w=wn(r), wc=w.length||r.wrong;
-  return '<div class="card hero"><div style="padding-right:26px"><div style="display:flex;align-items:baseline;gap:10px"><span style="font-family:'+SERIF+';font-weight:700;font-size:16px;letter-spacing:.06em">'+esc(r.label)+'</span><span class="cap">Raw Score</span></div>'
+  return '<div class="card hero"><div style="padding-right:26px"><div style="display:flex;align-items:baseline;gap:10px"><span style="font-family:'+SERIF+';font-weight:700;font-size:16px;letter-spacing:.06em">'+esc(sp(r.label)[0])+'</span>'+(sp(r.label)[1]?'<span style="font-size:11.5px;opacity:.75;letter-spacing:.02em">'+esc(sp(r.label)[1])+'</span>':'')+'<span class="cap">Raw Score</span></div>'
    +'<div class="big">'+(r.score==null?'–':r.score)+'<small>/ '+m+'</small></div>'+barH(r)+((r.unkNums||[]).length?'<div style="font-size:10.5px;margin-top:10px;color:var(--ac)">모름(?) 표시 <span style="font-family:'+SERIF+';margin-left:4px">'+r.unkNums.join(' · ')+'</span></div>':'')+'</div>'
    +'<div class="stats"><div class="st"><span>등급</span><b>'+(r.grade!=null?r.grade+'<em>등급</em>':'–')+'</b></div>'
    +'<div class="st"><span>오답</span><b>'+(wc!=null?wc+'<em>문항</em>':'–')+'</b></div>'
@@ -4419,13 +4422,16 @@ function heroH(r,prev){
 }
 function cardH(r,prev,dense){
   var d=delta(r,prev), w=wn(r);
-  return '<div class="card sc'+(dense?' dz':'')+'"><div class="top"><span class="lb">'+esc(C.clip(r.label,10))+'</span><span class="gd">'+(r.grade!=null?'<b>'+r.grade+'</b>등급':'')+'</span></div>'
+  return '<div class="card sc'+(dense?' dz':'')+'"><div class="top"><span class="lb">'+subjH(r.label)+'</span><span class="gd">'+(r.grade!=null?'<b>'+r.grade+'</b>등급':'')+'</span></div>'
    +'<div class="num">'+(r.score==null?'–':r.score)+'<small>/ '+rmax(r)+'</small><span class="dl">'+dh(d,'')+'</span></div>'+barH(r)
    +'<div class="wl"><span class="wk">오답</span><span style="font-family:'+SERIF+';letter-spacing:.03em">'+(w.length?w.join(' · '):(r.wrong!=null?(r.wrong?r.wrong+'문항':'없음'):'–'))+'</span></div>'
    +((r.unkNums||[]).length?'<div class="wl uk"><span class="wk">모름</span><span style="font-family:'+SERIF+';letter-spacing:.03em">'+r.unkNums.join(' · ')+'</span></div>':'')+'</div>';
 }
 /* 오답 지도 난이도 색: 테마와 무관하게 확실히 구분되는 3색(초록·주황·진홍) */
 var DCOL={'하':'#3E9B6E','중':'#E39A1F','상':'#B8323F'};
+/* "수학 (확률과 통계)" → ['수학','확률과 통계'] : 과목명은 크게, 선택과목은 아래 작은 글씨로(잘림 방지) */
+function sp(label){ var m=/^(.+?)\s*\((.+)\)\s*$/.exec(String(label||'')); return m?[m[1],m[2]]:[String(label||''),'']; }
+function subjH(label,elCls){ var p=sp(label); return esc(p[0])+(p[1]?'<span class="'+(elCls||'el')+'">'+esc(p[1])+'</span>':''); }
 function dc(c,d){ return DCOL[d]||c.ink; }
 function strip(r,c,W,H,lab){
   var an=r.an||{}, N=an.N||Math.max.apply(null,[DEFN[r.key]||20].concat(wn(r))), pl=6,pr=6, X=function(i){return pl+(i-1)*(W-pl-pr)/Math.max(1,N-1);}, g='', cy=lab?(H-14)/2+4:H/2;
@@ -4459,7 +4465,7 @@ function analN(rows,c){
   var th='<th style="width:16%">과목</th>'+(hasNext?'<th style="width:15%">다음 등급까지</th>':'')+(hasPack?'<th style="width:15%">쉬운 문항 실점</th><th style="width:13%">고난도 적중</th>':'')+(hasW?'<th style="text-align:left;padding-left:10px">오답 지도'+(hasPack?'<span style="float:right;padding-right:10px">'+leg(c)+'</span>':'')+'</th>':'');
   return '<div class="card" style="padding:2px 0 8px"><table><tr>'+th+'</tr>'+rows.map(function(r){
     var nx=nextOf(r), a=r.an||{};
-    return '<tr><td><b style="font-size:12px">'+esc(C.clip(r.label,8))+'</b></td>'
+    return '<tr><td><b style="font-size:12px">'+subjH(r.label,'el2')+'</b></td>'
      +(hasNext?'<td>'+(nx?(nx.keep?'<i style="margin:0">1등급 유지</i>':'<b>'+nx.need+'</b><i>점</i>'):'<i style="margin:0">–</i>')+'</td>':'')
      +(hasPack?(a.pack?'<td><b>'+ptsD(r,'하')+'</b><i>점</i></td><td><b>'+(a.hard-cntD(r,'상'))+'</b><i>/ '+a.hard+'</i></td>':'<td><i style="margin:0">–</i></td><td><i style="margin:0">–</i></td>'):'')
      +(hasW?'<td class="mp">'+(wn(r).length?strip(r,c,300,20,false):'<i style="margin:0">'+(r.wrong===0?'오답 없음':'–')+'</i>')+'</td>':'')+'</tr>';
@@ -4496,7 +4502,7 @@ function trendChart(ex,c){
 }
 function matrixH(ex){
   var labs=[]; ex.slice().reverse().forEach(function(e){ e.rows.forEach(function(r){ if(labs.indexOf(r.label)<0) labs.push(r.label); }); }); labs=labs.slice(0,6);
-  return '<table><tr><th>시험</th>'+labs.map(function(l){return '<th>'+esc(C.clip(l,7))+'</th>';}).join('')+'</tr>'+ex.slice().reverse().map(function(e,i){
+  return '<table><tr><th>시험</th>'+labs.map(function(l){return '<th>'+subjH(l,'el2')+'</th>';}).join('')+'</tr>'+ex.slice().reverse().map(function(e,i){
     return '<tr class="'+(i===0?'now':'')+'"><td>'+esc(C.clip(e.name.replace(/^20\d\d학년도\s*/,''),16))+'<i>'+dot(e.date).slice(5)+'</i></td>'+labs.map(function(L){ var r=e.rows.filter(function(x){return x.label===L;})[0]; return '<td>'+(r&&r.score!=null?'<b>'+r.score+'</b>'+(r.grade!=null?'<i>'+r.grade+'등급</i>':''):'–')+'</td>'; }).join('')+'</tr>'; }).join('')+'</table>';
 }
 function headH(c,P,cur,ex,pg){
@@ -4516,11 +4522,11 @@ R.cardInner=function(c,P){
   var cols=n<=3?n:n===4?2:3, wW=c.w||666;
   /* 섹션: [제목, 영문, 본문 함수, 예상 높이(px)] — 예상 높이로 쪽을 나누고, 남는 오차는 R.fit이 살짝 줄여 맞춘다 */
   var S=[];
-  S.push(['이번 시험'+(multi?'':''),multi?'THIS EXAM':'RESULTS',function(){ return n===1?heroH(rows[0],prev):'<div class="grid" style="grid-template-columns:repeat('+cols+',1fr)">'+rows.map(function(r){return cardH(r,prev,n>3);}).join('')+'</div>'; }, n===1?142:Math.ceil(n/cols)*((n>3?102:118)+(rows.some(function(r){return (r.unkNums||[]).length;})?16:0))+(Math.ceil(n/cols)-1)*12]);
+  S.push(['이번 시험'+(multi?'':''),multi?'THIS EXAM':'RESULTS',function(){ return n===1?heroH(rows[0],prev):'<div class="grid" style="grid-template-columns:repeat('+cols+',1fr)">'+rows.map(function(r){return cardH(r,prev,n>3);}).join('')+'</div>'; }, n===1?142:Math.ceil(n/cols)*((n>3?102:118)+(rows.some(function(r){return (r.unkNums||[]).length;})?16:0)+(rows.some(function(r){return sp(r.label)[1];})?13:0))+(Math.ceil(n/cols)-1)*12]);
   if(!multi) S[0][0]='과목별 성적';
   if(chart){ var tc=trendChart(ex,c); if(tc) S.push(['성적 흐름',/등급<\/text>/.test(tc)?'GRADE TREND':'SCORE TREND',function(){ return '<div class="card" style="padding:18px 14px 8px">'+tc+'</div>'; },236*(wW/666)]); }
   if(multi) S.push(['시험별 기록','RECORDS',function(){ return '<div class="card" style="padding:2px 0 0">'+matrixH(ex)+'</div>'; },22+30*ex.length]);
-  if(anal) S.push(['성적 분석','ANALYSIS',function(){ return n===1?anal1(rows[0],c):analN(rows,c); }, n===1?(((nextOf(rows[0])||(rows[0].an&&rows[0].an.pack))?92:0)+(wn(rows[0]).length?160:0)+((rows[0].an&&rows[0].an.segs&&rows[0].an.segs.length>1)?56:0)):(46+33*n+(rows.some(function(r){return wn(r).length;})?22:0))]);
+  if(anal) S.push(['성적 분석','ANALYSIS',function(){ return n===1?anal1(rows[0],c):analN(rows,c); }, n===1?(((nextOf(rows[0])||(rows[0].an&&rows[0].an.pack))?92:0)+(wn(rows[0]).length?160:0)+((rows[0].an&&rows[0].an.segs&&rows[0].an.segs.length>1)?56:0)):(46+33*n+rows.filter(function(r){return sp(r.label)[1];}).length*11+(rows.some(function(r){return wn(r).length;})?22:0))]);
   if(mr) S.push(['수시 수능최저','MINIMUM REQUIREMENTS',function(){ return minreqH(P.minreq,c); },30+44*P.minreq.items.length+(P.minreq.full?0:34)]);
   if(comment) S.push(['선생님 한마디',"MENTOR'S NOTE",function(){ return '<div class="card cm"><span class="q">“</span>'+esc(P.comment).replace(/\n/g,'<br>')+(P.teacher?'<div class="sg">담당 '+esc(P.teacher)+'</div>':'')+'</div>'; },36+Math.ceil(String(P.comment).length/(wW/11.5))*22+(P.teacher?22:0)]);
   var H=(c.bot-c.top)*1123, HEAD1=136, HEAD2=78, FOOT=22, SEC=42, TOL=1.2, hs=S.map(function(x){return SEC+x[3];}), sum=function(a,b){ var t=0; for(var i=a;i<b;i++) t+=hs[i]; return t; }, m=S.length, pages;
