@@ -1414,8 +1414,11 @@
   // ------------------------------------------------------------ PDF 바로 받기
   // 인쇄 창에서 조판이 끝난 HTML을 서버(api/deungbul-pdf)로 보내 쪽 범위별 PDF를 받고, 여기서 하나로 합쳐 내려받는다.
   var PDF_CHUNK = 16, PDF_PARALLEL = 6;
-  function addDownloadButton(w, title) {
-    var bar = w.document.getElementById('db-printbar'); if (!bar) return;
+  function addDownloadButton(w, title, tries) {
+    // 수학처럼 KaTeX 스크립트를 head에서 불러오는 경우, 스크립트 로딩이 끝나기 전에는 본문(인쇄 막대)이 아직 없다 → 생길 때까지 기다린다
+    var bar = w.document.getElementById('db-printbar');
+    if (!bar) { tries = (tries || 0) + 1; if (!w.closed && tries < 200) setTimeout(function () { addDownloadButton(w, title, tries); }, 150); return; }
+    if (w.document.getElementById('db-dlbtn')) return;
     var pbtn = w.document.getElementById('db-pbtn');
     function mk(id, label, bg) {
       var b = w.document.createElement('button');
