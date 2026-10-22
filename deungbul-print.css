@@ -1,8 +1,10 @@
 /* 옛한글(ᄌᆞ갸·아래아 등) 자모 — 웹폰트 서브셋에 없어 네모로 보이던 문제 */
-@font-face{font-family:"Noto Sans KR";font-style:normal;font-weight:100 549;font-display:block;src:url(assets/fonts/OldHangul-SansKR-Regular.woff2) format("woff2");unicode-range:U+1100-11FF,U+A960-A97F,U+D7B0-D7FF,U+302E-302F}
-@font-face{font-family:"Noto Sans KR";font-style:normal;font-weight:550 900;font-display:block;src:url(assets/fonts/OldHangul-SansKR-Bold.woff2) format("woff2");unicode-range:U+1100-11FF,U+A960-A97F,U+D7B0-D7FF,U+302E-302F}
-@font-face{font-family:"Noto Serif KR";font-style:normal;font-weight:100 549;font-display:block;src:url(assets/fonts/OldHangul-SerifKR-Regular.woff2) format("woff2");unicode-range:U+1100-11FF,U+A960-A97F,U+D7B0-D7FF,U+302E-302F}
-@font-face{font-family:"Noto Serif KR";font-style:normal;font-weight:550 900;font-display:block;src:url(assets/fonts/OldHangul-SerifKR-Bold.woff2) format("woff2");unicode-range:U+1100-11FF,U+A960-A97F,U+D7B0-D7FF,U+302E-302F}
+/* 주의: font-weight는 Google Fonts로 불러오는 굵기와 정확히 같아야 한다(다르면 그 굵기의 일반 한글까지 이 서브셋으로 넘어가 깨짐) */
+@font-face{font-family:"Noto Sans KR";font-style:normal;font-weight:400;font-display:block;src:url(assets/fonts/OldHangul-SansKR-Regular.woff2) format("woff2");unicode-range:U+1100-11FF,U+A960-A97F,U+D7B0-D7FF,U+302E-302F}
+@font-face{font-family:"Noto Sans KR";font-style:normal;font-weight:500;font-display:block;src:url(assets/fonts/OldHangul-SansKR-Regular.woff2) format("woff2");unicode-range:U+1100-11FF,U+A960-A97F,U+D7B0-D7FF,U+302E-302F}
+@font-face{font-family:"Noto Sans KR";font-style:normal;font-weight:700;font-display:block;src:url(assets/fonts/OldHangul-SansKR-Bold.woff2) format("woff2");unicode-range:U+1100-11FF,U+A960-A97F,U+D7B0-D7FF,U+302E-302F}
+@font-face{font-family:"Noto Serif KR";font-style:normal;font-weight:400;font-display:block;src:url(assets/fonts/OldHangul-SerifKR-Regular.woff2) format("woff2");unicode-range:U+1100-11FF,U+A960-A97F,U+D7B0-D7FF,U+302E-302F}
+@font-face{font-family:"Noto Serif KR";font-style:normal;font-weight:700;font-display:block;src:url(assets/fonts/OldHangul-SerifKR-Bold.woff2) format("woff2");unicode-range:U+1100-11FF,U+A960-A97F,U+D7B0-D7FF,U+302E-302F}
 :root{
   --burg:#7B1D1D;--burg2:#9B2D2D;--gold:#B8841A;--gold2:#D4A04A;--ink:#1A1010;--tx2:#3D2B2B;--tx3:#6E5858;--tx4:#A89696;
   --line:rgba(123,29,29,.16);--tint:#FBF6EE;--tint2:#F6EEE2;--ok:#1B6B3A;--ng:#B91C1C;
