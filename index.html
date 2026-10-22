@@ -10035,30 +10035,8 @@ window._loadLiveExamStatus = function(){
 // 점수·한마디 등은 그대로 두고, 값이 옛 이름과 정확히 같은 문자열만 새 이름으로 바꾼다(제목은 부분 치환). uids를 주면 그 학생 것만.
 window.mpSyncCardExamName = async function(from, to, uids){
   if (!from || !to || from === to) return 0;
-  var only = uids && uids.length ? {} : null; if (only) uids.forEach(function(u){ only[u] = 1; });
-  function deep(v){
-    if (typeof v === 'string') return v === from ? to : v;
-    if (Array.isArray(v)) return v.map(deep);
-    if (v && typeof v === 'object') { var o = {}; Object.keys(v).forEach(function(k){ o[k] = deep(v[k]); }); return o; }
-    return v;
-  }
-  var n = 0;
-  var jobs = [['cardArchive','studentUid'], ['studentReports','uid']];
-  for (var j = 0; j < jobs.length; j++) {
-    var col = jobs[j][0], uk = jobs[j][1], snap;
-    try { snap = await getDocs(query(collection(db, col), where('branch','==',getBranch()))); } catch (e) { console.warn('성적표 시험명 정정 조회 실패', col, e); continue; }
-    for (var i = 0; i < snap.docs.length; i++) {
-      var d = snap.docs[i], x = d.data();
-      if (only && !only[x[uk]]) continue;
-      if (col === 'studentReports' && x.kind !== 'card') continue;
-      var before = JSON.stringify(x.payload || {});
-      if (before.indexOf(JSON.stringify(from)) < 0 && String(x.title || '').indexOf(from) < 0) continue;
-      var patch = { payload: deep(x.payload || {}) };
-      if (x.title && String(x.title).indexOf(from) >= 0) patch.title = String(x.title).split(from).join(to);
-      try { await updateDoc(doc(db, col, d.id), patch); n++; } catch (e) { console.warn('성적표 시험명 정정 실패', col, d.id, e); }
-    }
-  }
-  return n;
+  try { var r = await mpArchiveApi({ action: 'renameExam', from: from, to: to, uids: uids || null }); return (r && r.n) || 0; }
+  catch (e) { console.warn('저장된 성적표 시험명 정정 실패', e); return 0; }
 };
 
 // 묶음 이름 수정 - 묶음 문서의 mergedTitle과, 이 묶음으로 합쳐진 성적(mergeGroupId 일치)의 examName을 함께 바꿈
