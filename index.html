@@ -7200,11 +7200,11 @@ window.saveExam = function(){
         });
         // 시험명도 성적에 반영: 이 시험 하나로 채점된 성적(examId 일치)은 examName을 새 시험명으로 맞춤.
         // "시험 묶기"로 합쳐진 성적은 묶음 이름(mergedTitle)을 쓰므로 이름은 그대로 두고, 묶음 문서의 원본 시험명 목록만 갱신.
-        var newTitle = examData.title || '';
+        var newTitle = examData.title || '', renamed = {};
         var updates = allDocs.map(function(d){
           var x = d.data(), patch = {};
           if ((x.examSource||null) !== newExamSourceLabel) patch.examSource = newExamSourceLabel;
-          if (newTitle && x.examId === editingExamId && x.examName !== newTitle) patch.examName = newTitle;
+          if (newTitle && x.examId === editingExamId && x.examName !== newTitle) { patch.examName = newTitle; (renamed[x.examName] = renamed[x.examName] || []).push(x.uid); }
           return Object.keys(patch).length ? updateDoc(doc(db,'grades',d.id), patch) : null;
         }).filter(Boolean);
         var side = getDocs(query(collection(db,'examMergeGroups'), where('examIds','array-contains',editingExamId))).then(function(gs){
@@ -7218,7 +7218,9 @@ window.saveExam = function(){
           return Promise.all(rs.docs.filter(function(r){ return newTitle && r.data().examTitle !== newTitle; })
             .map(function(r){ return updateDoc(doc(db,'examReflections',r.id), { examTitle: newTitle }); }));
         }).catch(function(e){ console.warn('회고 시험명 갱신 실패', e); });
-        return Promise.all(updates.concat([side, refl]));
+        return Promise.all(updates.concat([side, refl])).then(function(){
+          return Promise.all(Object.keys(renamed).map(function(from){ return mpSyncCardExamName(from, newTitle, renamed[from]).catch(function(e){ console.warn(e); }); }));
+        });
       });
     }).then(function(){
       closeModal('modal-create-exam');
@@ -10029,6 +10031,36 @@ window._loadLiveExamStatus = function(){
   });
 };
 
+// 저장된 성적표(보관함 cardArchive·학생 공개 studentReports)의 시험명 정정 - 시험명/묶음 이름 변경 시 호출.
+// 점수·한마디 등은 그대로 두고, 값이 옛 이름과 정확히 같은 문자열만 새 이름으로 바꾼다(제목은 부분 치환). uids를 주면 그 학생 것만.
+window.mpSyncCardExamName = async function(from, to, uids){
+  if (!from || !to || from === to) return 0;
+  var only = uids && uids.length ? {} : null; if (only) uids.forEach(function(u){ only[u] = 1; });
+  function deep(v){
+    if (typeof v === 'string') return v === from ? to : v;
+    if (Array.isArray(v)) return v.map(deep);
+    if (v && typeof v === 'object') { var o = {}; Object.keys(v).forEach(function(k){ o[k] = deep(v[k]); }); return o; }
+    return v;
+  }
+  var n = 0;
+  var jobs = [['cardArchive','studentUid'], ['studentReports','uid']];
+  for (var j = 0; j < jobs.length; j++) {
+    var col = jobs[j][0], uk = jobs[j][1], snap;
+    try { snap = await getDocs(query(collection(db, col), where('branch','==',getBranch()))); } catch (e) { console.warn('성적표 시험명 정정 조회 실패', col, e); continue; }
+    for (var i = 0; i < snap.docs.length; i++) {
+      var d = snap.docs[i], x = d.data();
+      if (only && !only[x[uk]]) continue;
+      if (col === 'studentReports' && x.kind !== 'card') continue;
+      var before = JSON.stringify(x.payload || {});
+      if (before.indexOf(JSON.stringify(from)) < 0 && String(x.title || '').indexOf(from) < 0) continue;
+      var patch = { payload: deep(x.payload || {}) };
+      if (x.title && String(x.title).indexOf(from) >= 0) patch.title = String(x.title).split(from).join(to);
+      try { await updateDoc(doc(db, col, d.id), patch); n++; } catch (e) { console.warn('성적표 시험명 정정 실패', col, d.id, e); }
+    }
+  }
+  return n;
+};
+
 // 묶음 이름 수정 - 묶음 문서의 mergedTitle과, 이 묶음으로 합쳐진 성적(mergeGroupId 일치)의 examName을 함께 바꿈
 window._renameExamMergeGroup = function(groupId){
   getDoc(doc(db,'examMergeGroups',groupId)).then(function(gd){
@@ -10054,9 +10086,11 @@ window._renameExamMergeGroup = function(groupId){
       var snap = { docs: docs };
       var ups = snap.docs.filter(function(d){ return d.data().examName !== t || d.data().mergeGroupId !== groupId; })
         .map(function(d){ return updateDoc(doc(db,'grades',d.id), { examName: t, mergeGroupId: groupId }); });
-      return Promise.all(ups).then(function(){ return ups.length; });
-    }).then(function(n){
-      alert('묶음 이름을 "'+t+'"(으)로 바꿨습니다.\n합쳐진 성적 '+n+'건의 시험명도 함께 수정했습니다.');
+      var uids = snap.docs.map(function(d){ return d.data().uid; });
+      return Promise.all(ups).then(function(){ return mpSyncCardExamName(oldTitle, t, uids); }).then(function(c){ return [ups.length, c]; });
+    }).then(function(r){
+      var n = r[0], c = r[1];
+      alert('묶음 이름을 "'+t+'"(으)로 바꿨습니다.\n합쳐진 성적 '+n+'건'+(c?', 저장된 성적표 '+c+'건':'')+'의 시험명도 함께 수정했습니다.');
       try { var m = document.getElementById('modal-exam-merge-groups'); if (m && m.classList.contains('open')) openExamMergeGroupsModal(); } catch(e){}
       try { invalidateTeacherTabCache(7); renderTeacher(7); } catch(e){}
     });
