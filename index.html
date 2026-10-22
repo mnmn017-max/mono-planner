@@ -5615,7 +5615,7 @@ function _buildExamGroupContainerHtml(group, memberExams){
   return '<div class="exam-group-container" style="border:2px solid '+color+';border-radius:18px;padding:22px 16px 18px;margin-bottom:14px;position:relative;background:rgba('+colorRgb+',0.09);">'
     + '<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:16px;position:relative;">'
     +   '<div style="text-align:center;">'
-    +     '<div style="font-family:Georgia,\'Nanum Myeongjo\',serif;font-size:13px;font-weight:800;color:'+color+';letter-spacing:0.5px;">🔗 '+escapeHtml(group.mergedTitle)+'</div>'
+    +     '<div style="font-family:Georgia,\'Nanum Myeongjo\',serif;font-size:13px;font-weight:800;color:'+color+';letter-spacing:0.5px;">🔗 '+escapeHtml(group.mergedTitle)+' <button onclick="_renameExamMergeGroup(\''+group.id+'\')" title="묶음 이름 수정" style="background:none;border:0;cursor:pointer;font-size:12px;padding:0 2px;vertical-align:1px;">✏️</button></div>'
     +     '<div style="width:36px;height:2px;background:'+color+';margin:6px auto 0;border-radius:2px;"></div>'
     +   '</div>'
     +   '<button onclick="_openExamGroupColorPicker(\''+group.id+'\')" title="묶음 색상 변경" style="position:absolute;right:2px;top:-4px;width:20px;height:20px;border-radius:50%;background:'+color+';border:2px solid #fff;box-shadow:0 0 0 1px rgba('+colorRgb+',0.4);cursor:pointer;padding:0;"></button>'
@@ -10016,6 +10016,30 @@ window._loadLiveExamStatus = function(){
   });
 };
 
+// 묶음 이름 수정 - 묶음 문서의 mergedTitle과, 이 묶음으로 합쳐진 성적(mergeGroupId 일치)의 examName을 함께 바꿈
+window._renameExamMergeGroup = function(groupId){
+  getDoc(doc(db,'examMergeGroups',groupId)).then(function(gd){
+    if (!gd.exists()) { alert('묶음을 찾을 수 없습니다.'); return; }
+    var oldTitle = gd.data().mergedTitle || '';
+    var t = prompt('묶음 이름을 입력해주세요.\n(이 묶음으로 합쳐진 학생 성적의 시험명도 함께 바뀝니다)', oldTitle);
+    if (t === null) return;
+    t = t.trim();
+    if (!t) { alert('이름을 비울 수 없습니다.'); return; }
+    if (t === oldTitle) return;
+    return updateDoc(doc(db,'examMergeGroups',groupId), { mergedTitle: t }).then(function(){
+      return getDocs(query(collection(db,'grades'), where('mergeGroupId','==',groupId)));
+    }).then(function(snap){
+      var ups = snap.docs.filter(function(d){ return d.data().examName !== t; })
+        .map(function(d){ return updateDoc(doc(db,'grades',d.id), { examName: t }); });
+      return Promise.all(ups).then(function(){ return ups.length; });
+    }).then(function(n){
+      alert('묶음 이름을 "'+t+'"(으)로 바꿨습니다.\n합쳐진 성적 '+n+'건의 시험명도 함께 수정했습니다.');
+      try { var m = document.getElementById('modal-exam-merge-groups'); if (m && m.classList.contains('open')) openExamMergeGroupsModal(); } catch(e){}
+      try { invalidateTeacherTabCache(7); renderTeacher(7); } catch(e){}
+    });
+  }).catch(function(e){ alert('이름 수정 실패: ' + e.message); });
+};
+
 window.openExamMergeGroupsModal = function(){
   document.getElementById('exam-merge-groups-body').innerHTML = '<div style="color:var(--tx3);font-size:12px;padding:10px 0;">불러오는 중...</div>';
   openModal('modal-exam-merge-groups');
@@ -10030,6 +10054,7 @@ window.openExamMergeGroupsModal = function(){
         + '<div style="font-size:13px;font-weight:700;color:var(--tx1);margin-bottom:4px;">'+escapeHtml(g.mergedTitle)+'</div>'
         + '<div style="font-size:11px;color:var(--tx3);margin-bottom:8px;">'+ (g.examTitles||[]).map(escapeHtml).join(' + ') + '</div>'
         + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">'
+        + '<button onclick="_renameExamMergeGroup(\''+g.id+'\')" style="padding:5px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--tx1);font-size:11px;cursor:pointer;">✏️ 이름 수정</button>'
         + '<button onclick="_rerunExamGroupMerge(\''+g.id+'\',this)" style="padding:5px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;">🔄 새로 합치기</button>'
         + '<button onclick="_diagnoseExamGroupMerge(\''+g.id+'\')" style="padding:5px 10px;background:rgba(74,127,255,0.1);border:1px solid rgba(74,127,255,0.2);border-radius:6px;color:var(--blue);font-size:11px;cursor:pointer;">🔍 진단</button>'
         + '<button onclick="_ungroupExamMergeGroup(\''+g.id+'\')" style="padding:5px 10px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:6px;color:var(--red);font-size:11px;cursor:pointer;">묶음 해제</button>'
