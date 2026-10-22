@@ -39,11 +39,25 @@ function readBody(req) {
   });
 }
 
+// 서버 크롬(람다)에는 한글 글꼴이 하나도 없다. 웹폰트가 늦게 오면 한글이 빈칸으로 찍히므로,
+// 크롬을 띄우기 전에 한글 대체 글꼴(Noto Sans KR)을 /tmp/fonts에 받아 둔다. 실패해도 PDF 만들기는 계속한다.
+const KR_FALLBACK_FONTS = [
+  "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanskr/NotoSansKR%5Bwght%5D.ttf",
+];
+let fontsPromise = null;
+function ensureKoreanFonts() {
+  if (!fontsPromise) {
+    fontsPromise = Promise.all(KR_FALLBACK_FONTS.map((u) => chromium.font(u).catch((e) => { console.error("font", u, e.message); return null; })));
+  }
+  return fontsPromise;
+}
+
 let browserPromise = null;
 function getBrowser() {
   if (!browserPromise) {
     browserPromise = (async () => {
       chromium.setGraphicsMode = false;
+      await ensureKoreanFonts();
       return puppeteer.launch({
         args: chromium.args,
         executablePath: await chromium.executablePath(),
@@ -92,13 +106,28 @@ module.exports = async function handler(req, res) {
     const browser = await getBrowser();
     const t1 = Date.now();
     page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 25000 });
-    // 글꼴·이미지를 기다리되, 최대 25초가 지나면 그대로 진행(무한 대기 방지)
-    await page.evaluate(() => {
+    // 글꼴 CSS(구글 폰트)와 글꼴 파일까지 다 받아질 때까지 기다린다.
+    // (예전에는 domcontentloaded에서 바로 글꼴을 확인해서, 글꼴 CSS가 오기도 전에 PDF를 찍어 한글이 빈칸으로 나왔음)
+    try {
+      await page.setContent(html, { waitUntil: ["load", "networkidle0"], timeout: 30000 });
+    } catch (e) {
+      console.error("setContent wait:", e.message); // 시간 초과여도 아래에서 글꼴을 한 번 더 기다린 뒤 진행
+    }
+    const fontState = await page.evaluate(async () => {
+      void document.body.offsetHeight; // 조판을 한 번 돌려 필요한 글꼴 조각을 모두 요청하게 함
       const imgs = Promise.all(Array.prototype.map.call(document.images, (i) => (i.complete ? 1 : new Promise((r) => { i.onload = i.onerror = r; }))));
-      const cap = new Promise((r) => setTimeout(r, 25000));
-      return Promise.race([Promise.all([imgs, document.fonts.ready]), cap]);
+      const deadline = Date.now() + 20000;
+      await Promise.race([imgs, new Promise((r) => setTimeout(r, 20000))]);
+      while (Date.now() < deadline) {
+        await document.fonts.ready;
+        const loading = Array.from(document.fonts).filter((f) => f.status === "loading").length;
+        if (!loading) break;
+        await new Promise((r) => setTimeout(r, 300));
+      }
+      const all = Array.from(document.fonts);
+      return { loaded: all.filter((f) => f.status === "loaded").length, loading: all.filter((f) => f.status === "loading").length, error: all.filter((f) => f.status === "error").length };
     });
+    res.setHeader("X-Fonts", "loaded=" + fontState.loaded + ";loading=" + fontState.loading + ";error=" + fontState.error);
     const t2 = Date.now();
     const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true, timeout: 40000 });
     const t3 = Date.now();
