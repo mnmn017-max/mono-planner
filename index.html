@@ -7198,10 +7198,27 @@ window.saveExam = function(){
         var allDocs = results[0].docs.concat(results[1].docs).filter(function(d){
           if (seen[d.id]) return false; seen[d.id] = true; return true;
         });
-        var updates = allDocs
-          .filter(function(d){ return (d.data().examSource||null) !== newExamSourceLabel; })
-          .map(function(d){ return updateDoc(doc(db,'grades',d.id), { examSource: newExamSourceLabel }); });
-        return Promise.all(updates);
+        // 시험명도 성적에 반영: 이 시험 하나로 채점된 성적(examId 일치)은 examName을 새 시험명으로 맞춤.
+        // "시험 묶기"로 합쳐진 성적은 묶음 이름(mergedTitle)을 쓰므로 이름은 그대로 두고, 묶음 문서의 원본 시험명 목록만 갱신.
+        var newTitle = examData.title || '';
+        var updates = allDocs.map(function(d){
+          var x = d.data(), patch = {};
+          if ((x.examSource||null) !== newExamSourceLabel) patch.examSource = newExamSourceLabel;
+          if (newTitle && x.examId === editingExamId && x.examName !== newTitle) patch.examName = newTitle;
+          return Object.keys(patch).length ? updateDoc(doc(db,'grades',d.id), patch) : null;
+        }).filter(Boolean);
+        var side = getDocs(query(collection(db,'examMergeGroups'), where('examIds','array-contains',editingExamId))).then(function(gs){
+          return Promise.all(gs.docs.map(function(g){
+            var gd = g.data(), ids = gd.examIds || [], titles = (gd.examTitles || []).slice(), i = ids.indexOf(editingExamId);
+            if (i < 0 || titles[i] === newTitle) return null;
+            titles[i] = newTitle; return updateDoc(doc(db,'examMergeGroups',g.id), { examTitles: titles });
+          }));
+        }).catch(function(e){ console.warn('묶음 시험명 갱신 실패', e); });
+        var refl = getDocs(query(collection(db,'examReflections'), where('examId','==',editingExamId))).then(function(rs){
+          return Promise.all(rs.docs.filter(function(r){ return newTitle && r.data().examTitle !== newTitle; })
+            .map(function(r){ return updateDoc(doc(db,'examReflections',r.id), { examTitle: newTitle }); }));
+        }).catch(function(e){ console.warn('회고 시험명 갱신 실패', e); });
+        return Promise.all(updates.concat([side, refl]));
       });
     }).then(function(){
       closeModal('modal-create-exam');
