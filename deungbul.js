@@ -269,7 +269,33 @@
     return report;
   }
 
+
+  // ------------------------------------------------------------ 옛한글 정규화
+  // 한글(HWP)에서 복사한 옛한글은 '한양 PUA'(U+E000~F8FF 사용자 정의 영역) 코드로 들어와 어떤 글꼴로도 네모가 된다.
+  // 표준 옛한글 자모(KS X 1026-1 / 유니코드 첫가끝)로 바꾼다. 표는 assets/hypua.json(5,661자)을 필요할 때만 불러온다.
+  var PUA_RE = /[\uE000-\uF8FF]/, _hypua = null;
+  function loadHypua() {
+    if (_hypua) return _hypua;
+    _hypua = fetch('/assets/hypua.json').then(function (r) { return r.json(); }).catch(function () { _hypua = null; return {}; });
+    return _hypua;
+  }
+  function puaStr(s, M) { return s.replace(/[\uE000-\uF8FF]/g, function (ch) { return M[ch.charCodeAt(0).toString(16)] || ch; }); }
+  function puaDeep(v, M) {
+    if (typeof v === 'string') return PUA_RE.test(v) ? puaStr(v, M) : v;
+    if (Array.isArray(v)) return v.map(function (x) { return puaDeep(x, M); });
+    if (v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype) { var o = {}; Object.keys(v).forEach(function (k) { o[k] = puaDeep(v[k], M); }); return o; }
+    return v;
+  }
+  function fixOldHangul(v) {
+    var hit = false; try { hit = PUA_RE.test(JSON.stringify(v)); } catch (e) {}
+    if (!hit) return Promise.resolve(v);
+    return loadHypua().then(function (M) { return puaDeep(v, M); });
+  }
+
   function uploadPack(examId, exam, pack, report, packId) {
+    return fixOldHangul(pack).then(function (p) { return uploadPack_(examId, exam, p, report, packId); });
+  }
+  function uploadPack_(examId, exam, pack, report, packId) {
     var F = fb(), c = ctx();
     var units = flattenUnits(pack);
     packId = packId || examId;
@@ -1511,11 +1537,11 @@
     return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>' + esc(title) + '</title><base href="' + origin + '/">' +
       '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
       '<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@400;700&family=Cormorant+Garamond:ital,wght@0,600;1,600&family=Bebas+Neue&family=DM+Mono:wght@500&display=block" rel="stylesheet">' +
-      '<link rel="stylesheet" href="' + origin + '/deungbul-print.css?v=10">' +
+      '<link rel="stylesheet" href="' + origin + '/deungbul-print.css?v=11">' +
       (hasMath ? '<style>*{text-wrap-style:auto!important}</style><link rel="stylesheet" href="' + origin + '/assets/katex/katex.min.css"><script src="' + origin + '/assets/katex/katex.min.js"><\/script><script src="' + origin + '/assets/katex/contrib/auto-render.min.js"><\/script>' : '') +
       '</head><body><div id="db-printbar"><span id="db-pstat">페이지를 조판하는 중입니다… (글꼴·이미지 로딩)</span><button id="db-pbtn" disabled>🖨 인쇄 / PDF 저장</button></div><div id="book"></div><div id="src" style="display:none">' + src + '</div>' +
       '<script>window.DB_ASSET=' + JSON.stringify(ASSET) + ';var PAG=' + PAGINATE.toString() + ';' +
-      '(async function(){try{await document.fonts.ready;var s=document.getElementById("src");s.style.display="block";s.style.position="absolute";s.style.left="-9999px";s.style.width="176mm";' +
+      '(async function(){try{await document.fonts.ready;var s=document.getElementById("src");if(/[\\uE000-\\uF8FF]/.test(s.innerHTML)){try{var HM=await (await fetch("/assets/hypua.json")).json();var fx=function(root){var tw=document.createTreeWalker(root,4),t;while(t=tw.nextNode()){if(/[\\uE000-\\uF8FF]/.test(t.nodeValue))t.nodeValue=t.nodeValue.replace(/[\\uE000-\\uF8FF]/g,function(c){return HM[c.charCodeAt(0).toString(16)]||c;});}};fx(s);Array.prototype.forEach.call(document.querySelectorAll("template"),function(tp){fx(tp.content);});}catch(e){}}s.style.display="block";s.style.position="absolute";s.style.left="-9999px";s.style.width="176mm";' +
       'if(window.renderMathInElement){var mo={delimiters:[{left:"$$",right:"$$",display:true},{left:"$",right:"$",display:false}],throwOnError:false};renderMathInElement(s,mo);Array.prototype.forEach.call(document.querySelectorAll("template"),function(t){renderMathInElement(t.content,mo);});try{await Promise.all(["KaTeX_Main","KaTeX_Math","KaTeX_Size1","KaTeX_Size2","KaTeX_Size3","KaTeX_Size4","KaTeX_AMS"].map(function(f){return document.fonts.load("16px "+f,"x");}).concat([document.fonts.load("italic 16px KaTeX_Math","x"),document.fonts.load("bold 16px KaTeX_Main","x")]));}catch(e){}}' +
       'void s.offsetHeight;try{await Promise.all(["400 16px \\"Noto Sans KR\\"","700 16px \\"Noto Sans KR\\"","500 16px \\"Noto Sans KR\\"","400 16px \\"Noto Serif KR\\"","700 16px \\"Noto Serif KR\\"","600 16px \\"Cormorant Garamond\\"","16px \\"Bebas Neue\\"","500 16px \\"DM Mono\\""].map(function(f){return document.fonts.load(f,"가나A1");}));}catch(e){}' +
       'await Promise.all(Array.prototype.map.call(document.images,function(i){return i.complete?1:new Promise(function(r){i.onload=i.onerror=r;});}));' +
