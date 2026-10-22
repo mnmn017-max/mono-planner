@@ -9282,6 +9282,19 @@ function _tryMergeGradesForUid(groupId, group, examIds, gradesForUid, uid){
     var newSourceExamIds = (existingMerged.sourceExamIds||[]).slice();
     var newSourceSessionIds = (existingMerged.sourceExamSessionIds||[]).slice();
     newOnes.forEach(function(g){
+      // 이미 합쳐진 시험을 다시 친 경우(배정 취소 후 재배정·재응시) - 그 시험 몫의 과목을 새 성적으로 교체.
+      // 같은 과목군(예: 탐구 sc·so)의 예전 과목은 지우고 새 과목·오답·모름으로 덮어씀.
+      var isRetake = g.examId && (existingMerged.sourceExamIds||[]).indexOf(g.examId) >= 0;
+      if (isRetake) {
+        var grpOf = function(sc, k){ return ((sc||{})[k]||{}).group || k; };
+        var newGroups = {}; Object.keys(g.scores||{}).forEach(function(k){ newGroups[grpOf(g.scores,k)] = 1; });
+        Object.keys(mergedScores).forEach(function(k){
+          if (newGroups[grpOf(mergedScores,k)]) { delete mergedScores[k]; delete mergedWrong[k]; delete mergedUnk[k]; }
+        });
+        Object.keys(g.scores||{}).forEach(function(k){ mergedScores[k] = g.scores[k]; delete mergedWrong[k]; delete mergedUnk[k]; });
+        Object.keys(g.wrongBySubj||{}).forEach(function(k){ mergedWrong[k] = g.wrongBySubj[k]; });
+        Object.keys(g.unknownBySubj||{}).forEach(function(k){ mergedUnk[k] = g.unknownBySubj[k]; });
+      }
       Object.keys(g.scores||{}).forEach(function(k){ if (mergedScores[k]===undefined) mergedScores[k] = g.scores[k]; });
       Object.keys(g.wrongBySubj||{}).forEach(function(k){ if (mergedWrong[k]===undefined) mergedWrong[k] = g.wrongBySubj[k]; });
       Object.keys(g.unknownBySubj||{}).forEach(function(k){ if (mergedUnk[k]===undefined) mergedUnk[k] = g.unknownBySubj[k]; });
