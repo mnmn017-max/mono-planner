@@ -10026,11 +10026,21 @@ window._renameExamMergeGroup = function(groupId){
     t = t.trim();
     if (!t) { alert('이름을 비울 수 없습니다.'); return; }
     if (t === oldTitle) return;
+    var gExamIds = gd.data().examIds || [];
     return updateDoc(doc(db,'examMergeGroups',groupId), { mergedTitle: t }).then(function(){
-      return getDocs(query(collection(db,'grades'), where('mergeGroupId','==',groupId)));
-    }).then(function(snap){
-      var ups = snap.docs.filter(function(d){ return d.data().examName !== t; })
-        .map(function(d){ return updateDoc(doc(db,'grades',d.id), { examName: t }); });
+      // 묶음을 해제했다가 다시 만든 경우 예전 성적은 옛 묶음 ID를 갖고 있으므로, 원본 시험이 모두 이 묶음에 속한 합쳐진 성적도 함께 찾는다
+      return Promise.all([
+        getDocs(query(collection(db,'grades'), where('mergeGroupId','==',groupId))),
+        gExamIds.length ? getDocs(query(collection(db,'grades'), where('sourceExamIds','array-contains',gExamIds[0]))) : Promise.resolve({docs:[]})
+      ]);
+    }).then(function(rs){
+      var seen = {}, docs = rs[0].docs.concat(rs[1].docs.filter(function(d){
+        var x = d.data(), src = x.sourceExamIds || [];
+        return x.source === 'merged_group' && src.length && src.every(function(i){ return gExamIds.indexOf(i) >= 0; });
+      })).filter(function(d){ if (seen[d.id]) return false; seen[d.id] = true; return true; });
+      var snap = { docs: docs };
+      var ups = snap.docs.filter(function(d){ return d.data().examName !== t || d.data().mergeGroupId !== groupId; })
+        .map(function(d){ return updateDoc(doc(db,'grades',d.id), { examName: t, mergeGroupId: groupId }); });
       return Promise.all(ups).then(function(){ return ups.length; });
     }).then(function(n){
       alert('묶음 이름을 "'+t+'"(으)로 바꿨습니다.\n합쳐진 성적 '+n+'건의 시험명도 함께 수정했습니다.');
