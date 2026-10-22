@@ -2,7 +2,7 @@
  * MONO PLANNER - 생성한 성적표 보관함 (Vercel Serverless Function)
  * 선생님·마스터만 생성/조회/삭제할 수 있고 학생은 접근할 수 없다(호출자 role을 서버에서 확인).
  * 저장 위치: Firestore cardArchive/{id}  { branch, studentUid, studentName, title, themeId, payload, createdBy, createdByName, createdAt }
- * POST body: { action: 'create' | 'list' | 'get' | 'update' | 'delete', ... }  (수정: 마스터=전체, 선생님=본인 작성분)
+ * POST body: { action: 'create' | 'list' | 'get' | 'update' | 'delete' | 'renameExam', ... }  (수정: 마스터=전체, 선생님=본인 작성분)
  * 환경변수: FIREBASE_SERVICE_ACCOUNT (다른 API와 같음)
  */
 const admin = require("firebase-admin");
@@ -73,6 +73,34 @@ module.exports = async function handler(req, res) {
       if (p.title) upd.title = String(p.title).slice(0, 120);
       await ref.update(upd);
       return res.json({ ok: true });
+    }
+    if (b.action === "renameExam") {
+      // 시험명·묶음 이름 변경 시 저장된 성적표(보관함·학생 공개)의 시험명 정정. 값이 옛 이름과 정확히 같은 문자열만 교체(제목은 부분 치환).
+      // payload 안에 중첩 배열이 있어 클라이언트 SDK로는 쓸 수 없으므로 서버에서 처리한다.
+      const from = String(b.from || ""), to = String(b.to || "");
+      if (!from || !to || from === to) return res.json({ ok: true, n: 0 });
+      const only = Array.isArray(b.uids) && b.uids.length ? new Set(b.uids.map(String)) : null;
+      const deep = function (v) {
+        if (typeof v === "string") return v === from ? to : v;
+        if (Array.isArray(v)) return v.map(deep);
+        if (v && typeof v === "object" && Object.getPrototypeOf(v) === Object.prototype) { const o = {}; Object.keys(v).forEach(function (k) { o[k] = deep(v[k]); }); return o; }
+        return v;
+      };
+      let n = 0;
+      for (const [cname, uk] of [["cardArchive", "studentUid"], ["studentReports", "uid"]]) {
+        const snap = await db.collection(cname).where("branch", "==", myBranch).get();
+        for (const d of snap.docs) {
+          const x = d.data();
+          if (only && !only.has(String(x[uk]))) continue;
+          if (cname === "studentReports" && x.kind !== "card") continue;
+          const hit = JSON.stringify(x.payload || {}).indexOf(JSON.stringify(from)) >= 0 || String(x.title || "").indexOf(from) >= 0;
+          if (!hit) continue;
+          const upd = { payload: deep(x.payload || {}) };
+          if (x.title && String(x.title).indexOf(from) >= 0) upd.title = String(x.title).split(from).join(to);
+          await d.ref.update(upd); n++;
+        }
+      }
+      return res.json({ ok: true, n });
     }
     if (b.action === "delete") {
       const d = await col.doc(String(b.id)).get();
