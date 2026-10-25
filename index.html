@@ -8124,6 +8124,48 @@ function _enterBreakScreen(sessionId, exam, finishedSubjIdx, breakDeadlineMs, ju
 // 듣기 파일 자동재생이 브라우저 정책으로 막혔을 때, 학생이 직접 눌러서 재생할 수 있도록
 // 화면 위에 눈에 띄는 배너를 띄움. 직접 누르는 클릭은 브라우저가 항상 허용하기 때문에
 // 이 방법이 가장 확실함.
+// ── 듣기 재생 보호 ──
+// OMR을 누를 때마다 종료 알림 음성(TTS) 잠금 해제용으로 무음 음성을 재생하는데(_primeSpeechOnUserGesture),
+// 아이폰·아이패드 등에서는 음성 합성이 시작되면 재생 중인 듣기 오디오가 멈춘다 → "OMR 누르면 듣기가 끊김".
+// 그래서 (1) 듣기가 재생 중일 때는 무음 음성을 보내지 않고, (2) 그래도 듣기가 의도치 않게 멈추면
+// 그 자리에서 이어서 다시 재생한다(실패하면 '이어서 듣기' 버튼). 처음부터가 아니라 멈춘 지점부터 이어 재생.
+var _examListen = { audio: null, stopped: false };
+function _setExamListeningAudio(a){
+  _stopExamListening();
+  _examListen.audio = a; _examListen.stopped = false;
+  a.addEventListener('pause', function(){
+    if (_examListen.audio !== a || _examListen.stopped || a.ended) return;
+    setTimeout(function(){
+      if (_examListen.audio !== a || _examListen.stopped || a.ended || !a.paused) return;
+      a.play().catch(function(){ _showListeningResumeBanner(a); });
+    }, 250);
+  });
+  a.addEventListener('playing', function(){ var b = document.getElementById('listening-resume-banner'); if (b) b.remove(); });
+}
+function _resumeExamListeningIfPaused(){
+  var a = _examListen.audio;
+  if (a && !_examListen.stopped && !a.ended && a.paused && a.currentTime > 0) { try { a.play().catch(function(){}); } catch(e){} }
+}
+function _stopExamListening(){
+  var a = _examListen.audio;
+  _examListen.stopped = true;
+  if (a) { try { a.pause(); } catch(e){} }
+  _examListen.audio = null;
+  var b = document.getElementById('listening-resume-banner'); if (b) b.remove();
+}
+function _showListeningResumeBanner(a){
+  if (document.getElementById('listening-resume-banner') || document.getElementById('listening-fallback-banner')) return;
+  var banner = document.createElement('div');
+  banner.id = 'listening-resume-banner';
+  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:linear-gradient(135deg,var(--burg),var(--burg2));color:#fff;padding:14px 18px;display:flex;align-items:center;justify-content:center;gap:14px;z-index:250;box-shadow:0 4px 16px rgba(0,0,0,.25);';
+  banner.innerHTML = '<span style="font-size:14px;font-weight:700;">🔊 듣기가 멈췄어요 - 버튼을 누르면 멈춘 곳부터 이어서 재생돼요</span>'
+    + '<button id="listening-resume-btn" style="padding:8px 18px;background:#fff;color:var(--burg);border:none;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">▶ 이어서 듣기</button>';
+  document.body.appendChild(banner);
+  document.getElementById('listening-resume-btn').onclick = function(){
+    a.play().then(function(){ banner.remove(); }).catch(function(e){ alert('재생에 실패했습니다. 기기 음량 및 무음 모드를 확인한 뒤 다시 눌러주세요.\n('+e.message+')'); });
+  };
+}
+
 function _showListeningPlayFallback(url, sessionId){
   if (document.getElementById('listening-fallback-banner')) return; // 중복 방지
   var banner = document.createElement('div');
@@ -8135,6 +8177,7 @@ function _showListeningPlayFallback(url, sessionId){
 
   document.getElementById('listening-fallback-play-btn').onclick = function(){
     var audio = new Audio(url);
+    _setExamListeningAudio(audio);
     // "재생 시작됨"이 아니라 "끝까지 다 재생됨"일 때만 완료로 기록 - 재생 시작하자마자
     // 완료로 기록해버리면, 재생 도중 학생이 나갔다 들어왔을 때 이미 "다 들은 것"으로
     // 처리되어서 나머지를 다시 들을 방법이 없어짐
@@ -8216,6 +8259,7 @@ function _enterExamScreen(sessionId, exam, subj, subjIdx, deadlineMs, savedAnswe
       audio.addEventListener('ended', function(){
         updateDoc(doc(db,'examSessions',sessionId), {listeningPlayed:true}).catch(function(){});
       });
+      _setExamListeningAudio(audio);
       audio.play().catch(function(){
         _showListeningPlayFallback(subj.listeningUrl, sessionId);
       });
@@ -8382,6 +8426,8 @@ window.setExamAnswer = function(no, value, btnEl){
 // 터치가 있었다"고 인식하게 만들어 종료 알림 음성이 막히지 않을 확률을 최대한 높인다.
 // (애플 정책상 100% 보장은 안 되지만, 답을 자주 고르는 시험 특성상 실질적으로 도움이 됨)
 function _primeSpeechOnUserGesture(){
+  // 듣기가 남아 있는 동안에는 음성 합성을 건드리지 않음(아이폰·아이패드에서 듣기 오디오가 끊김). 혹시 멈춰 있으면 이 터치로 이어 재생.
+  if (_examListen.audio && !_examListen.stopped && !_examListen.audio.ended) { _resumeExamListeningIfPaused(); return; }
   try {
     if (!('speechSynthesis' in window)) return;
     var u = new SpeechSynthesisUtterance('');
@@ -8779,6 +8825,7 @@ function _finalizeExamSubmit(sessionId, exam, subj, subjIdx, answers, autoSubmit
   ExamEngine.submitting = true;
   if (ExamEngine.clockInterval) clearInterval(ExamEngine.clockInterval);
   _releaseExamWakeLock();
+  _stopExamListening();
 
   var graded = gradeExamAnswers(_resolveSubjForGrading(subj, ExamEngine.electiveChoice), answers);
 
