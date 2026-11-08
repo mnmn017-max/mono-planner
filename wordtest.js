@@ -106,7 +106,7 @@
     gear: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z',
     eye: 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 15a3 3 0 100-6 3 3 0 000 6z', book: 'M4 19.5A2.5 2.5 0 016.5 17H20V3H6.5A2.5 2.5 0 004 5.5zM8 7h8M8 11h6',
     trash: 'M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14', edit: 'M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z', clock: 'M12 21a9 9 0 100-18 9 9 0 000 18zM12 7v5l3 2',
-    msg: 'M21 12a8 8 0 01-12 7l-6 2 2-6a8 8 0 1116-3z', sound: 'M11 5L6 9H2v6h4l5 4zM15.5 8.5a5 5 0 010 7'
+    msg: 'M21 12a8 8 0 01-12 7l-6 2 2-6a8 8 0 1116-3z', print: 'M6 9V3h12v6M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v7H6z', sound: 'M11 5L6 9H2v6h4l5 4zM15.5 8.5a5 5 0 010 7'
   };
   function sv(k, c, s, w) { return '<svg width="' + (s || 16) + '" height="' + (s || 16) + '" viewBox="0 0 24 24" fill="none" stroke="' + (c || 'currentColor') + '" stroke-width="' + (w || 2.2) + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + IC[k] + '"/></svg>'; }
   function toast(msg, ms) {
@@ -311,7 +311,7 @@
         + '<td>' + (t.type === 'sa' ? '주관식' : '객관식') + '</td><td>' + cutOf(t) + ' / ' + (t.words || []).length + '</td>'
         + '<td style="min-width:150px"><div class="row" style="gap:8px"><span style="flex:1;height:6px;border-radius:3px;background:#F1EAE8;display:flex;overflow:hidden;box-shadow:inset 0 1px 1px rgba(0,0,0,.06)"><span style="width:' + (p / tot * 100) + '%;background:#1B6B3A"></span><span style="width:' + (fl / tot * 100) + '%;background:#C25555"></span></span><span style="font-size:11px;font-weight:800;white-space:nowrap">' + (p + fl) + '/' + as.length + '</span></div></td>'
         + '<td><span class="tag ' + st[1] + '">' + st[0] + '</span></td>'
-        + '<td style="text-align:right;white-space:nowrap"><button type="button" class="ib" data-edit="' + t.id + '" aria-label="수정" style="width:32px;height:32px;border-radius:9px">' + sv('edit', '#5A4848', 13) + '</button> <button type="button" class="ib" data-deltest="' + t.id + '" aria-label="삭제" style="width:32px;height:32px;border-radius:9px">' + sv('trash', '#9C2F2F', 13) + '</button></td></tr>';
+        + '<td style="text-align:right;white-space:nowrap"><button type="button" class="ib" data-print="' + t.id + '" aria-label="인쇄" title="시험지 인쇄" style="width:32px;height:32px;border-radius:9px">' + sv('print', '#7B1D1D', 14) + '</button> <button type="button" class="ib" data-edit="' + t.id + '" aria-label="수정" style="width:32px;height:32px;border-radius:9px">' + sv('edit', '#5A4848', 13) + '</button> <button type="button" class="ib" data-deltest="' + t.id + '" aria-label="삭제" style="width:32px;height:32px;border-radius:9px">' + sv('trash', '#9C2F2F', 13) + '</button></td></tr>';
     }).join('');
     var right = '<div class="card" style="overflow:hidden">'
       + '<div class="row" style="justify-content:space-between;padding:14px 16px;flex-wrap:wrap;gap:8px"><div class="col" style="gap:2px"><span style="font-size:15px;font-weight:800">' + (f ? esc((f.grade ? f.grade + ' · ' : '') + f.name) : '전체 시험') + '</span><span style="font-size:11px;color:#8A7B7B">시험 ' + list.length + '개</span></div>'
@@ -329,6 +329,7 @@
     };
     v.querySelector('[data-act="newtest2"]').onclick = function () { openWizard(f ? f.id : null); };
     v.querySelectorAll('[data-edit]').forEach(function (b) { b.onclick = function () { editTest(testById(b.dataset.edit)); }; });
+    v.querySelectorAll('[data-print]').forEach(function (b) { b.onclick = function () { openPrintFor(testById(b.dataset.print)); }; });
     v.querySelectorAll('[data-deltest]').forEach(function (b) {
       b.onclick = function () {
         var t = testById(b.dataset.deltest), n = D.assigns.filter(function (a) { return a.testId === t.id && a.status === 'assigned'; });
@@ -339,6 +340,14 @@
       };
     });
   }
+  function openPrintFor(t, preset, date) {
+    if (!t) return;
+    if (!WT.openPrint) { U.toast('인쇄 기능을 불러오는 중이에요. 잠시 후 다시 눌러 주세요'); return; }
+    var f = folderById(t.folderId), pool = [];
+    D.tests.forEach(function (x) { if (x.folderId === t.folderId && x.id !== t.id) pool = pool.concat(x.words || []); });
+    WT.openPrint({ test: t, folderName: f ? f.name : '', students: D.students, pickStudents: pickStudents, presetUids: preset || [], assignDate: date, extraPool: pool });
+  }
+  WT._openPrintFor = openPrintFor;
   function kp(k, v, sub, c) { return '<div class="card wt-kpi"><span style="font-size:11px;color:#8A7B7B">' + k + '</span><b style="color:' + c + '">' + v + '</b><span style="font-size:11px;color:#8A7B7B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(sub) + '</span></div>'; }
 
   function folderDialog(f) {
