@@ -348,6 +348,18 @@
     WT.openPrint({ test: t, folderName: f ? f.name : '', students: D.students, pickStudents: pickStudents, presetUids: preset || [], assignDate: date, extraPool: pool });
   }
   WT._openPrintFor = openPrintFor;
+  function reportCtx() {
+    var me = ME();
+    return {
+      results: D.results, assigns: D.assigns, testById: testById, folderById: folderById, stuName: stuName,
+      student: function (uid) { for (var i = 0; i < D.students.length; i++) if (D.students[i].uid === uid) return D.students[i]; return null; },
+      resultTests: resultTests, teacher: (me.profile || {}).name || ''
+    };
+  }
+  function openReportFor(mode, testId, uids) {
+    if (!WT.openReportPrint) { U.toast('인쇄 기능을 불러오는 중이에요. 잠시 후 다시 눌러 주세요'); return; }
+    WT.openReportPrint({ ctx: reportCtx(), mode: mode, testId: testId, uids: uids || [], pickStudents: pickStudents });
+  }
   function kp(k, v, sub, c) { return '<div class="card wt-kpi"><span style="font-size:11px;color:#8A7B7B">' + k + '</span><b style="color:' + c + '">' + v + '</b><span style="font-size:11px;color:#8A7B7B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(sub) + '</span></div>'; }
 
   function folderDialog(f) {
@@ -678,9 +690,13 @@
     var tabs = [['student', '학생별'], ['word', '단어별 오답률'], ['heat', '점수 히트맵'], ['alert', '미통과 알림'], ['report', '개인 리포트']];
     var sel = (S.resView === 'heat' || S.resView === 'alert' || S.resView === 'report') ? '' :
       '<select class="inp" id="wt-rtest" style="height:40px;padding:0 12px;font-size:13px;font-weight:800;max-width:100%">' + (tests.length ? tests.map(function (t) { var f = folderById(t.folderId); return '<option value="' + t.id + '"' + (t.id === S.resTestId ? ' selected' : '') + '>' + esc(t.title) + (f ? ' · ' + esc(f.name) : '') + ' · ' + (t.type === 'sa' ? '주관식' : '객관식') + '</option>'; }).join('') : '<option>아직 결과가 없어요</option>') + '</select>';
-    v.innerHTML = '<div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px"><div class="well seg scroll" style="max-width:100%">' + tabs.map(function (t) { return '<button type="button" data-rv="' + t[0] + '" class="' + (S.resView === t[0] ? 'on' : '') + '">' + t[1] + (t[0] === 'alert' && pending ? '<span style="min-width:17px;height:17px;border-radius:9px;background:linear-gradient(180deg,#C25555,#9C2F2F);color:#fff;font-size:10px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;padding:0 5px">' + pending + '</span>' : '') + '</button>'; }).join('') + '</div>' + sel + '</div><div id="wt-rv"></div>';
+    v.innerHTML = '<div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px"><div class="well seg scroll" style="max-width:100%">' + tabs.map(function (t) { return '<button type="button" data-rv="' + t[0] + '" class="' + (S.resView === t[0] ? 'on' : '') + '">' + t[1] + (t[0] === 'alert' && pending ? '<span style="min-width:17px;height:17px;border-radius:9px;background:linear-gradient(180deg,#C25555,#9C2F2F);color:#fff;font-size:10px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;padding:0 5px">' + pending + '</span>' : '') + '</button>'; }).join('') + '</div><div class="row" style="gap:8px;flex-wrap:wrap">' + sel + '<button type="button" class="s" data-rprint style="height:40px;padding:0 14px;font-size:12.5px">' + sv('print', '#7B1D1D', 14) + '성적표 인쇄</button></div></div><div id="wt-rv"></div>';
     v.querySelectorAll('[data-rv]').forEach(function (b) { b.onclick = function () { S.resView = b.dataset.rv; render(); }; });
     var rs = v.querySelector('#wt-rtest'); if (rs) rs.onchange = function () { S.resTestId = rs.value; render(); };
+    var rpb = v.querySelector('[data-rprint]'); if (rpb) rpb.onclick = function () {
+      if (S.resView === 'report') openReportFor('sum', null, S.rpStudent ? [S.rpStudent] : []);
+      else openReportFor(S.resView === 'student' ? 'class' : 'single', S.resTestId, []);
+    };
     var box = v.querySelector('#wt-rv');
     if (S.resView === 'student') rvStudent(box);
     else if (S.resView === 'word') rvWord(box);
@@ -906,10 +922,11 @@
     var name = mine[0].studentName || stuName(uid);
     box.innerHTML = '<div style="display:grid;grid-template-columns:210px minmax(0,1fr);gap:14px;align-items:start" class="wt-kb">'
       + '<div class="card scroll" style="padding:10px;display:flex;flex-direction:column;gap:2px;max-height:620px">' + uids.map(function (u) { var on = u === uid, a = avg(u); return '<button type="button" data-rp="' + u + '" style="border:0;display:flex;justify-content:space-between;align-items:center;height:42px;padding:0 12px;border-radius:9px;font:' + (on ? 800 : 500) + ' 13px \'Noto Sans KR\',sans-serif;cursor:pointer;background:' + (on ? 'linear-gradient(180deg,#922B2B,#6E1818)' : 'transparent') + ';color:' + (on ? '#fff' : '#3D2B2B') + '"><span>' + esc(byStu[u][0].studentName || stuName(u)) + '</span><span style="font-size:11px;opacity:.8">' + a + '%</span></button>'; }).join('') + '</div>'
-      + '<div class="card" style="padding:20px 22px;display:flex;flex-direction:column;gap:14px"><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px"><span class="serif" style="font-size:26px">' + esc(name) + '</span><button type="button" class="p" data-rvme style="height:38px;padding:0 14px;font-size:12px">이 학생 오답 시험</button></div>'
+      + '<div class="card" style="padding:20px 22px;display:flex;flex-direction:column;gap:14px"><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px"><span class="serif" style="font-size:26px">' + esc(name) + '</span><div class="row" style="gap:8px"><button type="button" class="s" data-rpsum style="height:38px;padding:0 14px;font-size:12px">' + sv('print', '#7B1D1D', 13) + '종합 성적표</button><button type="button" class="p" data-rvme style="height:38px;padding:0 14px;font-size:12px">이 학생 오답 시험</button></div></div>'
       + '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));box-shadow:inset 0 1px 0 #F1E8E5,inset 0 -1px 0 #F1E8E5">' + [['평균 정답률', avg(uid) + '%', '#1A1010'], ['한 번에 통과', once + ' / ' + mine.length, '#1A1010'], ['재시험', re + '회', '#9C2F2F'], ['익힌 단어', learned, '#1A1010']].map(function (x, i) { return '<div class="col" style="padding:12px 0 12px ' + (i ? 16 : 0) + 'px;gap:2px;' + (i ? 'box-shadow:inset 1px 0 0 #F1E8E5' : '') + '"><span style="font-size:11px;color:#8A6A66">' + x[0] + '</span><span class="serif" style="font-size:22px;color:' + x[2] + '">' + x[1] + '</span></div>'; }).join('') + '</div>'
       + svg + '<div class="row" style="flex-wrap:wrap;gap:6px"><b style="font-size:12px;color:#8A6A66;margin-right:4px">계속 틀리는 단어</b>' + (rep.length ? rep.map(function (k) { return '<span style="padding:5px 10px;border-radius:14px;background:#F6E9E6;color:#7B1D1D;font-size:12px;font-weight:700">' + esc(k) + ' ×' + cnt[k] + '</span>'; }).join('') : '<span style="font-size:12px;color:#A89898">아직 없어요</span>') + '</div></div></div>';
     box.querySelectorAll('[data-rp]').forEach(function (b) { b.onclick = function () { S.rpStudent = b.dataset.rp; render(); }; });
+    box.querySelector('[data-rpsum]').onclick = function () { openReportFor('sum', null, [uid]); };
     box.querySelector('[data-rvme]').onclick = function () { S.view = 'review'; S.rvSel = {}; mine.forEach(function (r) { if (r.testId) S.rvSel[r.testId] = 1; }); S.rvOnly = uid; S.rvMode = 1; render(); };
   }
 

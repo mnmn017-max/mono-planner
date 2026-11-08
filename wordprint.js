@@ -263,6 +263,7 @@
   }
   WT.printBuild = buildDoc;
   WT.printPalettes = PAL;
+  WT._pr = { PAL: PAL, baseCss: baseCss, FONTS: FONTS, logo: logo, doPrint: function (h, b) { return doPrint(h, b); }, mdDot: mdDot };
   WT.printDesigns = DESIGNS;
 
   /* ---------- 인쇄 실행 (숨긴 iframe) ---------- */
