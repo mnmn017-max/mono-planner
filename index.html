@@ -741,6 +741,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 
 /* 메시지 영역 - 깔끔한 베이지 배경 */
 .kchat-area{flex:1;overflow-y:auto;padding:14px 12px;display:flex;flex-direction:column;gap:2px;background:#F2EDE6;}
+/* 입력창에서 글자가 바뀔 때 대화 영역까지 다시 계산·다시 그리지 않도록 분리 (휴대폰 입력 버벅임 완화) */
+.kchat-area{contain:layout paint;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;}
+.kchat-input-area{contain:layout;}
 .kchat-area::-webkit-scrollbar{width:5px;}
 .kchat-area::-webkit-scrollbar-thumb{background:var(--border);border-radius:5px;}
 
@@ -17084,9 +17087,11 @@ window.sendKChatMsg = function() {
 };
 // 채팅 입력: 줄바꿈 지원 - PC는 Enter 전송·Shift+Enter 줄바꿈, 휴대폰은 Enter가 줄바꿈이고 전송 버튼으로 보냄.
 // 한글 조합 중(isComposing) Enter는 무시해야 마지막 글자가 두 번 보내지지 않음
+var _kchatTouchMq = null;
 window.kchatKey = function(e){
   if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
-  var touch = window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+  if (!_kchatTouchMq && window.matchMedia) _kchatTouchMq = window.matchMedia('(hover: none) and (pointer: coarse)');
+  var touch = !!(_kchatTouchMq && _kchatTouchMq.matches);
   if (e.shiftKey || touch) return;
   e.preventDefault(); sendKChatMsg();
 };
@@ -17140,7 +17145,7 @@ function renderKChatMessages(msgs) {
     }
     var avatarText = (m.senderName||'?').slice(0,1);
     var avatarStyle = '';
-    if (m.senderAvatar) {
+    if (m.senderAvatar && !isMe) {
       if (m.senderAvatar.type === 'image') {
         avatarStyle = 'background-image:url(\''+_thumbUrl(m.senderAvatar.value, 36)+'\');background-size:cover;background-position:center;background-color:transparent;';
         avatarText = '';
