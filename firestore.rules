@@ -163,6 +163,34 @@ service cloud.firestore {
       allow read, write: if signedIn() && userId == uid();
     }
 
+    // ---------- 암기 Test · 단어 Test ----------
+    match /wordFolders/{id} {
+      allow read: if isMember();
+      allow write: if isStaff();
+    }
+    match /wordTests/{id} {
+      allow read: if isMember();
+      allow write: if isStaff();
+    }
+    match /wordSeries/{id} {
+      allow read, write: if isStaff();
+    }
+    match /wordAssign/{id} {
+      allow read: if isStaff() || owns('studentUid');
+      // 학생: 미통과 시 본인 재시험만 자동 생성 가능
+      allow create: if isStaff()
+        || (willOwn('studentUid') && request.resource.data.kind == 'retest');
+      // 학생: 본인 응시 상태만 갱신 (누구의 어떤 시험인지는 못 바꿈)
+      allow update: if isStaff()
+        || (owns('studentUid') && onlyChanges(['status', 'attempts', 'lastResultId', 'doneAt', 'bestScore', 'note']));
+      allow delete: if isStaff();
+    }
+    match /wordResults/{id} {
+      allow read: if isStaff() || owns('studentUid');
+      allow create: if isStaff() || willOwn('studentUid');
+      allow update, delete: if isStaff();
+    }
+
     // ---------- 등불 ----------
     match /deungbulPacks/{examId} {
       allow read: if isMember();
