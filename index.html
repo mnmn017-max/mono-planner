@@ -16540,14 +16540,16 @@ function _debouncedRenderKChatRooms(rooms) {
   }, 250);
 }
 
+var _kchatRoomsLastHtml = '';
 function renderKChatRooms(rooms) {
   var el = document.getElementById('kchat-rooms-list');
   if (!el) return;
   if (!rooms || !rooms.length) {
+    _kchatRoomsLastHtml = '';
     el.innerHTML = '<div class="kchat-empty"><div style="font-size:36px;opacity:.3;margin-bottom:10px;">💬</div><div style="color:var(--tx3);font-size:13px;">아직 대화방이 없어요</div><button class="kchat-empty-btn" onclick="openNewChatModal()">새 대화 시작하기</button></div>';
     return;
   }
-  el.innerHTML = rooms.map(function(r){
+  var _roomsHtml = rooms.map(function(r){
     // 상대방 정보 추출 (1:1은 상대방, 단톡은 그룹명)
     var displayName, avatarHtmlStr;
     if (r.isGroup) {
@@ -16596,6 +16598,12 @@ function renderKChatRooms(rooms) {
       +'</div>'
       +'</div>';
   }).join('');
+  // 목록 내용이 그대로면 다시 그리지 않음(읽음 리셋·내가 보낸 메시지로 방 정보가 바뀔 때마다 38개 방을 통째로 새로 그리던 것 방지)
+  if (_roomsHtml === _kchatRoomsLastHtml && el.querySelector('.kchat-room-item')) return;
+  _kchatRoomsLastHtml = _roomsHtml;
+  el.innerHTML = _roomsHtml;
+  var _rq = document.querySelector('input[oninput^="filterKChatRooms"]');
+  if (_rq && _rq.value && window.filterKChatRooms) filterKChatRooms(_rq.value);
 }
 
 window.filterKChatRooms = function(q) {
@@ -16669,6 +16677,9 @@ window.openKChatRoom = function(roomId) {
   _curChatRoomId = roomId;
   _kchatLimit = KCHAT_PAGE; _kchatHasMore = false; _kchatReadPending = {}; _kchatLastMsgs = null; _kchatLastHtml = '';
   var _kArea = document.getElementById('kchat-area'); if (_kArea) _kArea.innerHTML = '<div style="text-align:center;color:var(--tx4);font-size:13px;padding:40px;">불러오는 중…</div>';
+  _curChatRoomMeta = null;
+  // 메시지는 방 정보(getDoc)를 기다리지 않고 바로 구독 시작 - 왕복 1번만큼 빨리 뜸. 방 정보가 오면 읽음 숫자만 다시 그림
+  _kchatSubscribe(roomId, KCHAT_PAGE);
   _selectedFileForChat = null;
   var isDesktop = window.matchMedia('(min-width:1024px)').matches;
   if (!isDesktop) document.getElementById('kchat-list-view').style.display = 'none';
@@ -16720,9 +16731,8 @@ window.openKChatRoom = function(roomId) {
       updateDoc(doc(db, 'chatRooms', roomId), _resetUpdate).catch(function(e){console.error('미읽음 리셋 실패', e);});
     }
 
-    // 메시지 리스너 - 최근 메시지만 구독(이전 대화는 '이전 대화 더 보기'로 불러옴)
-    if (_curChatRoomId !== roomId) return; // 그 사이 다른 방을 열었으면 이 방 리스너는 만들지 않음
-    _kchatSubscribe(roomId, KCHAT_PAGE);
+    // 메시지는 위에서 이미 구독 중 - 방 정보(참여자 수)가 왔으니 읽음 숫자 반영해 다시 그림
+    if (_curChatRoomId === roomId && _kchatLastMsgs) { _kchatLastHtml = ''; _kchatScheduleRender(_kchatLastMsgs); }
   }).catch(function(e){
     console.error(e);
     alert('대화방 로드 실패: '+e.message);
