@@ -4679,7 +4679,7 @@ if(typeof module!=='undefined'&&module.exports) module.exports=R;
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, deleteField, collection, query, where, orderBy, onSnapshot, serverTimestamp, getDocs, limit, arrayUnion, increment } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, deleteField, collection, query, where, orderBy, onSnapshot, serverTimestamp, getDocs, limit, arrayUnion, increment, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
 import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
@@ -4707,6 +4707,13 @@ const CLOUDINARY_PRESET = 'Preset';
 function _cloudinaryDownloadUrl(url){
   if (!url) return url;
   return url.replace('/upload/', '/upload/fl_attachment/');
+}
+// 프로필 사진은 원본(최대 5MB)이 그대로 올라가 있어서, 채팅·목록의 작은 동그라미에도 원본을 받아 그리느라 무거웠음 → Cloudinary 썸네일 주소로 바꿔 씀
+function _thumbUrl(url, px){
+  if (!url || typeof url !== 'string' || url.indexOf('res.cloudinary.com') < 0 || url.indexOf('/image/upload/') < 0) return url;
+  if (/\/image\/upload\/(c_|w_|h_)/.test(url)) return url;
+  var n = Math.max(64, Math.round((px||40) * 2));
+  return url.replace('/image/upload/', '/image/upload/c_fill,g_face,w_'+n+',h_'+n+',q_auto,f_auto/');
 }
 function _chatFileIcon(fileName){
   var ext = (fileName||'').split('.').pop().toLowerCase();
@@ -13645,7 +13652,8 @@ function listenChatNotifs() {
     });
     if (myVersion !== _chatNotifVersion) return;
     unsubChatNotif = onSnapshot(
-      collection(db,'chatNotifs',currentUser.uid,'items'),
+      // 알림 기록 전체(수백~수천 건)를 매번 받지 않도록 최근 것만 구독 - 새 알림은 이 창 안으로 들어오므로 그대로 잡힘
+      query(collection(db,'chatNotifs',currentUser.uid,'items'), orderBy('createdAt','desc'), limit(30)),
       function(snapshot) {
         snapshot.docChanges().forEach(function(change) {
           if (change.type !== 'added') return;
@@ -13678,7 +13686,7 @@ function listenChatNotifs() {
       });
       if (myVersion !== _chatNotifVersion) return;
       unsubChatNotif = onSnapshot(
-        collection(db,'chatNotifs',currentUser.uid,'items'),
+        query(collection(db,'chatNotifs',currentUser.uid,'items'), orderBy('createdAt','desc'), limit(30)),
         function(snapshot) {
           snapshot.docChanges().forEach(function(change) {
             if (change.type !== 'added') return;
@@ -13796,7 +13804,7 @@ function avatarCircleHtml(name, avatar, sizePx, opts){
   var cursorStyle = opts.onclick ? 'cursor:pointer;' : '';
   var clickAttr = opts.onclick ? ' onclick="'+opts.onclick+'"' : '';
   if (avatar && avatar.type === 'image' && avatar.value) {
-    return '<div style="'+base+cursorStyle+'background:var(--surface2);" class="'+(opts.cls||'')+'"'+clickAttr+'><img src="'+escapeHtml(avatar.value)+'" style="width:100%;height:100%;object-fit:cover;"/></div>';
+    return '<div style="'+base+cursorStyle+'background:var(--surface2);" class="'+(opts.cls||'')+'"'+clickAttr+'><img src="'+escapeHtml(_thumbUrl(avatar.value, sizePx))+'" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;"/></div>';
   }
   if (avatar && avatar.type === 'emoji' && avatar.value) {
     return '<div style="'+base+cursorStyle+'background:var(--surface2);font-size:'+Math.round(sizePx*0.55)+'px;line-height:1;" class="'+(opts.cls||'')+'"'+clickAttr+'>'+avatar.value+'</div>';
@@ -13810,7 +13818,7 @@ function _applyAvatar(el, name, avatar) {
   if (!el) return;
   if (avatar && avatar.type === 'image' && avatar.value) {
     el.textContent = '';
-    el.style.backgroundImage = 'url("'+avatar.value+'")';
+    el.style.backgroundImage = 'url("'+_thumbUrl(avatar.value, 60)+'")';
     el.style.backgroundSize = 'cover';
     el.style.backgroundPosition = 'center';
   } else if (avatar && avatar.type === 'emoji' && avatar.value) {
@@ -16599,9 +16607,68 @@ window.filterKChatRooms = function(q) {
 };
 
 // 채팅방 열기
+// ── 채팅 성능 ──
+// 예전: 방을 열면 ① 전체 메시지를 한꺼번에 구독하고 ② 안 읽은 메시지마다 읽음 표시를 '한 건씩' 저장했는데,
+// 저장 한 건마다 화면 전체를 다시 그려서(메시지 N개면 N번 × N개) 방이 클수록 크게 버벅였음.
+// 지금: 최근 KCHAT_PAGE개만 구독 · 읽음 표시는 한 번에 묶어 저장 · 그리기는 한 프레임에 한 번 · 내용이 같으면 다시 그리지 않음.
+var KCHAT_PAGE = 80;
+var _kchatLimit = KCHAT_PAGE, _kchatHasMore = false, _kchatReadPending = {}, _kchatRaf = null, _kchatLastMsgs = null, _kchatLastHtml = '';
+function _kchatSubscribe(roomId, lim){
+  if (_unsubChatMessages) { _unsubChatMessages(); _unsubChatMessages = null; }
+  _kchatLimit = lim;
+  _unsubChatMessages = onSnapshot(
+    query(collection(db, 'chatRooms', roomId, 'messages'), orderBy('createdAt','desc'), limit(lim)),
+    function(snap){
+      if (_curChatRoomId !== roomId) return;
+      _kchatHasMore = snap.size >= lim;
+      var msgs = snap.docs.map(function(d){return Object.assign({_id:d.id}, d.data());}).reverse();
+      _kchatScheduleRender(msgs);
+      // 안 읽은 메시지에 내 읽음 표시 - 한 번에 묶어서 저장(저장 1번 = 화면 갱신 1번)
+      var batch = null, cnt = 0;
+      snap.docs.forEach(function(d){
+        if (cnt >= 450) return;
+        var rb = d.data().readBy || [];
+        if (rb.indexOf(currentUser.uid) !== -1 || _kchatReadPending[d.id]) return;
+        if (!batch) batch = writeBatch(db);
+        _kchatReadPending[d.id] = 1;
+        batch.update(doc(db, 'chatRooms', roomId, 'messages', d.id), {readBy: arrayUnion(currentUser.uid)});
+        cnt++;
+      });
+      if (batch && cnt) batch.commit().catch(function(e){ console.warn('읽음 표시 실패', e); });
+    },
+    function(err){ console.error('chat messages listen error', err); }
+  );
+}
+function _kchatScheduleRender(msgs){
+  _kchatLastMsgs = msgs;
+  if (_kchatRaf) return;
+  _kchatRaf = requestAnimationFrame(function(){
+    _kchatRaf = null;
+    var area = document.getElementById('kchat-area');
+    if (!area || !_kchatLastMsgs) return;
+    var wasBottom = area.scrollHeight - area.scrollTop - area.clientHeight < 80;
+    var prevH = area.scrollHeight, prevTop = area.scrollTop;
+    var firstRender = !area.querySelector('.kchat-row');
+    var keepTop = area._kchatKeepTop;
+    renderKChatMessages(_kchatLastMsgs);
+    if (keepTop) { area.scrollTop = area.scrollHeight - prevH + prevTop; area._kchatKeepTop = false; }
+    else if (wasBottom || firstRender) area.scrollTop = area.scrollHeight;
+  });
+}
+window.loadOlderKChat = function(){
+  if (!_curChatRoomId) return;
+  var area = document.getElementById('kchat-area'); if (area) area._kchatKeepTop = true;
+  _kchatSubscribe(_curChatRoomId, _kchatLimit + KCHAT_PAGE);
+};
+var _kchatDateFmt = null, _kchatTimeFmt = null;
+function _kchatFmtDate(ts){ if (!_kchatDateFmt) _kchatDateFmt = new Intl.DateTimeFormat('ko-KR', {year:'numeric', month:'long', day:'numeric', weekday:'long'}); return _kchatDateFmt.format(ts); }
+function _kchatFmtTime(ts){ if (!_kchatTimeFmt) _kchatTimeFmt = new Intl.DateTimeFormat('ko-KR', {hour:'2-digit', minute:'2-digit'}); return _kchatTimeFmt.format(ts); }
+
 window.openKChatRoom = function(roomId) {
   if (_unsubChatMessages) { _unsubChatMessages(); _unsubChatMessages = null; }
   _curChatRoomId = roomId;
+  _kchatLimit = KCHAT_PAGE; _kchatHasMore = false; _kchatReadPending = {}; _kchatLastMsgs = null; _kchatLastHtml = '';
+  var _kArea = document.getElementById('kchat-area'); if (_kArea) _kArea.innerHTML = '<div style="text-align:center;color:var(--tx4);font-size:13px;padding:40px;">불러오는 중…</div>';
   _selectedFileForChat = null;
   var isDesktop = window.matchMedia('(min-width:1024px)').matches;
   if (!isDesktop) document.getElementById('kchat-list-view').style.display = 'none';
@@ -16611,6 +16678,7 @@ window.openKChatRoom = function(roomId) {
 
   // 메타데이터 가져오기
   getDoc(doc(db, 'chatRooms', roomId)).then(function(d){
+    if (_curChatRoomId !== roomId) return; // 빠르게 다른 방으로 옮긴 경우 늦게 온 응답은 무시
     if (!d.exists()) { alert('대화방을 찾을 수 없습니다'); closeKChatRoom(); return; }
     _curChatRoomMeta = d.data();
     var hName = document.getElementById('kchat-header-name');
@@ -16652,26 +16720,9 @@ window.openKChatRoom = function(roomId) {
       updateDoc(doc(db, 'chatRooms', roomId), _resetUpdate).catch(function(e){console.error('미읽음 리셋 실패', e);});
     }
 
-    // 메시지 리스너
-    _unsubChatMessages = onSnapshot(
-      query(collection(db, 'chatRooms', roomId, 'messages'), orderBy('createdAt','asc')),
-      function(snap){
-        var area = document.getElementById('kchat-area');
-        if (!area) return;
-        var wasBottom = area.scrollHeight - area.scrollTop - area.clientHeight < 80;
-        var msgs = snap.docs.map(function(d){return Object.assign({_id:d.id}, d.data());});
-        renderKChatMessages(msgs);
-        if (wasBottom) area.scrollTop = area.scrollHeight;
-        // 안읽은 메시지 readBy에 자신 추가
-        snap.docs.forEach(function(d){
-          var m = d.data();
-          var rb = m.readBy || [];
-          if (rb.indexOf(currentUser.uid) === -1) {
-            updateDoc(doc(db, 'chatRooms', roomId, 'messages', d.id), {readBy: arrayUnion(currentUser.uid)}).catch(function(){});
-          }
-        });
-      }
-    );
+    // 메시지 리스너 - 최근 메시지만 구독(이전 대화는 '이전 대화 더 보기'로 불러옴)
+    if (_curChatRoomId !== roomId) return; // 그 사이 다른 방을 열었으면 이 방 리스너는 만들지 않음
+    _kchatSubscribe(roomId, KCHAT_PAGE);
   }).catch(function(e){
     console.error(e);
     alert('대화방 로드 실패: '+e.message);
@@ -17036,13 +17087,13 @@ function renderKChatMessages(msgs) {
     return;
   }
   var totalParticipants = (_curChatRoomMeta && _curChatRoomMeta.participants || []).length;
-  var out = '';
+  var out = _kchatHasMore ? '<div style="text-align:center;padding:10px 0 4px;"><button type="button" onclick="loadOlderKChat()" style="padding:6px 14px;border-radius:14px;border:1px solid var(--border);background:var(--surface);color:var(--tx2);font-size:12px;cursor:pointer;">이전 대화 더 보기</button></div>' : '';
   var lastDate = '', lastSender = '', lastMinute = '';
   for (var i=0; i<msgs.length; i++) {
     var m = msgs[i];
     var ts = m.createdAt ? m.createdAt.toDate() : new Date();
-    var dateStr = ts.toLocaleDateString('ko-KR', {year:'numeric', month:'long', day:'numeric', weekday:'long'});
-    var timeStr = ts.toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'});
+    var dateStr = _kchatFmtDate(ts);
+    var timeStr = _kchatFmtTime(ts);
     var minuteKey = ts.getFullYear()+'-'+ts.getMonth()+'-'+ts.getDate()+'-'+ts.getHours()+'-'+ts.getMinutes();
     if (dateStr !== lastDate) {
       out += '<div class="kchat-date"><span>'+dateStr+'</span></div>';
@@ -17062,7 +17113,7 @@ function renderKChatMessages(msgs) {
     var avatarStyle = '';
     if (m.senderAvatar) {
       if (m.senderAvatar.type === 'image') {
-        avatarStyle = 'background-image:url(\''+m.senderAvatar.value+'\');background-size:cover;background-position:center;background-color:transparent;';
+        avatarStyle = 'background-image:url(\''+_thumbUrl(m.senderAvatar.value, 36)+'\');background-size:cover;background-position:center;background-color:transparent;';
         avatarText = '';
       } else if (m.senderAvatar.type === 'emoji') {
         avatarText = m.senderAvatar.value;
@@ -17098,7 +17149,12 @@ function renderKChatMessages(msgs) {
     lastSender = m.senderUid;
     lastMinute = minuteKey;
   }
+  // 내용이 그대로면(읽음 표시만 내 쪽에서 반영된 경우 등) DOM을 새로 만들지 않음 - 스크롤·입력 끊김 방지
+  if (out === _kchatLastHtml && area.querySelector('.kchat-row')) return;
+  _kchatLastHtml = out;
+  var srch = document.getElementById('kchat-msg-search');
   area.innerHTML = out;
+  if (srch && srch.value && window.filterKChatMessages) filterKChatMessages(srch.value);
 }
 
 window.filterKChatMessages = function(q) {
