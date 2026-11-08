@@ -708,6 +708,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',san
 .kchat-placeholder{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 24px;text-align:center;}
 .kchat-file-prev{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--surface2);border-top:1px solid var(--border);}
 
+.kchat-row{content-visibility:auto;contain-intrinsic-size:auto 52px;}
 .kchat-input-area{display:flex;gap:6px;align-items:flex-end;padding:9px 10px;background:var(--surface);border-top:1px solid var(--border);flex-shrink:0;}
 .kchat-attach{background:none;border:none;color:var(--tx3);cursor:pointer;padding:6px;display:flex;align-items:center;justify-content:center;border-radius:50%;flex-shrink:0;}
 
@@ -16660,7 +16661,11 @@ function _kchatScheduleRender(msgs){
     var keepTop = area._kchatKeepTop;
     renderKChatMessages(_kchatLastMsgs);
     if (keepTop) { area.scrollTop = area.scrollHeight - prevH + prevTop; area._kchatKeepTop = false; }
-    else if (wasBottom || firstRender) area.scrollTop = area.scrollHeight;
+    else if (wasBottom || firstRender) {
+      area.scrollTop = area.scrollHeight;
+      // 화면 밖 메시지는 실제 크기를 늦게 계산하므로(content-visibility) 한 프레임 뒤 한 번 더 맨 아래로
+      requestAnimationFrame(function(){ area.scrollTop = area.scrollHeight; });
+    }
   });
 }
 window.loadOlderKChat = function(){
@@ -17086,7 +17091,22 @@ window.kchatKey = function(e){
   if (e.shiftKey || touch) return;
   e.preventDefault(); sendKChatMsg();
 };
-window.kchatGrow = function(el){ if(!el) return; el.style.height='auto'; el.style.height=Math.min(120, el.scrollHeight)+'px'; };
+// 입력할 때마다 높이를 'auto'로 풀었다가 다시 재면 채팅 화면 전체를 두 번씩 다시 계산함(휴대폰에서 글자마다 버벅임).
+// → 한 프레임에 한 번만, 그리고 줄 수가 바뀔 수 있을 때(넘침·글자 줄어듦·비움)만 다시 잼
+window.kchatGrow = function(el){
+  if(!el) return;
+  var len = el.value.length, prev = el._kgLen == null ? -1 : el._kgLen;
+  el._kgLen = len;
+  if (el._kgRaf) return;
+  el._kgRaf = requestAnimationFrame(function(){
+    el._kgRaf = null;
+    var shrink = el.value.length < prev || !el.value;
+    if (!shrink && el.scrollHeight <= el.clientHeight + 1) return; // 줄이 안 늘었으면 아무것도 안 함
+    if (shrink) el.style.height = 'auto';
+    var h = Math.min(120, el.scrollHeight) + 'px';
+    if (el.style.height !== h) el.style.height = h;
+  });
+};
 
 // 메시지 렌더 (그룹핑 + 읽음 표시)
 function renderKChatMessages(msgs) {
@@ -19569,8 +19589,9 @@ function MP_ttTick(){
   if(chip) chip.style.display='';
   MP_ttLoad();
   var sec=ttNowSec(), st=MPC.ttState(MP_TT.blocks,sec);
-  var ct=document.getElementById('mp-tt-chip-txt'); if(ct) ct.textContent=ttChipText(st);
-  ttUpdatePanel(st,sec);
+  // 매초 같은 글자를 다시 써 넣으면 화면 전체가 다시 계산돼서(특히 휴대폰) 채팅 입력 등이 1초마다 끊김 → 바뀐 경우에만 씀
+  var ct=document.getElementById('mp-tt-chip-txt'); if(ct){ var _ctx=ttChipText(st); if(ct.textContent!==_ctx) ct.textContent=_ctx; }
+  var _pc=document.getElementById('mp-tt-clk'); if(_pc && _pc.offsetParent) ttUpdatePanel(st,sec);
   var due=MPC.ttDue(MP_TT.blocks,sec,document.hidden?120:15);
   if(due){
     var key=ttDateKey()+'|'+due.s;
