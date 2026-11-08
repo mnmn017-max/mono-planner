@@ -1,5 +1,5 @@
 // /api/word-late-reminders.js
-// 단어 Test 밀린 시험 자동 알림 (Vercel Cron, 매일 16:00 KST)
+// 단어 Test 밀린 시험 자동 알림 (Vercel Cron, 매일 20:00 KST)
 //  - 배정일(date)이 오늘(KST)보다 이전인데 아직 안 본(status=='assigned') 시험을 학생별로 모아 1건 푸시
 //  - 시리즈 규칙 lateAlert=false 인 시험은 제외
 //  - 같은 날 두 번 실행돼도 중복 발송하지 않음(lateRemindOn 기록)
