@@ -710,7 +710,7 @@
   }
   function rvWord(box) {
     var t = testById(S.resTestId); if (!t) { box.innerHTML = emptyCard('결과가 생기면 단어별 오답률을 볼 수 있어요.'); return; }
-    var fm = firstResultMap(), rs = D.assigns.filter(function (a) { return a.testId === t.id; }).map(function (a) { return fm[a.id]; }).filter(Boolean);
+    var fm = firstResultMap(), rs = D.assigns.filter(function (a) { return a.testId === t.id && a.kind !== 'retest'; }).map(function (a) { return fm[a.id]; }).filter(Boolean);
     if (!rs.length) { box.innerHTML = emptyCard('아직 응시한 학생이 없어요.'); return; }
     var stat = (t.words || []).map(function (w) {
       var wrong = 0, picks = {};
@@ -747,10 +747,10 @@
     var tests = folderTests(fid).filter(function (t) { return D.assigns.some(function (a) { return a.testId === t.id; }); }).slice(-10);
     var fm = firstResultMap();
     var stuSet = {};
-    D.assigns.forEach(function (a) { if (tests.some(function (t) { return t.id === a.testId; })) stuSet[a.studentUid] = a.studentName || stuName(a.studentUid); });
+    D.assigns.forEach(function (a) { if (a.kind !== 'retest' && tests.some(function (t) { return t.id === a.testId; })) stuSet[a.studentUid] = a.studentName || stuName(a.studentUid); });
     var uids = Object.keys(stuSet).sort(function (a, b) { return stuSet[a].localeCompare(stuSet[b], 'ko'); });
     function cell(uid, t) {
-      var a = D.assigns.filter(function (x) { return x.testId === t.id && x.studentUid === uid; })[0];
+      var a = D.assigns.filter(function (x) { return x.testId === t.id && x.studentUid === uid && x.kind !== 'retest'; })[0];
       if (!a) return '<div class="wt-hm-cell" style="background:transparent"></div>';
       var r = fm[a.id];
       if (!r) return '<div class="wt-hm-cell" style="background:repeating-linear-gradient(45deg,#EFEAE7 0 5px,#F7F3F1 5px 10px);color:#A89898;box-shadow:inset 0 0 0 1px #E6DED9">–</div>';
@@ -896,7 +896,7 @@
     // 학생별 틀린 단어
     var perStu = {}, wordCnt = {}, ko = {}, names = {};
     D.assigns.forEach(function (a) {
-      if (selIds.indexOf(a.testId) < 0) return; if (S.rvOnly && a.studentUid !== S.rvOnly) return;
+      if (selIds.indexOf(a.testId) < 0 || a.kind === 'retest') return; if (S.rvOnly && a.studentUid !== S.rvOnly) return;
       var r = fm[a.id]; if (!r) return; names[a.studentUid] = a.studentName || stuName(a.studentUid);
       (r.answers || []).forEach(function (x) {
         var bad = !x.ok && (S.rvMode === 3 || !x.unknown);
@@ -1208,7 +1208,7 @@
       + '<text x="' + f(p0[0]) + '" y="' + f(p0[1] + 24) + '" text-anchor="middle" font-size="11" fill="#A89898" font-family="Noto Sans KR">0</text><text x="' + f(p1[0]) + '" y="' + f(p1[1] + 24) + '" text-anchor="middle" font-size="11" fill="#A89898" font-family="Noto Sans KR">' + total + '</text></svg></div>';
   }
   function showResult(res, retest) {
-    var mob = U.isMobile(), ok = res.passed, name = (res.studentName || '').replace(/^.(?=..)/, '');
+    var mob = U.isMobile(), ok = res.passed, name = /^[가-힣]{3}$/.test(res.studentName || '') ? res.studentName.slice(1) : '';
     var wrong = res.answers.filter(function (x) { return !x.ok; });
     var gauge = '<div class="card" style="padding:' + (mob ? '18px 14px 16px' : '26px 20px 22px') + ';display:flex;flex-direction:column;align-items:center;gap:8px;flex:none">' + arc(res.score, res.total, res.cut, ok, mob ? 260 : 320)
       + '<div class="col" style="align-items:center;gap:4px;text-align:center"><span class="serif" style="font-size:' + (mob ? 22 : 26) + 'px">' + (ok ? '통과했어요' + (name ? ', ' + esc(name) : '') : (res.cut - res.score) + '개만 더 맞히면 통과') + '</span><span style="font-size:12px;color:#7A6060">' + (ok ? (res.score === res.total ? '만점이에요! · ' : '커트보다 ' + (res.score - res.cut) + '개 더 맞혔어요 · ') + U.fmtSec(res.timeSec) : '틀린 단어만 다시 보면 금방이에요') + '</span></div></div>';
