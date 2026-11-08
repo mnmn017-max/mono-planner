@@ -545,7 +545,7 @@
       + '<div style="' + rowS + '">' + lab('하루에') + '<div class="row"><button type="button" class="ib" data-per="-1" aria-label="줄이기" style="width:34px;height:34px">−</button><span class="serif" style="font-size:18px;width:30px;text-align:center">' + SC.perDay + '</span><button type="button" class="ib" data-per="1" aria-label="늘리기" style="width:34px;height:34px">+</button><span style="font-size:13px">개씩</span></div></div>'
       + '<div style="' + rowS + '">' + lab('공개 · 마감') + '<select class="inp" data-k="hour" style="height:38px;padding:0 10px;font-size:13px;font-weight:700">' + [0, 6, 8, 10, 12, 14, 15, 16, 17, 18, 19, 20].map(function (h) { return '<option value="' + h + '"' + (h === SC.hour ? ' selected' : '') + '>' + (h === 0 ? '자정' : (h < 12 ? '오전 ' + h : '오후 ' + (h === 12 ? 12 : h - 12)) + '시') + '에 공개</option>'; }).join('') + '</select><span style="font-size:12.5px;color:#5A4848">그날 자정까지</span></div>'
       + '</div><div class="card" style="overflow:hidden">'
-      + [['retestFirst', '통과 못 하면 재시험부터', '틀린 단어 재시험을 통과해야 다음 날 시험이 열려요'], ['review5', '5개마다 오답 모음 넣기', '그동안 틀린 단어만 모아 자동으로 끼워 넣어요'], ['lateAlert', '밀린 시험 표시', '하루라도 안 보면 현황표와 홈 KPI에 밀림으로 표시해요']].map(function (r) {
+      + [['retestFirst', '통과 못 하면 재시험부터', '틀린 단어 재시험을 통과해야 다음 날 시험이 열려요'], ['review5', '5개마다 오답 모음 넣기', '그동안 틀린 단어만 모아 자동으로 끼워 넣어요'], ['lateAlert', '밀린 시험 알림', '하루라도 안 보면 밀림으로 표시하고, 매일 오후 4시에 학생 폰으로 알림을 보내요']].map(function (r) {
         return '<div style="' + rowS + '"><div class="col" style="flex:1;gap:2px"><span style="font-size:13.5px;font-weight:800">' + r[1] + '</span><span style="font-size:11.5px;color:#8A7B7B">' + r[2] + '</span></div><button type="button" class="tog' + (SC[r[0]] ? '' : ' off') + '" data-tog="' + r[0] + '" aria-label="' + r[1] + '"><i></i></button></div>';
       }).join('') + '</div></div>';
     box.innerHTML = '<div style="display:grid;grid-template-columns:minmax(0,320px) minmax(0,1fr);gap:14px;align-items:start" class="wt-sc-grid">' + left + right + '</div><style>@media(max-width:900px){.wt-sc-grid{grid-template-columns:1fr!important}}</style>';
@@ -735,11 +735,28 @@
     '선명하게': { full: '#0E7A3D', pass: '#A6DDB8', near: '#FFB34D', far: '#C0262D' },
     '색약 배려': { full: '#1E5AA8', pass: '#CFE0F5', near: '#F2B25C', far: '#6B3FA0' }
   };
+  var HM_KEY = 'wt_hm_v1', hmTimer = null;
   function hmCfg() {
-    var c = null; try { c = JSON.parse(localStorage.getItem('wt_hm_v1') || 'null'); } catch (e) { }
-    return c || { preset: '기본', colors: HM_PRESETS['기본'], near: 3, auto: true, panel: true };
+    var c = null, me = null;
+    try { me = ME(); } catch (e) { }
+    var acc = me && me.profile ? me.profile.wtHeatmap : undefined;
+    if (acc && acc.colors) c = acc;
+    else if (acc === undefined) { try { c = JSON.parse(localStorage.getItem(HM_KEY) || 'null'); } catch (e) { } }
+    c = c ? JSON.parse(JSON.stringify(c)) : null;
+    return c || { preset: '기본', colors: Object.assign({}, HM_PRESETS['기본']), near: 3, auto: true, panel: true };
   }
-  function hmSave(c) { try { localStorage.setItem('wt_hm_v1', JSON.stringify(c)); } catch (e) { } }
+  /* 계정(users 문서)에 저장 → 같은 계정이면 어느 기기에서나 같은 색 */
+  function hmSave(c) {
+    try { if (c) localStorage.setItem(HM_KEY, JSON.stringify(c)); else localStorage.removeItem(HM_KEY); } catch (e) { }
+    var me = null; try { me = ME(); } catch (e) { }
+    if (!me || !me.uid) return;
+    if (me.profile) me.profile.wtHeatmap = c || null;
+    clearTimeout(hmTimer);
+    hmTimer = setTimeout(function () {
+      F().updateDoc(F().doc(F().db, 'users', me.uid), { wtHeatmap: c || null })
+        .catch(function () { U.toast('색상 설정을 계정에 저장하지 못했어요'); });
+    }, 400);
+  }
   function lum(hex) { var n = parseInt(hex.slice(1), 16); var r = n >> 16 & 255, g = n >> 8 & 255, b = n & 255; return (0.299 * r + 0.587 * g + 0.114 * b) / 255; }
   function rvHeat(box) {
     var cfg = hmCfg(), C = cfg.colors;
@@ -779,7 +796,7 @@
     box.querySelectorAll('[data-col]').forEach(function (inp) { inp.onchange = function () { cfg.colors = Object.assign({}, cfg.colors); cfg.colors[inp.dataset.col] = inp.value; cfg.preset = '직접'; hmSave(cfg); render(); }; });
     var nr = box.querySelector('[data-near]'); if (nr) nr.onchange = function () { cfg.near = Math.max(1, Math.min(10, nr.value | 0)); hmSave(cfg); render(); };
     var au = box.querySelector('[data-auto]'); if (au) au.onclick = function () { cfg.auto = !cfg.auto; hmSave(cfg); render(); };
-    var rsb = box.querySelector('[data-reset]'); if (rsb) rsb.onclick = function () { hmSave(null); try { localStorage.removeItem('wt_hm_v1'); } catch (e) { } render(); };
+    var rsb = box.querySelector('[data-reset]'); if (rsb) rsb.onclick = function () { hmSave(null); render(); };
   }
 
   /* --- 미통과 알림 (왼쪽 알림함 A + 가운데 재시험 만들기 + 오른쪽 받는 순서 B) */
