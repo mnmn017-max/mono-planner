@@ -190,6 +190,16 @@
   };
   WT.DB = DB;
   /* 통과 기준: cutWrong(틀려도 되는 개수)이 있으면 그것을, 없으면 cutN · cutPct(%) 순서로 */
+  /* 재시험 커트라인: 시험의 reCut {mode:'same'|'all'|'wrong'|'pct', v} → 재시험 배정에 넣을 값 */
+  WT.retestCut = function (a) {
+    var r = a.reCut || null, base = { cutWrong: a.cutWrong != null ? a.cutWrong : null, cutPct: a.cutPct != null ? a.cutPct : 80 };
+    if (!r || r.mode === 'same') return base;
+    if (r.mode === 'all') return { cutWrong: 0, cutPct: 100 };
+    if (r.mode === 'wrong') return { cutWrong: Math.max(0, +r.v || 0), cutPct: base.cutPct };
+    if (r.mode === 'pct') return { cutWrong: null, cutPct: Math.max(0, Math.min(100, +r.v || 80)) };
+    return base;
+  };
+  WT.retestLabel = function (r) { if (!r || r.mode === 'same') return '본 시험과 같게'; if (r.mode === 'all') return '전부 맞혀야 통과'; if (r.mode === 'wrong') return '오답 ' + r.v + '개까지'; return r.v + '% 이상'; };
   WT.cutCount = function (n, o) {
     o = o || {};
     if (o.cutWrong != null && o.cutWrong !== '') return Math.max(0, n - (+o.cutWrong));
@@ -318,7 +328,7 @@
       var tot = Math.max(1, as.length);
       var st = !as.length ? ['예약 전', 't-wait'] : (w ? ['진행 중', 't-run'] : ['완료', 't-pass']);
       return '<tr><td><div class="col" style="gap:2px"><b style="font-size:13.5px">' + esc(t.title) + '</b><span style="font-size:11px;color:#8A7B7B">' + (t.words || []).length + '단어' + (S.folderId === 'all' && folderById(t.folderId) ? ' · ' + esc(folderById(t.folderId).name) : '') + (t.kind === 'review' ? ' · 오답 시험' : '') + '</span></div></td>'
-        + '<td>' + (t.type === 'sa' ? '주관식' : '객관식') + '</td><td>' + cutOf(t) + ' / ' + (t.words || []).length + '</td>'
+        + '<td>' + (t.type === 'sa' ? '주관식' : '객관식') + '</td><td>' + cutOf(t) + ' / ' + (t.words || []).length + (t.reCut && t.reCut.mode !== 'same' ? '<div style="font-size:10.5px;color:#8A7B7B;margin-top:1px">재시험 ' + esc(WT.retestLabel(t.reCut)) + '</div>' : '') + '</td>'
         + '<td style="min-width:150px"><div class="row" style="gap:8px"><span style="flex:1;height:6px;border-radius:3px;background:#F1EAE8;display:flex;overflow:hidden;box-shadow:inset 0 1px 1px rgba(0,0,0,.06)"><span style="width:' + (p / tot * 100) + '%;background:#1B6B3A"></span><span style="width:' + (fl / tot * 100) + '%;background:#C25555"></span></span><span style="font-size:11px;font-weight:800;white-space:nowrap">' + (p + fl) + '/' + as.length + '</span></div></td>'
         + '<td><span class="tag ' + st[1] + '">' + st[0] + '</span></td>'
         + '<td style="text-align:right;white-space:nowrap"><button type="button" class="ib" data-print="' + t.id + '" aria-label="인쇄" title="시험지 인쇄" style="width:32px;height:32px;border-radius:9px">' + sv('print', '#7B1D1D', 14) + '</button> <button type="button" class="ib" data-edit="' + t.id + '" aria-label="수정" style="width:32px;height:32px;border-radius:9px">' + sv('edit', '#5A4848', 13) + '</button> <button type="button" class="ib" data-deltest="' + t.id + '" aria-label="삭제" style="width:32px;height:32px;border-radius:9px">' + sv('trash', '#9C2F2F', 13) + '</button></td></tr>';
@@ -401,23 +411,40 @@
 
   function editTest(t) {
     var m = U.modal({ title: '시험 수정', eyebrow: 'EDIT', width: 640 });
-    var type = t.type || 'mc', pct = t.cutPct != null ? t.cutPct : 80, cmode = t.cutWrong != null ? 'w' : 'p', wrong = t.cutWrong != null ? t.cutWrong : 2;
+    var type = t.type || 'mc', pct = t.cutPct != null ? t.cutPct : 80, cmode = t.cutWrong != null ? 'w' : 'p', wrong = t.cutWrong != null ? t.cutWrong : 2, re = Object.assign({ mode: 'same', v: '' }, t.reCut || {});
     var wordsTxt = (t.words || []).map(function (w) { return w.en + '\t' + w.ko; }).join('\n');
     m.body.innerHTML = '<div class="col" style="gap:14px">'
       + '<label class="col" style="gap:6px"><span style="font-size:12px;font-weight:800;color:#5A4848">시험 이름</span><input class="inp" id="wt-et" value="' + esc(t.title) + '" style="height:44px;padding:0 14px;font-size:14px;font-weight:700"></label>'
       + '<div class="row" style="gap:12px;flex-wrap:wrap"><div class="col" style="gap:6px"><span style="font-size:12px;font-weight:800;color:#5A4848">유형</span><div class="well seg"><button type="button" data-ty="mc" class="' + (type === 'mc' ? 'on' : '') + '">객관식 5지선다</button><button type="button" data-ty="sa" class="' + (type === 'sa' ? 'on' : '') + '">주관식</button></div></div>'
       + '<div class="col" style="gap:6px"><span style="font-size:12px;font-weight:800;color:#5A4848">커트라인</span><div class="row" style="gap:8px;flex-wrap:wrap"><div class="well seg"><button type="button" data-cm="w" class="' + (cmode === 'w' ? 'on' : '') + '">오답 개수</button><button type="button" data-cm="p" class="' + (cmode === 'p' ? 'on' : '') + '">% 기준</button></div><span class="row" data-cmw style="gap:6px;' + (cmode === 'w' ? '' : 'display:none') + '"><span style="font-size:13px">오답</span><input class="inp" id="wt-ew2" type="number" min="0" max="50" value="' + wrong + '" style="width:64px;height:42px;padding:0 8px;font-size:14px;font-weight:800;text-align:center"><span style="font-size:13px">개까지 통과</span></span><span class="row" data-cmp style="gap:6px;' + (cmode === 'p' ? '' : 'display:none') + '"><input class="inp" id="wt-ep" type="number" min="0" max="100" value="' + pct + '" style="width:80px;height:42px;padding:0 10px;font-size:14px;font-weight:800;text-align:center"><span style="font-size:13px">% 이상 통과</span></span></div></div>'
+      + '<div class="col" style="gap:6px;flex-basis:100%"><span style="font-size:12px;font-weight:800;color:#5A4848">재시험 커트라인 <span style="font-weight:500;color:#8A7B7B">· 틀린 단어만 모아 보는 재시험의 통과 기준</span></span><div class="row" style="gap:8px;flex-wrap:wrap"><div class="well seg scroll">' + [['same', '본 시험과 같게'], ['all', '전부 맞혀야'], ['wrong', '오답 개수'], ['pct', '% 기준']].map(function (o) { return '<button type="button" data-re="' + o[0] + '" class="' + (re.mode === o[0] ? 'on' : '') + '">' + o[1] + '</button>'; }).join('') + '</div>'
+        + '<span class="row" data-rew style="gap:6px;' + (re.mode === 'wrong' ? '' : 'display:none') + '"><span style="font-size:13px">오답</span><input class="inp" id="wt-rew" type="number" min="0" max="20" value="' + (re.mode === 'wrong' ? re.v : 1) + '" style="width:64px;height:42px;padding:0 8px;font-size:14px;font-weight:800;text-align:center"><span style="font-size:13px">개까지 통과</span></span>'
+        + '<span class="row" data-rep style="gap:6px;' + (re.mode === 'pct' ? '' : 'display:none') + '"><input class="inp" id="wt-rep" type="number" min="0" max="100" value="' + (re.mode === 'pct' ? re.v : 80) + '" style="width:80px;height:42px;padding:0 10px;font-size:14px;font-weight:800;text-align:center"><span style="font-size:13px">% 이상 통과</span></span></div></div>'
       + '<div class="col" style="gap:6px"><span style="font-size:12px;font-weight:800;color:#5A4848">폴더</span><select class="inp" id="wt-ef" style="height:42px;padding:0 10px;font-size:13px">' + D.folders.map(function (f) { return '<option value="' + f.id + '"' + (f.id === t.folderId ? ' selected' : '') + '>' + esc((f.grade ? f.grade + ' · ' : '') + f.name) + '</option>'; }).join('') + '</select></div></div>'
       + '<label class="col" style="gap:6px"><span style="font-size:12px;font-weight:800;color:#5A4848">단어 (한 줄에 하나 · 영어 뜻)</span><textarea class="inp" id="wt-ew" style="height:240px;padding:12px;font:13px/1.7 \'JetBrains Mono\',monospace;resize:vertical">' + esc(wordsTxt) + '</textarea></label></div>';
     m.body.querySelectorAll('[data-ty]').forEach(function (b) { b.onclick = function () { type = b.dataset.ty; m.body.querySelectorAll('[data-ty]').forEach(function (x) { x.classList.toggle('on', x === b); }); }; });
     m.body.querySelectorAll('[data-cm]').forEach(function (b) { b.onclick = function () { cmode = b.dataset.cm; m.body.querySelectorAll('[data-cm]').forEach(function (x) { x.classList.toggle('on', x === b); }); m.body.querySelector('[data-cmw]').style.display = cmode === 'w' ? '' : 'none'; m.body.querySelector('[data-cmp]').style.display = cmode === 'p' ? '' : 'none'; }; });
-    m.foot.innerHTML = '<button type="button" class="s" data-n style="height:44px;padding:0 16px">취소</button><button type="button" class="p" data-y style="height:44px;padding:0 20px">저장</button>';
+    m.body.querySelectorAll('[data-re]').forEach(function (b) { b.onclick = function () { re.mode = b.dataset.re; m.body.querySelectorAll('[data-re]').forEach(function (x) { x.classList.toggle('on', x === b); }); m.body.querySelector('[data-rew]').style.display = re.mode === 'wrong' ? '' : 'none'; m.body.querySelector('[data-rep]').style.display = re.mode === 'pct' ? '' : 'none'; }; });
+    var sibs = D.tests.filter(function (x) { return x.folderId === t.folderId && x.id !== t.id; });
+    m.foot.innerHTML = (sibs.length ? '<label class="row" style="gap:8px;margin-right:auto;font-size:12.5px;color:#5A4848;cursor:pointer"><input type="checkbox" id="wt-eall" style="width:18px;height:18px;accent-color:#7B1D1D">같은 폴더 시험 ' + sibs.length + '개에도 커트라인 똑같이 적용</label>' : '')
+      + '<button type="button" class="s" data-n style="height:44px;padding:0 16px">취소</button><button type="button" class="p" data-y style="height:44px;padding:0 20px">저장</button>';
     m.foot.querySelector('[data-n]').onclick = m.close;
     m.foot.querySelector('[data-y]').onclick = function () {
+      var reCut = re.mode === 'same' ? null : re.mode === 'all' ? { mode: 'all' } : re.mode === 'wrong' ? { mode: 'wrong', v: Math.max(0, Math.min(20, Math.round(+m.body.querySelector('#wt-rew').value || 0))) } : { mode: 'pct', v: Math.max(0, Math.min(100, Math.round(+m.body.querySelector('#wt-rep').value || 80))) };
+      var cutF = { cutPct: Math.max(0, Math.min(100, +m.body.querySelector('#wt-ep').value || 80)), cutWrong: cmode === 'w' ? Math.max(0, Math.min(50, Math.round(+m.body.querySelector('#wt-ew2').value || 0))) : null, reCut: reCut };
+      var all = m.body.ownerDocument.getElementById('wt-eall'), toAll = all && all.checked;
       var pw = WT.parseWords(m.body.querySelector('#wt-ew').value);
       if (!pw.words.length) { U.toast('단어가 없어요'); return; }
-      DB.upd('wordTests', t.id, { title: m.body.querySelector('#wt-et').value.trim() || t.title, type: type, cutPct: Math.max(0, Math.min(100, +m.body.querySelector('#wt-ep').value || 80)), cutWrong: cmode === 'w' ? Math.max(0, Math.min(50, Math.round(+m.body.querySelector('#wt-ew2').value || 0))) : null, folderId: m.body.querySelector('#wt-ef').value || t.folderId || null, words: pw.words })
-        .then(function () { m.close(); U.toast('저장했어요'); refresh(); });
+      DB.upd('wordTests', t.id, { title: m.body.querySelector('#wt-et').value.trim() || t.title, type: type, cutPct: cutF.cutPct, cutWrong: cutF.cutWrong, reCut: cutF.reCut, folderId: m.body.querySelector('#wt-ef').value || t.folderId || null, words: pw.words })
+        .then(function () {
+          var fb = F(), b = fb.writeBatch(fb.db);
+          if (toAll) sibs.forEach(function (x) { b.update(fb.doc(fb.db, 'wordTests', x.id), cutF); });
+          // 아직 안 본 배정도 같은 기준으로
+          var ids = (toAll ? sibs.map(function (x) { return x.id; }) : []).concat([t.id]);
+          D.assigns.filter(function (a) { return a.status === 'assigned' && a.kind !== 'retest' && ids.indexOf(a.testId) >= 0; }).slice(0, 450).forEach(function (a) { b.update(fb.doc(fb.db, 'wordAssign', a.id), cutF); });
+          return b.commit();
+        })
+        .then(function () { m.close(); U.toast(toAll ? '저장했어요 · 같은 폴더 ' + sibs.length + '개에도 적용' : '저장했어요'); refresh(); });
     };
   }
 
@@ -549,7 +576,7 @@
       if (SC.days.indexOf(dow) >= 0) {
         if (SC.review5 && sinceReview.length >= 5) {
           var src = sinceReview.splice(0);
-          out.push({ date: d, kind: 'review', title: '오답 모음 (' + shortNo(src[0]) + '~' + shortNo(src[src.length - 1]) + ')', sourceTestIds: src.map(function (t) { return t.id; }), type: src[0].type, cutPct: src[0].cutPct, cutWrong: src[0].cutWrong != null ? src[0].cutWrong : null });
+          out.push({ date: d, kind: 'review', title: '오답 모음 (' + shortNo(src[0]) + '~' + shortNo(src[src.length - 1]) + ')', sourceTestIds: src.map(function (t) { return t.id; }), type: src[0].type, cutPct: src[0].cutPct, cutWrong: src[0].cutWrong != null ? src[0].cutWrong : null, reCut: src[0].reCut || null });
         } else {
           for (var n = 0; n < SC.perDay && k < tests.length; n++) { var t = tests[k++]; out.push({ date: d, kind: 'normal', test: t, title: t.title }); sinceReview.push(t); }
         }
@@ -644,7 +671,7 @@
       SC.students.forEach(function (uid) {
         pl.forEach(function (x, i) {
           var t = x.test || {};
-          list.push({ studentUid: uid, studentName: stuName(uid), testId: x.kind === 'normal' ? t.id : null, sourceTestIds: x.sourceTestIds || null, title: x.title, folderId: SC.folderId, type: (x.kind === 'normal' ? t.type : x.type) || 'mc', cutPct: (x.kind === 'normal' ? t.cutPct : x.cutPct) || 80, cutWrong: (x.kind === 'normal' ? t.cutWrong : x.cutWrong) != null ? (x.kind === 'normal' ? t.cutWrong : x.cutWrong) : null, total: x.kind === 'normal' ? (t.words || []).length : null, date: x.date, openAt: U.kstMs(x.date, SC.hour), dueAt: U.kstMs(x.date, 23, 59), status: 'assigned', kind: x.kind, seriesId: ref.id, seq: i, retestFirst: SC.retestFirst, teacherUid: me.uid, teacherName: (me.profile || {}).name || '', attempts: 0 });
+          list.push({ studentUid: uid, studentName: stuName(uid), testId: x.kind === 'normal' ? t.id : null, sourceTestIds: x.sourceTestIds || null, title: x.title, folderId: SC.folderId, type: (x.kind === 'normal' ? t.type : x.type) || 'mc', cutPct: (x.kind === 'normal' ? t.cutPct : x.cutPct) || 80, cutWrong: (x.kind === 'normal' ? t.cutWrong : x.cutWrong) != null ? (x.kind === 'normal' ? t.cutWrong : x.cutWrong) : null, reCut: (x.kind === 'normal' ? t.reCut : x.reCut) || null, total: x.kind === 'normal' ? (t.words || []).length : null, date: x.date, openAt: U.kstMs(x.date, SC.hour), dueAt: U.kstMs(x.date, 23, 59), status: 'assigned', kind: x.kind, seriesId: ref.id, seq: i, retestFirst: SC.retestFirst, teacherUid: me.uid, teacherName: (me.profile || {}).name || '', attempts: 0 });
         });
       });
       var chunks = []; for (var i = 0; i < list.length; i += 400) chunks.push(list.slice(i, i + 400));
@@ -1253,7 +1280,7 @@
       var retest = null;
       if (!passed && (a.kind !== 'retest' || a.autoNext !== false)) {
         var d = a.kind === 'retest' ? U.addDays(today, 1) : today;
-        retest = { studentUid: me.uid, studentName: res.studentName, testId: a.testId || null, title: String(a.title).replace(/\s*재시험$/, '') + ' 재시험', folderId: a.folderId || null, words: wrong, total: wrong.length, cutPct: a.cutPct != null ? a.cutPct : 80, cutWrong: a.cutWrong != null ? a.cutWrong : null, type: a.type || 'mc', date: d, openAt: a.kind === 'retest' ? U.kstMs(d, 0) : Date.now(), dueAt: U.kstMs(d, 23, 59), status: 'assigned', kind: 'retest', parentResultId: ref.id, parentAssignId: a.id, teacherUid: a.teacherUid || null, teacherName: a.teacherName || '', autoNext: true, auto: true, attempts: 0 };
+        retest = { studentUid: me.uid, studentName: res.studentName, testId: a.testId || null, title: String(a.title).replace(/\s*재시험$/, '') + ' 재시험', folderId: a.folderId || null, words: wrong, total: wrong.length, cutPct: WT.retestCut(a).cutPct, cutWrong: WT.retestCut(a).cutWrong, reCut: a.reCut || null, type: a.type || 'mc', date: d, openAt: a.kind === 'retest' ? U.kstMs(d, 0) : Date.now(), dueAt: U.kstMs(d, 23, 59), status: 'assigned', kind: 'retest', parentResultId: ref.id, parentAssignId: a.id, teacherUid: a.teacherUid || null, teacherName: a.teacherName || '', autoNext: true, auto: true, attempts: 0 };
         jobs.push(DB.add('wordAssign', retest));
       }
       if (!passed && a.teacherUid) F().push([a.teacherUid], '🔔 단어 Test 미통과', res.studentName + ' · ' + a.title + ' ' + score + '/' + n + ' (커트 ' + cut + ')', { type: 'wordtest' });
