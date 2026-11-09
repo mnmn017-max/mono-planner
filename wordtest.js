@@ -342,9 +342,20 @@
       };
     });
   }
+  /* 인쇄 모듈은 처음 누를 때만 받아 옴 (학생 기기에는 받지 않음) */
+  var _prLoad = null;
+  function loadPrintMods() {
+    if (WT.openPrint && WT.openReportPrint) return Promise.resolve();
+    if (_prLoad) return _prLoad;
+    var add = function (src) { return new Promise(function (ok, no) { var sc = document.createElement('script'); sc.src = src; sc.onload = ok; sc.onerror = function () { _prLoad = null; no(new Error('load')); }; document.head.appendChild(sc); }); };
+    var v = (document.querySelector('script[src*="/wordtest.js"]') || { src: '' }).src.split('?')[1] || '';
+    _prLoad = add('/wordprint.js?' + v).then(function () { return add('/wordreport.js?' + v); });
+    return _prLoad;
+  }
+  function withPrint(fn) { U.toast('인쇄 화면을 준비하고 있어요'); loadPrintMods().then(fn).catch(function () { U.toast('인쇄 기능을 불러오지 못했어요. 인터넷 연결을 확인해 주세요'); }); }
   function openPrintFor(t, preset, date) {
     if (!t) return;
-    if (!WT.openPrint) { U.toast('인쇄 기능을 불러오는 중이에요. 잠시 후 다시 눌러 주세요'); return; }
+    if (!WT.openPrint) { withPrint(function () { openPrintFor(t, preset, date); }); return; }
     var f = folderById(t.folderId), pool = [];
     D.tests.forEach(function (x) { if (x.folderId === t.folderId && x.id !== t.id) pool = pool.concat(x.words || []); });
     WT.openPrint({ test: t, folderName: f ? f.name : '', students: D.students, pickStudents: pickStudents, presetUids: preset || [], assignDate: date, extraPool: pool });
@@ -359,7 +370,7 @@
     };
   }
   function openReportFor(mode, testId, uids) {
-    if (!WT.openReportPrint) { U.toast('인쇄 기능을 불러오는 중이에요. 잠시 후 다시 눌러 주세요'); return; }
+    if (!WT.openReportPrint) { withPrint(function () { openReportFor(mode, testId, uids); }); return; }
     WT.openReportPrint({ ctx: reportCtx(), mode: mode, testId: testId, uids: uids || [], pickStudents: pickStudents });
   }
   function kp(k, v, sub, c) { return '<div class="card wt-kpi"><span style="font-size:11px;color:#8A7B7B">' + k + '</span><b style="color:' + c + '">' + v + '</b><span style="font-size:11px;color:#8A7B7B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(sub) + '</span></div>'; }

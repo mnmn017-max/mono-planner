@@ -1,0 +1,15679 @@
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, deleteField, collection, query, where, orderBy, onSnapshot, serverTimestamp, getDocs, limit, arrayUnion, increment, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
+import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDnAr8er9NTegYGfIeVErrC96zvO9JlvgQ",
+  authDomain: "mono-planner-75a60.firebaseapp.com",
+  projectId: "mono-planner-75a60",
+  storageBucket: "mono-planner-75a60.firebasestorage.app",
+  messagingSenderId: "948778604548",
+  appId: "1:948778604548:web:99470273105c125d41fd51"
+};
+const CLOUDINARY_CLOUD = 'dhoxxsyh4';
+
+// 시험 응시 화면용 브랜드 로고 (base64 인라인 - 외부 호스팅 의존 없이 항상 표시됨)
+const MONO_LOGO_DATAURI = '/mono-logo.png';
+const MONO_WATERMARK_DATAURI = '/mono-watermark.png';
+
+const LIGHTHOUSE_LOGO_DATAURI = '/lighthouse-logo.png';
+
+const CLOUDINARY_PRESET = 'Preset';
+
+// 채팅 파일 업로드/열람 공용 헬퍼 - PPT/DOCX 등 오피스 문서는 브라우저가 화면에 바로
+// 못 띄우는 형식이라, 그냥 링크로 열면 "안 열림"처럼 보임(빈 화면/오류). fl_attachment를
+// 붙여서 무조건 다운로드되게 만들면 어떤 파일이든 확실하게 받아서 열 수 있음.
+function _cloudinaryDownloadUrl(url){
+  if (!url) return url;
+  return url.replace('/upload/', '/upload/fl_attachment/');
+}
+// 프로필 사진은 원본(최대 5MB)이 그대로 올라가 있어서, 채팅·목록의 작은 동그라미에도 원본을 받아 그리느라 무거웠음 → Cloudinary 썸네일 주소로 바꿔 씀
+function _thumbUrl(url, px){
+  if (!url || typeof url !== 'string' || url.indexOf('res.cloudinary.com') < 0 || url.indexOf('/image/upload/') < 0) return url;
+  if (/\/image\/upload\/(c_|w_|h_)/.test(url)) return url;
+  var n = Math.max(64, Math.round((px||40) * 2));
+  return url.replace('/image/upload/', '/image/upload/c_fill,g_face,w_'+n+',h_'+n+',q_auto,f_auto/');
+}
+function _chatFileIcon(fileName){
+  var ext = (fileName||'').split('.').pop().toLowerCase();
+  var map = { pdf:'📕', ppt:'📊', pptx:'📊', doc:'📘', docx:'📘', xls:'📗', xlsx:'📗', zip:'🗜️', hwp:'📄' };
+  return map[ext] || '📎';
+}
+// 실제 파일 업로드 - Cloudinary 응답에 secure_url이 없으면(업로드 프리셋이 그 파일
+// 형식을 막아둔 경우 등) 조용히 깨진 메시지를 만들지 않고 명확히 실패를 알림
+// 채팅 첨부 용량: 10MB 이하는 기존처럼 Cloudinary(무료 요금제 파일당 10MB 한도),
+// 10MB 초과~100MB는 Firebase Storage(chatFiles/{방}/...)로 올린다.
+var CHAT_CLOUDINARY_MAX = 10*1024*1024, CHAT_FILE_MAX = 100*1024*1024;
+function _chatFileTooBig(file){
+  if (file.size <= CHAT_FILE_MAX) return false;
+  alert('⚠️ 파일 용량이 너무 큽니다 ('+(file.size/1024/1024).toFixed(1)+'MB)\n채팅에는 100MB 이하 파일만 보낼 수 있습니다. 압축하거나 나눠서 보내주세요.');
+  return true;
+}
+// 큰 파일을 Firebase Storage에 올리고 {url, path}를 돌려줌. onProgress(0~100)
+function _uploadBigChatFile(file, roomId, onProgress){
+  var safe = String(file.name || 'file').replace(/[\\/#?\[\]*]/g, '_').slice(-120);
+  var path = 'chatFiles/' + roomId + '/' + Date.now() + '_' + safe;
+  var meta = { contentType: file.type || 'application/octet-stream',
+    contentDisposition: "attachment; filename*=UTF-8''" + encodeURIComponent(file.name || 'file'),
+    customMetadata: { uploader: (currentUser && currentUser.uid) || '' } };
+  return new Promise(function(resolve, reject){
+    var task = uploadBytesResumable(storageRef(storage, path), file, meta);
+    task.on('state_changed', function(snap){
+      if (onProgress && snap.totalBytes) onProgress(Math.round(snap.bytesTransferred / snap.totalBytes * 100));
+    }, function(err){
+      var m = (err && err.code === 'storage/unauthorized') ? '저장소 권한이 없습니다(관리자: Firebase Storage 규칙 확인 필요)' : (err && err.message) || '알 수 없는 오류';
+      reject(new Error(m));
+    }, function(){
+      getDownloadURL(task.snapshot.ref).then(function(url){ resolve({ url: url, path: path }); }, reject);
+    });
+  });
+}
+function _uploadChatFileAndSend(file, roomId, onDone){
+  if (_chatFileTooBig(file)) return;
+  if (file.size > CHAT_CLOUDINARY_MAX) {
+    _uploadBigChatFile(file, roomId).then(function(r){
+      addDoc(collection(db,'chats',roomId,'messages'), {
+        fileUrl: r.url, filePath: r.path, fileName: file.name,
+        senderUid: currentUser.uid, senderName: currentProfile.name, createdAt: serverTimestamp()
+      });
+      if (onDone) onDone();
+    }).catch(function(e){ alert('⚠️ 파일 업로드 실패: ' + e.message); });
+    return;
+  }
+  var fd = new FormData();
+  fd.append('file', file);
+  fd.append('upload_preset', CLOUDINARY_PRESET);
+  fd.append('resource_type', 'auto');
+  var fname = file.name;
+  fetch('https://api.cloudinary.com/v1_1/'+CLOUDINARY_CLOUD+'/auto/upload', {method:'POST', body:fd})
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if (!data || !data.secure_url) {
+        var reason = (data && data.error && data.error.message) ? data.error.message : '알 수 없는 오류';
+        alert('⚠️ 파일 업로드에 실패했습니다: ' + reason + '\n(파일 형식이 지원되지 않거나 용량이 클 수 있습니다)');
+        return;
+      }
+      addDoc(collection(db,'chats',roomId,'messages'), {
+        fileUrl: data.secure_url, fileName: fname,
+        senderUid: currentUser.uid, senderName: currentProfile.name, createdAt: serverTimestamp()
+      });
+      if (onDone) onDone();
+    }).catch(function(e){
+      alert('⚠️ 파일 업로드 실패: ' + e.message);
+    });
+}
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const storage = getStorage(app);
+// [등불] deungbul.js가 사용할 Firestore 헬퍼 노출
+window.MP_FB = { db: db, doc: doc, getDoc: getDoc, setDoc: setDoc, addDoc: addDoc, updateDoc: updateDoc, deleteDoc: deleteDoc, deleteField: deleteField, collection: collection, query: query, where: where, getDocs: getDocs, serverTimestamp: serverTimestamp,
+  orderBy: orderBy, limit: limit, onSnapshot: onSnapshot, writeBatch: writeBatch, increment: increment, arrayUnion: arrayUnion,
+  me: function(){ return { uid: currentUser && currentUser.uid, profile: currentProfile, branch: getBranch() }; },
+  plannerDate: function(){ return getPlannerDate(); },
+  loadStudents: function(){ return loadStudentList(); },
+  push: function(uids, title, body, data){ try { _sendPushNotification(uids, title, body, data); } catch(e) {} } };
+const messaging = getMessaging(app);
+
+const FCM_VAPID_KEY = 'BKnAS5VGPO1l5T4jLtIHGmIsx3WnrCQEyeWvyKcouMKzfPZ4vAtCoSgzg-PHydj2uvuFERpry6g4V7uctslDTe4';
+// 서비스워커(firebase-messaging-sw.js) 파일을 고쳐서 새로 올릴 때마다 이 숫자를 1씩 올려주세요.
+// 이러면 vercel.json에 캐시 헤더를 따로 설정하지 않아도, 브라우저가 주소가 바뀐 걸 보고
+// "새 파일"로 인식해서 캐시 없이 무조건 새로 받아옵니다 (가장 간단한 방법).
+const SW_VERSION = 5;
+// Firebase 콘솔 → 프로젝트 설정 → 클라우드 메시징 → 서버 키
+var _FCM_SERVER_KEY = 'YOUR_SERVER_KEY_HERE';
+
+// FCM 토큰 등록 및 Firestore 저장
+// isUserGesture=true 일 때만 실제로 권한을 "요청"함 (iOS는 사용자 제스처 없이 요청하면 조용히 실패/거부됨)
+// 이미 권한이 허용된 상태라면 언제 호출해도 조용히 토큰을 갱신함
+async function registerFCMToken(uid, isUserGesture) {
+  try {
+    if (!('Notification' in window)) { console.warn('[FCM] 이 브라우저는 알림을 지원하지 않습니다.'); return; }
+    if (!('serviceWorker' in navigator)) { console.warn('[FCM] 이 브라우저는 서비스워커를 지원하지 않습니다.'); return; }
+
+    var currentPermission = Notification.permission;
+    console.log('[FCM] 현재 권한 상태:', currentPermission, '/ 사용자 제스처:', !!isUserGesture);
+
+    if (currentPermission === 'denied') {
+      console.warn('[FCM] 알림 권한이 차단되어 있습니다. 기기 설정에서 직접 허용해야 합니다.');
+      _updateNotifBanner('denied');
+      return;
+    }
+
+    if (currentPermission === 'default') {
+      if (!isUserGesture) {
+        // 사용자 제스처 없이 자동 요청하면 iOS 등에서 신뢰성이 떨어짐 - 배너로 유도만 하고 여기서 멈춤
+        console.log('[FCM] 아직 권한 요청 전 - 배너를 통해 사용자가 직접 눌러야 함');
+        _updateNotifBanner('default');
+        return;
+      }
+      var permission = await Notification.requestPermission();
+      console.log('[FCM] 권한 요청 결과:', permission);
+      if (permission !== 'granted') { _updateNotifBanner(permission); return; }
+    }
+
+    // 서비스워커 등록 + "활성화"까지 확실히 대기 (등록만 되고 미활성 상태에서 토큰 요청하면 실패하는 기기가 있음)
+    // updateViaCache:'none' - 브라우저가 이 파일을 캐싱하지 않고 매번 최신 버전을 확인하도록 강제
+    // (안 그러면 서버 파일을 고쳐도 오래된 버전이 계속 남아있는 기기가 생김)
+    var swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js?v=' + SW_VERSION, { updateViaCache: 'none' });
+    console.log('[FCM] 서비스워커 등록 완료, 활성화 대기 중...');
+    // 새 버전이 있는지 매번 명시적으로 한 번 더 확인 (skipWaiting/clients.claim과 짝을 이룸)
+    swRegistration.update().catch(function(){});
+    await navigator.serviceWorker.ready;
+    console.log('[FCM] 서비스워커 활성화 완료');
+
+    var token = await getToken(messaging, { vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: swRegistration });
+    if (!token) { console.error('[FCM] 토큰 발급 실패 (빈 토큰)'); _updateNotifBanner('token-failed'); return; }
+
+    console.log('[FCM] 토큰 발급 성공:', token.slice(0, 20) + '...');
+    var userDoc = await getDoc(doc(db, 'users', uid));
+    if (userDoc.exists() && userDoc.data().fcmToken === token) {
+      console.log('[FCM] 기존 토큰과 동일 - 갱신 불필요');
+    } else {
+      await updateDoc(doc(db, 'users', uid), { fcmToken: token, fcmTokenUpdatedAt: serverTimestamp() }).catch(function(){
+        return setDoc(doc(db, 'users', uid), { fcmToken: token, fcmTokenUpdatedAt: serverTimestamp() }, { merge: true });
+      });
+      console.log('[FCM] 토큰 Firestore 저장 완료');
+    }
+    _updateNotifBanner('granted');
+  } catch(e) {
+    console.error('[FCM] registerFCMToken 오류:', e);
+    _updateNotifBanner('error');
+  }
+}
+
+// 알림 배너 상태 업데이트 (사용자에게 명확히 안내) - 학생/선생님 화면 둘 다 반영
+function _updateNotifBanner(state) {
+  var banners = [document.getElementById('notif-permission-banner'), document.getElementById('notif-permission-banner-t')];
+  banners.forEach(function(banner){
+    if (!banner) return;
+    if (state === 'default') {
+      banner.style.display = 'flex';
+      banner.innerHTML = '<span>🔔 채팅 알림을 받으려면 눌러서 허용해주세요</span><button onclick="enableNotificationsNow()" style="background:#fff;color:var(--burg);border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">알림 켜기</button>';
+    } else if (state === 'denied') {
+      banner.style.display = 'flex';
+      banner.innerHTML = '<span>🔕 알림이 차단되어 있습니다. 기기 설정에서 이 앱의 알림을 허용해주세요.</span><button onclick="this.parentElement.style.display=\'none\'" style="background:none;border:none;color:#fff;font-size:16px;cursor:pointer;">✕</button>';
+    } else {
+      banner.style.display = 'none';
+    }
+  });
+}
+
+// 배너의 "알림 켜기" 버튼 클릭 시 - 실제 사용자 제스처이므로 여기서 권한을 요청
+window.enableNotificationsNow = function() {
+  if (!currentUser) return;
+  registerFCMToken(currentUser.uid, true);
+};
+
+// ═══════════════════════════════════════
+// 앱처럼 설치(홈 화면에 추가) 안내
+// 아이폰(Safari)은 "홈 화면에 추가"로 설치하지 않으면 웹 푸시 알림이 아예 작동하지 않음(iOS 자체 제약).
+// 안드로이드는 설치 안 해도 알림이 오지만, 설치하면 앱을 켜두지 않아도 더 안정적으로 옴.
+// ═══════════════════════════════════════
+var _deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', function(e){
+  e.preventDefault();
+  _deferredInstallPrompt = e;
+});
+
+function _isStandalonePwa(){
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+function _isIOSDevice(){
+  return /iphone|ipad|ipod/i.test(navigator.userAgent);
+}
+
+window.openInstallAppGuide = function(){
+  var isIOS = _isIOSDevice();
+  var isStandalone = _isStandalonePwa();
+  var body = document.getElementById('install-guide-body');
+  if (!body) return;
+
+  if (isStandalone) {
+    body.innerHTML = '<div style="text-align:center;padding:20px 0;"><div style="font-size:32px;margin-bottom:10px;">✅</div><div style="font-weight:700;color:var(--green);">이미 앱으로 설치되어 있어요!</div><div style="font-size:12px;color:var(--tx3);margin-top:6px;">알림도 카톡처럼 앱을 켜두지 않아도 옵니다.</div></div>';
+  } else if (isIOS) {
+    body.innerHTML = '<div style="font-size:13px;color:var(--tx2);line-height:1.8;">'
+      + '<div style="background:var(--gold-l);border-radius:10px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--tx2);">📌 아이폰은 <b>"홈 화면에 추가"</b>를 해야만 알림이 옵니다 (Safari 자체 제한이라 이 단계는 꼭 필요해요)</div>'
+      + '<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:14px;"><span style="font-weight:800;color:var(--burg);">1</span><span>화면 하단(또는 상단) 주소창의 <b>공유 버튼</b> <span style="display:inline-block;border:1.5px solid var(--tx2);border-radius:4px;padding:1px 5px;">⬆️</span> 을 탭하세요</span></div>'
+      + '<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:14px;"><span style="font-weight:800;color:var(--burg);">2</span><span>아래로 스크롤해서 <b>"홈 화면에 추가"</b>를 탭하세요</span></div>'
+      + '<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:14px;"><span style="font-weight:800;color:var(--burg);">3</span><span>오른쪽 위 <b>"추가"</b>를 탭하면 완료!</span></div>'
+      + '<div style="display:flex;gap:10px;align-items:flex-start;"><span style="font-weight:800;color:var(--burg);">4</span><span>홈 화면에 생긴 <b>Mono Planner 아이콘으로 다시 접속</b>해서 알림을 켜주세요</span></div>'
+      + '</div>';
+  } else if (_deferredInstallPrompt) {
+    body.innerHTML = '<div style="text-align:center;padding:10px 0 20px;">'
+      + '<div style="font-size:12.5px;color:var(--tx3);margin-bottom:16px;">앱으로 설치하면 알림이 훨씬 안정적으로 옵니다</div>'
+      + '<button class="modal-btn primary" onclick="_triggerAndroidInstall()">지금 바로 설치하기</button>'
+      + '</div>';
+  } else {
+    body.innerHTML = '<div style="font-size:13px;color:var(--tx2);line-height:1.8;">'
+      + '<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:14px;"><span style="font-weight:800;color:var(--burg);">1</span><span>브라우저 오른쪽 위 <b>점 3개(⋮) 메뉴</b>를 탭하세요</span></div>'
+      + '<div style="display:flex;gap:10px;align-items:flex-start;"><span style="font-weight:800;color:var(--burg);">2</span><span><b>"앱 설치"</b> 또는 <b>"홈 화면에 추가"</b>를 탭하세요</span></div>'
+      + '</div>';
+  }
+  openModal('modal-install-guide');
+};
+
+window._triggerAndroidInstall = function(){
+  if (!_deferredInstallPrompt) return;
+  _deferredInstallPrompt.prompt();
+  _deferredInstallPrompt.userChoice.then(function(){ _deferredInstallPrompt = null; closeModal('modal-install-guide'); });
+};
+
+// 로그인 후 한 번, 알림도 안 켜져있고 아직 설치 안내를 안 본 학생에게만 살짝 안내 배너 노출
+function _maybeShowInstallNudge(){
+  if (!currentUser || !currentProfile || currentProfile.role !== 'student') return;
+  if (_isStandalonePwa()) return;
+  if (localStorage.getItem('installNudgeDismissed_'+currentUser.uid)) return;
+  var el = document.getElementById('install-nudge-banner');
+  if (el) el.style.display = 'flex';
+}
+window.dismissInstallNudge = function(){
+  if (currentUser) localStorage.setItem('installNudgeDismissed_'+currentUser.uid, '1');
+  var el = document.getElementById('install-nudge-banner');
+  if (el) el.style.display = 'none';
+};
+
+// ═══════════════════════════════════════
+// 알림 클릭 시 해당 채팅방으로 자동 이동
+// ═══════════════════════════════════════
+
+// 1) 앱이 꺼져있어서 알림 클릭으로 새로 열린 경우 - URL의 ?openChat= 파라미터를 확인
+function _maybeOpenChatFromUrl(){
+  try {
+    var params = new URLSearchParams(window.location.search);
+    var roomId = params.get('openChat');
+    if (!roomId) return;
+    // URL을 깔끔하게 정리 (뒤로가기 눌렀을 때 다시 열리지 않도록)
+    window.history.replaceState({}, '', window.location.pathname);
+    setTimeout(function(){ _navigateToChatRoom(roomId); }, 300);
+  } catch(e){}
+}
+
+// 2) 앱이 이미 열려있어서 서비스워커가 postMessage로 알려준 경우
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', function(event){
+    if (event.data && event.data.type === 'open-chat-room' && event.data.roomId) {
+      _navigateToChatRoom(event.data.roomId);
+    }
+  });
+}
+
+// 학생/선생님 화면 어느 쪽이든 채팅 탭으로 이동한 뒤 해당 대화방을 염
+function _navigateToChatRoom(roomId){
+  if (!currentUser || !currentProfile) return;
+  if (currentProfile.role === 'student') {
+    studentTab(3);
+    setTimeout(function(){ openKChatRoom(roomId); }, 300);
+  } else {
+    renderTeacher(4); // 선생님/마스터의 "대화방" 탭은 항상 인덱스 4
+    setTimeout(function(){ openKChatRoom(roomId); }, 300);
+  }
+}
+
+// 포그라운드 FCM 수신 - 앱이 열려있을 때는 서비스 워커가 아니라 여기로 전달되므로,
+// 직접 알림을 띄워줘야 함 (안 그러면 앱을 켜두고 있을 때만 알림이 조용히 사라짐)
+//
+// FCM은 "최소 1번 이상 전달"을 보장하는 시스템이라 같은 메시지가 실제로 여러 번
+// 중복 전달되는 경우가 드물게 있다 (구글 공식 문서에 명시된 특성). tag만으로는
+// 안드로이드에서 아주 짧은 간격으로 연달아 오면 못 걸러질 수 있어서, 최근에 처리한
+// messageId를 직접 기억해뒀다가 중복이면 알림을 아예 띄우지 않는 이중 방어를 추가.
+var _recentFgMessageIds = [];
+var _RECENT_FG_ID_LIMIT = 30;
+function _isDuplicateFgMessage(id){
+  if (!id) return false;
+  if (_recentFgMessageIds.indexOf(id) !== -1) return true;
+  _recentFgMessageIds.push(id);
+  if (_recentFgMessageIds.length > _RECENT_FG_ID_LIMIT) _recentFgMessageIds.shift();
+  return false;
+}
+
+onMessage(messaging, function(payload) {
+  if (_isDuplicateFgMessage(payload.messageId)) {
+    console.log('[FCM] 중복 메시지 감지 - 알림 표시 건너뜀:', payload.messageId);
+    return;
+  }
+
+  var title = (payload.data && payload.data.title) || (payload.notification && payload.notification.title) || '📋 알림';
+  var body = (payload.data && payload.data.body) || (payload.notification && payload.notification.body) || '';
+  var notifTag = payload.messageId || (payload.data&&payload.data.roomId) || 'mono-planner-notification';
+
+  // 인앱 배너로도 항상 보여줌 (권한 여부와 무관하게, 화면 보고 있을 때 확실히 알 수 있도록)
+  _showInAppNotifBanner(title, body);
+
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  if (navigator.serviceWorker && navigator.serviceWorker.getRegistration) {
+    navigator.serviceWorker.getRegistration().then(function(reg){
+      if (reg && reg.showNotification) {
+        reg.showNotification(title, { body: body, icon: '/icon-192.png', badge: '/icon-192.png', tag: notifTag, data: payload.data||{} });
+      } else {
+        try { new Notification(title, { body: body, icon: '/icon-192.png', tag: notifTag }); } catch(e){}
+      }
+    }).catch(function(){
+      try { new Notification(title, { body: body, icon: '/icon-192.png', tag: notifTag }); } catch(e){}
+    });
+  } else {
+    try { new Notification(title, { body: body, icon: '/icon-192.png', tag: notifTag }); } catch(e){}
+  }
+});
+
+// 앱을 보고 있을 때(포그라운드) 화면 상단에 잠깐 뜨는 인앱 알림 배너
+function _showInAppNotifBanner(title, body){
+  var existing = document.getElementById('inapp-notif-banner');
+  if (existing) existing.remove();
+  var el = document.createElement('div');
+  el.id = 'inapp-notif-banner';
+  el.className = 'inapp-notif-banner';
+  el.innerHTML = '<div class="inapp-notif-title"></div><div class="inapp-notif-body"></div>';
+  el.querySelector('.inapp-notif-title').textContent = title;
+  el.querySelector('.inapp-notif-body').textContent = body;
+  document.body.appendChild(el);
+  requestAnimationFrame(function(){ el.classList.add('show'); });
+  setTimeout(function(){
+    el.classList.remove('show');
+    setTimeout(function(){ el.remove(); }, 300);
+  }, 6000);
+}
+
+// 새벽 4시 기준 오늘 날짜 (4시 이전이면 어제로 처리)
+// ═══════════════════════════════════════
+// 시험 출처/분류 - 시험 생성("시험 구분")과 성적 탭 필터가 같은 목록을 공유하도록 통합.
+// 지점별로 Firestore에 저장해두고, 어느 화면에서든 "+ 새 분류 추가"로 늘릴 수 있게 함.
+//
+// 주의: 통합 전에 두 화면이 서로 다른 목록을 따로 쓰고 있었음 -
+//   시험 생성: 연습용/대성/메가스터디/이투스/평가원/교육청/기타
+//   성적 탭 필터: 연습용/사설/정규/대성
+// 하나를 기준으로 삼으면 다른 쪽에서 이미 써오던 분류가 필터 목록에서 사라져서
+// (예: "사설"/"정규"로 분류해둔 기존 성적을 더 이상 못 걸러보게 됨) 안 되므로,
+// 기본값은 반드시 두 목록을 빠짐없이 합친 것으로 둔다.
+// ═══════════════════════════════════════
+var _examSourceOptionsCache = null;
+var _examSourceRemovedDefaultsCache = [];
+var DEFAULT_EXAM_SOURCE_OPTIONS = ['연습용','사설','정규','대성','메가스터디','이투스','평가원','교육청','기타'];
+
+// ═══════════════════════════════════════
+// 선택과목 마스터 목록 - 국어(화작/언매), 수학(확통/미적/기하), 과학탐구/사회탐구
+// 세부과목을 "그때그때 자유 입력"하면 오타나 띄어쓰기 차이로 같은 과목이 다른 과목으로
+// 집계되는 문제가 생기므로, 지점별로 미리 목록화해두고 시험 생성/성적 입력에서는
+// 이 목록에서 "선택"만 하도록 함. 목록 자체는 이 화면에서 추가/삭제/이름변경 가능.
+// 과목이 electives가 필요없으면 그냥 빈 목록으로 두면 됨(강제로 뭔가 만들어두지 않음).
+// ═══════════════════════════════════════
+var _electiveOptionsCache = null; // {ko:[...], ma:[...], sc:[...], so:[...], ...}
+var DEFAULT_ELECTIVE_OPTIONS = {
+  ko: ['화법과 작문', '언어와 매체'],
+  ma: ['확률과 통계', '미적분', '기하'],
+  sc: ['물리학Ⅰ','화학Ⅰ','생명과학Ⅰ','지구과학Ⅰ','물리학Ⅱ','화학Ⅱ','생명과학Ⅱ','지구과학Ⅱ'],
+  so: ['생활과 윤리','윤리와 사상','한국지리','세계지리','동아시아사','세계사','정치와 법','경제','사회문화']
+};
+
+function loadElectiveOptions(){
+  if (_electiveOptionsCache) return Promise.resolve(_electiveOptionsCache);
+  var branch = getBranch();
+  return getDoc(doc(db,'electiveSubjectOptions',branch)).then(function(d){
+    var saved = (d.exists() && d.data().subjects) ? d.data().subjects : {};
+    var merged = {};
+    Object.keys(DEFAULT_ELECTIVE_OPTIONS).forEach(function(k){ merged[k] = DEFAULT_ELECTIVE_OPTIONS[k].slice(); });
+    Object.keys(saved).forEach(function(k){ merged[k] = saved[k]; }); // 저장된 게 있으면 (빈 배열 포함) 그걸로 덮어씀
+    _electiveOptionsCache = merged;
+    return merged;
+  }).catch(function(){ return Object.assign({}, DEFAULT_ELECTIVE_OPTIONS); });
+}
+
+function saveElectiveOptionsForSubject(subjKey, list){
+  var branch = getBranch();
+  return loadElectiveOptions().then(function(all){
+    all[subjKey] = list;
+    _electiveOptionsCache = all;
+    return setDoc(doc(db,'electiveSubjectOptions',branch), {subjects: all}, {merge:true});
+  });
+}
+
+// 탐구1/탐구2의 "과탐/사탐" 선택에 따라, 그에 맞는 마스터 목록으로 과목명 select를 채움
+window.populateTanNameSelect = function(n, preloadedOptions){
+  var typeSel = document.getElementById('edit-tan'+n+'-type');
+  var nameSel = document.getElementById('edit-tan'+n+'-name');
+  if (!typeSel || !nameSel) return;
+  var type = typeSel.value; // 'sc' or 'so'
+  if (!type) { nameSel.innerHTML = '<option value="">먼저 과탐/사탐을 선택하세요</option>'; return; }
+  var fillFn = function(all){
+    var list = all[type] || [];
+    nameSel.innerHTML = '<option value="">과목 선택</option>' + list.map(function(o){ return '<option value="'+escapeHtml(o)+'">'+escapeHtml(o)+'</option>'; }).join('');
+  };
+  if (preloadedOptions) fillFn(preloadedOptions);
+  else loadElectiveOptions().then(fillFn);
+};
+
+window.openElectiveManageModal = function(){
+  openModal('modal-elective-manage');
+  renderElectiveManageList();
+};
+
+window.renderElectiveManageList = function(){
+  var subj = document.getElementById('elective-manage-subject-select').value;
+  var host = document.getElementById('elective-manage-list');
+  host.innerHTML = '<div style="color:var(--tx3);font-size:12px;">불러오는 중...</div>';
+  loadElectiveOptions().then(function(all){
+    var list = all[subj] || [];
+    if (!list.length) {
+      host.innerHTML = '<div style="color:var(--tx4);font-size:12px;padding:8px 0;">등록된 선택과목이 없습니다 (이 과목은 선택과목 없이 그냥 진행됩니다)</div>';
+      return;
+    }
+    host.innerHTML = list.map(function(name, i){
+      return '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--surface2);border-radius:8px;margin-bottom:5px;">'
+        + '<span style="flex:1;font-size:13px;color:var(--tx1);">'+escapeHtml(name)+'</span>'
+        + '<button onclick="renameElectiveOption('+i+')" style="padding:3px 8px;background:var(--surface);border:1px solid var(--border);border-radius:5px;font-size:11px;cursor:pointer;color:var(--tx2);">이름변경</button>'
+        + '<button onclick="removeElectiveOption('+i+')" style="padding:3px 8px;background:var(--red-l);border:1px solid rgba(185,28,28,0.2);border-radius:5px;font-size:11px;cursor:pointer;color:var(--red);">삭제</button>'
+        + '</div>';
+    }).join('');
+  });
+};
+
+window.addElectiveOption = function(){
+  var subj = document.getElementById('elective-manage-subject-select').value;
+  var input = document.getElementById('elective-manage-add-input');
+  var name = input.value.trim();
+  if (!name) return;
+  loadElectiveOptions().then(function(all){
+    var list = (all[subj] || []).slice();
+    if (list.indexOf(name) !== -1) { alert('이미 있는 과목입니다'); return; }
+    list.push(name);
+    return saveElectiveOptionsForSubject(subj, list).then(function(){
+      input.value = '';
+      renderElectiveManageList();
+    });
+  });
+};
+
+window.removeElectiveOption = function(idx){
+  var subj = document.getElementById('elective-manage-subject-select').value;
+  loadElectiveOptions().then(function(all){
+    var list = (all[subj] || []).slice();
+    var removed = list[idx];
+    if (!confirm('"'+removed+'"을(를) 목록에서 삭제하시겠습니까?\n(이미 이 이름으로 저장된 기존 성적 데이터는 그대로 남습니다)')) return;
+    list.splice(idx, 1);
+    saveElectiveOptionsForSubject(subj, list).then(renderElectiveManageList);
+  });
+};
+
+window.renameElectiveOption = function(idx){
+  var subj = document.getElementById('elective-manage-subject-select').value;
+  loadElectiveOptions().then(function(all){
+    var list = (all[subj] || []).slice();
+    var oldName = list[idx];
+    var newName = prompt('새 이름을 입력해주세요', oldName);
+    if (!newName || !newName.trim() || newName.trim() === oldName) return;
+    newName = newName.trim();
+    if (list.indexOf(newName) !== -1) { alert('이미 있는 이름입니다'); return; }
+    list[idx] = newName;
+    saveElectiveOptionsForSubject(subj, list).then(function(){
+      alert('이름을 변경했습니다.\n(이미 "'+oldName+'"으로 저장된 기존 성적 데이터는 자동으로 안 바뀌니, 필요하면 개별 성적에서 직접 수정해주세요)');
+      renderElectiveManageList();
+    });
+  });
+};
+
+
+function loadExamSourceOptions(){
+  if (_examSourceOptionsCache) return Promise.resolve(_examSourceOptionsCache);
+  var branch = getBranch();
+  return getDoc(doc(db,'examSourceOptions',branch)).then(function(d){
+    var saved = (d.exists() && d.data().options) ? d.data().options : [];
+    // 기본 제공 분류를 삭제해도 다시 나타나지 않게 하려면, "명시적으로 지운 기본분류"
+    // 목록을 따로 기억해둬야 함(removedDefaults). 이게 없으면 기본분류는 저장 여부와
+    // 무관하게 항상 다시 합쳐져서, 지워도 새로고침하면 되살아나는 문제가 있었음.
+    var removedDefaults = (d.exists() && d.data().removedDefaults) ? d.data().removedDefaults : [];
+    var merged = DEFAULT_EXAM_SOURCE_OPTIONS.filter(function(o){ return removedDefaults.indexOf(o) === -1; });
+    saved.forEach(function(o){ if (merged.indexOf(o) === -1) merged.push(o); });
+    _examSourceOptionsCache = merged;
+    _examSourceRemovedDefaultsCache = removedDefaults;
+    return merged;
+  }).catch(function(){ return DEFAULT_EXAM_SOURCE_OPTIONS.slice(); });
+}
+
+function addExamSourceOption(label){
+  label = (label||'').trim();
+  if (!label) return Promise.resolve(_examSourceOptionsCache || DEFAULT_EXAM_SOURCE_OPTIONS.slice());
+  var branch = getBranch();
+  return loadExamSourceOptions().then(function(opts){
+    if (opts.indexOf(label) !== -1) return opts; // 이미 있으면 그대로
+    var updated = opts.concat([label]);
+    return setDoc(doc(db,'examSourceOptions',branch), {options: updated}, {merge:true}).then(function(){
+      _examSourceOptionsCache = updated;
+      return updated;
+    });
+  });
+}
+
+// 분류 삭제 - 이제 기본 제공 분류(DEFAULT_EXAM_SOURCE_OPTIONS)도 삭제 가능함.
+// 기본분류를 지우는 경우엔 removedDefaults 목록에 이름을 추가해둬서, 다음에 불러올 때
+// 다시 합쳐지지 않도록 함. 이미 그 분류로 저장된 시험/성적은 그대로 남고(글자로
+// 저장되어 있어서 안 깨짐), 앞으로 선택할 수 있는 목록에서만 빠짐.
+function removeExamSourceOption(label){
+  var branch = getBranch();
+  return loadExamSourceOptions().then(function(opts){
+    var updated = opts.filter(function(o){ return o !== label; });
+    var isDefault = DEFAULT_EXAM_SOURCE_OPTIONS.indexOf(label) !== -1;
+    var newRemovedDefaults = (_examSourceRemovedDefaultsCache||[]).slice();
+    if (isDefault && newRemovedDefaults.indexOf(label) === -1) newRemovedDefaults.push(label);
+    return setDoc(doc(db,'examSourceOptions',branch), {options: updated, removedDefaults: newRemovedDefaults}, {merge:true}).then(function(){
+      _examSourceOptionsCache = updated;
+      _examSourceRemovedDefaultsCache = newRemovedDefaults;
+      return updated;
+    });
+  });
+}
+
+var EXAM_SOURCE_LABELS = {
+  practice:'연습용', daesung:'대성', megastudy:'메가스터디', etoos:'이투스',
+  pyeongga:'평가원', office:'교육청', etc:'기타'
+};
+function examSourceLabel(v){ return EXAM_SOURCE_LABELS[v] || v || ''; }
+
+// exam-source-select(시험 생성)를 공유 목록으로 채움. 선택된 값이 있으면 유지.
+function populateExamSourceSelect(currentValue){
+  var sel = document.getElementById('exam-source-select');
+  if (!sel) return;
+  loadExamSourceOptions().then(function(opts){
+    sel.innerHTML = opts.map(function(o){ return '<option value="'+escapeHtml(o)+'">'+escapeHtml(o)+'</option>'; }).join('')
+      + '<option value="__add_new__">+ 새 분류 직접 추가</option>';
+    if (currentValue) sel.value = examSourceLabel(currentValue); // 예전 영문 키로 저장된 시험도 라벨로 맞춰서 선택
+  });
+}
+
+// 어디서든(시험 생성 select, 성적 탭 필터) 새 분류를 추가하면 양쪽 다 갱신되도록 공통 처리
+window.openAddExamSourceOption = function(selectIdToRestore){
+  var name = prompt('새로 추가할 시험 분류 이름을 입력해주세요\n(예: 스카이에듀, 시대인재 등)');
+  if (!name || !name.trim()) {
+    if (selectIdToRestore) { var s=document.getElementById(selectIdToRestore); if (s) s.value = s.options[0] ? s.options[0].value : ''; }
+    return;
+  }
+  addExamSourceOption(name.trim()).then(function(){
+    populateExamSourceSelect(name.trim());
+    if (typeof renderGradeCategoryTabs === 'function') renderGradeCategoryTabs();
+  });
+};
+
+// 분류 관리 모달 - 직접 추가한 분류들을 목록으로 보여주고 하나씩 삭제할 수 있게 함
+window.openManageExamSourceOptions = function(){
+  document.getElementById('manage-exam-source-body').innerHTML = '<div style="color:var(--tx3);font-size:12px;">불러오는 중...</div>';
+  openModal('modal-manage-exam-source');
+  _examSourceOptionsCache = null; // 최신 상태로 다시 불러오기
+  loadExamSourceOptions().then(function(opts){
+    var custom = opts.filter(function(o){ return DEFAULT_EXAM_SOURCE_OPTIONS.indexOf(o) === -1; });
+    var activeDefaults = DEFAULT_EXAM_SOURCE_OPTIONS.filter(function(o){ return opts.indexOf(o) !== -1; });
+    var removedDefaults = _examSourceRemovedDefaultsCache || [];
+
+    var defaultHtml = activeDefaults.length ? activeDefaults.map(function(o){
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--surface2);border-radius:8px;margin-bottom:6px;">'
+        + '<span style="font-size:13px;color:var(--tx1);">'+escapeHtml(o)+'</span>'
+        + '<button onclick="_confirmRemoveExamSourceOption(\''+escapeHtml(o).replace(/'/g,"\\'")+'\')" style="padding:4px 9px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:5px;color:var(--red);font-size:11px;cursor:pointer;">삭제</button>'
+        + '</div>';
+    }).join('') : '<div style="color:var(--tx4);font-size:12px;">기본 분류가 모두 삭제되어 없습니다.</div>';
+
+    var customHtml = custom.length ? custom.map(function(o){
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--surface2);border-radius:8px;margin-bottom:6px;">'
+        + '<span style="font-size:13px;color:var(--tx1);">'+escapeHtml(o)+'</span>'
+        + '<button onclick="_confirmRemoveExamSourceOption(\''+escapeHtml(o).replace(/'/g,"\\'")+'\')" style="padding:4px 9px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:5px;color:var(--red);font-size:11px;cursor:pointer;">삭제</button>'
+        + '</div>';
+    }).join('') : '<div style="color:var(--tx4);font-size:12px;">직접 추가한 분류가 없습니다.</div>';
+
+    var removedHtml = removedDefaults.length ? '<div class="modal-label" style="margin-top:14px;">삭제한 기본 분류</div>'
+      + removedDefaults.map(function(o){
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--surface2);border-radius:8px;margin-bottom:6px;opacity:0.7;">'
+          + '<span style="font-size:13px;color:var(--tx3);text-decoration:line-through;">'+escapeHtml(o)+'</span>'
+          + '<button onclick="_restoreExamSourceOption(\''+escapeHtml(o).replace(/'/g,"\\'")+'\')" style="padding:4px 9px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:5px;color:var(--gold);font-size:11px;cursor:pointer;">복원</button>'
+          + '</div>';
+      }).join('') : '';
+
+    document.getElementById('manage-exam-source-body').innerHTML =
+      '<div class="modal-label">기본 제공 분류</div>'
+      + '<div style="margin-bottom:14px;">'+defaultHtml+'</div>'
+      + '<div class="modal-label">직접 추가한 분류</div>'
+      + customHtml
+      + removedHtml;
+  });
+};
+
+window._confirmRemoveExamSourceOption = function(label){
+  if (!confirm('"'+label+'" 분류를 삭제하시겠습니까?\n\n이미 이 분류로 저장된 시험/성적은 그대로 유지되고, 앞으로 새로 고를 수 있는 목록에서만 빠집니다.\n(기본 제공 분류는 나중에 "복원" 버튼으로 다시 되살릴 수 있어요)')) return;
+  removeExamSourceOption(label).then(function(){
+    openManageExamSourceOptions();
+    if (typeof renderGradeCategoryTabs === 'function') renderGradeCategoryTabs();
+  }).catch(function(e){ alert('삭제 실패: ' + e.message); });
+};
+
+window._restoreExamSourceOption = function(label){
+  var branch = getBranch();
+  var newRemovedDefaults = (_examSourceRemovedDefaultsCache||[]).filter(function(o){ return o !== label; });
+  var updated = (_examSourceOptionsCache||[]).concat([label]);
+  setDoc(doc(db,'examSourceOptions',branch), {options: updated, removedDefaults: newRemovedDefaults}, {merge:true}).then(function(){
+    _examSourceOptionsCache = updated;
+    _examSourceRemovedDefaultsCache = newRemovedDefaults;
+    openManageExamSourceOptions();
+    if (typeof renderGradeCategoryTabs === 'function') renderGradeCategoryTabs();
+  }).catch(function(e){ alert('복원 실패: ' + e.message); });
+};
+
+
+
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+
+// ══════════════════════════════════════════════════════════
+// 시험 관리 기능 (선생님/마스터) - Phase 1: 1과목 시험
+// ══════════════════════════════════════════════════════════
+
+// 묶음마다 자동으로 배정할 색상 팔레트 - 앱의 따뜻한 톤에 맞는 차분한 색들
+var EXAM_GROUP_COLOR_PALETTE = [
+  {name:'골드', hex:'#B8841A'}, {name:'세이지', hex:'#6B8068'}, {name:'더스티블루', hex:'#5B7B9A'},
+  {name:'모브', hex:'#8B5A7A'}, {name:'테라코타', hex:'#C17A52'}, {name:'딥틸', hex:'#3F7A72'},
+  {name:'플럼', hex:'#6B4A7A'}, {name:'슬레이트', hex:'#5A6478'}
+];
+// 이미 다른 묶음이 쓰고 있는 색은 피해서, 아직 안 쓰인 색 중 첫 번째를 배정함
+// (색상당 그룹 1개 원칙 - 팔레트를 다 써버린 극히 드문 경우에만 어쩔 수 없이 겹치게 순환)
+function _autoAssignGroupColor(usedColors){
+  var unused = EXAM_GROUP_COLOR_PALETTE.find(function(c){ return usedColors.indexOf(c.hex) === -1; });
+  return unused ? unused.hex : EXAM_GROUP_COLOR_PALETTE[usedColors.length % EXAM_GROUP_COLOR_PALETTE.length].hex;
+}
+
+function buildTExamManage(){
+  return Promise.all([
+    getDocs(query(collection(db,'exams'), where('branch','==',getBranch()))),
+    loadExamSourceOptions(),
+    getDocs(query(collection(db,'examMergeGroups'), where('branch','==',getBranch())))
+  ]).then(function(results){
+    var snap = results[0], sourceOpts = results[1], groupSnap = results[2];
+    var exams = snap.docs.map(function(d){return Object.assign({id:d.id}, d.data());});
+    exams = _sortExamList(exams, _currentExamMgmtSort);
+
+    // examId -> 그룹 정보 매핑 (한 시험은 최대 하나의 묶음에만 속함)
+    var groups = groupSnap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
+    var groupByExamId = {};
+    groups.forEach(function(g){ (g.examIds||[]).forEach(function(eid){ groupByExamId[eid] = g; }); });
+
+    // 시험 목록을 순서대로 훑으면서, 묶인 시험은 그룹 컨테이너로 한 번에 묶어서 렌더링
+    // (같은 그룹의 시험이 여러 개 흩어져 있어도, 처음 만나는 자리에서 그 묶음 전체를 렌더링하고
+    // 나머지는 건너뜀 - 정렬 순서상 흩어져 있어도 묶음 상자 하나로 합쳐 보이게 하기 위함)
+    var renderedGroupIds = {};
+    var listParts = exams.map(function(ex){
+      var group = groupByExamId[ex.id];
+      if (!group) return examCardHtml(ex);
+      if (renderedGroupIds[group.id]) return ''; // 이미 이 묶음을 렌더링했음
+      renderedGroupIds[group.id] = true;
+      var memberExams = exams.filter(function(e){ return (group.examIds||[]).indexOf(e.id) !== -1; });
+      return _buildExamGroupContainerHtml(group, memberExams);
+    });
+    var listHtml = exams.length ? listParts.join('') : '<div style="color:var(--tx3);font-size:13px;text-align:center;padding:30px 0;">아직 만든 시험이 없습니다</div>';
+    var isMaster = currentProfile && currentProfile.role === 'master';
+    var safetyCard = isMaster ? (
+      '<div class="card">'
+      +'<div class="card-h"><div class="card-title">🛡 시험 강제제출 안전장치</div></div>'
+      +'<div style="font-size:12px;color:var(--tx3);margin-bottom:10px;line-height:1.6;">마감시각이 지났는데도 학생이 앱을 안 열어서 응시중 상태로 남아있는 시험을 처리합니다. 이 버튼은 <b>브라우저에서 직접 처리</b>되어 별도 서버 설정 없이 바로 사용할 수 있어요. (개발자용 Vercel Cron 자동화도 별도로 지원됩니다)</div>'
+      +'<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">'
+      +  '<select class="modal-select" id="exam-safety-target-exam" style="flex:1;min-width:140px;margin:0;" onchange="_updateExamSafetyStudentOptions()"><option value="">전체 시험 대상</option>'+exams.map(function(e){return '<option value="'+e.id+'">'+escapeHtml(e.title)+'</option>';}).join('')+'</select>'
+      +  '<select class="modal-select" id="exam-safety-target-student" style="flex:1;min-width:140px;margin:0;"><option value="">전체 학생 대상</option></select>'
+      +'</div>'
+      +'<div id="exam-safety-status" style="font-size:12px;color:var(--tx3);margin-bottom:10px;"></div>'
+      +'<button class="modal-btn cancel" style="margin:0;" onclick="_runExamForceSubmitFromCard()">지금 바로 강제제출 처리</button>'
+      +'</div>'
+    ) : '';
+    var catTabs = ['전체'].concat(sourceOpts).map(function(c,i){
+      var active = c === (_currentExamMgmtCategory||'전체');
+      return '<button onclick="switchExamMgmtCategory(\''+escapeHtml(c).replace(/'/g,"\\'")+'\')" class="exam-mgmt-cat-btn'+(active?' active':'')+'">'+escapeHtml(c)+'</button>';
+    }).join('') + '<button onclick="openAddExamSourceOption()" class="exam-mgmt-cat-btn exam-mgmt-cat-add">+ 분류 추가</button>' + '<button onclick="openManageExamSourceOptions()" class="exam-mgmt-cat-btn" style="color:var(--tx3);">🔧 관리</button>';
+    return safetyCard + '<div class="card">'
+      +'<div class="card-h"><div class="card-title">📝 시험 관리</div><div class="ex-hdr-actions"><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;background:#fef2f2;color:#dc2626;" onclick="openLiveExamStatusModal()">🔴 실시간 응시 현황</button><button class="modal-btn cancel ex-sec" style="margin:0;width:auto;padding:8px 14px;font-size:12px;background:var(--gold-l);color:var(--gold);" onclick="openMissingGradesRecoveryModal()">🔧 누락 성적 검사</button><button id="exam-merge-toggle-btn" class="modal-btn cancel ex-sec" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="_toggleExamMergeMode()">🔗 시험 묶기</button><button id="exam-merge-confirm-btn" class="modal-btn primary" style="display:none;margin:0;width:auto;padding:8px 16px;font-size:12px;background:var(--gold);" onclick="openMergeExamsModal()">선택한 시험 묶기</button><button class="modal-btn cancel ex-sec" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openExamMergeGroupsModal()">📋 묶음 목록</button><button class="modal-btn cancel ex-sec" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openElectiveManageModal()">🔧 선택과목 관리</button><button class="modal-btn primary" style="margin:0;width:auto;padding:8px 16px;font-size:12px;" onclick="openCreateExamModal()">+ 새 시험 만들기</button><button class="mp-btn ex-more-btn" onclick="mpToggleExMore(this)">⋯ 더보기</button></div></div>'
+      +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;" id="exam-mgmt-cat-tabs">'+catTabs+'</div>'
+      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">'
+      +  '<span style="font-size:12px;color:var(--tx3);">정렬</span>'
+      +  '<select class="modal-select" id="exam-mgmt-sort-select" onchange="switchExamMgmtSort(this.value)" style="margin:0;width:auto;padding:6px 10px;font-size:12px;">'
+      +    '<option value="upload_desc"'+(_currentExamMgmtSort==='upload_desc'?' selected':'')+'>업로드 역순 (최신 먼저)</option>'
+      +    '<option value="upload_asc"'+(_currentExamMgmtSort==='upload_asc'?' selected':'')+'>업로드 순 (오래된 먼저)</option>'
+      +    '<option value="name_asc"'+(_currentExamMgmtSort==='name_asc'?' selected':'')+'>이름순 (가나다)</option>'
+      +  '</select>'
+      +'</div>'
+      +'<div id="exam-list-area">'+listHtml+'</div>'
+      +'</div>';
+  }).catch(function(e){
+    console.error(e);
+    return '<div class="card"><div style="color:var(--red);font-size:13px;padding:20px;">시험 목록을 불러오지 못했습니다</div></div>';
+  });
+}
+
+// 시험지 목록 정렬 - 업로드순/역순/이름순. createdAt이 없는 예전 시험은 항상 맨 뒤로
+// 보내서(0으로 취급) 목록 어딘가에 묻히지 않고 일관되게 정렬되도록 함.
+function _sortExamList(exams, sortKey){
+  var withTime = exams.map(function(e){ return { e:e, t: e.createdAt ? e.createdAt.toMillis() : 0 }; });
+  if (sortKey === 'upload_asc') {
+    withTime.sort(function(a,b){ return a.t - b.t; });
+  } else if (sortKey === 'name_asc') {
+    withTime.sort(function(a,b){ return (a.e.title||'').localeCompare(b.e.title||'', 'ko'); });
+  } else { // upload_desc (기본값)
+    withTime.sort(function(a,b){ return b.t - a.t; });
+  }
+  return withTime.map(function(x){ return x.e; });
+}
+
+var _currentExamMgmtSort = 'upload_desc';
+window.switchExamMgmtSort = function(sortKey){
+  _currentExamMgmtSort = sortKey;
+  invalidateTeacherTabCache(7);
+  renderTeacher(7);
+  // 정렬을 바꾸면 목록 전체가 다시 그려지는데, 카테고리 필터는 화면에 이미 그려진
+  // 카드를 숨기는 방식(CSS)이라 다시 그려지고 나면 필터가 풀려버림 - 렌더링이 끝난
+  // 직후 지금 선택돼있던 분류 필터를 다시 적용해줌
+  setTimeout(function(){ switchExamMgmtCategory(_currentExamMgmtCategory); }, 50);
+};
+
+var _currentExamMgmtCategory = '전체';
+window.switchExamMgmtCategory = function(cat){
+  _currentExamMgmtCategory = cat;
+  document.querySelectorAll('.exam-mgmt-cat-btn').forEach(function(btn){
+    if (btn.classList.contains('exam-mgmt-cat-add')) return;
+    btn.classList.toggle('active', btn.textContent === cat);
+  });
+  var cards = document.querySelectorAll('#exam-list-area .exam-card');
+  cards.forEach(function(card){
+    var src = card.dataset.examSource || '';
+    card.style.display = (cat === '전체' || src === cat) ? '' : 'none';
+  });
+  // 묶음 컨테이너는 그 자체에 분류가 없고, 안에 든 시험 카드들의 분류만 있음. 안에 든
+  // 카드가 전부 필터에 안 걸리면(전부 숨겨지면) 빈 껍데기 상자만 남아 보이던 문제가
+  // 있었어서, 컨테이너 안에 "보이는" 카드가 하나라도 있을 때만 컨테이너 자체를 보여줌.
+  document.querySelectorAll('#exam-list-area .exam-group-container').forEach(function(container){
+    var visibleInside = Array.from(container.querySelectorAll('.exam-card')).some(function(c){ return c.style.display !== 'none'; });
+    container.style.display = visibleInside ? '' : 'none';
+  });
+};
+
+// 특정 학생 한 명만 강제제출 - 시험 현황/모니터 화면에서 사용
+window._runExamForceSubmitForStudent = function(examId, uid, studentName){
+  if (!confirm(studentName+' 학생만 강제제출 처리하시겠습니까?\n(마감시각이 지났는데 아직 응시중/대기중인 경우만 대상입니다)')) return;
+  runExamForceSubmitNow(examId, uid);
+};
+
+// "특정 시험" 드롭다운을 고르면, 그 시험에 배정된 학생만 "특정 학생" 드롭다운에 채워줌
+window._updateExamSafetyStudentOptions = function(){
+  var examSel = document.getElementById('exam-safety-target-exam');
+  var studentSel = document.getElementById('exam-safety-target-student');
+  if (!examSel || !studentSel) return;
+  var examId = examSel.value;
+  studentSel.innerHTML = '<option value="">전체 학생 대상</option>';
+  if (!examId) return;
+  Promise.all([getDoc(doc(db,'exams',examId)), loadStudentList()]).then(function(results){
+    var exam = results[0].data();
+    var students = results[1];
+    var assignedUids = exam.assignedTo || [];
+    var assigned = students.filter(function(s){ return assignedUids.indexOf(s.uid) !== -1; });
+    studentSel.innerHTML = '<option value="">전체 학생 대상</option>' + assigned.map(function(s){ return '<option value="'+s.uid+'">'+escapeHtml(s.name)+'</option>'; }).join('');
+  });
+};
+
+// 카드 안의 드롭다운 선택값을 그대로 강제제출 실행에 넘겨줌 (전체/특정시험/특정학생 다 이걸로 처리)
+window._runExamForceSubmitFromCard = function(){
+  var examId = document.getElementById('exam-safety-target-exam').value || null;
+  var uid = document.getElementById('exam-safety-target-student').value || null;
+  runExamForceSubmitNow(examId, uid);
+};
+
+window.runExamForceSubmitNow = function(filterExamId, filterUid){
+  var statusEl = document.getElementById('exam-safety-status') || document.getElementById('exam-safety-status-'+(filterExamId||''));
+  if (statusEl) statusEl.textContent = '⏳ 처리 중... (서버 없이 브라우저에서 직접 처리합니다)';
+
+  var now = Date.now();
+  var scanned = 0, waitingStarted = 0, forceSubmittedSubjects = 0, movedToBreak = 0, fullyCompleted = 0, errors = 0;
+  var examCache = {};
+
+  function getExam(examId){
+    if (examCache[examId]) return examCache[examId];
+    examCache[examId] = getDoc(doc(db,'exams',examId)).then(function(d){ return d.exists() ? Object.assign({id:examId}, d.data()) : null; });
+    return examCache[examId];
+  }
+
+  var baseQuery = filterExamId
+    ? query(collection(db,'examSessions'), where('status','in',['waiting','in_progress','break']), where('examId','==',filterExamId))
+    : query(collection(db,'examSessions'), where('status','in',['waiting','in_progress','break']));
+
+  getDocs(baseQuery).then(function(snap){
+    var sessions = snap.docs.map(function(d){ return {id:d.id, data:d.data()}; });
+    if (filterUid) sessions = sessions.filter(function(s){ return s.data.studentUid === filterUid; });
+    var chain = Promise.resolve();
+
+    sessions.forEach(function(s){
+      chain = chain.then(function(){
+        scanned++;
+        var sess = s.data;
+        return getExam(sess.examId).then(function(exam){
+          if (!exam) return;
+
+          // 1) 대기중(waiting) - 일괄 시작 시각이 이미 지났으면 강제로 시작 처리
+          if (sess.status === 'waiting') {
+            if (!exam.startAtMs || exam.startAtMs > now) return;
+            var wSubjIdx = sess.currentSubjectIndex || 0;
+            var wSubj = exam.subjects[wSubjIdx];
+            if (!wSubj) return;
+            return updateDoc(doc(db,'examSessions',s.id), {
+              status: 'in_progress',
+              startedAtMs: exam.startAtMs,
+              deadlineMs: exam.startAtMs + wSubj.durationMin*60000,
+              currentAnswers: {},
+              listeningPlayed: false
+            }).then(function(){ waitingStarted++; }).catch(function(){ errors++; });
+          }
+
+          // 2) 응시중(in_progress) - 마감시각이 지났으면 저장된 답안으로 강제 채점
+          if (sess.status === 'in_progress') {
+            if (!sess.deadlineMs || sess.deadlineMs > now) return;
+            var subjIdx = sess.currentSubjectIndex || 0;
+            // 항상 "현재" 시험 설정으로 채점 - 선생님이 배점/정답을 고치면 이미 응시중이던
+            // 학생에게도 그대로 반영되도록 함 (요청사항)
+            var subj = exam.subjects[subjIdx];
+            if (!subj) return;
+
+            var graded = gradeExamAnswers(_resolveSubjForGrading(subj, sess.electiveChoices && sess.electiveChoices[subjIdx]), sess.currentAnswers || {});
+            var subjectResult = {
+              subject: subj.subject, subjectIndex: subjIdx,
+              startedAtMs: sess.deadlineMs - subj.durationMin*60000,
+              submittedAtMs: now, autoSubmitted: true, forcedByServer: true,
+              score: graded.score, totalScore: graded.totalScore, correctCount: graded.correctCount,
+              wrongNumbers: graded.wrongNumbers, mcAccuracy: graded.mcAccuracy, shortAccuracy: graded.shortAccuracy,
+              answers: graded.details
+            };
+            var results = (sess.subjectResults || []).slice();
+            results[subjIdx] = subjectResult;
+            var isLastSubject = (subjIdx >= exam.subjects.length - 1);
+
+            if (isLastSubject) {
+              return updateDoc(doc(db,'examSessions',s.id), {status:'graded', subjectResults:results, currentAnswers:{}})
+                .then(function(){ return _getPrevSubjectScores(sess.studentUid, exam.gradeType, examSourceLabel(exam.examSource)); })
+                .then(function(prevScores){
+                  return _writeExamResultToGrades(sess.studentUid, s.id, exam, results, sess.electiveChoices, sess.unknownBySubj).then(function(){
+                    _awardExamRewards(sess.studentUid, exam, results, prevScores, sess.electiveChoices);
+                  });
+                })
+                .then(function(){ return MP_onExamCompleted(sess.studentUid, exam.id, results, exam); })
+                .then(function(){ fullyCompleted++; forceSubmittedSubjects++; })
+                .catch(function(e){ console.error(e); errors++; });
+            } else {
+              var breakMin = subj.breakAfterMin || 0;
+              return updateDoc(doc(db,'examSessions',s.id), {
+                status:'break', subjectResults:results, currentAnswers:{},
+                currentSubjectIndex: subjIdx+1, breakDeadlineMs: now + breakMin*60000
+              }).then(function(){ movedToBreak++; forceSubmittedSubjects++; }).catch(function(){ errors++; });
+            }
+          }
+
+          // 3) 쉬는시간(break) - 쉬는시간이 끝났으면 다음 과목 시작
+          if (sess.status === 'break') {
+            if (!sess.breakDeadlineMs || sess.breakDeadlineMs > now) return;
+            var nextIdx = sess.currentSubjectIndex || 0;
+            var nextSubj = exam.subjects[nextIdx];
+            if (!nextSubj) return;
+            return updateDoc(doc(db,'examSessions',s.id), {
+              status:'in_progress', startedAtMs: now, deadlineMs: now + nextSubj.durationMin*60000,
+              currentAnswers: {}, listeningPlayed: false
+            }).catch(function(){ errors++; });
+          }
+        }).catch(function(e){ console.error(e); errors++; });
+      });
+    });
+
+    return chain;
+  }).then(function(){
+    var msg = '완료! (브라우저에서 직접 처리됨)\n\n스캔: ' + scanned + '개\n대기실→시작 전환: ' + waitingStarted + '개\n강제 제출된 과목: ' + forceSubmittedSubjects + '개\n쉬는시간 전환: ' + movedToBreak + '개\n완전 종료: ' + fullyCompleted + '개\n실패: ' + errors + '개';
+    if (statusEl) statusEl.textContent = '✓ 스캔 ' + scanned + '개, 강제제출 ' + forceSubmittedSubjects + '개 처리 완료';
+    alert(msg);
+    renderTeacher(7);
+  }).catch(function(e){
+    console.error(e);
+    if (statusEl) statusEl.textContent = '✗ 오류: ' + e.message;
+    alert('강제제출 처리 실패: ' + e.message);
+  });
+};
+
+// 디자인 A: 묶음 전체를 얇은 색 헤어라인으로 감싸고, 상단에 세리프체로 그룹명 + 색상 변경 버튼
+function _buildExamGroupContainerHtml(group, memberExams){
+  var color = group.color || '#B8841A';
+  var colorRgb = _hexToRgbStr(color);
+  var cardsHtml = memberExams.map(examCardHtml).join('<div style="height:8px;"></div>');
+  return '<div class="exam-group-container" style="border:2px solid '+color+';border-radius:18px;padding:22px 16px 18px;margin-bottom:14px;position:relative;background:rgba('+colorRgb+',0.09);">'
+    + '<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:16px;position:relative;">'
+    +   '<div style="text-align:center;">'
+    +     '<div style="font-family:Georgia,\'Nanum Myeongjo\',serif;font-size:13px;font-weight:800;color:'+color+';letter-spacing:0.5px;">🔗 '+escapeHtml(group.mergedTitle)+' <button onclick="_renameExamMergeGroup(\''+group.id+'\')" title="묶음 이름 수정" style="background:none;border:0;cursor:pointer;font-size:12px;padding:0 2px;vertical-align:1px;">✏️</button></div>'
+    +     '<div style="width:36px;height:2px;background:'+color+';margin:6px auto 0;border-radius:2px;"></div>'
+    +   '</div>'
+    +   '<button onclick="_openExamGroupColorPicker(\''+group.id+'\')" title="묶음 색상 변경" style="position:absolute;right:2px;top:-4px;width:20px;height:20px;border-radius:50%;background:'+color+';border:2px solid #fff;box-shadow:0 0 0 1px rgba('+colorRgb+',0.4);cursor:pointer;padding:0;"></button>'
+    + '</div>'
+    + cardsHtml
+    + '<div style="display:flex;align-items:center;justify-content:center;margin-top:16px;">'
+    +   '<div style="width:6px;height:6px;border-radius:50%;background:'+color+';"></div>'
+    +   '<div style="width:36px;height:2px;background:'+color+';margin:0 8px;border-radius:2px;"></div>'
+    +   '<div style="width:6px;height:6px;border-radius:50%;background:'+color+';"></div>'
+    + '</div>'
+    + '</div>';
+}
+function _hexToRgbStr(hex){
+  hex = hex.replace('#','');
+  var r = parseInt(hex.substring(0,2),16), g = parseInt(hex.substring(2,4),16), b = parseInt(hex.substring(4,6),16);
+  return r+','+g+','+b;
+}
+
+window._openExamGroupColorPicker = function(groupId){
+  document.getElementById('exam-group-color-swatches').innerHTML = '<div style="color:var(--tx3);font-size:12px;">불러오는 중...</div>';
+  openModal('modal-exam-group-color');
+  getDocs(query(collection(db,'examMergeGroups'), where('branch','==',getBranch()))).then(function(snap){
+    // 지금 이 묶음(groupId) 자신이 쓰고 있는 색은 계속 선택 가능해야 하니 제외하고,
+    // 다른 묶음이 쓰고 있는 색만 "사용중"으로 비활성화함 (색상당 그룹 1개 원칙)
+    var usedByOthers = snap.docs.filter(function(d){ return d.id !== groupId; }).map(function(d){ return d.data().color; }).filter(Boolean);
+    var swatches = EXAM_GROUP_COLOR_PALETTE.map(function(c){
+      var taken = usedByOthers.indexOf(c.hex) !== -1;
+      if (taken) {
+        return '<button disabled title="'+c.name+' - 다른 묶음에서 이미 사용 중" style="width:32px;height:32px;border-radius:50%;background:'+c.hex+';border:2px solid #fff;box-shadow:0 0 0 1px var(--border);opacity:0.25;cursor:not-allowed;position:relative;">'
+          + '<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;">✕</span></button>';
+      }
+      return '<button onclick="_setExamGroupColor(\''+groupId+'\',\''+c.hex+'\')" title="'+c.name+'" style="width:32px;height:32px;border-radius:50%;background:'+c.hex+';border:2px solid #fff;box-shadow:0 0 0 1px var(--border);cursor:pointer;"></button>';
+    }).join('');
+    document.getElementById('exam-group-color-swatches').innerHTML = swatches
+      + '<div style="width:100%;font-size:11px;color:var(--tx4);text-align:center;margin-top:8px;">✕ 표시는 다른 묶음에서 이미 쓰고 있는 색이에요</div>';
+  });
+};
+
+window._setExamGroupColor = function(groupId, hex){
+  updateDoc(doc(db,'examMergeGroups',groupId), { color: hex }).then(function(){
+    closeModal('modal-exam-group-color');
+    invalidateTeacherTabCache(7);
+    renderTeacher(7);
+  }).catch(function(e){ alert('색상 변경 실패: ' + e.message); });
+};
+
+function examCardHtml(ex){
+  var subj = ex.subjects && ex.subjects[0];
+  var subjName = subj ? _resolveSubjDisplayName(subj) : '';
+  var multiLabel = (ex.subjects && ex.subjects.length > 1) ? (ex.subjects.length+'과목') : '';
+  var qCount = subj && subj.questions ? subj.questions.length : 0;
+  var totalScore = subj && subj.questions ? _r2(subj.questions.reduce(function(s,q){return s+(q.point||0);},0)) : 0;
+  var assignedCount = (ex.assignedTo||[]).length;
+  var sourceLabel = examSourceLabel(ex.examSource);
+  return '<div class="exam-card" data-exam-id="'+ex.id+'" data-exam-source="'+escapeHtml(sourceLabel)+'" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px;">'
+    +'<div class="exam-card-header-row">'
+    +'<div style="display:flex;gap:8px;align-items:flex-start;">'
+    +'<input type="checkbox" class="exam-merge-checkbox" value="'+ex.id+'" style="display:none;width:18px;height:18px;flex-shrink:0;margin-top:3px;" onchange="_syncExamMergeBtn()"/>'
+    +'<div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><div style="font-size:15px;font-weight:700;color:var(--tx1);">'+escapeHtml(ex.title)+'</div>'
+    +(sourceLabel?'<span style="font-size:10px;font-weight:700;color:var(--burg);background:var(--burg-l);padding:2px 8px;border-radius:5px;">'+escapeHtml(sourceLabel)+'</span>':'')
+    +(multiLabel?'<span style="font-size:10px;font-weight:700;color:var(--gold);background:var(--gold-l);padding:2px 8px;border-radius:5px;">'+multiLabel+'</span>':'')+'</div>'
+    +'<div style="font-size:12px;color:var(--tx3);margin-top:2px;">'+escapeHtml(subjName)+(multiLabel?' 외':'')+' · 문항 '+qCount+'개 · 총점 '+totalScore+'점 · 배정 '+assignedCount+'명</div></div>'
+    +'</div>'
+    +'<div class="mp-card-stat" style="margin:2px 0 8px;display:flex;gap:4px;flex-wrap:wrap;"></div>'
+    +'<div class="exam-card-actions">'
+    +'<button onclick="openAssignExamModal(\''+ex.id+'\')" class="btn-secondary" style="font-size:11px;padding:6px 10px;">배정</button>'
+    +'<button onclick="openExamMonitor(\''+ex.id+'\')" class="btn-primary" style="font-size:11px;padding:6px 10px;">현황</button>'
+    +'<button onclick="DB_openTeacherPanel(\''+ex.id+'\')" style="font-size:11px;padding:6px 10px;background:#0f1626;border:1px solid rgba(212,160,74,0.6);border-radius:6px;color:#D4A04A;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:5px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:5px;background:#FBF1DC"><img src="/assets/deungbul/ic_lighthouse.svg" alt="" style="width:14px;height:14px"></span>등불 복습</button>'
+    +'<button class="ex-sec" onclick="openEditExamModal(\''+ex.id+'\')" style="font-size:11px;padding:6px 10px;background:#eef7ff;border:1px solid rgba(59,130,246,0.25);border-radius:6px;color:#2563eb;cursor:pointer;">✏️ 설정 수정</button>'
+    +'<button class="ex-sec" onclick="openExamFullRanking(\''+ex.id+'\',\''+escapeHtml(ex.title).replace(/'/g,"\\'")+'\')" style="font-size:11px;padding:6px 10px;background:#fff7ed;border:1px solid rgba(234,88,12,0.25);border-radius:6px;color:#c2410c;cursor:pointer;">🏆 전체 순위</button>'
+    +(ex.startAtMs ? '<button class="ex-sec" onclick="openExamDisplayScreen(\''+ex.id+'\')" style="font-size:11px;padding:6px 10px;background:#1a1a1a;border:none;border-radius:6px;color:#fff;cursor:pointer;">🖥 진행 화면</button>' : '')
+    +'<button class="ex-sec" onclick="reGradeExamSessions(\''+ex.id+'\',\''+escapeHtml(ex.title).replace(/'/g,"\\'")+'\')" style="font-size:11px;padding:6px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);cursor:pointer;">🔄 다시 채점하기</button>'
+    +'<button onclick="openExamReflections(\''+ex.id+'\',\''+escapeHtml(ex.title)+'\')" style="font-size:11px;padding:6px 10px;background:#eef2ff;border:1px solid rgba(79,70,229,0.2);border-radius:6px;color:#4338ca;cursor:pointer;">🌱 다음 걸음을 위하여</button>'
+    +'<button class="ex-sec" onclick="deleteExamConfirm(\''+ex.id+'\',\''+escapeHtml(ex.title)+'\')" style="font-size:11px;padding:6px 10px;background:var(--red-l);border:1px solid rgba(185,28,28,0.2);border-radius:6px;color:var(--red);cursor:pointer;">삭제</button>'
+    +'<button class="ex-sec" onclick="openEditGradeCutoffModal(\''+ex.id+'\')" style="font-size:11px;padding:6px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.25);border-radius:6px;color:var(--gold);cursor:pointer;">📐 등급표</button>'
+    +'<button class="ex-more-btn mp-btn sm" onclick="mpToggleExMore(this)">⋯ 더보기</button>'
+    +'</div></div>'
+    +'</div>';
+}
+
+window.deleteExamConfirm = function(examId, title){
+  if (!confirm('"'+title+'" 시험을 완전히 삭제하시겠습니까?\n\n배정된 학생들의 응시 기록도 함께 삭제되며, 되돌릴 수 없습니다.')) return;
+  getDocs(query(collection(db,'examSessions'), where('examId','==',examId))).then(function(snap){
+    var deletes = snap.docs.map(function(d){ return deleteDoc(doc(db,'examSessions',d.id)); });
+    return Promise.all(deletes);
+  }).then(function(){
+    // [등불] 이 시험의 복습지·등불 데이터도 함께 정리
+    return getDocs(query(collection(db,'reviewSheets'), where('examId','==',examId))).then(function(rs){
+      return Promise.all(rs.docs.map(function(d){ return deleteDoc(doc(db,'reviewSheets',d.id)); }));
+    }).then(function(){
+      return getDocs(collection(db,'deungbulPacks',examId,'units')).then(function(us){
+        return Promise.all(us.docs.map(function(d){ return deleteDoc(doc(db,'deungbulPacks',examId,'units',d.id)); }));
+      });
+    }).then(function(){ return deleteDoc(doc(db,'deungbulPacks',examId)); }).catch(function(e){ console.warn('[등불] 정리 실패', e); });
+  }).then(function(){
+    return deleteDoc(doc(db,'exams',examId));
+  }).then(function(){
+    alert('삭제되었습니다');
+    invalidateTeacherTabCache(7);
+    renderTeacher(7);
+  }).catch(function(e){
+    alert('삭제 실패: ' + e.message);
+  });
+};
+
+// ── 시험 생성 모달 (여러과목 지원) ──
+var _examSubjectBlocks = []; // [{subject, durationMin, breakAfterMin, listeningUrl, questions:[...]}]
+var _examMode = 'single'; // 'single' | 'multi'
+var _examWarnChips = [10, 5, 1];
+
+var _editingExamId = null; // null이면 새 시험 생성, 값이 있으면 그 시험을 수정 중
+
+window.openCreateExamModal = function(){
+  _editingExamId = null;
+  _examMode = 'single';
+  _examSubjectBlocks = [ _newExamSubjectBlock() ];
+  _examWarnChips = [10, 5, 1];
+  openModal('modal-create-exam');
+  document.getElementById('exam-title-input').value = '';
+  document.getElementById('exam-warn-add-input').value = '';
+  document.getElementById('exam-mode-single-btn').classList.add('active');
+  document.getElementById('exam-mode-multi-btn').classList.remove('active');
+  document.getElementById('exam-add-subject-btn').style.display = 'none';
+  document.getElementById('exam-tts-volume-input').value = 100;
+  document.getElementById('exam-tts-volume-label').textContent = '100%';
+  _examTtsCustomAudio = {};
+  setExamTtsProvider('device');
+  document.getElementById('exam-tts-cloud-voice-select').value = 'ko-KR-Neural2-A';
+  var startAtInput = document.getElementById('exam-start-at-input');
+  if (startAtInput) startAtInput.value = '';
+  document.getElementById('exam-source-select').value = '';
+  populateExamSourceSelect();
+  document.getElementById('exam-type-select').value = 'mock';
+  document.getElementById('modal-create-exam-title').textContent = '📝 새 시험 만들기';
+  document.getElementById('exam-save-btn').textContent = '시험 저장';
+  populateExamTtsVoices();
+  renderExamWarnChips();
+  renderExamSubjectBlocks();
+};
+
+// 이미 만들어진 시험의 설정을 불러와서 같은 화면에서 수정
+window.openEditExamModal = function(examId){
+  getDoc(doc(db,'exams',examId)).then(function(d){
+    if (!d.exists()) { alert('시험을 찾을 수 없습니다'); return; }
+    var exam = d.data();
+
+    return getDocs(query(collection(db,'examSessions'), where('examId','==',examId))).then(function(sessSnap){
+      var hasStarted = sessSnap.docs.some(function(s){
+        var st = s.data().status;
+        return st === 'in_progress' || st === 'break' || st === 'submitted' || st === 'graded';
+      });
+      if (hasStarted) {
+        var proceed = confirm('⚠️ 이미 응시를 시작했거나 완료한 학생이 있는 시험입니다.\n\n문항 구성이나 배점을 바꾸면 이미 채점된 학생의 성적과 안 맞을 수 있습니다.\n(등급표만 바꾸실 거면 "📐 등급표" 버튼을 이용하시는 게 더 안전합니다)\n\n그래도 계속 수정하시겠습니까?');
+        if (!proceed) return;
+      }
+
+      _editingExamId = examId;
+      _examMode = exam.type || 'single';
+      _examSubjectBlocks = (exam.subjects||[]).map(function(s){
+        var subj = s.subject, exCat = s.exCategory||null;
+        // 예전 시험은 과학탐구/사회탐구가 그냥 sc/so로 저장되어 있었는데, 새 구조(탐구과목1/2 +
+        // 계열)로 자연스럽게 열리도록 여기서 한 번 변환해줌
+        if (subj === 'sc' || subj === 'so') { exCat = subj; subj = 'ex1'; }
+        return {
+          subject: subj, exCategory: exCat, electiveOptions: s.electiveOptions||[],
+          questionsByElective: (function(){
+            var out = {};
+            if (s.questionsByElective) {
+              Object.keys(s.questionsByElective).forEach(function(name){
+                out[name] = (s.questionsByElective[name]||[]).map(function(q){ return Object.assign({}, q); });
+              });
+            }
+            return out;
+          })(),
+          durationMin: s.durationMin, breakAfterMin: s.breakAfterMin||0,
+          listeningUrl: s.listeningUrl||null, listeningDurationSec: s.listeningDurationSec||null,
+          questions: (s.questions||[]).map(function(q){ return Object.assign({}, q); }),
+          // 이 필드가 아예 없는 예전 시험은(등급을 켜고 끄는 개념 자체가 없던 때 만들어진 것이라)
+          // 원래 동작대로 계속 등급이 보이게 두고, 새로 만드는 시험만 기본이 "꺼짐"이 되게 함
+          gradeCutoffsEnabled: s.gradeCutoffsEnabled !== undefined ? s.gradeCutoffsEnabled : true,
+          gradeCutoffs: s.gradeCutoffs ? s.gradeCutoffs.map(function(c){return Object.assign({},c);}) : _defaultGradeCutoffs(),
+          // 선택과목별 등급컷 복원 - 예전 시험(이 필드가 없던 시험)을 불러왔을 때는
+          // 비워두면 _syncExamActiveQuestionsPointer가 열 때 자동으로 기본값을 채워줌
+          gradeCutoffsByElective: (function(){
+            var out = {};
+            if (s.gradeCutoffsByElective) {
+              Object.keys(s.gradeCutoffsByElective).forEach(function(name){
+                out[name] = (s.gradeCutoffsByElective[name]||[]).map(function(c){ return Object.assign({}, c); });
+              });
+            }
+            return out;
+          })()
+        };
+      });
+      if (!_examSubjectBlocks.length) _examSubjectBlocks = [ _newExamSubjectBlock() ];
+      _examWarnChips = (exam.warnMinutesList || [10,5,1]).slice();
+
+      openModal('modal-create-exam');
+      document.getElementById('exam-title-input').value = exam.title || '';
+      document.getElementById('exam-source-select').value = exam.examSource || '';
+      populateExamSourceSelect(exam.examSource);
+      document.getElementById('exam-type-select').value = exam.gradeType || 'mock';
+      document.getElementById('exam-mode-single-btn').classList.toggle('active', _examMode==='single');
+      document.getElementById('exam-mode-multi-btn').classList.toggle('active', _examMode==='multi');
+      document.getElementById('exam-add-subject-btn').style.display = _examMode==='multi' ? 'inline-block' : 'none';
+      document.getElementById('exam-tts-volume-input').value = Math.round((exam.ttsVolume!=null?exam.ttsVolume:1)*100);
+      document.getElementById('exam-tts-volume-label').textContent = Math.round((exam.ttsVolume!=null?exam.ttsVolume:1)*100)+'%';
+      _examTtsCustomAudio = {};
+      if (exam.ttsCustomAudio) {
+        Object.keys(exam.ttsCustomAudio).forEach(function(min){ _examTtsCustomAudio[min] = { url: exam.ttsCustomAudio[min] }; });
+      }
+      setExamTtsProvider(exam.ttsProvider === 'cloud' ? 'cloud' : exam.ttsProvider === 'custom' ? 'custom' : 'device');
+      document.getElementById('exam-tts-cloud-voice-select').value = exam.ttsCloudVoiceName || 'ko-KR-Neural2-A';
+      var startAtInput = document.getElementById('exam-start-at-input');
+      if (startAtInput) {
+        if (exam.startAtMs) {
+          var d2 = new Date(exam.startAtMs - new Date().getTimezoneOffset()*60000);
+          startAtInput.value = d2.toISOString().slice(0,16);
+        } else {
+          startAtInput.value = '';
+        }
+      }
+      document.getElementById('modal-create-exam-title').textContent = '✏️ 시험 설정 수정';
+      document.getElementById('exam-save-btn').textContent = '수정 내용 저장';
+      populateExamTtsVoices();
+      setTimeout(function(){
+        var voiceSel = document.getElementById('exam-tts-voice-select');
+        if (voiceSel && exam.ttsVoiceURI) voiceSel.value = exam.ttsVoiceURI;
+      }, 300);
+      renderExamWarnChips();
+      renderExamSubjectBlocks();
+    });
+  }).catch(function(e){ alert('불러오기 실패: ' + e.message); });
+};
+
+// ── TTS 목소리 목록 채우기 ──
+function populateExamTtsVoices(){
+  var sel = document.getElementById('exam-tts-voice-select');
+  if (!sel || !('speechSynthesis' in window)) return;
+  function fill(){
+    var voices = speechSynthesis.getVoices() || [];
+    var korean = voices.filter(function(v){ return v.lang && v.lang.toLowerCase().indexOf('ko') === 0; });
+    if (!korean.length) {
+      sel.innerHTML = '<option value="">기본 목소리 (이 기기에 설치된 한국어 목소리를 찾지 못했습니다)</option>';
+      return;
+    }
+    sel.innerHTML = '<option value="">기본 목소리</option>' + korean.map(function(v){
+      return '<option value="'+escapeHtml(v.voiceURI)+'">'+escapeHtml(v.name)+' ('+escapeHtml(v.lang)+')</option>';
+    }).join('');
+  }
+  fill();
+  if (speechSynthesis.onvoiceschanged !== undefined) {
+    speechSynthesis.onvoiceschanged = fill;
+  }
+}
+
+// ═══════════════════════════════════════
+// 종료 알림 목소리 - "이 기기의 기본 목소리" / "고품질 클라우드 목소리" 두 가지 출처 지원
+// ═══════════════════════════════════════
+var _examTtsProvider = 'device'; // 'device' | 'cloud'
+
+window.setExamTtsProvider = function(provider){
+  _examTtsProvider = provider;
+  document.getElementById('exam-tts-provider-device-btn').classList.toggle('active', provider==='device');
+  document.getElementById('exam-tts-provider-cloud-btn').classList.toggle('active', provider==='cloud');
+  document.getElementById('exam-tts-provider-custom-btn').classList.toggle('active', provider==='custom');
+  document.getElementById('exam-tts-device-panel').style.display = provider==='device' ? 'flex' : 'none';
+  document.getElementById('exam-tts-cloud-panel').style.display = provider==='cloud' ? 'block' : 'none';
+  document.getElementById('exam-tts-custom-panel').style.display = provider==='custom' ? 'block' : 'none';
+  if (provider==='custom') renderExamTtsCustomList();
+};
+
+// "직접 녹음" 모드용 - 알림 문구별 업로드 슬롯을 그림. _examWarnChips(알림 시간 목록)가
+// 바뀔 때마다 이 목록도 같이 갱신되어야 해서, 시간 추가/삭제 함수에서도 이 함수를 다시 호출함.
+var _examTtsCustomAudio = {}; // {분: {url, uploading}}
+
+// 한 번 올린 녹음 파일은 지점 전체에서 계속 재사용되도록 별도 보관함에 저장해둔다.
+// 이러면 시험을 새로 만들 때마다 같은 "N분 남았습니다" 파일을 매번 다시 올릴 필요가 없다.
+var _ttsAudioLibraryCache = null;
+function loadTtsCustomAudioLibrary(){
+  if (_ttsAudioLibraryCache) return Promise.resolve(_ttsAudioLibraryCache);
+  var branch = getBranch();
+  return getDoc(doc(db,'ttsCustomAudioLibrary',branch)).then(function(d){
+    _ttsAudioLibraryCache = (d.exists() && d.data().clips) ? d.data().clips : {};
+    return _ttsAudioLibraryCache;
+  }).catch(function(){ return {}; });
+}
+function saveTtsCustomAudioToLibrary(min, url){
+  var branch = getBranch();
+  if (!_ttsAudioLibraryCache) _ttsAudioLibraryCache = {};
+  _ttsAudioLibraryCache[min] = url;
+  return setDoc(doc(db,'ttsCustomAudioLibrary',branch), {clips: _ttsAudioLibraryCache}, {merge:true}).catch(function(){});
+}
+
+
+function renderExamTtsCustomList(){
+  var host = document.getElementById('exam-tts-custom-list');
+  if (!host) return;
+  if (!_examWarnChips.length) {
+    host.innerHTML = '<div style="color:var(--tx3);font-size:12px;">먼저 위에서 종료 알림 시간을 추가해주세요</div>';
+    return;
+  }
+  host.innerHTML = '<div style="color:var(--tx3);font-size:12px;">보관함 확인 중...</div>';
+  // 예전에 이미 올려둔 파일이 보관함에 있으면 자동으로 채워넣어서, 매번 다시 올릴 필요가 없게 함
+  loadTtsCustomAudioLibrary().then(function(library){
+    _examWarnChips.forEach(function(min){
+      if (!_examTtsCustomAudio[min] && library[min]) {
+        _examTtsCustomAudio[min] = { url: library[min], fromLibrary: true };
+      }
+    });
+    _renderExamTtsCustomListNow();
+  });
+}
+
+function _renderExamTtsCustomListNow(){
+  var host = document.getElementById('exam-tts-custom-list');
+  if (!host) return;
+  var sorted = _examWarnChips.slice().sort(function(a,b){return b-a;});
+  host.innerHTML = sorted.map(function(min){
+    var entry = _examTtsCustomAudio[min];
+    var phrase = min+'분 남았습니다';
+    var statusHtml = entry && entry.url
+      ? '<span style="color:var(--green);font-weight:700;">✓ '+(entry.fromLibrary?'보관함에서 자동 적용됨':'업로드됨')+'</span> <button type="button" onclick="playCustomTtsPreview('+min+')" style="margin-left:6px;padding:3px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;font-size:11px;cursor:pointer;">▶ 재생</button>'
+      : '<span style="color:var(--tx4);">아직 업로드 안됨</span>';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface2);border-radius:8px;margin-bottom:6px;">'
+      + '<div style="flex:1;">'
+      + '<div style="font-size:13px;font-weight:600;color:var(--tx1);margin-bottom:2px;">"'+phrase+'"</div>'
+      + '<div id="exam-tts-custom-status-'+min+'" style="font-size:11px;">'+statusHtml+'</div>'
+      + '</div>'
+      + '<label class="exam-add-chip-btn" style="cursor:pointer;font-size:11px;padding:0 12px;height:32px;display:flex;align-items:center;">'
+      + '📁 '+(entry&&entry.url?'다시 올리기':'파일 선택')+'<input type="file" accept="audio/*" style="display:none;" onchange="uploadCustomTtsAudio('+min+',this)"/>'
+      + '</label>'
+      + '</div>';
+  }).join('');
+}
+
+window.uploadCustomTtsAudio = function(min, input){
+  if (!input.files || !input.files[0]) return;
+  var file = input.files[0];
+  var statusEl = document.getElementById('exam-tts-custom-status-'+min);
+  if (statusEl) statusEl.innerHTML = '⏳ 업로드 중...';
+
+  var fd = new FormData();
+  fd.append('file', file);
+  fd.append('upload_preset', CLOUDINARY_PRESET);
+  fd.append('resource_type', 'auto');
+
+  var xhr = new XMLHttpRequest();
+  xhr.timeout = 60000;
+  xhr.open('POST', 'https://api.cloudinary.com/v1_1/'+CLOUDINARY_CLOUD+'/auto/upload');
+  xhr.upload.onprogress = function(e){
+    if (e.lengthComputable && statusEl) statusEl.innerHTML = '⏳ 업로드 중... ' + Math.round((e.loaded/e.total)*100) + '%';
+  };
+  xhr.onload = function(){
+    var data = null;
+    try { data = JSON.parse(xhr.responseText); } catch(e){}
+    if (xhr.status >= 200 && xhr.status < 300 && data && data.secure_url) {
+      _examTtsCustomAudio[min] = { url: data.secure_url };
+      saveTtsCustomAudioToLibrary(min, data.secure_url); // 보관함에도 저장 - 다음 시험부터는 자동 적용됨
+      _renderExamTtsCustomListNow();
+    } else {
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--red);">✗ 업로드 실패</span>';
+    }
+  };
+  xhr.onerror = function(){ if (statusEl) statusEl.innerHTML = '<span style="color:var(--red);">✗ 네트워크 오류</span>'; };
+  xhr.ontimeout = function(){ if (statusEl) statusEl.innerHTML = '<span style="color:var(--red);">✗ 시간 초과</span>'; };
+  xhr.send(fd);
+};
+
+window.playCustomTtsPreview = function(min){
+  var entry = _examTtsCustomAudio[min];
+  if (!entry || !entry.url) return;
+  var audio = new Audio(entry.url);
+  audio.play().catch(function(){});
+};
+
+window.testExamTtsVoice = function(){
+  if (_examTtsProvider === 'cloud') {
+    var voiceName = document.getElementById('exam-tts-cloud-voice-select').value;
+    _playCloudTts('5분 남았습니다', voiceName, 1);
+  } else if (_examTtsProvider === 'custom') {
+    var entry = _examTtsCustomAudio[5] || _examTtsCustomAudio[Object.keys(_examTtsCustomAudio)[0]];
+    if (!entry) { alert('먼저 파일을 하나 이상 업로드해주세요'); return; }
+    playCustomTtsPreview(_examTtsCustomAudio[5] ? 5 : Object.keys(_examTtsCustomAudio)[0]);
+  } else {
+    var voiceURI = document.getElementById('exam-tts-voice-select').value;
+    var volume = (parseInt(document.getElementById('exam-tts-volume-input').value, 10) || 0) / 100;
+    _speakExamWithOptions('5분 남았습니다', voiceURI, volume);
+  }
+};
+
+// 클라우드 음성을 서버(/api/tts-generate)에 요청해서 mp3로 재생. 응답을 짧게 캐싱해서
+// 같은 문구를 여러 번 재생할 때(예: 여러 과목이 같은 "5분 남았습니다"를 쓰는 경우) 매번
+// 다시 요청하지 않도록 함.
+var _cloudTtsCache = {};
+function _playCloudTts(text, voiceName, volume){
+  var cacheKey = voiceName+'|'+text;
+  if (_cloudTtsCache[cacheKey]) {
+    _playBase64Mp3(_cloudTtsCache[cacheKey], volume);
+    return;
+  }
+  fetch('/api/tts-generate', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({text: text, voiceName: voiceName})
+  }).then(function(r){
+    if (!r.ok) return r.json().then(function(e){ throw new Error(e.error || ('HTTP '+r.status)); });
+    return r.json();
+  }).then(function(data){
+    _cloudTtsCache[cacheKey] = data.audioContent;
+    if (Object.keys(_cloudTtsCache).length > 30) _cloudTtsCache = {}; // 너무 쌓이지 않게 가끔 비움
+    _playBase64Mp3(data.audioContent, volume);
+  }).catch(function(e){
+    console.error('[클라우드 음성 재생 실패]', e);
+    alert('클라우드 음성 재생에 실패했습니다: ' + e.message);
+  });
+}
+
+function _playBase64Mp3(base64, volume){
+  try {
+    var audio = new Audio('data:audio/mp3;base64,' + base64);
+    audio.volume = (volume != null ? volume : 1);
+    audio.play().catch(function(e){ console.warn('[음성 재생 차단됨]', e); });
+  } catch(e){ console.error(e); }
+}
+
+// 실제 시험 진행 중 종료 알림이 울릴 때 호출되는 공통 진입점 - exam 설정에 따라
+// 기기 목소리(speechSynthesis) 또는 클라우드 목소리 중 알맞은 쪽으로 재생
+function _speakExamAlert(text, exam, minutesLeft){
+  if (exam && exam.ttsProvider === 'custom' && exam.ttsCustomAudio && minutesLeft != null && exam.ttsCustomAudio[minutesLeft]) {
+    try {
+      var audio = new Audio(exam.ttsCustomAudio[minutesLeft]);
+      audio.volume = exam.ttsVolume != null ? exam.ttsVolume : 1;
+      audio.play().catch(function(e){ console.warn('[녹음 파일 재생 차단됨]', e); });
+    } catch(e){ console.error(e); }
+  } else if (exam && exam.ttsProvider === 'cloud' && exam.ttsCloudVoiceName) {
+    _playCloudTts(text, exam.ttsCloudVoiceName, exam.ttsVolume != null ? exam.ttsVolume : 1);
+  } else {
+    _speakExamWithOptions(text, exam ? exam.ttsVoiceURI : null, exam && exam.ttsVolume != null ? exam.ttsVolume : 1);
+  }
+}
+
+function _newExamSubjectBlock(){
+  return { subject:'ko', exCategory:null, electiveOptions:[], questionsByElective:{}, durationMin:100, breakAfterMin:20, listeningUrl:null, questions:[], gradeCutoffsEnabled:false, gradeCutoffs:_defaultGradeCutoffs() };
+}
+
+function _defaultGradeCutoffs(){
+  return [
+    {grade:1,min:90},{grade:2,min:80},{grade:3,min:70},{grade:4,min:60},
+    {grade:5,min:50},{grade:6,min:40},{grade:7,min:30},{grade:8,min:20},{grade:9,min:0}
+  ];
+}
+
+// 시험 중 '모름(?)'으로 표시한 문항 (성적탭 카드용)
+function _unknownHtml(g){
+  var u=g&&g.unknownBySubj; if(!u||!Object.keys(u).length) return '';
+  var sc=g.scores||{};
+  return '<div style="margin-top:8px"><div style="font-size:11px;color:var(--tx3);margin-bottom:6px">모름(?) 표시한 문항 <span style="color:var(--tx4)">· 맞힌 문항도 포함</span></div>'
+    +Object.keys(u).sort(function(a,b){ var O=['ko','ma','en','hi','sc','so']; var ia=O.indexOf(a.replace(/\d+$/,'')), ib=O.indexOf(b.replace(/\d+$/,'')); return ((ia<0?9:ia)-(ib<0?9:ib))||a.localeCompare(b); }).map(function(k){
+      var e=sc[k]||{}, label=e.label||(subjectNames[k]||k), grp=e.group||k.replace(/\d+/g,'');
+      var wrong=String((g.wrongBySubj||{})[k]||'').split(',').map(function(x){return x.trim();});
+      return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px"><span class="subject-tag subj-'+grp+'" style="font-size:10px;flex-shrink:0">'+escapeHtml(label)+'</span><div style="display:flex;gap:4px;flex-wrap:wrap">'
+        +String(u[k]).split(',').map(function(n){ n=n.trim(); var w=wrong.indexOf(n)>=0; return '<span title="'+(w?'모름 · 틀림':'모름 · 맞힘')+'" style="background:var(--gold-l);border:1px solid rgba(184,132,26,0.35);border-radius:4px;padding:2px 7px;font-size:12px;color:#8a6410">?'+n+'번'+(w?'':' ✓')+'</span>'; }).join('')+'</div></div>';
+    }).join('')+'</div>';
+}
+// 배점 소수점 허용: 합계는 소수 둘째 자리에서 반올림(부동소수 오차 제거)
+function _r2(x){ return Math.round((+x||0)*100)/100; }
+window._r2=_r2;
+function computeGradeFromCutoffs(cutoffs, score){
+  if (!cutoffs || !cutoffs.length) return '';
+  var sorted = cutoffs.slice().sort(function(a,b){ return b.min - a.min; });
+  for (var i=0;i<sorted.length;i++){
+    if (score >= sorted[i].min) return String(sorted[i].grade);
+  }
+  return '';
+}
+
+window.setGradeCutoffsEnabled = function(blockIdx, enabled){
+  var block = _examSubjectBlocks[blockIdx];
+  if (!block) return;
+  block.gradeCutoffsEnabled = enabled;
+  if (enabled && (!block.gradeCutoffs || !block.gradeCutoffs.length)) block.gradeCutoffs = _defaultGradeCutoffs();
+  renderExamSubjectBlocks();
+};
+
+window.toggleGradeCutoffPanel = function(blockIdx){
+  var panel = document.getElementById('exam-cutoff-panel-'+blockIdx);
+  var arrow = document.getElementById('exam-cutoff-arrow-'+blockIdx);
+  if (!panel) return;
+  var open = panel.style.display !== 'none';
+  panel.style.display = open ? 'none' : 'block';
+  if (arrow) arrow.textContent = open ? '▾' : '▴';
+};
+
+window.renderGradeCutoffRows = function(blockIdx){
+  var block = _examSubjectBlocks[blockIdx];
+  var area = document.getElementById('exam-cutoff-rows-'+blockIdx);
+  if (!area || !block) return;
+  if (!block.gradeCutoffs) block.gradeCutoffs = [];
+  var sorted = block.gradeCutoffs.slice().sort(function(a,b){ return a.grade - b.grade; });
+  area.innerHTML = sorted.map(function(c){
+    var realIdx = block.gradeCutoffs.indexOf(c);
+    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
+      + '<span style="width:52px;font-size:12px;font-weight:700;color:var(--burg);">'+c.grade+'등급</span>'
+      + '<span style="font-size:11px;color:var(--tx3);">원점수</span>'
+      + '<input type="number" min="0" max="100" value="'+c.min+'" class="exam-bulk-input" style="width:56px;" onchange="updateGradeCutoff('+blockIdx+','+realIdx+',\'min\',this.value)"/>'
+      + '<span style="font-size:11px;color:var(--tx3);">점 이상</span>'
+      + '<button type="button" onclick="removeGradeCutoffRow('+blockIdx+','+realIdx+')" class="exam-q-remove-btn" style="margin-left:auto;">✕</button>'
+      + '</div>';
+  }).join('');
+};
+
+window.updateGradeCutoff = function(blockIdx, rowIdx, field, value){
+  var block = _examSubjectBlocks[blockIdx];
+  if (!block || !block.gradeCutoffs[rowIdx]) return;
+  block.gradeCutoffs[rowIdx][field] = parseInt(value,10)||0;
+};
+
+window.addGradeCutoffRow = function(blockIdx){
+  var block = _examSubjectBlocks[blockIdx];
+  if (!block) return;
+  if (!block.gradeCutoffs) block.gradeCutoffs = [];
+  var nextGrade = block.gradeCutoffs.length ? Math.max.apply(null, block.gradeCutoffs.map(function(c){return c.grade;}))+1 : 1;
+  block.gradeCutoffs.push({grade:nextGrade, min:0});
+  renderGradeCutoffRows(blockIdx);
+};
+
+window.removeGradeCutoffRow = function(blockIdx, rowIdx){
+  var block = _examSubjectBlocks[blockIdx];
+  if (!block) return;
+  block.gradeCutoffs.splice(rowIdx,1);
+  renderGradeCutoffRows(blockIdx);
+};
+
+window.resetGradeCutoffToDefault = function(blockIdx){
+  var block = _examSubjectBlocks[blockIdx];
+  if (!block) return;
+  block.gradeCutoffs = _defaultGradeCutoffs();
+  renderGradeCutoffRows(blockIdx);
+};
+
+// ═══════════════════════════════════════
+// 시험 생성 후 등급표 수정
+// ═══════════════════════════════════════
+var _egcExamId = null;
+var _egcSubjects = null; // 편집용 로컬 복사본
+
+window.openEditGradeCutoffModal = function(examId){
+  _egcExamId = examId;
+  openModal('modal-edit-grade-cutoff');
+  document.getElementById('egc-body').innerHTML = '<div style="color:var(--tx3);font-size:13px;">불러오는 중...</div>';
+  getDoc(doc(db,'exams',examId)).then(function(d){
+    if (!d.exists()) { document.getElementById('egc-body').innerHTML = '<div style="color:var(--red);font-size:13px;">시험을 찾을 수 없습니다</div>'; return; }
+    var exam = d.data();
+    _egcSubjects = (exam.subjects||[]).map(function(s){
+      return Object.assign({}, s, { gradeCutoffs: (s.gradeCutoffs ? s.gradeCutoffs.map(function(c){return Object.assign({},c);}) : _defaultGradeCutoffs()) });
+    });
+    renderEditGradeCutoffBody();
+  }).catch(function(e){
+    document.getElementById('egc-body').innerHTML = '<div style="color:var(--red);font-size:13px;">불러오기 실패: '+e.message+'</div>';
+  });
+};
+
+window.renderEditGradeCutoffBody = function(){
+  var el = document.getElementById('egc-body');
+  if (!el || !_egcSubjects) return;
+  el.innerHTML = _egcSubjects.map(function(subj, si){
+    var subjName = _resolveSubjDisplayName(subj);
+    var sorted = subj.gradeCutoffs.slice().sort(function(a,b){return a.grade-b.grade;});
+    var rows = sorted.map(function(c){
+      var realIdx = subj.gradeCutoffs.indexOf(c);
+      return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
+        + '<span style="width:52px;font-size:12px;font-weight:700;color:var(--burg);">'+c.grade+'등급</span>'
+        + '<span style="font-size:11px;color:var(--tx3);">원점수</span>'
+        + '<input type="number" min="0" max="100" value="'+c.min+'" class="exam-bulk-input" style="width:56px;" onchange="_egcUpdateCutoff('+si+','+realIdx+',this.value)"/>'
+        + '<span style="font-size:11px;color:var(--tx3);">점 이상</span>'
+        + '<button type="button" onclick="_egcRemoveCutoff('+si+','+realIdx+')" class="exam-q-remove-btn" style="margin-left:auto;">✕</button>'
+        + '</div>';
+    }).join('');
+    return '<div class="exam-section" style="margin-bottom:10px;">'
+      + '<div class="exam-section-title" style="margin-bottom:8px;">'+escapeHtml(subjName)+(subj.gradeCutoffsEnabled ? '' : ' <span style="font-size:11px;font-weight:400;color:var(--tx4);">(등급 사용 꺼짐 - 아래를 고쳐도 성적엔 등급이 안 붙어요)</span>')+'</div>'
+      + '<div id="egc-rows-'+si+'">'+rows+'</div>'
+      + '<button type="button" onclick="_egcAddCutoff('+si+')" class="exam-add-chip-btn" style="margin-top:4px;">+ 등급 추가</button>'
+      + '</div>';
+  }).join('');
+};
+
+window._egcUpdateCutoff = function(si, ci, value){
+  if (!_egcSubjects[si]) return;
+  _egcSubjects[si].gradeCutoffs[ci].min = parseInt(value,10)||0;
+};
+window._egcRemoveCutoff = function(si, ci){
+  _egcSubjects[si].gradeCutoffs.splice(ci,1);
+  renderEditGradeCutoffBody();
+};
+window._egcAddCutoff = function(si){
+  var cutoffs = _egcSubjects[si].gradeCutoffs;
+  var nextGrade = cutoffs.length ? Math.max.apply(null, cutoffs.map(function(c){return c.grade;}))+1 : 1;
+  cutoffs.push({grade:nextGrade, min:0});
+  renderEditGradeCutoffBody();
+};
+
+window.saveEditedGradeCutoff = function(){
+  if (!_egcExamId || !_egcSubjects) return;
+  var newSubjects = _egcSubjects.map(function(s){ return Object.assign({}, s); });
+  updateDoc(doc(db,'exams',_egcExamId), { subjects: newSubjects }).then(function(){
+    // 이미 채점된 학생들의 grades 문서도 새 등급표로 재계산
+    return getDocs(query(collection(db,'grades'), where('examId','==',_egcExamId)));
+  }).then(function(snap){
+    var tasks = snap.docs.map(function(gDoc){
+      var g = gDoc.data();
+      var scores = Object.assign({}, g.scores);
+      Object.keys(scores).forEach(function(key){
+        var subjDef = newSubjects.find(function(s){ return s.subject === key; });
+        // "등급 사용"이 꺼져있는 과목은 등급표를 수정해도 등급을 다시 계산해 넣지 않음 -
+        // 꺼져있어도 gradeCutoffs 배열 자체는 기본값이 항상 채워져 있어서, 이 체크가
+        // 없으면 등급 기능을 꺼둔 과목도 등급표 수정 화면을 한 번 저장하는 순간
+        // 등급이 실수로 붙어버리는 문제가 있었음
+        if (subjDef && subjDef.gradeCutoffsEnabled && subjDef.gradeCutoffs) {
+          scores[key] = Object.assign({}, scores[key], { grade: computeGradeFromCutoffs(_getCutoffsForScoreEntry(subjDef, scores[key]), scores[key].score) });
+        }
+      });
+      return updateDoc(doc(db,'grades',gDoc.id), { scores: scores });
+    });
+    return Promise.all(tasks);
+  }).then(function(results){
+    closeModal('modal-edit-grade-cutoff');
+    alert('등급표가 저장되었습니다' + (results && results.length ? ' (기존 성적 '+results.length+'건에도 반영됨)' : ''));
+  }).catch(function(e){
+    alert('저장 실패: ' + e.message);
+  });
+};
+
+window.setExamMode = function(mode){
+  if (mode === 'single' && _examSubjectBlocks.length > 1) {
+    if (!confirm('1과목 모드로 바꾸면 추가된 과목들이 사라집니다. 계속할까요?')) return;
+    _examSubjectBlocks = [_examSubjectBlocks[0]];
+  }
+  _examMode = mode;
+  document.getElementById('exam-mode-single-btn').classList.toggle('active', mode==='single');
+  document.getElementById('exam-mode-multi-btn').classList.toggle('active', mode==='multi');
+  document.getElementById('exam-add-subject-btn').style.display = mode==='multi' ? 'block' : 'none';
+  renderExamSubjectBlocks();
+};
+
+window.addExamSubjectBlock = function(){
+  _examSubjectBlocks.push(_newExamSubjectBlock());
+  renderExamSubjectBlocks();
+};
+
+window.removeExamSubjectBlock = function(idx){
+  if (_examSubjectBlocks.length <= 1) { alert('최소 1개 과목은 있어야 합니다'); return; }
+  _examSubjectBlocks.splice(idx, 1);
+  renderExamSubjectBlocks();
+};
+
+window.updateExamSubjectField = function(idx, field, value){
+  var b = _examSubjectBlocks[idx];
+  if (!b) return;
+  if (field==='durationMin' || field==='breakAfterMin') b[field] = parseInt(value,10)||0;
+  else b[field] = value;
+  if (field === 'subject' || field === 'exCategory') {
+    b.electiveOptions = []; // 과목/계열이 바뀌면 이전에 골라둔 선택과목은 더 이상 안 맞을 수 있어 초기화
+    renderExamSubjectBlocks(); // 계열 선택창 등 구조 자체가 바뀌어야 해서 전체 재렌더
+  }
+};
+
+// 과목(또는 탐구 계열)에 맞는 마스터 목록을 불러와서, 이 시험에 적용할 선택과목을
+// 체크박스로 여러 개 고를 수 있게 함. 마스터 목록이 비어있는 과목이면 아무것도 안 뜨고
+// (선택과목 없이 그냥 진행) - 억지로 뭔가 강제하지 않음.
+window.renderExamElectivePanel = function(idx){
+  var block = _examSubjectBlocks[idx];
+  var host = document.getElementById('exam-elective-panel-'+idx);
+  if (!block || !host) return;
+  var isExplore = block.subject === 'ex1' || block.subject === 'ex2';
+  var baseKey = isExplore ? block.exCategory : block.subject;
+  if (!baseKey) { host.innerHTML = ''; return; }
+  if (isExplore && !block.exCategory) { host.innerHTML = '<div style="font-size:11px;color:var(--tx4);">위에서 계열(과학탐구/사회탐구)을 먼저 선택해주세요</div>'; return; }
+
+  loadElectiveOptions().then(function(all){
+    var list = all[baseKey] || [];
+    if (!list.length) {
+      host.innerHTML = '<div style="font-size:11px;color:var(--tx4);">이 과목엔 등록된 선택과목이 없습니다 (선택과목 없이 진행됩니다). "🔧 선택과목 관리"에서 추가할 수 있어요.</div>';
+      return;
+    }
+    var checked = block.electiveOptions || [];
+    host.innerHTML = '<div class="modal-label" style="margin-bottom:6px;">선택과목 <span class="exam-optional-tag">이 시험에서 학생이 고를 수 있는 과목 - 여러 개 선택 가능, 선택사항</span></div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:8px;">'
+      + list.map(function(name){
+          var isChecked = checked.indexOf(name) !== -1;
+          return '<label style="display:flex;align-items:center;gap:5px;padding:6px 10px;background:'+(isChecked?'var(--burg-l2)':'var(--surface2)')+';border:1px solid '+(isChecked?'var(--burg)':'var(--border)')+';border-radius:8px;font-size:12px;cursor:pointer;color:'+(isChecked?'var(--burg)':'var(--tx2)')+';">'
+            + '<input type="checkbox" '+(isChecked?'checked':'')+' onchange="toggleExamElectiveOption('+idx+',\''+escapeHtml(name).replace(/'/g,"\\'")+'\',this.checked)" style="margin:0;"/>'
+            + escapeHtml(name)
+            + '</label>';
+        }).join('')
+      + '</div>';
+  });
+};
+
+window.toggleExamElectiveOption = function(idx, name, isChecked){
+  var block = _examSubjectBlocks[idx];
+  if (!block) return;
+  if (!block.electiveOptions) block.electiveOptions = [];
+  if (!block.questionsByElective) block.questionsByElective = {};
+  if (isChecked) {
+    if (block.electiveOptions.indexOf(name) === -1) block.electiveOptions.push(name);
+    if (!block.questionsByElective[name]) block.questionsByElective[name] = [];
+  } else {
+    block.electiveOptions = block.electiveOptions.filter(function(n){ return n !== name; });
+    // 체크 해제해도 이미 입력해둔 문항은 바로 안 지우고 questionsByElective에 남겨둠
+    // (실수로 체크 풀었다 다시 켰을 때 문항이 사라지지 않도록)
+  }
+  _syncExamActiveQuestionsPointer(idx);
+  renderExamQuestionBuilder(idx);
+};
+
+// block.questions를 "지금 편집 중인 선택과목의 문항 배열"을 가리키는 포인터로 유지함.
+// 이렇게 하면 문항 추가/삭제/일괄생성 등 기존 로직을 하나도 안 건드리고도, 그 로직들이
+// 자동으로 "지금 선택된 과목"의 문항을 다루게 됨 (배열은 참조 타입이라 questionsByElective
+// 안의 배열과 block.questions가 항상 같은 실체를 가리키게 유지).
+// 등급컷(gradeCutoffs)도 완전히 같은 방식으로 선택과목별로 분리함 - 예전엔 국어에
+// "언어와 매체"/"화법과 작문"을 둘 다 골라도 등급컷을 하나만 공유해서 설정할 수 있었음.
+function _syncExamActiveQuestionsPointer(idx){
+  var block = _examSubjectBlocks[idx];
+  if (!block) return;
+  if (!block.electiveOptions || !block.electiveOptions.length) {
+    // 선택과목이 없으면 원래대로 - block.questions가 이미 questionsByElective를 가리키고
+    // 있었다면(직전까지 선택과목이 있었던 경우) 공용 문항 배열로 되돌림
+    if (!block._ownQuestions) block._ownQuestions = block.questions && block.questions.length && !block._fromElective ? block.questions : [];
+    block.questions = block._ownQuestions;
+    if (!block._ownGradeCutoffs) block._ownGradeCutoffs = block.gradeCutoffs && !block._cutoffsFromElective ? block.gradeCutoffs : _defaultGradeCutoffs();
+    block.gradeCutoffs = block._ownGradeCutoffs;
+    block._cutoffsFromElective = false;
+    return;
+  }
+  if (!block._currentElective || block.electiveOptions.indexOf(block._currentElective) === -1) {
+    block._currentElective = block.electiveOptions[0];
+  }
+  if (!block.questionsByElective[block._currentElective]) block.questionsByElective[block._currentElective] = [];
+  block.questions = block.questionsByElective[block._currentElective];
+  block._fromElective = true;
+
+  if (!block.gradeCutoffsByElective) block.gradeCutoffsByElective = {};
+  if (!block.gradeCutoffsByElective[block._currentElective]) block.gradeCutoffsByElective[block._currentElective] = _defaultGradeCutoffs();
+  block.gradeCutoffs = block.gradeCutoffsByElective[block._currentElective];
+  block._cutoffsFromElective = true;
+}
+
+window.switchExamQuestionElective = function(blockIdx, electiveName){
+  var block = _examSubjectBlocks[blockIdx];
+  if (!block) return;
+  block._currentElective = electiveName;
+  _syncExamActiveQuestionsPointer(blockIdx);
+  renderExamQuestionBuilder(blockIdx);
+  // 등급컷 패널도 지금 보고 있는 중이면 같이 새로고침 (선택과목 바꾸면 그 과목의
+  // 등급컷으로 화면이 바로 갱신되도록)
+  var cutoffPanel = document.getElementById('exam-cutoff-panel-'+blockIdx);
+  if (cutoffPanel && cutoffPanel.style.display !== 'none') renderGradeCutoffRows(blockIdx);
+};
+
+window.renderExamSubjectBlocks = function(){
+  var container = document.getElementById('exam-subjects-container');
+  if (!container) return;
+  // 시험 관리 화면에서만 "과학탐구/사회탐구"를 "탐구과목1/탐구과목2"로 표시 (성적탭 등 다른
+  // 화면의 subjectNames는 그대로 둠 - 거기까지 바뀌면 플래너 등 무관한 곳까지 영향을 줌).
+  // ex1/ex2를 고르면 그 안에서 "계열(과학탐구/사회탐구)"을 따로 정하고, 그 계열의 마스터
+  // 목록에서 선택과목을 여러 개 고를 수 있음.
+  var subjList = [
+    {key:'ko',name:'국어'},{key:'en',name:'영어'},{key:'ma',name:'수학'},{key:'hi',name:'한국사'},
+    {key:'ex1',name:'탐구과목1'},{key:'ex2',name:'탐구과목2'}
+  ];
+
+  container.innerHTML = _examSubjectBlocks.map(function(block, idx){
+    var isLast = idx === _examSubjectBlocks.length - 1;
+    var subjOptionsHtml = subjList.map(function(s){
+      return '<option value="'+s.key+'"'+(block.subject===s.key?' selected':'')+'>'+escapeHtml(s.name)+'</option>';
+    }).join('');
+    var isExplore = block.subject === 'ex1' || block.subject === 'ex2';
+    // 선택과목 마스터 목록 기준 과목 키 (탐구는 계열에 따라 sc/so, 나머지는 그대로)
+    var electiveBaseKey = isExplore ? (block.exCategory || '') : block.subject;
+
+    return '<div class="exam-section exam-subject-block">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">'
+      +   '<div class="exam-section-title" style="margin:0;">'+(_examMode==='multi' ? ('과목 '+(idx+1)) : '과목 설정')+'</div>'
+      +   (_examMode==='multi' ? '<button class="exam-q-remove-btn" onclick="removeExamSubjectBlock('+idx+')">✕</button>' : '')
+      + '</div>'
+      + '<div style="display:flex;gap:10px;">'
+      +   '<div style="flex:1;"><div class="modal-label">과목</div><select class="modal-select" onchange="updateExamSubjectField('+idx+',\'subject\',this.value)">'+subjOptionsHtml+'</select></div>'
+      +   '<div style="width:120px;"><div class="modal-label">시간(분)</div><input class="modal-input" type="number" value="'+block.durationMin+'" oninput="updateExamSubjectField('+idx+',\'durationMin\',this.value)"/></div>'
+      +   (_examMode==='multi' && !isLast ? '<div style="width:130px;"><div class="modal-label">다음 쉬는시간(분)</div><input class="modal-input" type="number" value="'+block.breakAfterMin+'" oninput="updateExamSubjectField('+idx+',\'breakAfterMin\',this.value)"/></div>' : '')
+      + '</div>'
+
+      + (isExplore ?
+          '<div style="margin-top:10px;"><div class="modal-label">계열</div><select class="modal-select" onchange="updateExamSubjectField('+idx+',\'exCategory\',this.value)">'
+          + '<option value="">선택해주세요</option>'
+          + '<option value="sc"'+(block.exCategory==='sc'?' selected':'')+'>과학탐구</option>'
+          + '<option value="so"'+(block.exCategory==='so'?' selected':'')+'>사회탐구</option>'
+          + '</select></div>'
+        : '')
+
+      + '<div id="exam-elective-panel-'+idx+'" style="margin-top:10px;"></div>'
+
+      + '<div style="margin-top:12px;">'
+      +   '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'
+      +     '<button type="button" class="exam-cutoff-toggle-btn" onclick="toggleGradeCutoffPanel('+idx+')" style="margin:0;">📐 등급 커트라인 설정 <span class="exam-optional-tag">선택사항</span> <span id="exam-cutoff-arrow-'+idx+'">▾</span></button>'
+      +     '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--tx2);cursor:pointer;white-space:nowrap;margin-left:10px;">'
+      +       '<input type="checkbox" '+(block.gradeCutoffsEnabled?'checked':'')+' onchange="setGradeCutoffsEnabled('+idx+',this.checked)"/> 등급 사용'
+      +     '</label>'
+      +   '</div>'
+      +   (block.gradeCutoffsEnabled ? '' : '<div style="font-size:11px;color:var(--tx4);margin-bottom:6px;">지금은 꺼져있어서 이 과목은 등급 없이 원점수만 기록됩니다.</div>')
+      +   '<div id="exam-cutoff-panel-'+idx+'" class="exam-cutoff-panel" style="display:none;'+(block.gradeCutoffsEnabled?'':'opacity:0.4;pointer-events:none;')+'">'
+      +     '<div style="font-size:11px;color:var(--tx3);margin-bottom:8px;">원점수가 아래 최소점수 이상이면 해당 등급으로 자동 반영됩니다 (100점 만점 기준)</div>'
+      +     (block.electiveOptions && block.electiveOptions.length ? '<div style="font-size:12px;font-weight:700;color:var(--gold);background:var(--gold-l);border-radius:8px;padding:6px 10px;margin-bottom:10px;">📌 지금 "'+escapeHtml(block._currentElective||block.electiveOptions[0])+'"의 등급컷을 편집 중이에요. 위에서 문항 탭을 바꾸면 그 선택과목의 등급컷으로 전환됩니다.</div>' : '')
+      +     '<div id="exam-cutoff-rows-'+idx+'"></div>'
+      +     '<div style="display:flex;gap:8px;margin-top:8px;">'
+      +       '<button type="button" onclick="addGradeCutoffRow('+idx+')" class="exam-add-chip-btn">+ 등급 추가</button>'
+      +       '<button type="button" onclick="resetGradeCutoffToDefault('+idx+')" class="exam-add-chip-btn">기본값(9등급)으로</button>'
+      +     '</div>'
+      +   '</div>'
+      + '</div>'
+
+      + '<div class="modal-label" style="margin-top:10px;">🎧 듣기평가 파일 <span class="exam-optional-tag">선택사항</span></div>'
+      + '<input type="file" accept="audio/*" id="exam-listening-file-'+idx+'" onchange="handleExamListeningFile('+idx+',this)" style="display:none;"/>'
+      + '<div class="exam-file-upload-row">'
+      +   '<button type="button" class="exam-file-upload-btn" onclick="document.getElementById(\'exam-listening-file-'+idx+'\').click()">'
+      +     '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>'
+      +     '오디오 파일 선택'
+      +   '</button>'
+      +   '<span id="exam-listening-status-'+idx+'" class="exam-file-status">'+(block.listeningUrl?'✓ 첨부됨':'첨부된 파일 없음')+'</span>'
+      + '</div>'
+
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 10px;">'
+      +   '<div class="exam-section-title" style="margin:0;">📋 문항 구성</div>'
+      +   '<div style="display:flex;gap:6px;">'
+      +     '<button type="button" onclick="addExamQuestion('+idx+',\'mc\')" class="exam-add-q-btn">+ 객관식</button>'
+      +     '<button type="button" onclick="addExamQuestion('+idx+',\'short\')" class="exam-add-q-btn">+ 주관식</button>'
+      +   '</div>'
+      + '</div>'
+      + '<div class="exam-bulk-add-row">'
+      +   '<span class="exam-bulk-label">일괄 생성</span>'
+      +   '<div class="exam-bulk-field"><span>객관식</span><input type="number" min="0" value="0" id="exam-bulk-mc-'+idx+'" class="exam-bulk-input"/><span>개</span></div>'
+      +   '<div class="exam-bulk-field"><span>주관식</span><input type="number" min="0" value="0" id="exam-bulk-short-'+idx+'" class="exam-bulk-input"/><span>개</span></div>'
+      +   '<button type="button" onclick="addExamQuestionsBulk('+idx+')" class="exam-bulk-add-btn">한번에 추가</button>'
+      + '</div>'
+      + '<div class="exam-bulk-add-row">'
+      +   '<span class="exam-bulk-label">일괄 적용</span>'
+      +   '<div class="exam-bulk-field"><span>주관식 유형</span><select id="exam-bulk-shortmode-'+idx+'" class="exam-bulk-select"><option value="simple">단순입력</option><option value="digit">자릿수클릭</option></select></div>'
+      +   '<button type="button" onclick="applyBulkShortMode('+idx+')" class="exam-bulk-add-btn">주관식 전체 적용</button>'
+      +   '<div class="exam-bulk-field" style="margin-left:auto;"><span>배점</span><input type="number" min="0" step="0.1" value="3" id="exam-bulk-point-'+idx+'" class="exam-bulk-input"/><span>점</span></div>'
+      +   '<button type="button" onclick="applyBulkPoint('+idx+')" class="exam-bulk-add-btn">전체 배점 적용</button>'
+      + '</div>'
+      + '<div class="exam-quick-answer-box" id="exam-quick-answer-box-'+idx+'"></div>'
+      + '<div class="exam-bulk-add-row" style="background:var(--surface2);">'
+      +   '<span class="exam-bulk-label" style="color:var(--tx4);">📷 이미지 자동인식 (참고용)</span>'
+      +   '<span style="font-size:11px;color:var(--tx4);">원문자 인식 정확도가 낮을 수 있어요 - 위 "빠른 순차 입력"을 권장합니다</span>'
+      +   '<button type="button" onclick="openAnswerKeyOcrModal('+idx+')" class="exam-bulk-add-btn" style="margin-left:auto;">이미지로 정답 채우기</button>'
+      + '</div>'
+      + '<div class="exam-q-hint">문항을 드래그하거나 ▲▼ 버튼으로 순서를 바꿀 수 있어요</div>'
+      + '<div class="exam-question-list" id="exam-question-builder-'+idx+'"></div>'
+      + '<div class="exam-score-check" id="exam-score-check-'+idx+'"></div>'
+      + '</div>';
+  }).join('');
+
+  _examSubjectBlocks.forEach(function(_, idx){ renderExamQuestionBuilder(idx); renderGradeCutoffRows(idx); renderQuickAnswerBox(idx); renderExamElectivePanel(idx); });
+};
+
+window.addExamQuestion = function(blockIdx, type){
+  var block = _examSubjectBlocks[blockIdx];
+  if (!block) return;
+  var no = block.questions.length + 1;
+  if (type === 'mc') block.questions.push({no:no, type:'mc', choices:5, point:3, answer:1});
+  else block.questions.push({no:no, type:'short', point:3, answer:'', shortMode:'simple'});
+  renderExamQuestionBuilder(blockIdx);
+};
+
+window.removeExamQuestion = function(blockIdx, qIdx){
+  var block = _examSubjectBlocks[blockIdx];
+  if (!block) return;
+  block.questions.splice(qIdx, 1);
+  block.questions.forEach(function(q,i){ q.no = i+1; });
+  renderExamQuestionBuilder(blockIdx);
+};
+
+window.updateExamQuestionField = function(blockIdx, idx, field, value){
+  var block = _examSubjectBlocks[blockIdx];
+  if (!block) return;
+  var q = block.questions[idx];
+  if (!q) return;
+  if (field === 'point') q[field] = _r2(parseFloat(value)||0);
+  else if (field === 'choices') q[field] = parseInt(value,10)||0;
+  else if (field === 'answer' && q.type === 'mc') q[field] = parseInt(value,10)||1; // select의 value는 항상 문자열이라 숫자로 변환 필요 (안 하면 화면 표시/채점 둘 다 어긋남)
+  else q[field] = value;
+  if (field === 'point') updateExamScoreCheck(blockIdx);
+};
+
+window.renderExamQuestionBuilder = function(blockIdx){
+  var block = _examSubjectBlocks[blockIdx];
+  var area = document.getElementById('exam-question-builder-'+blockIdx);
+  if (!area || !block) return;
+  _syncExamActiveQuestionsPointer(blockIdx);
+
+  var tabsHtml = '';
+  if (block.electiveOptions && block.electiveOptions.length) {
+    tabsHtml = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;padding:8px;background:var(--gold-l);border-radius:8px;">'
+      + '<div style="width:100%;font-size:11px;color:var(--gold);font-weight:700;margin-bottom:2px;">📚 선택과목마다 문항/정답이 따로예요 - 아래에서 과목을 골라 그 과목 문항을 입력하세요</div>'
+      + block.electiveOptions.map(function(name){
+          var isActive = name === block._currentElective;
+          var qCount = (block.questionsByElective && block.questionsByElective[name]) ? block.questionsByElective[name].length : 0;
+          return '<button type="button" onclick="switchExamQuestionElective('+blockIdx+',\''+escapeHtml(name).replace(/'/g,"\\'")+'\')" style="padding:6px 12px;border-radius:8px;border:1px solid '+(isActive?'var(--gold)':'var(--border)')+';background:'+(isActive?'var(--gold)':'var(--surface)')+';color:'+(isActive?'#fff':'var(--tx2)')+';font-size:12px;font-weight:600;cursor:pointer;">'+escapeHtml(name)+' ('+qCount+'문항)</button>';
+        }).join('')
+      + '</div>';
+  }
+
+  if (!block.questions.length) {
+    area.innerHTML = tabsHtml + '<div style="color:var(--tx4);font-size:12px;text-align:center;padding:20px 0;">위 버튼으로 문항을 추가하세요</div>';
+  } else {
+    area.innerHTML = tabsHtml + block.questions.map(function(q, idx){
+      var typeLabel = q.type === 'mc' ? '객관식' : '주관식';
+      var rowExtra = '';
+      if (q.type === 'mc') {
+        rowExtra = '<select class="exam-q-select" onchange="updateExamQuestionField('+blockIdx+','+idx+',\'choices\',this.value)">'
+          + [4,5].map(function(c){return '<option value="'+c+'"'+(q.choices===c?' selected':'')+'>'+c+'지선다</option>';}).join('')
+          + '</select>'
+          + '<select class="exam-q-select" id="exam-q-answer-select-'+blockIdx+'-'+idx+'" onchange="updateExamQuestionField('+blockIdx+','+idx+',\'answer\',this.value)">'
+          + Array.from({length:q.choices||5},function(_,i){return i+1;}).map(function(n){return '<option value="'+n+'"'+(q.answer===n?' selected':'')+'>정답 '+n+'번</option>';}).join('')
+          + '</select>';
+      } else {
+        rowExtra = '<select class="exam-q-select" onchange="updateExamQuestionField('+blockIdx+','+idx+',\'shortMode\',this.value)">'
+          + '<option value="simple"'+(q.shortMode==='simple'?' selected':'')+'>단순입력</option>'
+          + '<option value="digit"'+(q.shortMode==='digit'?' selected':'')+'>자릿수클릭(3자리)</option>'
+          + '</select>'
+          + '<input type="text" class="exam-q-input" placeholder="정답 입력" value="'+escapeHtml(q.answer||'')+'" oninput="updateExamQuestionField('+blockIdx+','+idx+',\'answer\',this.value)" style="width:84px;"/>';
+      }
+      var isFirst = idx === 0, isLast = idx === block.questions.length - 1;
+      return '<div class="exam-q-row" draggable="true" data-block="'+blockIdx+'" data-idx="'+idx+'" '
+        + 'ondragstart="examQDragStart(event,'+blockIdx+','+idx+')" ondragover="examQDragOver(event)" '
+        + 'ondrop="examQDrop(event,'+blockIdx+','+idx+')" ondragend="examQDragEnd(event)">'
+        + '<span class="exam-q-drag-handle" title="드래그해서 순서 변경">⠿</span>'
+        + '<div class="exam-q-order-btns">'
+        +   '<button type="button" class="exam-q-order-btn" '+(isFirst?'disabled':'')+' onclick="moveExamQuestion('+blockIdx+','+idx+',-1)">▲</button>'
+        +   '<button type="button" class="exam-q-order-btn" '+(isLast?'disabled':'')+' onclick="moveExamQuestion('+blockIdx+','+idx+',1)">▼</button>'
+        + '</div>'
+        + '<div class="exam-q-no">'+q.no+'</div>'
+        + '<span class="exam-q-type-badge">'+typeLabel+'</span>'
+        + rowExtra
+        + '<span class="exam-q-point-label">배점</span>'
+        + '<input type="number" min="0" step="0.1" class="exam-q-point-input" value="'+q.point+'" oninput="updateExamQuestionField('+blockIdx+','+idx+',\'point\',this.value)"/>'
+        + '<button class="exam-q-remove-btn" onclick="removeExamQuestion('+blockIdx+','+idx+')">✕</button>'
+        + '</div>';
+    }).join('');
+  }
+  updateExamScoreCheck(blockIdx);
+  renderQuickAnswerBox(blockIdx);
+};
+
+// ── 일괄 생성 ──
+window.addExamQuestionsBulk = function(blockIdx){
+  var block = _examSubjectBlocks[blockIdx];
+  if (!block) return;
+  var mcInput = document.getElementById('exam-bulk-mc-'+blockIdx);
+  var shortInput = document.getElementById('exam-bulk-short-'+blockIdx);
+  var mcCount = parseInt(mcInput ? mcInput.value : 0, 10) || 0;
+  var shortCount = parseInt(shortInput ? shortInput.value : 0, 10) || 0;
+  if (mcCount <= 0 && shortCount <= 0) { alert('생성할 객관식 또는 주관식 문항 개수를 입력해주세요'); return; }
+  if (mcCount + shortCount > 100) { alert('한 번에 100문항까지만 생성할 수 있습니다'); return; }
+
+  for (var i=0; i<mcCount; i++){
+    block.questions.push({no:0, type:'mc', choices:5, point:3, answer:1});
+  }
+  for (var j=0; j<shortCount; j++){
+    block.questions.push({no:0, type:'short', point:3, answer:'', shortMode:'simple'});
+  }
+  block.questions.forEach(function(q,i){ q.no = i+1; });
+  if (mcInput) mcInput.value = 0;
+  if (shortInput) shortInput.value = 0;
+  renderExamQuestionBuilder(blockIdx);
+};
+
+// ── 주관식 유형 일괄 적용 ──
+window.applyBulkShortMode = function(blockIdx){
+  var block = _examSubjectBlocks[blockIdx];
+  if (!block) return;
+  var sel = document.getElementById('exam-bulk-shortmode-'+blockIdx);
+  var mode = sel ? sel.value : 'simple';
+  var count = 0;
+  block.questions.forEach(function(q){
+    if (q.type === 'short') { q.shortMode = mode; count++; }
+  });
+  if (!count) { alert('적용할 주관식 문항이 없습니다'); return; }
+  renderExamQuestionBuilder(blockIdx);
+};
+
+// ── 배점 일괄 적용 ──
+window.applyBulkPoint = function(blockIdx){
+  var block = _examSubjectBlocks[blockIdx];
+  if (!block) return;
+  var input = document.getElementById('exam-bulk-point-'+blockIdx);
+  var point = _r2(parseFloat(input ? input.value : 0));
+  if (isNaN(point) || point < 0) { alert('올바른 배점을 입력해주세요'); return; }
+  if (!block.questions.length) { alert('적용할 문항이 없습니다'); return; }
+  block.questions.forEach(function(q){ q.point = point; });
+  renderExamQuestionBuilder(blockIdx);
+};
+
+// ═══════════════════════════════════════
+// 정답 빠른 순차 입력 (숫자 1자리 입력 → 자동으로 다음 문항 칸으로 이동)
+// OCR보다 훨씬 정확하고 빠름 - 종이 정답표를 보면서 숫자만 쭉 입력하면 됨
+// ═══════════════════════════════════════
+window.renderQuickAnswerBox = function(blockIdx){
+  var block = _examSubjectBlocks[blockIdx];
+  var area = document.getElementById('exam-quick-answer-box-'+blockIdx);
+  if (!area || !block) return;
+  var mcQuestions = block.questions.filter(function(q){ return q.type === 'mc'; });
+  if (!mcQuestions.length) {
+    area.innerHTML = '';
+    return;
+  }
+  var cells = mcQuestions.map(function(q, i){
+    return '<div class="quick-ans-cell">'
+      + '<div class="quick-ans-no">'+q.no+'</div>'
+      + '<input type="text" inputmode="numeric" maxlength="1" class="quick-ans-input" '
+      + 'id="quick-ans-'+blockIdx+'-'+i+'" data-qno="'+q.no+'" data-idx="'+i+'" '
+      + 'value="'+(q.answer||'')+'" '
+      + 'oninput="handleQuickAnswerInput(this,'+blockIdx+')" '
+      + 'onfocus="this.select()" '
+      + 'onkeydown="handleQuickAnswerKeydown(event,this,'+blockIdx+')"/>'
+      + '</div>';
+  }).join('');
+  area.innerHTML = '<div class="quick-ans-title">⚡ 정답 빠른 순차 입력 <span class="exam-optional-tag">숫자 입력 시 자동으로 다음 칸으로 이동</span></div>'
+    + '<div class="quick-ans-grid">' + cells + '</div>';
+};
+
+window.handleQuickAnswerInput = function(inputEl, blockIdx){
+  var block = _examSubjectBlocks[blockIdx];
+  if (!block) return;
+  // 앞뒤 공백이나 숫자 아닌 문자가 섞여 들어와도(예: 실수로 스페이스바 먼저 누른 경우)
+  // 항상 마지막에 입력된 숫자 하나만 남기고 나머지는 무시
+  var digitsOnly = inputEl.value.replace(/\D/g,'');
+  var lastDigit = digitsOnly.slice(-1);
+  inputEl.value = lastDigit;
+  if (!lastDigit) return;
+
+  var idx = parseInt(inputEl.dataset.idx,10);
+  var qno = parseInt(inputEl.dataset.qno,10);
+  var q = block.questions.find(function(qq){ return qq.no === qno; });
+  if (!q) return;
+
+  var maxChoice = q.choices || 5;
+  var val = parseInt(lastDigit,10);
+  if (val < 1 || val > maxChoice) {
+    inputEl.classList.add('quick-ans-invalid');
+    inputEl.select(); // 잘못된 값이 칸에 남아있어도 곧바로 다시 타이핑해서 덮어쓸 수 있도록 선택 상태로 둠
+    return; // 범위를 벗어나면 저장하지 않고 빨간 테두리로만 표시 (다음 칸으로 넘어가지 않음)
+  }
+  inputEl.classList.remove('quick-ans-invalid');
+  q.answer = val;
+
+  // 문항 목록(아래 상세 편집 영역) 전체를 다시 그리면 이 입력창의 포커스가 끊겨서
+  // 자동 다음칸 이동이 깨지므로, 해당 문항의 정답 select 하나만 콕 집어서 값만 갱신
+  var qIdxInBlock = block.questions.indexOf(q);
+  var detailSelect = document.getElementById('exam-q-answer-select-'+blockIdx+'-'+qIdxInBlock);
+  if (detailSelect) detailSelect.value = String(val);
+  // renderExamQuestionBuilder가 이 빠른입력 박스를 다시 그리지는 않으므로 포커스는 유지된 채로,
+  // 다음 칸으로 자동 이동
+  var next = document.getElementById('quick-ans-'+blockIdx+'-'+(idx+1));
+  if (next) { next.focus(); next.select(); }
+};
+
+window.handleQuickAnswerKeydown = function(event, inputEl, blockIdx){
+  var idx = parseInt(inputEl.dataset.idx,10);
+  // 빈 칸에서 백스페이스 누르면 이전 칸으로 이동 (실수로 건너뛴 경우 되돌아가기 편하게)
+  if (event.key === 'Backspace' && !inputEl.value) {
+    var prev = document.getElementById('quick-ans-'+blockIdx+'-'+(idx-1));
+    if (prev) { event.preventDefault(); prev.focus(); prev.select(); }
+  } else if (event.key === 'ArrowRight') {
+    var nextR = document.getElementById('quick-ans-'+blockIdx+'-'+(idx+1));
+    if (nextR) { event.preventDefault(); nextR.focus(); nextR.select(); }
+  } else if (event.key === 'ArrowLeft') {
+    var prevL = document.getElementById('quick-ans-'+blockIdx+'-'+(idx-1));
+    if (prevL) { event.preventDefault(); prevL.focus(); prevL.select(); }
+  }
+};
+
+// ═══════════════════════════════════════
+// 정답표 이미지 자동 인식 (OCR, 브라우저 안에서 무료로 동작 - 서버/API 키 불필요)
+// 정확도가 100%는 아니므로, 인식 후 반드시 검토 화면을 거쳐 사람이 확인/수정한 뒤에만 적용됨.
+// ═══════════════════════════════════════
+var _ocrTargetBlockIdx = null;
+var _ocrParsedResults = null; // {no: answer(1~9 숫자문자열)} 형태
+
+// 원문자(circled digit) → 숫자 변환 맵 (정답표에 ①②③④⑤ 형태로 많이 쓰이기 때문)
+var _CIRCLED_DIGIT_MAP = {'①':'1','②':'2','③':'3','④':'4','⑤':'5','⑥':'6','⑦':'7','⑧':'8','⑨':'9','⑩':'10'};
+
+window.openAnswerKeyOcrModal = function(blockIdx){
+  _ocrTargetBlockIdx = blockIdx;
+  _ocrParsedResults = null;
+  document.getElementById('answer-key-ocr-file').value = '';
+  document.getElementById('answer-key-ocr-preview').style.display = 'none';
+  document.getElementById('answer-key-ocr-run-btn').style.display = 'none';
+  document.getElementById('answer-key-ocr-status').textContent = '';
+  document.getElementById('answer-key-ocr-review').innerHTML = '';
+  document.getElementById('answer-key-ocr-apply-btn').style.display = 'none';
+  openModal('modal-answer-key-ocr');
+};
+
+window.handleAnswerKeyOcrFile = function(input){
+  if (!input.files || !input.files[0]) return;
+  var file = input.files[0];
+  var preview = document.getElementById('answer-key-ocr-preview');
+  preview.src = URL.createObjectURL(file);
+  preview.style.display = 'block';
+  document.getElementById('answer-key-ocr-run-btn').style.display = 'block';
+  document.getElementById('answer-key-ocr-review').innerHTML = '';
+  document.getElementById('answer-key-ocr-apply-btn').style.display = 'none';
+};
+
+var _tesseractLoadPromise = null;
+function _ensureTesseractLoaded(){
+  if (window.Tesseract) return Promise.resolve();
+  if (_tesseractLoadPromise) return _tesseractLoadPromise;
+  _tesseractLoadPromise = new Promise(function(resolve, reject){
+    var script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.0.5/dist/tesseract.min.js';
+    script.onload = function(){
+      // 스크립트 로드 후에도 전역 Tesseract 객체가 실제로 잡히는지 재확인 (CDN 캐시/버전 이슈 대비)
+      if (window.Tesseract) resolve();
+      else reject(new Error('OCR 라이브러리는 받아왔지만 초기화에 실패했습니다'));
+    };
+    script.onerror = function(){ reject(new Error('OCR 라이브러리를 불러오지 못했습니다 (인터넷 연결 또는 방화벽을 확인해주세요)')); };
+    document.head.appendChild(script);
+  });
+  return _tesseractLoadPromise;
+}
+
+window.runAnswerKeyOcr = function(){
+  var fileInput = document.getElementById('answer-key-ocr-file');
+  if (!fileInput.files || !fileInput.files[0]) { alert('이미지를 먼저 선택해주세요'); return; }
+  var statusEl = document.getElementById('answer-key-ocr-status');
+  var reviewEl = document.getElementById('answer-key-ocr-review');
+  reviewEl.innerHTML = '';
+  statusEl.textContent = '⏳ 인식 라이브러리 불러오는 중...';
+
+  var worker = null;
+  // 90초 안에 안 끝나면 멈춰있는 것처럼 보이지 않도록 명확히 실패 처리
+  var timedOut = false;
+  var timeoutId = setTimeout(function(){
+    timedOut = true;
+    statusEl.textContent = '✗ 인식 시간 초과 (90초) - 이미지 용량을 줄이거나 더 선명한 사진으로 다시 시도해주세요';
+    if (worker) worker.terminate().catch(function(){});
+  }, 90000);
+
+  _ensureTesseractLoaded().then(function(){
+    if (timedOut) return Promise.reject(new Error('timeout'));
+    statusEl.textContent = '⏳ 인식 엔진 준비 중... (처음 한 번은 시간이 좀 걸려요)';
+    // 정답표는 대부분 숫자 위주라 영어(숫자/기호) 인식기만으로도 충분하고, 한국어 언어팩까지
+    // 같이 불러오면 실패 확률이 높아지고 훨씬 느려지므로 기본은 영어만 사용
+    return Tesseract.createWorker('eng', 1, {
+      logger: function(m){
+        if (timedOut) return;
+        if (m.status === 'recognizing text') {
+          statusEl.textContent = '⏳ 인식 중... ' + Math.round((m.progress||0)*100) + '%';
+        } else if (m.status) {
+          statusEl.textContent = '⏳ ' + m.status + '...';
+        }
+      }
+    });
+  }).then(function(w){
+    if (timedOut) return Promise.reject(new Error('timeout'));
+    worker = w;
+    return worker.recognize(fileInput.files[0]);
+  }).then(function(result){
+    clearTimeout(timeoutId);
+    if (timedOut) return;
+    if (worker) worker.terminate().catch(function(){});
+    var rawText = (result && result.data && result.data.text) ? result.data.text : '';
+    console.log('[OCR 인식 원문]', rawText);
+    _ocrParsedResults = _parseAnswerKeyText(rawText);
+    var matchCount = Object.keys(_ocrParsedResults).length;
+    if (matchCount === 0) {
+      statusEl.textContent = '⚠️ 문항 번호를 자동으로 찾지 못했습니다 - 아래 "인식된 원문"을 보고 형식을 확인해주세요';
+    } else {
+      statusEl.textContent = '✓ 인식 완료 (' + matchCount + '개 찾음) - 아래에서 하나씩 확인해주세요';
+    }
+    _renderAnswerKeyOcrReview(rawText);
+  }).catch(function(e){
+    clearTimeout(timeoutId);
+    if (worker) worker.terminate().catch(function(){});
+    if (e && e.message === 'timeout') return; // 이미 타임아웃 메시지 표시됨
+    statusEl.textContent = '✗ 인식 실패: ' + (e && e.message ? e.message : '알 수 없는 오류');
+    console.error('[OCR 실패]', e);
+  });
+};
+
+// OCR로 뽑아낸 원문 텍스트에서 "문항번호 - 정답" 쌍을 최대한 찾아내는 파싱
+function _parseAnswerKeyText(rawText){
+  // 원문자(①②③...)를 숫자로 치환하면서 앞뒤에 공백을 넣어준다 - 안 그러면 "01②"처럼 붙어있던
+  // 경우 "012"로 합쳐져버려서(숫자끼리 붙음) 잘못 인식되는 문제가 생김
+  var text = rawText;
+  Object.keys(_CIRCLED_DIGIT_MAP).forEach(function(ch){
+    text = text.split(ch).join(' ' + _CIRCLED_DIGIT_MAP[ch] + ' ');
+  });
+
+  var results = {};
+  // 실제 정답표는 "01 ② 02 ⑤ 03 ② 04 ④ 05 ①"처럼 한 줄에 여러 쌍이 가로로 나열된
+  // 격자(그리드) 형태가 많고, 번호와 정답 사이에 마침표/콜론 같은 구분기호 없이
+  // 그냥 띄어쓰기만 있는 경우도 흔하다. 그래서 줄 단위가 아니라 전체 텍스트에서
+  // "번호 + (구분기호 있어도 되고 없어도 됨) + 정답" 패턴을 전역으로 계속 찾는다.
+  // 번호는 어차피 텍스트 안에 그대로 찍혀 있으므로, 줄바꿈/컬럼 순서가 뒤섞여도
+  // 각 쌍이 어느 문항인지는 항상 정확하게 유지된다.
+  var pairRe = /(\d{1,3})\s*[.\-):：．]?\s+?(\d{1,2})(?=\D|$)/g;
+  var m;
+  while ((m = pairRe.exec(text)) !== null) {
+    var no = parseInt(m[1],10), ans = parseInt(m[2],10);
+    if (no>=1 && no<=200 && ans>=1 && ans<=20 && results[no]===undefined) {
+      results[no] = String(ans);
+    }
+  }
+
+  // 위 방식으로 거의 못 찾았으면(예: 번호-정답 사이에 공백조차 없는 경우), 구분기호 없이도
+  // 붙어있는 형태까지 좀 더 느슨하게 한 번 더 시도 (오탐 줄이려고 이 경우엔 원래 결과가
+  // 부족할 때만 보조로 사용)
+  if (Object.keys(results).length < 3) {
+    var looseRe = /(\d{1,3})\D{0,2}(\d{1})(?!\d)/g;
+    var m2;
+    while ((m2 = looseRe.exec(text)) !== null) {
+      var no2 = parseInt(m2[1],10), ans2 = parseInt(m2[2],10);
+      if (no2>=1 && no2<=200 && ans2>=1 && ans2<=9 && results[no2]===undefined) {
+        results[no2] = String(ans2);
+      }
+    }
+  }
+
+  return results;
+}
+
+function _renderAnswerKeyOcrReview(rawText){
+  var block = _examSubjectBlocks[_ocrTargetBlockIdx];
+  var area = document.getElementById('answer-key-ocr-review');
+  if (!block || !area) return;
+
+  var rawTextBox = rawText ? (
+    '<details style="margin-bottom:12px;">'
+    + '<summary style="cursor:pointer;font-size:11px;color:var(--tx3);">🔍 인식된 원문 보기 (자동으로 못 찾았을 때 여기서 형식을 확인해보세요)</summary>'
+    + '<pre style="white-space:pre-wrap;font-size:11px;color:var(--tx2);background:var(--surface2);border-radius:6px;padding:10px;margin-top:6px;max-height:150px;overflow-y:auto;">'+escapeHtml(rawText)+'</pre>'
+    + '</details>'
+  ) : '';
+
+  var mcQuestions = block.questions.filter(function(q){ return q.type === 'mc'; });
+  if (!mcQuestions.length) {
+    area.innerHTML = rawTextBox + '<div style="color:var(--tx3);font-size:12px;">이 과목에는 객관식 문항이 없어 자동으로 채울 항목이 없습니다 (주관식은 직접 입력해주세요)</div>';
+    document.getElementById('answer-key-ocr-apply-btn').style.display = 'none';
+    return;
+  }
+  var matched = 0;
+  var rows = mcQuestions.map(function(q){
+    var guessed = _ocrParsedResults[q.no];
+    if (guessed != null) matched++;
+    var maxChoice = q.choices || 5;
+    var options = Array.from({length:maxChoice}, function(_,i){ return i+1; }).map(function(n){
+      var sel = guessed != null ? (parseInt(guessed,10) === n) : (n === 1 && guessed == null ? false : false);
+      return '<option value="'+n+'"'+(sel?' selected':'')+'>'+n+'번</option>';
+    }).join('');
+    return '<div style="display:flex;align-items:center;gap:10px;padding:6px 4px;border-bottom:1px solid var(--border2);font-size:12px;">'
+      + '<span style="width:50px;font-weight:700;color:var(--burg);">'+q.no+'번</span>'
+      + '<span style="color:'+(guessed!=null?'var(--green)':'var(--tx4)')+';width:70px;">'+(guessed!=null?'인식됨':'인식 안됨')+'</span>'
+      + '<select id="ocr-review-'+q.no+'" class="exam-q-select" style="flex:1;">'+options+'</select>'
+      + '</div>';
+  }).join('');
+
+  area.innerHTML = rawTextBox + '<div style="font-size:12px;font-weight:700;color:var(--tx1);margin-bottom:8px;">객관식 '+mcQuestions.length+'개 중 '+matched+'개 인식됨 - 아래에서 하나씩 확인해주세요</div>' + rows;
+  document.getElementById('answer-key-ocr-apply-btn').style.display = 'block';
+}
+
+
+window.applyAnswerKeyOcrResults = function(){
+  var block = _examSubjectBlocks[_ocrTargetBlockIdx];
+  if (!block) return;
+  var applied = 0;
+  block.questions.forEach(function(q){
+    if (q.type !== 'mc') return;
+    var sel = document.getElementById('ocr-review-'+q.no);
+    if (sel) { q.answer = parseInt(sel.value,10); applied++; }
+  });
+  closeModal('modal-answer-key-ocr');
+  renderExamQuestionBuilder(_ocrTargetBlockIdx);
+  alert('정답 '+applied+'개 문항에 적용했습니다. 채점 정확도를 위해 문항 목록에서 한 번 더 확인해주세요.');
+};
+
+// ── 순서 변경: ▲▼ 버튼 ──
+window.moveExamQuestion = function(blockIdx, idx, dir){
+  var block = _examSubjectBlocks[blockIdx];
+  if (!block) return;
+  var target = idx + dir;
+  if (target < 0 || target >= block.questions.length) return;
+  var arr = block.questions;
+  var tmp = arr[idx]; arr[idx] = arr[target]; arr[target] = tmp;
+  arr.forEach(function(q,i){ q.no = i+1; });
+  renderExamQuestionBuilder(blockIdx);
+};
+
+// ── 순서 변경: 드래그 앤 드롭 ──
+var _examQDrag = null; // {blockIdx, idx}
+window.examQDragStart = function(ev, blockIdx, idx){
+  _examQDrag = {blockIdx:blockIdx, idx:idx};
+  ev.currentTarget.classList.add('dragging');
+  try { ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', String(idx)); } catch(e){}
+};
+window.examQDragOver = function(ev){
+  ev.preventDefault();
+  try { ev.dataTransfer.dropEffect = 'move'; } catch(e){}
+};
+window.examQDrop = function(ev, blockIdx, dropIdx){
+  ev.preventDefault();
+  if (!_examQDrag || _examQDrag.blockIdx !== blockIdx) { _examQDrag = null; return; }
+  var fromIdx = _examQDrag.idx;
+  _examQDrag = null;
+  if (fromIdx === dropIdx) return;
+  var block = _examSubjectBlocks[blockIdx];
+  if (!block) return;
+  var arr = block.questions;
+  var moved = arr.splice(fromIdx, 1)[0];
+  arr.splice(dropIdx, 0, moved);
+  arr.forEach(function(q,i){ q.no = i+1; });
+  renderExamQuestionBuilder(blockIdx);
+};
+window.examQDragEnd = function(ev){
+  ev.currentTarget.classList.remove('dragging');
+  _examQDrag = null;
+};
+
+window.updateExamScoreCheck = function(blockIdx){
+  var block = _examSubjectBlocks[blockIdx];
+  var el = document.getElementById('exam-score-check-'+blockIdx);
+  if (!el || !block) return;
+  var total = _r2(block.questions.reduce(function(s,q){return s+(q.point||0);},0));
+  var ok = total === 100;
+  el.className = 'exam-score-check ' + (ok ? 'ok' : 'warn');
+  el.innerHTML = '<span>배점 합계 <span class="exam-score-check-value" style="color:'+(ok?'var(--green)':'var(--red)')+';">'+total+'</span> / 100점 '+(ok?'✓':'')+'</span>'
+    + (ok ? '' : '<button class="exam-autobalance-btn" onclick="autoBalanceExamScore('+blockIdx+')">자동 배점</button>');
+};
+
+window.autoBalanceExamScore = function(blockIdx){
+  var block = _examSubjectBlocks[blockIdx];
+  if (!block || !block.questions.length) return;
+  var n = block.questions.length;
+  var base = Math.floor(100/n), remainder = 100 - base*n;
+  block.questions.forEach(function(q,i){ q.point = base + (i<remainder?1:0); });
+  renderExamQuestionBuilder(blockIdx);
+};
+
+window.handleExamListeningFile = function(blockIdx, input){
+  if (!input.files || !input.files[0]) return;
+  var file = input.files[0];
+  var statusEl = document.getElementById('exam-listening-status-'+blockIdx);
+
+  // 용량이 너무 크면 Cloudinary 무료/서명없는 업로드 프리셋에서 대부분 거절되므로 미리 안내
+  var sizeMB = file.size / (1024*1024);
+  if (sizeMB > 100) {
+    statusEl.textContent = '✗ 파일이 너무 큽니다 ('+sizeMB.toFixed(1)+'MB) - 100MB 이하로 압축해서 다시 시도해주세요';
+    statusEl.style.color = 'var(--red)';
+    return;
+  }
+
+  statusEl.textContent = '⏳ 업로드 중... 0%';
+  statusEl.style.color = 'var(--tx3)';
+
+  // 재생시간 미리 확인 (업로드와 별개로 로컬에서 즉시 계산)
+  var durationLabel = '';
+  try {
+    var probeAudio = new Audio(URL.createObjectURL(file));
+    probeAudio.addEventListener('loadedmetadata', function(){
+      var sec = Math.round(probeAudio.duration || 0);
+      var mm = Math.floor(sec/60), ss = sec%60;
+      durationLabel = ' (재생시간 ' + mm + ':' + String(ss).padStart(2,'0') + ')';
+      _examSubjectBlocks[blockIdx].listeningDurationSec = sec;
+      var curEl = document.getElementById('exam-listening-status-'+blockIdx);
+      if (curEl && curEl.textContent.indexOf('재생시간') === -1 && curEl.textContent.indexOf('✓') === 0) {
+        curEl.textContent = curEl.textContent + durationLabel;
+      }
+    });
+  } catch(e){}
+
+  var fd = new FormData();
+  fd.append('file', file);
+  fd.append('upload_preset', CLOUDINARY_PRESET);
+  fd.append('resource_type', 'auto');
+
+  // fetch 대신 XMLHttpRequest 사용 - 실제 업로드 진행률(%)을 보여줄 수 있어서,
+  // 시간이 걸리는 큰 오디오 파일을 올릴 때 "멈춘 것처럼" 보이지 않게 함.
+  // 90초 넘게 응답이 없으면 타임아웃으로 명확히 실패 처리 (무한 대기 방지).
+  var xhr = new XMLHttpRequest();
+  xhr.timeout = 90000;
+  xhr.open('POST', 'https://api.cloudinary.com/v1_1/'+CLOUDINARY_CLOUD+'/auto/upload');
+
+  xhr.upload.onprogress = function(e){
+    if (e.lengthComputable) {
+      var pct = Math.round((e.loaded / e.total) * 100);
+      statusEl.textContent = '⏳ 업로드 중... ' + pct + '%';
+    }
+  };
+
+  xhr.onload = function(){
+    var data = null;
+    try { data = JSON.parse(xhr.responseText); } catch(e){}
+
+    if (xhr.status >= 200 && xhr.status < 300 && data && data.secure_url) {
+      _examSubjectBlocks[blockIdx].listeningUrl = data.secure_url;
+      statusEl.textContent = '✓ ' + file.name + durationLabel;
+      statusEl.style.color = 'var(--green)';
+      statusEl.style.fontWeight = '700';
+    } else {
+      // Cloudinary가 에러 응답을 줬는데도 이전 코드는 이걸 그냥 "성공"으로 처리하던 버그가 있었음 - 수정됨
+      var reason = (data && data.error && data.error.message) ? data.error.message : ('HTTP ' + xhr.status);
+      statusEl.textContent = '✗ 업로드 실패: ' + reason;
+      statusEl.style.color = 'var(--red)';
+      console.error('[듣기평가 업로드 실패]', xhr.status, xhr.responseText);
+    }
+  };
+
+  xhr.onerror = function(){
+    statusEl.textContent = '✗ 업로드 실패: 네트워크 오류 (인터넷 연결을 확인해주세요)';
+    statusEl.style.color = 'var(--red)';
+  };
+
+  xhr.ontimeout = function(){
+    statusEl.textContent = '✗ 업로드 시간 초과 (90초) - 파일이 너무 크거나 네트워크가 느립니다';
+    statusEl.style.color = 'var(--red)';
+  };
+
+  xhr.send(fd);
+};
+
+window.renderExamWarnChips = function(){
+  var area = document.getElementById('exam-warn-chips');
+  if (!area) return;
+  if (!_examWarnChips.length) {
+    area.innerHTML = '<div class="exam-chip-empty">설정된 알림이 없습니다 - 아래에서 추가하세요</div>';
+    return;
+  }
+  var sorted = _examWarnChips.slice().sort(function(a,b){return b-a;});
+  area.innerHTML = sorted.map(function(min){
+    return '<div class="exam-chip">'+min+'분 전<button class="exam-chip-remove" onclick="removeExamWarnChip('+min+')">✕</button></div>';
+  }).join('');
+};
+
+window.addExamWarnChip = function(){
+  var input = document.getElementById('exam-warn-add-input');
+  var val = parseInt(input.value, 10);
+  if (!val || val <= 0) { alert('1 이상의 숫자를 입력해주세요'); return; }
+  if (_examWarnChips.indexOf(val) === -1) { _examWarnChips.push(val); renderExamWarnChips(); }
+  input.value = '';
+  input.focus();
+  if (_examTtsProvider === 'custom') renderExamTtsCustomList();
+};
+
+window.removeExamWarnChip = function(min){
+  _examWarnChips = _examWarnChips.filter(function(m){ return m !== min; });
+  renderExamWarnChips();
+  if (_examTtsProvider === 'custom') renderExamTtsCustomList();
+};
+
+window.saveExam = function(){
+  var title = document.getElementById('exam-title-input').value.trim();
+  var examSource = document.getElementById('exam-source-select').value;
+  var examType = document.getElementById('exam-type-select').value;
+  var startAtRaw = document.getElementById('exam-start-at-input').value;
+  var ttsVoiceURI = document.getElementById('exam-tts-voice-select').value || null;
+  var ttsVolume = (parseInt(document.getElementById('exam-tts-volume-input').value, 10) || 0) / 100;
+  var ttsProvider = _examTtsProvider;
+  var ttsCloudVoiceName = document.getElementById('exam-tts-cloud-voice-select').value || null;
+
+  if (!title) { alert('시험 이름을 입력해주세요'); return; }
+  if (!_examSubjectBlocks.length) { alert('과목을 1개 이상 설정해주세요'); return; }
+
+  var startAtMs = null;
+  if (startAtRaw) {
+    var parsed = new Date(startAtRaw).getTime();
+    if (isNaN(parsed)) { alert('시작 시간 형식이 올바르지 않습니다'); return; }
+    if (parsed < Date.now()) {
+      if (!confirm('설정한 시작 시간이 이미 지났습니다. 이대로 저장하면 학생이 응시하기를 누르는 즉시 바로 시작됩니다.\n\n계속할까요?')) return;
+    }
+    startAtMs = parsed;
+  }
+
+  for (var bi=0; bi<_examSubjectBlocks.length; bi++){
+    var block = _examSubjectBlocks[bi];
+    if (!block.questions.length) { alert((bi+1)+'번째 과목에 문항을 1개 이상 추가해주세요'); return; }
+    if (!block.durationMin || block.durationMin<=0) { alert((bi+1)+'번째 과목의 시험 시간을 입력해주세요'); return; }
+    var total = _r2(block.questions.reduce(function(s,q){return s+(q.point||0);},0));
+    if (total !== 100) {
+      if (!confirm((bi+1)+'번째 과목의 배점 합계가 100점이 아닙니다 (현재 '+total+'점).\n\n이대로 저장하시겠습니까?')) return;
+    }
+    for (var qi=0; qi<block.questions.length; qi++){
+      var q = block.questions[qi];
+      if (q.type==='short' && !String(q.answer||'').trim()) {
+        alert((bi+1)+'번째 과목 '+q.no+'번 문항의 정답을 입력해주세요'); return;
+      }
+    }
+  }
+
+  var warnMinutesList = _examWarnChips.slice().sort(function(a,b){ return b - a; });
+  if (!warnMinutesList.length) warnMinutesList = [5];
+
+  var normalizeQuestionList = function(list){
+    return (list||[]).map(function(q){
+      var copy = Object.assign({}, q);
+      if (q.type === 'short' && q.shortMode === 'digit') {
+        copy.answer = String(q.answer).replace(/\D/g,'').padStart(3,'0').slice(-3);
+      }
+      return copy;
+    });
+  };
+
+  var normalizedSubjects = _examSubjectBlocks.map(function(block, i){
+    var normalizedQuestions = normalizeQuestionList(block.questions);
+    // 선택과목이 있으면, 지금 편집 중인 것만이 아니라 questionsByElective에 있는
+    // 모든 선택과목의 문항을 다 정규화해서 저장 (안 그러면 다른 선택과목 문항이 날아감).
+    // 등급컷도 마찬가지 - 지금 보고 있는 선택과목 것만이 아니라 전체를 다 저장해야
+    // "언어와 매체" 것만 저장되고 "화법과 작문" 것이 날아가는 일이 없음.
+    var normalizedByElective = {};
+    var cutoffsByElective = {};
+    if (block.electiveOptions && block.electiveOptions.length) {
+      block.electiveOptions.forEach(function(name){
+        if (block.questionsByElective) normalizedByElective[name] = normalizeQuestionList(block.questionsByElective[name]);
+        cutoffsByElective[name] = (block.gradeCutoffsByElective && block.gradeCutoffsByElective[name]) ? block.gradeCutoffsByElective[name] : _defaultGradeCutoffs();
+      });
+    }
+    return {
+      subject: block.subject,
+      exCategory: block.exCategory || null,
+      electiveOptions: block.electiveOptions || [],
+      questionsByElective: normalizedByElective,
+      order: i+1,
+      durationMin: block.durationMin,
+      breakAfterMin: (i < _examSubjectBlocks.length-1) ? (block.breakAfterMin||0) : 0,
+      listeningUrl: block.listeningUrl || null,
+      listeningDurationSec: block.listeningDurationSec || null,
+      gradeCutoffsEnabled: !!block.gradeCutoffsEnabled,
+      gradeCutoffs: block.gradeCutoffs || null,
+      gradeCutoffsByElective: (block.electiveOptions && block.electiveOptions.length) ? cutoffsByElective : null,
+      questions: normalizedQuestions
+    };
+  });
+
+  var examData = {
+    title: title,
+    type: _examMode,
+    examSource: examSource,
+    gradeType: examType,
+    warnMinutesList: warnMinutesList,
+    ttsEnabled: true,
+    ttsVoiceURI: ttsVoiceURI,
+    ttsVolume: ttsVolume,
+    ttsProvider: ttsProvider,
+    ttsCloudVoiceName: ttsCloudVoiceName,
+    ttsCustomAudio: (function(){
+      var out = {};
+      Object.keys(_examTtsCustomAudio).forEach(function(min){ if (_examTtsCustomAudio[min] && _examTtsCustomAudio[min].url) out[min] = _examTtsCustomAudio[min].url; });
+      return out;
+    })(),
+    startAtMs: startAtMs,
+    subjects: normalizedSubjects
+  };
+
+  if (_editingExamId) {
+    // 수정 모드 - branch/createdBy/createdAt/assignedTo는 원래 값을 그대로 유지하고 나머지만 갱신
+    var editingExamId = _editingExamId;
+    updateDoc(doc(db,'exams',editingExamId), examData).then(function(){
+      // 시험 구분(연습용/정규 등)이 바뀌었을 수 있으니, 이미 이 시험으로 채점되어
+      // 성적탭에 저장된 기록들도 같은 값으로 맞춰줌 - 안 그러면 시험 설정은 "정규"로
+      // 바꿨는데 예전에 채점된 성적은 계속 "연습용"으로 남아있는 불일치가 생김.
+      // "시험 묶기"로 합쳐진 성적은 examId 필드 자체가 없어져서(대신 sourceExamIds로
+      // 원본 시험들을 추적함) 두 조건을 각각 조회해서 합쳐야 빠짐없이 찾을 수 있음.
+      var newExamSourceLabel = examSourceLabel(examData.examSource) || null;
+      return Promise.all([
+        getDocs(query(collection(db,'grades'), where('examId','==',editingExamId))),
+        getDocs(query(collection(db,'grades'), where('sourceExamIds','array-contains',editingExamId)))
+      ]).then(function(results){
+        var seen = {};
+        var allDocs = results[0].docs.concat(results[1].docs).filter(function(d){
+          if (seen[d.id]) return false; seen[d.id] = true; return true;
+        });
+        // 시험명도 성적에 반영: 이 시험 하나로 채점된 성적(examId 일치)은 examName을 새 시험명으로 맞춤.
+        // "시험 묶기"로 합쳐진 성적은 묶음 이름(mergedTitle)을 쓰므로 이름은 그대로 두고, 묶음 문서의 원본 시험명 목록만 갱신.
+        var newTitle = examData.title || '', renamed = {};
+        var updates = allDocs.map(function(d){
+          var x = d.data(), patch = {};
+          if ((x.examSource||null) !== newExamSourceLabel) patch.examSource = newExamSourceLabel;
+          if (newTitle && x.examId === editingExamId && x.examName !== newTitle) { patch.examName = newTitle; (renamed[x.examName] = renamed[x.examName] || []).push(x.uid); }
+          return Object.keys(patch).length ? updateDoc(doc(db,'grades',d.id), patch) : null;
+        }).filter(Boolean);
+        var side = getDocs(query(collection(db,'examMergeGroups'), where('examIds','array-contains',editingExamId))).then(function(gs){
+          return Promise.all(gs.docs.map(function(g){
+            var gd = g.data(), ids = gd.examIds || [], titles = (gd.examTitles || []).slice(), i = ids.indexOf(editingExamId);
+            if (i < 0 || titles[i] === newTitle) return null;
+            titles[i] = newTitle; return updateDoc(doc(db,'examMergeGroups',g.id), { examTitles: titles });
+          }));
+        }).catch(function(e){ console.warn('묶음 시험명 갱신 실패', e); });
+        var refl = getDocs(query(collection(db,'examReflections'), where('examId','==',editingExamId))).then(function(rs){
+          return Promise.all(rs.docs.filter(function(r){ return newTitle && r.data().examTitle !== newTitle; })
+            .map(function(r){ return updateDoc(doc(db,'examReflections',r.id), { examTitle: newTitle }); }));
+        }).catch(function(e){ console.warn('회고 시험명 갱신 실패', e); });
+        return Promise.all(updates.concat([side, refl])).then(function(){
+          return Promise.all(Object.keys(renamed).map(function(from){ return mpSyncCardExamName(from, newTitle, renamed[from]).catch(function(e){ console.warn(e); }); }));
+        });
+      });
+    }).then(function(){
+      closeModal('modal-create-exam');
+      alert('시험 설정이 수정되었습니다.');
+      _editingExamId = null;
+      invalidateTeacherTabCache(7);
+      renderTeacher(7);
+    }).catch(function(e){
+      alert('수정 실패: ' + e.message);
+    });
+    return;
+  }
+
+  examData.branch = getBranch();
+  examData.createdBy = currentUser.uid;
+  examData.createdAt = serverTimestamp();
+  examData.assignedTo = [];
+
+  addDoc(collection(db,'exams'), examData).then(function(ref){
+    closeModal('modal-create-exam');
+    alert('시험이 생성되었습니다. 이제 학생에게 배정해주세요.');
+    invalidateTeacherTabCache(7);
+    renderTeacher(7);
+    openAssignExamModal(ref.id);
+  }).catch(function(e){
+    alert('시험 저장 실패: ' + e.message);
+  });
+};
+
+// ── 배정 ──
+window.openAssignExamModal = function(examId){
+  window._assignExamId = examId;
+  openModal('modal-assign-exam');
+  document.getElementById('assign-exam-list').innerHTML = '<div style="color:var(--tx3);font-size:12px;padding:10px 0;">불러오는 중...</div>';
+  document.getElementById('assign-exam-grade-filter').innerHTML = '';
+  loadStudentList().then(function(students){
+    getDoc(doc(db,'exams',examId)).then(function(examDoc){
+      var assigned = (examDoc.data().assignedTo)||[];
+      var listEl = document.getElementById('assign-exam-list');
+      listEl.innerHTML = students.map(function(s){
+        var checked = assigned.indexOf(s.uid) !== -1;
+        return '<label style="display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid var(--border2);font-size:13px;cursor:pointer;" data-grade="'+escapeHtml(s.grade||'')+'">'
+          + '<input type="checkbox" value="'+s.uid+'" '+(checked?'checked':'')+' style="width:18px;height:18px;" onchange="_syncAssignGradeFilterState()"/>'
+          + escapeHtml(s.name) + ' <span style="color:var(--tx3);font-size:11px;">('+escapeHtml(s.grade||'')+')</span>'
+          + '</label>';
+      }).join('');
+
+      // 실제로 존재하는 학년들만 뽑아서 필터 칩으로 (없는 학년은 안 보여줌)
+      var grades = [];
+      students.forEach(function(s){ var g = s.grade||''; if (g && grades.indexOf(g) === -1) grades.push(g); });
+      var filterEl = document.getElementById('assign-exam-grade-filter');
+      if (!grades.length) { filterEl.innerHTML = ''; return; }
+      filterEl.innerHTML = grades.map(function(g){
+        return '<button type="button" class="exam-mgmt-cat-btn" data-grade-chip="'+escapeHtml(g)+'" onclick="_toggleAssignGradeFilter(\''+escapeHtml(g).replace(/'/g,"\\'")+'\')">'+escapeHtml(g)+'</button>';
+      }).join('');
+      _syncAssignGradeFilterState();
+    });
+  });
+};
+
+// 학년 칩을 누르면, 그 학년 학생들을 통째로 켜거나 끔 (이미 그 학년이 전부 체크되어 있으면
+// 끄고, 아니면 켬 - 토글 방식). 여러 학년 칩을 동시에 눌러서 중복 선택 가능.
+window._toggleAssignGradeFilter = function(grade){
+  var labels = Array.from(document.querySelectorAll('#assign-exam-list label[data-grade="'+CSS.escape(grade)+'"]'));
+  if (!labels.length) return;
+  var allChecked = labels.every(function(l){ return l.querySelector('input').checked; });
+  labels.forEach(function(l){ l.querySelector('input').checked = !allChecked; });
+  _syncAssignGradeFilterState();
+};
+
+// 학년 칩의 "켜짐/꺼짐" 표시를, 실제 체크박스 상태에 맞춰 동기화 (그 학년 전원이 체크된
+// 경우에만 칩이 활성화된 것처럼 보이게 함)
+window._syncAssignGradeFilterState = function(){
+  document.querySelectorAll('#assign-exam-grade-filter [data-grade-chip]').forEach(function(chip){
+    var grade = chip.getAttribute('data-grade-chip');
+    var labels = Array.from(document.querySelectorAll('#assign-exam-list label[data-grade="'+CSS.escape(grade)+'"]'));
+    var allChecked = labels.length > 0 && labels.every(function(l){ return l.querySelector('input').checked; });
+    chip.classList.toggle('active', allChecked);
+  });
+};
+
+window.confirmAssignExam = function(){
+  var examId = window._assignExamId;
+  if (!examId) return;
+  var checked = Array.from(document.querySelectorAll('#assign-exam-list input[type="checkbox"]:checked'));
+  var uids = checked.map(function(c){return c.value;});
+
+  getDoc(doc(db,'exams',examId)).then(function(examDoc){
+    var exam = examDoc.data();
+    var existing = exam.assignedTo || [];
+    var newUids = uids.filter(function(u){ return existing.indexOf(u) === -1; });
+    var removedUids = existing.filter(function(u){ return uids.indexOf(u) === -1; }); // 체크 해제해서 배정 취소된 학생들
+
+    if (!removedUids.length) {
+      return proceedAssign();
+    }
+
+    // 배정 취소된 학생들의 세션/성적 기록을 미리 조회해서, 몇 명이 실제로 지워지는지
+    // 확인창에 정확히 보여준 뒤 진행 (되돌릴 수 없는 삭제라 한 번 더 확인시킴)
+    var nameByUid = {};
+    document.querySelectorAll('#assign-exam-list input[type="checkbox"]').forEach(function(cb){
+      nameByUid[cb.value] = cb.parentElement.textContent.trim();
+    });
+
+    return Promise.all(removedUids.map(function(uid){
+      return getDocs(query(collection(db,'examSessions'), where('examId','==',examId), where('studentUid','==',uid)))
+        .then(function(snap){ return {uid: uid, sessionDocs: snap.docs}; });
+    })).then(function(removedInfo){
+      var removedNames = removedUids.map(function(u){ return nameByUid[u] || u; });
+      var totalSessions = removedInfo.reduce(function(sum,info){ return sum + info.sessionDocs.length; }, 0);
+
+      var proceed = confirm(
+        '다음 학생의 배정을 취소하시겠습니까?\n\n' + removedNames.join(', ')
+        + '\n\n⚠️ 배정을 취소하면 이 학생들의 응시 기록과 이 시험으로 저장된 성적이 함께 삭제되며, 되돌릴 수 없습니다.'
+        + (totalSessions ? ('\n(영향받는 응시 기록: ' + totalSessions + '건)') : '')
+      );
+      if (!proceed) return;
+
+      var deleteTasks = [];
+      removedInfo.forEach(function(info){
+        info.sessionDocs.forEach(function(d){
+          deleteTasks.push(deleteDoc(doc(db,'examSessions',d.id)));
+        });
+      });
+      // 이 시험으로 이 학생들 이름으로 저장된 성적(grades)도 같이 삭제
+      deleteTasks.push(
+        getDocs(query(collection(db,'grades'), where('examId','==',examId))).then(function(gSnap){
+          return Promise.all(
+            gSnap.docs
+              .filter(function(d){ return removedUids.indexOf(d.data().uid) !== -1; })
+              .map(function(d){ return deleteDoc(doc(db,'grades',d.id)); })
+          );
+        })
+      );
+
+      return Promise.all(deleteTasks).then(proceedAssign);
+    });
+
+    function proceedAssign(){
+      return updateDoc(doc(db,'exams',examId), { assignedTo: uids }).then(function(){
+        var tasks = [];
+        // 새로 배정된 학생만 examSessions 생성 (이미 있으면 건너뜀)
+        newUids.forEach(function(uid){
+          tasks.push(
+            getDocs(query(collection(db,'examSessions'), where('examId','==',examId), where('studentUid','==',uid)))
+              .then(function(snap){
+                if (!snap.empty) return;
+                return addDoc(collection(db,'examSessions'), {
+                  examId: examId,
+                  studentUid: uid,
+                  branch: exam.branch,
+                  status: 'not_started',
+                  currentSubjectIndex: 0,
+                  subjectResults: [],
+                  createdAt: serverTimestamp()
+                });
+              })
+          );
+        });
+
+        return Promise.all(tasks).then(function(){
+          closeModal('modal-assign-exam');
+          var msg = '배정이 저장되었습니다.\n\n현재 배정: ' + uids.length + '명';
+          if (removedUids.length) msg += '\n배정 취소: ' + removedUids.length + '명';
+          alert(msg);
+          invalidateTeacherTabCache(7);
+          renderTeacher(7);
+        });
+      });
+    }
+  }).catch(function(e){ alert('배정 저장 실패: ' + e.message); });
+};
+
+// ── 모니터링 ──
+// ═══════════════════════════════════════
+// 선생님/마스터: 시험 회고·전략 열람 + 자동 분석
+// ═══════════════════════════════════════
+
+// 텍스트 유사도 (자카드 유사도, 어절 기준) - 0~1
+function _textSimilarity(a, b){
+  var normA = (a||'').replace(/\s+/g,' ').trim();
+  var normB = (b||'').replace(/\s+/g,' ').trim();
+  if (!normA || !normB) return 0;
+  var setA = new Set(normA.split(' '));
+  var setB = new Set(normB.split(' '));
+  var inter = 0;
+  setA.forEach(function(w){ if (setB.has(w)) inter++; });
+  var union = new Set([].concat(Array.from(setA), Array.from(setB))).size;
+  return union ? inter/union : 0;
+}
+
+// 아주 단순한 규칙 기반 핵심 문장 추출 (진짜 AI 요약은 아니고, 키워드 포함/길이 기준 발췌)
+var _REFL_KEYWORDS = ['부족','실수','시간','개선','다시','연습','집중','틀렸','헷갈','몰라','어려웠','반복','꼼꼼','속도','계획'];
+function _extractKeySentence(text){
+  if (!text) return '';
+  var sentences = text.split(/(?<=[.!?다요])\s+/).map(function(s){return s.trim();}).filter(Boolean);
+  if (!sentences.length) return text.slice(0,60);
+  var scored = sentences.map(function(s){
+    var score = 0;
+    _REFL_KEYWORDS.forEach(function(k){ if (s.indexOf(k)>=0) score++; });
+    score += Math.min(s.length, 60)/60; // 너무 짧은 문장 페널티
+    return {s:s, score:score};
+  });
+  scored.sort(function(a,b){ return b.score-a.score; });
+  return scored[0].s;
+}
+
+window.openExamReflections = function(examId, examTitle){
+  window._erExamId = examId;
+  document.getElementById('er-title').textContent = '🌱 '+examTitle+' - 학생들이 작성한 "다음 걸음을 위하여"';
+  document.getElementById('er-body').innerHTML = '<div style="color:var(--tx3);font-size:13px;">불러오는 중...</div>';
+  openModal('modal-exam-reflections');
+
+  Promise.all([
+    getDocs(query(collection(db,'examReflections'), where('examId','==',examId))),
+    loadStudentList(),
+    getDoc(doc(db,'exams',examId)).catch(function(){ return null; }),
+    getDocs(query(collection(db,'examSessions'), where('examId','==',examId))).catch(function(){ return {docs:[]}; })
+  ]).then(function(results){
+    var reflSnap = results[0], students = results[1];
+    var _exSubs = (results[2] && results[2].exists && results[2].exists()) ? (results[2].data().subjects||[]) : [];
+    var _choiceBySess = {}; results[3].docs.forEach(function(d){ _choiceBySess[d.id] = d.data().electiveChoices || {}; });
+    var nameMap = {}; students.forEach(function(s){ nameMap[s.uid]=s.name; });
+    var reflections = reflSnap.docs.map(function(d){return d.data();});
+    // 과목 이름: 저장된 이름 → 학생이 고른 선택과목 → 시험 과목명 순으로 (예전 회고의 ex1·ex2 표시 해결)
+    reflections.forEach(function(r){
+      var sd = _exSubs[r.subjectIndex];
+      r._label = r.subjectLabel || (sd ? _reflSubjLabel(sd, r.subjectIndex, _choiceBySess[r.sessionId]) : '') || subjectNames[r.subject] || r.subject;
+    });
+
+    if (!reflections.length) {
+      document.getElementById('er-summary').textContent = '';
+      document.getElementById('er-body').innerHTML = '<div style="color:var(--tx3);font-size:13px;padding:14px 0;">아직 작성된 회고가 없습니다</div>';
+      return;
+    }
+
+    // 과목별로 그룹
+    var bySubject = {};
+    reflections.forEach(function(r){
+      if (!bySubject[r._label]) bySubject[r._label] = [];
+      bySubject[r._label].push(r);
+    });
+
+    // 복붙/반복 의심 탐지
+    var flags = []; // {type, uidA, uidB?, subject, detail}
+    Object.keys(bySubject).forEach(function(subj){
+      var list = bySubject[subj];
+      // 학생 간 교차 유사도 (같은 문항끼리)
+      for (var i=0;i<list.length;i++){
+        for (var j=i+1;j<list.length;j++){
+          REFLECTION_PROMPTS.forEach(function(p){
+            var sim = _textSimilarity(list[i][p.key], list[j][p.key]);
+            if (sim >= 0.75 && (list[i][p.key]||'').length > 15) {
+              flags.push({type:'cross', uidA:list[i].uid, uidB:list[j].uid, subject:subj, q:p.label, sim:sim});
+            }
+          });
+        }
+      }
+      // 개인 내 3문항 반복
+      list.forEach(function(r){
+        var s12 = _textSimilarity(r.q1, r.q2), s13 = _textSimilarity(r.q1, r.q3), s23 = _textSimilarity(r.q2, r.q3);
+        if (Math.max(s12,s13,s23) >= 0.7) {
+          flags.push({type:'self', uidA:r.uid, subject:subj, sim:Math.max(s12,s13,s23)});
+        }
+      });
+    });
+
+    var summaryParts = [reflections.length+'건의 회고'];
+    if (flags.length) summaryParts.push('⚠️ 의심 항목 '+flags.length+'건 발견');
+    document.getElementById('er-summary').innerHTML = summaryParts.join(' · ');
+
+    var flagsHtml = '';
+    if (flags.length) {
+      flagsHtml = '<div class="er-flag-box">'
+        + '<div class="er-flag-title">⚠️ 복붙/반복 작성 의심</div>'
+        + flags.map(function(f){
+            var nameA = nameMap[f.uidA]||'?';
+            if (f.type==='cross') {
+              var nameB = nameMap[f.uidB]||'?';
+              return '<div class="er-flag-item">'+escapeHtml(nameA)+' ↔ '+escapeHtml(nameB)+' · '+escapeHtml(f.subject)+' · "'+escapeHtml(f.q)+'" 답변 유사도 '+Math.round(f.sim*100)+'%</div>';
+            } else {
+              return '<div class="er-flag-item">'+escapeHtml(nameA)+' · '+escapeHtml(f.subject)+' · 3개 답변 서로 유사(반복 작성 의심, 유사도 '+Math.round(f.sim*100)+'%)</div>';
+            }
+          }).join('')
+        + '</div>';
+    }
+
+    var bodyHtml = Object.keys(bySubject).map(function(subj){
+      var subjName = subj;
+      var cards = bySubject[subj].map(function(r){
+        var name = nameMap[r.uid]||'?';
+        return '<div class="er-card">'
+          + '<div class="er-card-name">'+escapeHtml(name)+'</div>'
+          + (r.strategy ? '<div class="er-strategy"><span class="er-strategy-label">🎯 이번 전략</span>'+escapeHtml(r.strategy)+'</div>' : '')
+          + REFLECTION_PROMPTS.map(function(p){
+              var val = r[p.key];
+              if (!val) return '';
+              var key = _extractKeySentence(val);
+              return '<div class="er-qa">'
+                + '<div class="er-q">'+escapeHtml(p.label)+'</div>'
+                + '<div class="er-key">💡 핵심: '+escapeHtml(key)+'</div>'
+                + '<div class="er-a">'+escapeHtml(val)+'</div>'
+                + '</div>';
+            }).join('')
+          + '</div>';
+      }).join('');
+      return '<div class="er-subject-block"><div class="er-subject-title">'+escapeHtml(subjName)+'</div>'+cards+'</div>';
+    }).join('');
+
+    document.getElementById('er-body').innerHTML = flagsHtml + bodyHtml;
+  }).catch(function(e){
+    document.getElementById('er-body').innerHTML = '<div style="color:var(--red);font-size:13px;">불러오기 실패: '+e.message+'</div>';
+  });
+};
+
+window.openExamMonitor = function(examId){
+  window._monitorExamId = examId;
+  openModal('modal-exam-monitor');
+  document.getElementById('exam-monitor-body').innerHTML = '<div style="color:var(--tx3);font-size:12px;padding:10px 0;">불러오는 중...</div>';
+  Promise.all([
+    getDoc(doc(db,'exams',examId)),
+    getDocs(query(collection(db,'examSessions'), where('examId','==',examId))),
+    loadStudentList()
+  ]).then(function(results){
+    var exam = results[0].data();
+    var sessions = results[1].docs.map(function(d){return Object.assign({id:d.id}, d.data());});
+    var students = results[2];
+    var nameMap = {}; students.forEach(function(s){ nameMap[s.uid]=s.name; });
+
+    document.getElementById('exam-monitor-title').textContent = exam.title;
+    var statusLabel = {not_started:'미접속', waiting:'대기중(출석)', in_progress:'응시중', break:'쉬는시간', submitted:'채점대기', graded:'채점완료'};
+
+    var attendanceHtml = '';
+    if (exam.startAtMs) {
+      var waitingCount = sessions.filter(function(s){ return s.status==='waiting'; }).length;
+      var startedCount = sessions.filter(function(s){ return s.status!=='not_started' && s.status!=='waiting'; }).length;
+      var notYetCount = sessions.filter(function(s){ return s.status==='not_started'; }).length;
+      var startAtStr = new Date(exam.startAtMs).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+      attendanceHtml = '<div style="background:var(--gold-l);border:1px solid rgba(184,132,26,0.25);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:12px;">'
+        + '<div style="font-weight:700;color:var(--gold);margin-bottom:4px;">⏱ 일괄 시작 예정: '+startAtStr+'</div>'
+        + '<div style="color:var(--tx2);">출석(대기실 입장) <b style="color:var(--gold);">'+waitingCount+'명</b> · 응시 시작됨 <b>'+startedCount+'명</b> · 아직 미접속 <b style="color:var(--red);">'+notYetCount+'명</b></div>'
+        + '</div>';
+    }
+
+    var rows = sessions.map(function(sess){
+      var subj0 = sess.subjectResults && sess.subjectResults[0];
+      var score = subj0 ? subj0.score : null;
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 4px;border-bottom:1px solid var(--border2);font-size:13px;">'
+        + '<span>'+escapeHtml(nameMap[sess.studentUid]||'?')+'</span>'
+        + '<span style="color:var(--tx3);font-size:12px;">'+ (statusLabel[sess.status]||sess.status) + (score!=null?' · '+score+'점':'') + '</span>'
+        + ((sess.status==='submitted'||sess.status==='graded') ? '<button onclick="openManualReviewModal(\''+sess.id+'\')" style="font-size:11px;padding:4px 8px;background:var(--burg-l);color:var(--burg);border:none;border-radius:6px;cursor:pointer;">상세</button>' : '')
+        + '</div>';
+    }).join('');
+    document.getElementById('exam-monitor-body').innerHTML = attendanceHtml + (rows || '<div style="color:var(--tx3);font-size:12px;">배정된 학생이 없습니다</div>');
+  });
+};
+
+// ══════════════════════════════════════════════════════════
+// 시험 응시 기능 (학생) - Phase 1
+// ══════════════════════════════════════════════════════════
+
+function buildExamListPage(){
+  var __dt_h = '<div class="dt-header dt-only"><div><div class="dt-header-title">나의 시험</div></div></div>';
+  return __dt_h+'<div class="dt-main-grid"><div style="grid-column:1/3;"><div id="wt-exam-sec"></div><div id="mp-sched-host"></div><div id="mp-rep-host"></div><div id="db-review-host"></div><div class="card"><div class="card-h"><div class="card-title">📝 나의 시험</div></div>'
+    +'<div id="exam-list-cat-tabs" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;"></div>'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;"><span style="font-size:12px;color:var(--tx3);">정렬</span><select class="modal-select" id="exam-list-sort-select" onchange="switchExamListSort(this.value)" style="margin:0;width:auto;padding:6px 10px;font-size:12px;"><option value="date_desc">최신순</option><option value="date_asc">오래된순</option><option value="name_asc">이름순</option></select></div>'
+    +'<div id="exam-list-student">불러오는 중...</div></div></div></div>';
+}
+
+var _currentExamListCategory = '전체', _currentExamListSort = 'date_desc';
+window.switchExamListCategory = function(cat){
+  _currentExamListCategory = cat;
+  // 처음 렌더링할 때 색상을 클래스가 아니라 인라인 스타일로 직접 넣어뒀어서, active
+  // 클래스만 토글해서는 실제로는 색이 안 바뀌는 문제가 있었음(목록은 바뀌는데 버튼
+  // 색만 그대로). 초기 렌더링과 똑같은 방식으로 인라인 스타일을 직접 다시 넣어줌.
+  document.querySelectorAll('.exam-list-cat-btn').forEach(function(btn){
+    var isActive = btn.textContent === cat;
+    btn.classList.toggle('active', isActive);
+    btn.style.background = isActive ? 'var(--blue-l)' : 'var(--surface2)';
+    btn.style.borderColor = isActive ? 'rgba(29,78,216,0.2)' : 'var(--border)';
+    btn.style.color = isActive ? '#7aa8ff' : 'var(--tx3)';
+  });
+  _renderExamListStudent();
+};
+window.switchExamListSort = function(sortKey){
+  _currentExamListSort = sortKey;
+  _renderExamListStudent();
+};
+
+function loadExamList(){
+  if (!currentUser) return;
+  // [등불] 시험탭 상단에 「등불 복습」 카드 표시
+  try { if (window.DB_renderStudentReviews) window.DB_renderStudentReviews(); } catch(e) {}
+  getDocs(query(collection(db,'examSessions'), where('studentUid','==',currentUser.uid))).then(function(snap){
+    var sessions = snap.docs.map(function(d){return Object.assign({id:d.id}, d.data());});
+    if (!sessions.length) {
+      document.getElementById('exam-list-student').innerHTML = '<div style="color:var(--tx3);font-size:13px;text-align:center;padding:30px 0;">배정된 시험이 없습니다</div>';
+      var catTabsEl0 = document.getElementById('exam-list-cat-tabs');
+      if (catTabsEl0) catTabsEl0.innerHTML = '';
+      return;
+    }
+    Promise.all(sessions.map(function(s){ return getDoc(doc(db,'exams',s.examId)); })).then(function(examDocs){
+      var rows = sessions.map(function(sess, i){
+        var exam = examDocs[i].exists() ? examDocs[i].data() : null;
+        return exam ? {sess: sess, exam: exam} : null;
+      }).filter(Boolean);
+      window._examListCache = rows;
+
+      // 분류 탭 - 이 학생에게 배정된 시험들의 분류만 보여줌(조회 전용, 추가/수정/삭제는
+      // 선생님/마스터만 가능)
+      var cats = Array.from(new Set(rows.map(function(r){return r.exam.examSource;}).filter(Boolean)));
+      var catTabsEl = document.getElementById('exam-list-cat-tabs');
+      if (catTabsEl) {
+        if (!cats.length) {
+          catTabsEl.innerHTML = '';
+        } else {
+          _currentExamListCategory = '전체';
+          catTabsEl.innerHTML = ['전체'].concat(cats).map(function(c){
+            return '<button class="exam-list-cat-btn'+(c==='전체'?' active':'')+'" onclick="switchExamListCategory(\''+escapeHtml(c).replace(/'/g,"\\'")+'\')" style="padding:6px 10px;background:'+(c==='전체'?'var(--blue-l)':'var(--surface2)')+';border:1px solid '+(c==='전체'?'rgba(29,78,216,0.2)':'var(--border)')+';border-radius:6px;color:'+(c==='전체'?'#7aa8ff':'var(--tx3)')+';font-size:12px;cursor:pointer;">'+escapeHtml(c)+'</button>';
+          }).join('');
+        }
+      }
+
+      _renderExamListStudent();
+    });
+  }).catch(function(e){
+    document.getElementById('exam-list-student').innerHTML = '<div style="color:var(--red);font-size:12px;">불러오기 실패</div>';
+  });
+}
+
+// 캐시된 시험 목록을 지금 선택된 분류/정렬 기준으로 걸러서 다시 그림
+function _renderExamListStudent(){
+  var el = document.getElementById('exam-list-student');
+  if (!el || !window._examListCache) return;
+  var rows = window._examListCache.slice();
+
+  if (_currentExamListCategory && _currentExamListCategory !== '전체') {
+    rows = rows.filter(function(r){ return r.exam.examSource === _currentExamListCategory; });
+  }
+
+  if (_currentExamListSort === 'date_asc') {
+    rows.sort(function(a,b){ return (a.exam.createdAt?a.exam.createdAt.toMillis():0) - (b.exam.createdAt?b.exam.createdAt.toMillis():0); });
+  } else if (_currentExamListSort === 'name_asc') {
+    rows.sort(function(a,b){ return (a.exam.title||'').localeCompare(b.exam.title||'', 'ko'); });
+  } else { // date_desc (기본값)
+    rows.sort(function(a,b){ return (b.exam.createdAt?b.exam.createdAt.toMillis():0) - (a.exam.createdAt?a.exam.createdAt.toMillis():0); });
+  }
+
+  if (!rows.length) { el.innerHTML = '<div style="color:var(--tx3);font-size:13px;text-align:center;padding:30px 0;">해당 분류의 시험이 없습니다</div>'; return; }
+
+  el.innerHTML = rows.map(function(r){
+        var sess = r.sess, exam = r.exam;
+        var subj0 = exam.subjects && exam.subjects[0];
+        var subjName = subj0 ? _resolveSubjDisplayName(subj0) : '';
+        var statusInfo = {
+          not_started: {label:'응시 전', color:'var(--tx3)', btn:'응시하기'},
+          waiting: {label:'대기중(출석)', color:'var(--gold)', btn:'대기실 입장'},
+          in_progress: {label:'응시중', color:'var(--burg)', btn:'이어서 응시'},
+          break: {label:'쉬는시간', color:'var(--gold)', btn:'이어서 응시'},
+          submitted: {label:'채점중', color:'var(--tx3)', btn:null},
+          graded: {label:'채점완료', color:'var(--green)', btn:null}
+        }[sess.status] || {label:sess.status, color:'var(--tx3)', btn:null};
+
+        var score = (sess.subjectResults && sess.subjectResults[0]) ? sess.subjectResults[0].score : null;
+
+        return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">'
+          + '<div><div style="font-size:15px;font-weight:700;">'+escapeHtml(exam.title)+'</div>'
+          + '<div style="font-size:12px;color:var(--tx3);margin-top:2px;">'+escapeHtml(subjName)+' · '+subj0.durationMin+'분'
+          + (score!=null ? ' · <b style="color:var(--burg);">'+score+'점</b>' : '')
+          + '</div></div>'
+          + '<div style="text-align:right;">'
+          + '<div style="font-size:11px;color:'+statusInfo.color+';font-weight:700;margin-bottom:6px;">'+statusInfo.label+'</div>'
+          + (statusInfo.btn ? '<button onclick="startExam(\''+sess.id+'\')" class="modal-btn primary" style="margin:0;width:auto;padding:8px 18px;font-size:12px;">'+statusInfo.btn+'</button>' : (score!=null?'<div style="display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;"><button onclick="viewExamResult(\''+sess.id+'\')" style="font-size:11px;padding:6px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;">결과보기</button><button onclick="openReflectionForPastExam(\''+sess.id+'\')" style="font-size:11px;padding:6px 12px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);cursor:pointer;">✍️ 다음 걸음을 위하여</button></div>':''))
+          + '</div></div>';
+  }).join('');
+}
+
+// ── 시험 응시 상태 ──
+var ExamEngine = {
+  sessionId: null,
+  examId: null,
+  exam: null,
+  subject: null,
+  deadlineMs: null,
+  answers: {}, // {questionNo: value}
+  clockInterval: null,
+  saveTimer: null,
+  warned: false,
+  submitting: false
+};
+
+window.startExam = function(sessionId){
+  // 기기마다 시스템 시계가 조금씩 다를 수 있어서(선생님 기기, 학생 기기 각자 몇 초씩
+  // 오차가 날 수 있음), 시험 응시를 시작하는 이 시점에 서버 시각을 확인해서 보정값을
+  // 구해둠. 이후 이 시험 안에서 일어나는 모든 시간 계산(과목 시작/종료, 쉬는시간 등)이
+  // 전부 이 보정된 시각(_nowSynced())을 기준으로 이뤄져서, 기기 시계가 어긋나 있어도
+  // 실제 서버 기준 정확한 시각으로 동작함.
+  _syncServerTimeOffset();
+
+  // 이 함수는 학생이 "응시하기"를 직접 클릭할 때 호출되는, 진짜 사용자 조작(user gesture) 시점.
+  // 브라우저 정책상 음성(speechSynthesis)은 사용자가 직접 조작한 시점에서 한 번 "잠금 해제"돼야
+  // 나중에 타이머 등으로 자동 재생되는 음성도 정상 작동하는 경우가 있다. 단, 빈 문자열로
+  // 재생을 시도하면 일부 브라우저에서 음성 재생 큐 자체가 멈춰버리는 부작용이 있어서,
+  // 아주 짧은 실제 문자를 아주 작은 볼륨으로 재생하는 방식으로 안전하게 처리한다.
+  try {
+    if ('speechSynthesis' in window) {
+      speechSynthesis.cancel(); // 혹시 막혀있던 큐가 있으면 초기화
+      var primeUtter = new SpeechSynthesisUtterance('시작');
+      primeUtter.volume = 0.01;
+      primeUtter.rate = 10; // 최대한 빨리 끝나도록
+      speechSynthesis.speak(primeUtter);
+    }
+  } catch(e){ console.warn('[TTS 잠금해제 실패]', e); }
+
+  // 듣기평가 파일(HTML5 audio) 자동재생도 브라우저가 막는 경우가 있어서, 같은 원리로
+  // 지금(진짜 클릭 시점)에 무음으로 짧게 재생→정지를 한 번 해두면, 나중에 화면이 자동으로
+  // 전환되며 재생되는 듣기 파일도 막히지 않고 통과되는 경우가 많음.
+  try {
+    var primeAudio = new Audio();
+    primeAudio.volume = 0;
+    primeAudio.src = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//tQxAADB8AhSmxhIIEVCSiJrDCQBTcu3UrAIwUdkRgQbFAZC7k+9re83/6svUAxrM5tQmMAAAAAAAAAAAAAAAAA';
+    var p = primeAudio.play();
+    if (p && p.then) { p.then(function(){ primeAudio.pause(); }).catch(function(){}); }
+  } catch(e){}
+
+  getDoc(doc(db,'examSessions',sessionId)).then(function(sessDoc){
+    if (!sessDoc.exists()) { alert('시험 세션을 찾을 수 없습니다'); return; }
+    var sess = Object.assign({id:sessDoc.id}, sessDoc.data());
+    getDoc(doc(db,'exams',sess.examId)).then(function(examDoc){
+      var exam = Object.assign({id:sess.examId}, examDoc.data());
+      var subjIdx = sess.currentSubjectIndex || 0;
+      var subj = exam.subjects[subjIdx];
+      if (!subj) { alert('과목 정보를 찾을 수 없습니다'); return; }
+
+      if (sess.status === 'not_started') {
+        // 여러 과목을 응시하는 시험에서, 탐구 선택과목 고르기 같은 걸 "그 과목 시작
+        // 직전"에 하나씩 물어보면 매번 응시 시간이 뒤로 밀리는 문제가 있었음. 그래서
+        // 이제는 시험 전체가 시작되기 전에(첫 진입 시 딱 한 번) 모든 과목의 선택과목을
+        // 한꺼번에 다 골라두고, 그 다음에야 대기화면/시험시작으로 넘어가도록 함.
+        _enterExamPrepScreen(sessionId, exam, function(){
+          // 일괄 시작 시간이 설정되어 있고 아직 도달 전이면 대기화면으로
+          if (exam.startAtMs && _nowSynced() < exam.startAtMs) {
+            updateDoc(doc(db,'examSessions',sessionId), {
+              status: 'waiting',
+              waitingSince: serverTimestamp()
+            }).then(function(){
+              _enterWaitingScreen(sessionId, exam, subj, subjIdx);
+            });
+          } else {
+            _beginSubjectNow(sessionId, exam, subj, subjIdx);
+          }
+        });
+      } else if (sess.status === 'waiting') {
+        _enterWaitingScreen(sessionId, exam, subj, subjIdx);
+      } else if (sess.status === 'in_progress') {
+        var remaining = sess.deadlineMs - _nowSynced();
+        if (remaining <= 0) {
+          _forceSubmitSession(sessionId, exam, subj, subjIdx, sess.currentAnswers||{});
+        } else {
+          _enterExamScreen(sessionId, exam, subj, subjIdx, sess.deadlineMs, sess.currentAnswers||{}, sess.listeningPlayed);
+        }
+      } else if (sess.status === 'break') {
+        var breakRemaining = sess.breakDeadlineMs - _nowSynced();
+        if (breakRemaining <= 0) {
+          _startNextSubject(sessionId, exam, subjIdx);
+        } else {
+          _enterBreakScreen(sessionId, exam, subjIdx-1, sess.breakDeadlineMs);
+        }
+      } else {
+        alert('이미 종료된 시험입니다');
+      }
+    });
+  });
+};
+
+// 과목 표시명 공용 헬퍼 - 탐구 선택과목(ex1/ex2)은 subjectNames에 항목이 없어서
+// 그냥 두면 "ex1" 같은 원본 코드가 그대로 보이거나(제목), undefined가 되는(알림)
+// 문제가 있었음. 학생이 선택과목을 고른 뒤에는 그 실제 과목명(_electiveLabel)을
+// 최우선으로 쓰고, 아직 안 골랐으면 "과학탐구"/"사회탐구" 같은 큰 분류명을 보여줌.
+function _resolveSubjDisplayName(subj){
+  if (!subj) return '';
+  if (subj._electiveLabel) return subj._electiveLabel;
+  if (subj.subject && /^ex\d+$/.test(subj.subject)) {
+    return subj.exCategory === 'sc' ? '과학탐구' : (subj.exCategory === 'so' ? '사회탐구' : '탐구');
+  }
+  return subjectNames[subj.subject] || subj.subject;
+}
+// 채점 결과(r) 하나의 과목명: 탐구(ex1·ex2)는 학생이 고른 선택과목명, 선택과목 있는 과목은 "수학 (미적분)"
+function _resultSubjName(r, exam, choices){
+  if (!r) return '';
+  var sd = exam && exam.subjects && exam.subjects[r.subjectIndex];
+  var el = choices && (choices[r.subjectIndex] || choices[String(r.subjectIndex)]);
+  var code = (sd && sd.subject) || r.subject;
+  if (/^ex\d+$/.test(code||'')) return el || (sd ? _resolveSubjDisplayName(sd) : '탐구');
+  var base = subjectNames[code] || code;
+  return el ? base+' ('+el+')' : base;
+}
+window._resultSubjName = _resultSubjName;
+// 학생이 그 과목에서 '모름(?)' 표시한 문항 번호 집합
+function _unkSet(sess, idx){ var u=sess&&sess.unknownBySubj, a=u&&(u[idx]||u[String(idx)]); var m={}; (a||[]).forEach(function(n){ m[parseInt(n,10)]=true; }); return m; }
+window._unkSet = _unkSet;
+// 예전에 채점된 성적에는 '모름(?)' 기록이 성적 문서에 없어서, 선생님 계정 접속 시 한 번 응시 기록에서 채워 넣는다(지점별 1회)
+async function _backfillUnknownGrades(){
+  // (1) '모름(?)' 기록 채우기  (2) 예전 결과 수정 기능 때문에 탐구가 ex1·ex2 키/이름으로 저장된 성적 바로잡기
+  if (!currentProfile || (currentProfile.role!=='teacher' && currentProfile.role!=='master')) return;
+  var flag='unkBackfill_v2_'+getBranch(); try{ if(localStorage.getItem(flag)) return; }catch(e){}
+  var ss=await getDocs(query(collection(db,'examSessions'), where('branch','==',getBranch())));
+  var exams={}, n=0, f=0;
+  for (var i=0;i<ss.docs.length;i++){
+    var sd=ss.docs[i], sess=sd.data(); if(!sess.subjectResults||!sess.subjectResults.length) continue;
+    var hasUnk=sess.unknownBySubj&&Object.keys(sess.unknownBySubj).length;
+    var gs=await getDocs(query(collection(db,'grades'), where('examSessionId','==',sd.id))); if(gs.empty) continue;
+    var g=gs.docs[0], gd=g.data(), broken=Object.keys(gd.scores||{}).some(function(k){return /^ex\d+$/.test(k);});
+    if(!broken&&(!hasUnk||gd.unknownBySubj)) continue;
+    if(!(sess.examId in exams)){ var ed=await getDoc(doc(db,'exams',sess.examId)); exams[sess.examId]=ed.exists()?Object.assign({id:sess.examId},ed.data()):null; }
+    var ex=exams[sess.examId]; if(!ex) continue;
+    var built=_buildGradesScoresFromResults(ex, sess.subjectResults, sess.electiveChoices||{}, sess.unknownBySubj);
+    var upd={}; if(hasUnk&&Object.keys(built.unknownBySubj).length) upd.unknownBySubj=built.unknownBySubj;
+    if(broken){ upd.scores=built.scores; upd.wrongBySubj=built.wrongBySubj; f++; }
+    if(Object.keys(upd).length){ await updateDoc(doc(db,'grades',g.id),upd); n++; }
+  }
+  try{ localStorage.setItem(flag, String(Date.now())); }catch(e){}
+  if(n) console.log('[성적 보정] '+n+'건 (ex1·ex2 이름 수정 '+f+'건)');
+}
+
+// 시험 전체 시작 전, 딱 한 번만 - 이 시험에 포함된 모든 과목 중 선택과목(탐구 등)이
+// 필요한 게 있으면 전부 순서대로 골라두게 함. 예전엔 "그 과목 시작 직전"에 하나씩
+// 물어봐서 응시 시각이 매번 밀렸는데, 이제는 시험 전체가 시작되기도 전에 다 끝내둠.
+function _enterExamPrepScreen(sessionId, exam, allDoneFn){
+  getDoc(doc(db,'examSessions',sessionId)).then(function(sd){
+    var existingChoices = (sd.exists() && sd.data().electiveChoices) || {};
+    var pending = [];
+    (exam.subjects||[]).forEach(function(subj, idx){
+      if (subj.electiveOptions && subj.electiveOptions.length && !existingChoices[idx]) {
+        pending.push({subj:subj, idx:idx});
+      } else if (existingChoices[idx]) {
+        // 이미 골라둔 적 있으면(새로고침 등으로 재진입) subj 객체에도 표시해서
+        // 제목 등에 바로 실제 과목명이 보이게 함
+        subj._electiveLabel = existingChoices[idx];
+        if (subj.questionsByElective && subj.questionsByElective[existingChoices[idx]] && subj.questionsByElective[existingChoices[idx]].length) {
+          subj.questions = subj.questionsByElective[existingChoices[idx]];
+        }
+      }
+    });
+    _runExamPrepQueue(sessionId, exam, pending, 0, allDoneFn);
+  }).catch(function(){ allDoneFn(); });
+}
+
+function _runExamPrepQueue(sessionId, exam, pending, i, allDoneFn){
+  if (i >= pending.length) { allDoneFn(); return; }
+  var item = pending[i];
+  _enterElectiveChoiceScreen(sessionId, exam, item.subj, item.idx, function(){
+    _runExamPrepQueue(sessionId, exam, pending, i+1, allDoneFn);
+  });
+}
+
+function _beginSubjectNow(sessionId, exam, subj, subjIdx){
+  // 전략노트("다음 걸음을 위하여")는 이제 시험 시작 전 준비화면(_enterExamPrepScreen)
+  // 단계에서 미리 다 처리되므로, 여기서는 더 이상 블로킹으로 물어보지 않고 바로 시작함
+  // (예전엔 여기서도 한 번 더 물어봐서 시작 시각이 밀리는 문제가 있었음)
+  _maybeShowElectiveThenStart(sessionId, exam, subj, subjIdx, function(){
+    _actuallyStartSubjectTimer(sessionId, exam, subj, subjIdx);
+  });
+}
+
+// 이 과목에 선택과목이 설정되어 있으면(electiveOptions가 1개 이상), 응시 시작 전에
+// 학생이 하나를 고르는 화면을 먼저 보여줌. 없으면 바로 다음 단계(전략노트/시험시작)로 넘어감.
+function _maybeShowElectiveThenStart(sessionId, exam, subj, subjIdx, proceedFn){
+  if (!subj.electiveOptions || !subj.electiveOptions.length) { proceedFn(); return; }
+  // 이미 골라둔 적 있으면(예: 대기화면에서 나갔다 다시 들어온 경우) 다시 안 물어봄
+  getDoc(doc(db,'examSessions',sessionId)).then(function(sd){
+    var existing = sd.exists() && sd.data().electiveChoices && sd.data().electiveChoices[subjIdx];
+    if (existing) { proceedFn(); return; }
+    _enterElectiveChoiceScreen(sessionId, exam, subj, subjIdx, proceedFn);
+  }).catch(function(){ _enterElectiveChoiceScreen(sessionId, exam, subj, subjIdx, proceedFn); });
+}
+
+function _enterElectiveChoiceScreen(sessionId, exam, subj, subjIdx, proceedFn){
+  showScreen('screen-exam');
+  var isExplore = subj.subject === 'ex1' || subj.subject === 'ex2';
+  var categoryLabel = isExplore ? (subj.exCategory === 'sc' ? '과학탐구' : '사회탐구') : (subjectNames[subj.subject] || subj.subject);
+  var el = document.getElementById('screen-exam');
+  el.innerHTML = '<div class="refl-wrap">'
+    + '<div class="refl-card">'
+    +   '<div class="refl-kicker">SUBJECT CHOICE</div>'
+    +   '<div class="refl-title">'+escapeHtml(categoryLabel)+' 선택과목을 골라주세요</div>'
+    +   '<div class="refl-sub">이번 시험에서 응시할 선택과목을 하나 골라주세요. 시작하고 나면 바꿀 수 없어요.</div>'
+    +   '<div class="elective-choice-list">'
+    +     subj.electiveOptions.map(function(name){
+            return '<button type="button" class="elective-choice-btn" onclick="_submitElectiveChoice(\''+escapeHtml(name).replace(/'/g,"\\'")+'\')">'+escapeHtml(name)+'</button>';
+          }).join('')
+    +   '</div>'
+    + '</div>'
+    + '</div>';
+
+  window._electiveProceedCtx = {sessionId:sessionId, exam:exam, subj:subj, subjIdx:subjIdx, proceedFn:proceedFn};
+}
+
+window._submitElectiveChoice = function(name){
+  var ctx = window._electiveProceedCtx;
+  if (!ctx) return;
+  if (!confirm('"'+name+'"(으)로 응시하시겠습니까?\n시작 후에는 바꿀 수 없습니다.')) return;
+  var field = {};
+  field['electiveChoices.'+ctx.subjIdx] = name;
+  updateDoc(doc(db,'examSessions',ctx.sessionId), field).then(function(){
+    window._electiveProceedCtx = null;
+    ExamEngine.electiveChoice = name; // 채점 시점에 비동기 재조회 없이 바로 쓸 수 있도록 동기적으로도 세팅
+    // ctx.subj는 이후 이어지는 화면 진입/채점 로직들이 전부 같은 객체를 참조하고 있어서,
+    // 여기서 실제 과목명(_electiveLabel)과 questions를 직접 바꿔치기해두면(참조 공유)
+    // 제목/알림 등 어디서든 "ex1" 같은 코드가 아니라 실제 이름이 바로 보이고, 학생이
+    // 실제로 보는 문제 화면도, 나중 채점도 전부 자동으로 이 선택과목 문항을 쓰게 됨
+    ctx.subj._electiveLabel = name;
+    if (ctx.subj.questionsByElective && ctx.subj.questionsByElective[name] && ctx.subj.questionsByElective[name].length) {
+      ctx.subj.questions = ctx.subj.questionsByElective[name];
+    }
+    ctx.proceedFn();
+  }).catch(function(e){ alert('저장 실패: ' + e.message); });
+};
+
+// 예정 시각(exam.startAtMs)이 있는 시험은, 학생이 일찍 제출하든 늦게 들어오든 상관없이
+// "그 과목이 원래 끝나야 할 시각"에 정확히 맞춰서 마감시각을 정해야 함(전원이 같은
+// 시각에 시작/종료). 그래서 상대시간(now+진행시간)이 아니라, 시험 전체 스케줄에서
+// 이 과목의 절대 종료시각을 그대로 가져다 씀. 예정 시각이 없는(개인 응시) 시험은
+// 원래처럼 지금부터 진행시간만큼으로 계산함.
+// 단, 그 예정 종료시각이 이미 "지금"보다도 과거라면(=라이브 진행 시간대가 완전히
+// 끝난 뒤, 결석했던 학생이 나중에 따로 응시하는 등의 경우) 옛날 스케줄에 묶어버리면
+// 시작하자마자 0초 남음으로 즉시 종료 처리되는 버그가 생기므로, 이 경우엔 그냥
+// 일반적인 개인 응시처럼 지금부터 정상적으로 진행시간을 준다.
+function _getSubjectDeadline(exam, subjIdx, now){
+  if (exam.startAtMs) {
+    var schedule = _computeExamDisplaySchedule(exam);
+    var phase = schedule.find(function(p){ return p.type==='subject' && p.idx===subjIdx; });
+    if (phase && phase.endMs > now) return phase.endMs;
+  }
+  return now + exam.subjects[subjIdx].durationMin*60000;
+}
+// 쉬는시간도 마찬가지 - 예정된 시험이면 "학생이 언제 제출했든" 상관없이 원래 정해진
+// 다음 과목 시작 시각까지 기다리게 함 (일찍 냈다고 다음 과목이 일찍 시작되면 안 됨).
+// 이것도 그 시각이 이미 지난 과거면(라이브 시간대가 끝난 뒤) 정상적인 쉬는시간으로 폴백.
+function _getBreakDeadline(exam, finishedSubjIdx, now){
+  if (exam.startAtMs) {
+    var schedule = _computeExamDisplaySchedule(exam);
+    var breakPhase = schedule.find(function(p){ return p.type==='break' && p.afterIdx===finishedSubjIdx; });
+    if (breakPhase && breakPhase.endMs > now) return breakPhase.endMs;
+    var nextPhase = schedule.find(function(p){ return p.type==='subject' && p.idx===finishedSubjIdx+1; });
+    if (nextPhase && nextPhase.startMs > now) return nextPhase.startMs;
+  }
+  var breakMin = exam.subjects[finishedSubjIdx].breakAfterMin || 0;
+  return now + breakMin*60000;
+}
+
+function _actuallyStartSubjectTimer(sessionId, exam, subj, subjIdx){
+  var now = _nowSynced();
+  var deadline = _getSubjectDeadline(exam, subjIdx, now);
+  updateDoc(doc(db,'examSessions',sessionId), {
+    status: 'in_progress',
+    startedAtMs: now,
+    deadlineMs: deadline,
+    currentAnswers: {},
+    listeningPlayed: false
+  }).then(function(){
+    _enterExamScreen(sessionId, exam, subj, subjIdx, deadline, {});
+  });
+}
+
+// ── 일괄 시작 대기화면 ──
+// 단체(일괄 시작) 시험은 대기시간을 침범하지 않도록, 전략 작성을 대기화면 안에
+// "비차단"으로 내장한다 - 다 쓰든 안 쓰든 지정된 시각이 되면 전원 정확히 동시에 시작됨.
+function _enterWaitingScreen(sessionId, exam, subj, subjIdx){
+  showScreen('screen-exam');
+  var screenEl = document.getElementById('screen-exam');
+  screenEl.innerHTML = '<div class="exam-wait-wrap">'
+    + '<div class="exam-wait-icon">🙋</div>'
+    + '<div class="exam-wait-title">대기 중입니다</div>'
+    + '<div class="exam-wait-sub">출석 확인이 완료되었습니다. 지정된 시각이 되면 전원 동시에 시험이 시작됩니다.</div>'
+    + '<div id="exam-wait-timer" class="exam-wait-timer">--:--</div>'
+    + '<div id="exam-wait-strategy-slot"></div>'
+    + '<div class="exam-wait-hint">이 화면을 벗어나지 말고 기다려주세요</div>'
+    + '</div>';
+
+  // 대기 중 여유가 있으면, 지난 회고를 보고 이번 전략을 미리 써둘 수 있게 함 (선택사항, 시작 시각을 절대 침범하지 않음)
+  var uid = currentUser.uid;
+  getDocs(query(collection(db,'examReflections'), where('uid','==',uid), where('subject','==',subj.subject))).then(function(snap){
+    var prior = snap.docs.map(function(d){return d.data();})
+      .filter(function(r){ return r.examId !== exam.id && r.q1; })
+      .sort(function(a,b){
+        var at=a.reflectionAt?a.reflectionAt.toMillis():0, bt=b.reflectionAt?b.reflectionAt.toMillis():0;
+        return bt-at;
+      });
+    if (!prior.length) return;
+    prior = _reflPreferSame(prior, _resolveSubjDisplayName(subj));
+    var slot = document.getElementById('exam-wait-strategy-slot');
+    if (!slot) return;
+    var subjName = _resolveSubjDisplayName(subj);
+    slot.innerHTML = '<div class="exam-wait-strategy-box">'
+      + '<div class="refl-prior-box" style="margin-bottom:14px;">'
+      +   '<div class="refl-prior-label">📖 지난 "'+escapeHtml(prior[0].examTitle||'')+'" - 다음 걸음을 위하여</div>'
+      +   REFLECTION_PROMPTS.map(function(p){
+            var val = prior[0][p.key];
+            if (!val) return '';
+            return '<div class="refl-prior-item"><div class="refl-prior-q">'+escapeHtml(p.label)+'</div><div class="refl-prior-a">'+escapeHtml(val)+'</div></div>';
+          }).join('')
+      + '</div>'
+      + '<div class="refl-q" style="justify-content:center;">✍️ 이번 '+escapeHtml(subjName)+', 어떻게 풀어나갈 건가요? <span style="font-weight:400;color:var(--tx4);font-size:11px;">(대기 중 여유 있게 작성 - 시작 시각에 자동으로 넘어갑니다)</span></div>'
+      + '<textarea id="exam-wait-strategy-input" class="refl-textarea" placeholder="예: 시간 배분을 다시 해서..."></textarea>'
+      + '<button type="button" class="exam-add-chip-btn" style="margin-top:8px;" onclick="_saveStrategyDuringWait(\''+exam.id+'\',\''+_reflSubjKey(exam, subjIdx)+'\','+subjIdx+',\''+sessionId+'\')">전략 저장</button>'
+      + '<span id="exam-wait-strategy-saved" style="margin-left:10px;font-size:11px;color:var(--green);display:none;">✓ 저장됨</span>'
+      + '</div>';
+  }).catch(function(){});
+
+  if (ExamEngine.clockInterval) clearInterval(ExamEngine.clockInterval);
+  ExamEngine.clockInterval = setInterval(function(){
+    var remaining = (exam.startAtMs || _nowSynced()) - _nowSynced();
+    if (remaining <= 0) {
+      clearInterval(ExamEngine.clockInterval);
+      // 전략 작성 여부와 무관하게, 지정된 시각에 정확히 전원 동시 시작 (대기/작성으로 인한 지연 없음)
+      _actuallyStartSubjectTimer(sessionId, exam, subj, subjIdx);
+      return;
+    }
+    var totalSec = Math.floor(remaining/1000);
+    var mm = Math.floor(totalSec/60), ss = totalSec%60;
+    var el = document.getElementById('exam-wait-timer');
+    if (el) el.textContent = String(mm).padStart(2,'0')+':'+String(ss).padStart(2,'0');
+  }, 1000);
+}
+
+window._saveStrategyDuringWait = function(examId, subject, subjIdx, sessionId){
+  var input = document.getElementById('exam-wait-strategy-input');
+  var text = input ? input.value.trim() : '';
+  if (!text) { alert('전략을 입력해주세요'); return; }
+  var uid = currentUser.uid;
+  var docId = _reflectionDocId(uid, examId, subject);
+  var _ws = ExamEngine.exam && ExamEngine.exam.subjects && ExamEngine.exam.subjects[subjIdx];
+  setDoc(doc(db,'examReflections',docId), {
+    uid: uid, examId: examId, examTitle: (ExamEngine.exam&&ExamEngine.exam.title)||'', subject: String(subject).split('_')[0],
+    subjectKey: subject, subjectLabel: _ws ? _resolveSubjDisplayName(_ws) : '',
+    subjectIndex: subjIdx, branch: getBranch(), sessionId: sessionId,
+    strategy: text, strategyAt: serverTimestamp()
+  }, {merge:true}).then(function(){
+    var badge = document.getElementById('exam-wait-strategy-saved');
+    if (badge) badge.style.display = 'inline';
+  }).catch(function(e){ alert('저장 실패: '+e.message); });
+};
+
+
+function _startNextSubject(sessionId, exam, subjIdx){
+  var subj = exam.subjects[subjIdx];
+  // 전략노트는 이제 시작 전 준비화면에서만 처리하므로 여기선 더 이상 안 물어봄
+  _maybeShowElectiveThenStart(sessionId, exam, subj, subjIdx, function(){
+    var now = _nowSynced();
+    var deadline = _getSubjectDeadline(exam, subjIdx, now);
+    updateDoc(doc(db,'examSessions',sessionId), {
+      status: 'in_progress',
+      currentSubjectIndex: subjIdx,
+      startedAtMs: now,
+      deadlineMs: deadline,
+      currentAnswers: {},
+      listeningPlayed: false
+    }).then(function(){
+      _enterExamScreen(sessionId, exam, subj, subjIdx, deadline, {});
+    });
+  });
+}
+
+function _enterBreakScreen(sessionId, exam, finishedSubjIdx, breakDeadlineMs, justScoredPoints){
+  var finishedSubj = exam.subjects[finishedSubjIdx];
+  var nextSubj = exam.subjects[finishedSubjIdx+1];
+  var finishedSubjName = _resolveSubjDisplayName(finishedSubj);
+  var nextSubjName = _resolveSubjDisplayName(nextSubj);
+  var isScheduled = !!exam.startAtMs;
+  var fmt = function(ms){ var d = new Date(ms); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
+
+  showScreen('screen-exam');
+  var screenEl = document.getElementById('screen-exam');
+  screenEl.innerHTML = '<div class="exam-break-wrap">'
+    + '<div class="exam-break-card">'
+    +   (justScoredPoints!==undefined && justScoredPoints!==null ? '<div class="exam-break-scored">✓ '+escapeHtml(finishedSubjName)+' 제출 완료 · <b>'+justScoredPoints+'점</b></div>' : '')
+    +   '<div class="exam-break-icon">☕</div>'
+    +   '<div class="exam-break-title">쉬는 시간</div>'
+    +   '<div class="exam-break-sub">잠시 후 <b>'+escapeHtml(nextSubjName)+'</b> 시험이 시작됩니다</div>'
+    +   '<div id="exam-break-timer" class="exam-break-timer">--:--</div>'
+    +   (isScheduled ? '<div class="exam-break-scheduled">'+escapeHtml(nextSubjName)+' 시작 시각: '+fmt(breakDeadlineMs)+'</div>' : '')
+    + '</div>'
+    + '</div>';
+
+  if (ExamEngine.clockInterval) clearInterval(ExamEngine.clockInterval);
+  ExamEngine.clockInterval = setInterval(function(){
+    var remaining = breakDeadlineMs - _nowSynced();
+    if (remaining <= 0) {
+      clearInterval(ExamEngine.clockInterval);
+      _startNextSubject(sessionId, exam, finishedSubjIdx+1);
+      return;
+    }
+    var totalSec = Math.floor(remaining/1000);
+    var mm = Math.floor(totalSec/60), ss = totalSec%60;
+    var el = document.getElementById('exam-break-timer');
+    if (el) el.textContent = String(mm).padStart(2,'0')+':'+String(ss).padStart(2,'0');
+  }, 1000);
+}
+
+// 듣기 파일 자동재생이 브라우저 정책으로 막혔을 때, 학생이 직접 눌러서 재생할 수 있도록
+// 화면 위에 눈에 띄는 배너를 띄움. 직접 누르는 클릭은 브라우저가 항상 허용하기 때문에
+// 이 방법이 가장 확실함.
+// ── 듣기 재생 보호 ──
+// OMR을 누를 때마다 종료 알림 음성(TTS) 잠금 해제용으로 무음 음성을 재생하는데(_primeSpeechOnUserGesture),
+// 아이폰·아이패드 등에서는 음성 합성이 시작되면 재생 중인 듣기 오디오가 멈춘다 → "OMR 누르면 듣기가 끊김".
+// 그래서 (1) 듣기가 재생 중일 때는 무음 음성을 보내지 않고, (2) 그래도 듣기가 의도치 않게 멈추면
+// 그 자리에서 이어서 다시 재생한다(실패하면 '이어서 듣기' 버튼). 처음부터가 아니라 멈춘 지점부터 이어 재생.
+var _examListen = { audio: null, stopped: false };
+function _setExamListeningAudio(a){
+  _stopExamListening();
+  _examListen.audio = a; _examListen.stopped = false;
+  a.addEventListener('pause', function(){
+    if (_examListen.audio !== a || _examListen.stopped || a.ended) return;
+    setTimeout(function(){
+      if (_examListen.audio !== a || _examListen.stopped || a.ended || !a.paused) return;
+      a.play().catch(function(){ _showListeningResumeBanner(a); });
+    }, 250);
+  });
+  a.addEventListener('playing', function(){ var b = document.getElementById('listening-resume-banner'); if (b) b.remove(); });
+}
+function _resumeExamListeningIfPaused(){
+  var a = _examListen.audio;
+  if (a && !_examListen.stopped && !a.ended && a.paused && a.currentTime > 0) { try { a.play().catch(function(){}); } catch(e){} }
+}
+function _stopExamListening(){
+  var a = _examListen.audio;
+  _examListen.stopped = true;
+  if (a) { try { a.pause(); } catch(e){} }
+  _examListen.audio = null;
+  var b = document.getElementById('listening-resume-banner'); if (b) b.remove();
+}
+function _showListeningResumeBanner(a){
+  if (document.getElementById('listening-resume-banner') || document.getElementById('listening-fallback-banner')) return;
+  var banner = document.createElement('div');
+  banner.id = 'listening-resume-banner';
+  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:linear-gradient(135deg,var(--burg),var(--burg2));color:#fff;padding:14px 18px;display:flex;align-items:center;justify-content:center;gap:14px;z-index:250;box-shadow:0 4px 16px rgba(0,0,0,.25);';
+  banner.innerHTML = '<span style="font-size:14px;font-weight:700;">🔊 듣기가 멈췄어요 - 버튼을 누르면 멈춘 곳부터 이어서 재생돼요</span>'
+    + '<button id="listening-resume-btn" style="padding:8px 18px;background:#fff;color:var(--burg);border:none;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">▶ 이어서 듣기</button>';
+  document.body.appendChild(banner);
+  document.getElementById('listening-resume-btn').onclick = function(){
+    a.play().then(function(){ banner.remove(); }).catch(function(e){ alert('재생에 실패했습니다. 기기 음량 및 무음 모드를 확인한 뒤 다시 눌러주세요.\n('+e.message+')'); });
+  };
+}
+
+function _showListeningPlayFallback(url, sessionId){
+  if (document.getElementById('listening-fallback-banner')) return; // 중복 방지
+  var banner = document.createElement('div');
+  banner.id = 'listening-fallback-banner';
+  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:linear-gradient(135deg,var(--burg),var(--burg2));color:#fff;padding:14px 18px;display:flex;align-items:center;justify-content:center;gap:14px;z-index:250;box-shadow:0 4px 16px rgba(123,29,29,0.35);';
+  banner.innerHTML = '<span style="font-size:14px;font-weight:700;">🔊 듣기 파일이 자동으로 재생되지 않았어요 - 아래 버튼을 눌러 재생해주세요</span>'
+    + '<button id="listening-fallback-play-btn" style="padding:8px 18px;background:#fff;color:var(--burg);border:none;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">▶ 재생하기</button>';
+  document.body.appendChild(banner);
+
+  document.getElementById('listening-fallback-play-btn').onclick = function(){
+    var audio = new Audio(url);
+    _setExamListeningAudio(audio);
+    // "재생 시작됨"이 아니라 "끝까지 다 재생됨"일 때만 완료로 기록 - 재생 시작하자마자
+    // 완료로 기록해버리면, 재생 도중 학생이 나갔다 들어왔을 때 이미 "다 들은 것"으로
+    // 처리되어서 나머지를 다시 들을 방법이 없어짐
+    audio.addEventListener('ended', function(){
+      updateDoc(doc(db,'examSessions',sessionId), {listeningPlayed:true}).catch(function(){});
+    });
+    audio.play().then(function(){
+      banner.remove();
+    }).catch(function(e){
+      alert('재생에 실패했습니다. 기기 음량 및 무음 모드를 확인한 뒤 다시 눌러주세요.\n('+e.message+')');
+    });
+  };
+}
+
+// 시험 보는 동안 화면이 자동으로 꺼지지 않게 함. 브라우저가 탭이 백그라운드로 가면
+// wake lock을 자동으로 풀어버리는 경우가 있어서, 다시 화면을 보게 되면(visibilitychange)
+// 재요청하도록 함께 처리.
+var _examWakeLock = null;
+function _requestExamWakeLock(){
+  if (!('wakeLock' in navigator)) return;
+  navigator.wakeLock.request('screen').then(function(lock){
+    _examWakeLock = lock;
+  }).catch(function(e){ console.warn('[화면 꺼짐 방지 실패]', e); });
+}
+function _releaseExamWakeLock(){
+  if (_examWakeLock) { _examWakeLock.release().catch(function(){}); _examWakeLock = null; }
+}
+document.addEventListener('visibilitychange', function(){
+  if (document.visibilityState === 'visible' && document.getElementById('screen-exam') && document.getElementById('screen-exam').classList.contains('active')) {
+    _requestExamWakeLock();
+  }
+});
+
+function _enterExamScreen(sessionId, exam, subj, subjIdx, deadlineMs, savedAnswers, listeningPlayed){
+  ExamEngine.sessionId = sessionId;
+  ExamEngine.examId = exam.id;
+  ExamEngine.exam = exam;
+  ExamEngine.subject = subj;
+  ExamEngine.subjectIndex = subjIdx;
+  ExamEngine.deadlineMs = deadlineMs;
+  ExamEngine.answers = savedAnswers || {};
+  ExamEngine.warnedSet = {};
+  ExamEngine.submitting = false;
+  ExamEngine.electiveChoice = null; // 수능 시간 모드에서 탐구 라벨에 세부과목명을 같이 보여주기 위함
+  ExamEngine.unknown = {};
+  getDoc(doc(db,'examSessions',sessionId)).then(function(sd){
+    var choices = sd.exists() ? sd.data().electiveChoices : null;
+    // [등불] 새로고침 후 재진입 시 '모름(?)' 표시 복원
+    var unkSaved = sd.exists() && sd.data().unknownBySubj ? sd.data().unknownBySubj[subjIdx] : null;
+    if (unkSaved && unkSaved.length) {
+      unkSaved.forEach(function(n){ ExamEngine.unknown[n] = true; });
+      unkSaved.forEach(function(n){ var b = document.querySelector('.omr-unk[data-unk="'+n+'"]'); if (b) b.classList.add('on'); });
+    }
+    if (choices && choices[subjIdx]) {
+      ExamEngine.electiveChoice = choices[subjIdx];
+      subj._electiveLabel = choices[subjIdx]; // 새로고침 후 재진입 등으로 subj 객체가
+      // 새로 만들어진 경우에도(라이브 흐름 중 태그해둔 게 없는 경우) 여기서 다시 채워줌
+      var titleEl = document.querySelector('.exam-taking-title');
+      if (titleEl) titleEl.textContent = exam.title + ' · ' + _resolveSubjDisplayName(subj);
+      _updateExamTimeRangeLabel(); // 이미 그려진 화면이면 라벨을 다시 갱신
+    }
+  }).catch(function(){});
+
+  showScreen('screen-exam');
+  document.getElementById('screen-exam').innerHTML = buildExamTakingHtml(exam, subj, deadlineMs);
+
+  _requestExamWakeLock();
+
+  // 듣기 파일 자동 1회 재생. 브라우저가 자동재생을 막는 경우가 있어서(기기/브라우저마다
+  // 다르고, 클릭 없이 화면이 뜨는 경우일수록 더 잘 막힘), 성공했을 때만 "재생함"으로
+  // 기록하고, 실패하면 학생이 직접 누를 수 있는 버튼을 보여줌 - 예전엔 실패해도 무조건
+  // "재생함"으로 기록해버려서 다시는 재생을 시도할 방법조차 없었음.
+  // 또한 "재생 시작됨"이 아니라 "끝까지 다 재생됨"(ended 이벤트)일 때만 완료로 기록 -
+  // 재생 도중에 학생이 나갔다 들어오면 처음부터 다시 들려줘야지, 시작했다는 이유만으로
+  // "다 들은 것"으로 처리해버리면 나머지를 다시 들을 방법이 없어짐.
+  if (subj.listeningUrl) {
+    if (!listeningPlayed) {
+      var audio = new Audio(subj.listeningUrl);
+      audio.addEventListener('ended', function(){
+        updateDoc(doc(db,'examSessions',sessionId), {listeningPlayed:true}).catch(function(){});
+      });
+      _setExamListeningAudio(audio);
+      audio.play().catch(function(){
+        _showListeningPlayFallback(subj.listeningUrl, sessionId);
+      });
+    }
+  }
+
+  renderExamOmrGrid(subj);
+  restoreExamAnswersToUi(subj);
+
+  if (ExamEngine.clockInterval) clearInterval(ExamEngine.clockInterval);
+  ExamEngine.clockInterval = setInterval(_examClockTick, 1000);
+  _examClockTick();
+}
+
+function buildExamTakingHtml(exam, subj, deadlineMs){
+  var subjName = _resolveSubjDisplayName(subj);
+  var startEndLabel = '';
+  if (deadlineMs) {
+    var startMs = deadlineMs - subj.durationMin*60000;
+    var fmt = function(ms){ var d = new Date(ms); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
+    startEndLabel = fmt(startMs) + ' ~ ' + fmt(deadlineMs);
+  }
+  var clockNumbers = Array.from({length:12},function(_,i){
+    var n = i+1;
+    var a = n*30*Math.PI/180;
+    var x = 120 + 83*Math.sin(a), y = 120 - 83*Math.cos(a);
+    return '<text x="'+x+'" y="'+y+'" text-anchor="middle" dominant-baseline="central" class="exam-clock-numeral">'+n+'</text>';
+  }).join('');
+  var clockBatons = Array.from({length:12},function(_,i){
+    var a = i*30*Math.PI/180;
+    var r1 = 96, r2 = 107;
+    var x1=120+r1*Math.sin(a),y1=120-r1*Math.cos(a),x2=120+r2*Math.sin(a),y2=120-r2*Math.cos(a);
+    return '<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="var(--burg)" stroke-width="2" stroke-linecap="round"/>';
+  }).join('');
+  var minuteTicks = Array.from({length:60},function(_,i){
+    if (i%5===0) return '';
+    var a=i*6*Math.PI/180;
+    var r1 = 101, r2 = 107;
+    var x1=120+r1*Math.sin(a),y1=120-r1*Math.cos(a),x2=120+r2*Math.sin(a),y2=120-r2*Math.cos(a);
+    return '<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="var(--tx4)" stroke-width="0.6"/>';
+  }).join('');
+
+  return '<div class="exam-taking-wrap">'
+    + '<div class="exam-taking-header">'
+    + '<div class="exam-taking-title">'+escapeHtml(exam.title)+' · '+escapeHtml(subjName)+'</div>'
+    + (exam.ttsEnabled ? '<button type="button" class="exam-tts-test-btn" onclick="testExamWarnSound()">🔊 소리 테스트</button>' : '')
+    + '</div>'
+    + '<div class="exam-split">'
+    +   '<div class="exam-clock-pane">'
+    +     '<div class="exam-watch-frame">'
+    +       '<svg id="exam-clock" viewBox="0 0 240 240" class="exam-clock-svg">'
+    +         '<defs>'
+    +           '<radialGradient id="watchFaceGrad" cx="50%" cy="42%" r="65%">'
+    +             '<stop offset="0%" stop-color="#FFFEFA"/>'
+    +             '<stop offset="100%" stop-color="#F6EFDC"/>'
+    +           '</radialGradient>'
+    +           '<clipPath id="watchFaceClip"><circle cx="120" cy="120" r="118"/></clipPath>'
+    +         '</defs>'
+    +         '<circle cx="120" cy="120" r="118" fill="url(#watchFaceGrad)" stroke="var(--burg)" stroke-width="2.5"/>'
+    +         '<circle cx="120" cy="120" r="113" fill="none" stroke="var(--gold2)" stroke-width="0.75"/>'
+    +         '<g clip-path="url(#watchFaceClip)">'
+    +           '<g transform="rotate(-14 120 120)">'
+    +             '<image href="'+MONO_WATERMARK_DATAURI+'" x="12" y="92" width="216" height="82" opacity="1"/>'
+    +           '</g>'
+    +         '</g>'
+    +         minuteTicks
+    +         clockBatons
+    +         clockNumbers
+    +         '<g id="exam-clock-hour-g" transform="rotate(0 120 120)"><path d="M120,132 L117,64 L120,50 L123,64 Z" fill="var(--tx1)"/></g>'
+    +         '<g id="exam-clock-min-g" transform="rotate(0 120 120)"><path d="M120,138 L118,40 L120,26 L122,40 Z" fill="var(--tx1)"/></g>'
+    +         '<g id="exam-clock-sec-g" transform="rotate(0 120 120)">'
+    +           '<line x1="120" y1="145" x2="120" y2="30" stroke="var(--burg)" stroke-width="1.4" stroke-linecap="round"/>'
+    +           '<circle cx="120" cy="145" r="3.5" fill="var(--burg)"/>'
+    +         '</g>'
+    +         '<circle cx="120" cy="120" r="5" fill="var(--burg)" stroke="var(--gold2)" stroke-width="1.2"/>'
+    +       '</svg>'
+    +     '</div>'
+    +     '<div class="exam-clock-catchphrase">&ldquo;너의 꾸준함과 우리의 치열함이 기적을 이루길&rdquo;</div>'
+    +     (startEndLabel ? '<div class="exam-clock-timerange" id="exam-clock-timerange">'+startEndLabel+'</div>' : '')
+    +     '<button type="button" id="exam-clock-mode-btn" class="exam-clock-mode-btn" onclick="toggleExamClockMode()">'+(_examClockMode==='real'?'📅 수능 시간으로 보기':'🕐 실제 시각으로 보기')+'</button>'
+    +     '<div class="exam-clock-footer-brand">'
+    +       '<img src="'+LIGHTHOUSE_LOGO_DATAURI+'" alt="" class="exam-clock-footer-icon"/>'
+    +       '<span>멘토즈 스터디카페 울산송정점</span>'
+    +     '</div>'
+    +   '</div>'
+    +   '<div class="exam-omr-pane">'
+    +     '<div id="exam-omr-area" class="exam-omr-area"></div>'
+    +     '<button class="modal-btn primary" style="margin:14px;width:calc(100% - 28px);" onclick="confirmSubmitExam()">제출하기</button>'
+    +   '</div>'
+    + '</div>'
+    + '<div id="exam-warn-banner" class="exam-warn-banner" style="display:none;"></div>'
+    + '<div id="exam-warn-flash" class="exam-warn-flash"></div>'
+    + '</div>';
+}
+
+function renderExamOmrGrid(subj){
+  var area = document.getElementById('exam-omr-area');
+  if (!area) return;
+  area.innerHTML = subj.questions.map(function(q){
+    if (q.type === 'mc') {
+      var bubbles = Array.from({length:q.choices||5},function(_,i){
+        var n = i+1;
+        return '<button class="omr-mc-bubble" data-q="'+q.no+'" data-v="'+n+'" onclick="setExamAnswer('+q.no+',\''+n+'\',this)">'+n+'</button>';
+      }).join('');
+      return '<div class="omr-row"><div class="omr-qno">'+q.no+'</div><div class="omr-choices">'+bubbles+'</div>'+_omrUnkBtn(q.no)+'</div>';
+    } else if (q.shortMode === 'digit') {
+      var cols = ['백','십','일'];
+      var digitGrid = cols.map(function(label, ci){
+        var nums = Array.from({length:10},function(_,i){return i;});
+        return '<div class="omr-digit-col"><div class="omr-digit-label">'+label+'</div>'
+          + nums.map(function(n){
+              var isDefault = n===0 ? ' default-selected' : '';
+              return '<button class="omr-digit-btn'+isDefault+'" data-q="'+q.no+'" data-col="'+ci+'" data-v="'+n+'" onclick="setExamDigitAnswer('+q.no+','+ci+','+n+',this)">'+n+'</button>';
+            }).join('')
+          + '</div>';
+      }).join('');
+      return '<div class="omr-row omr-row-digit"><div class="omr-qno">'+q.no+'</div><div class="omr-digit-grid">'+digitGrid+'</div>'+_omrUnkBtn(q.no)+'</div>';
+    } else {
+      return '<div class="omr-row"><div class="omr-qno">'+q.no+'</div><input type="text" class="omr-short-input" data-q="'+q.no+'" oninput="setExamAnswer('+q.no+',this.value)" placeholder="답 입력"/>'+_omrUnkBtn(q.no)+'</div>';
+    }
+  }).join('');
+}
+
+// [등불] OMR '모름(?)' 표시 - 답은 평소처럼 마킹하고, 확신이 없는 문항에 표시.
+// 채점에는 영향이 없고, 맞혔더라도 등불 복습지에 포함됨. examSessions.unknownBySubj.{과목idx}에 저장.
+function _omrUnkBtn(no){
+  var on = !!(ExamEngine.unknown && ExamEngine.unknown[no]);
+  return '<button type="button" class="omr-unk'+(on?' on':'')+'" data-unk="'+no+'" title="모름: 답은 마킹하고, 확신이 없는 문항이면 눌러 주세요" onclick="toggleExamUnknown('+no+',this)">?</button>';
+}
+window.toggleExamUnknown = function(no, btnEl){
+  if (!ExamEngine.unknown) ExamEngine.unknown = {};
+  if (ExamEngine.unknown[no]) delete ExamEngine.unknown[no]; else ExamEngine.unknown[no] = true;
+  if (btnEl) btnEl.classList.toggle('on', !!ExamEngine.unknown[no]);
+  if (!ExamEngine.sessionId) return;
+  var field = {};
+  field['unknownBySubj.'+ExamEngine.subjectIndex] = Object.keys(ExamEngine.unknown).map(function(n){ return parseInt(n,10); }).sort(function(a,b){return a-b;});
+  updateDoc(doc(db,'examSessions',ExamEngine.sessionId), field).catch(function(){});
+};
+
+window.setExamAnswer = function(no, value, btnEl){
+  // 이미 이 번호가 마킹된 상태에서 같은 번호를 또 누르면 - OMR에서 실수로 마킹한 걸
+  // 지우는 것과 같은 동작 - 마킹을 취소함 (선택 해제 + 답안 자체를 비움)
+  if (ExamEngine.answers[no] === value) {
+    delete ExamEngine.answers[no];
+    if (btnEl) {
+      document.querySelectorAll('.omr-mc-bubble[data-q="'+no+'"]').forEach(function(b){ b.classList.remove('selected'); });
+    }
+    _scheduleExamAutosave();
+    _primeSpeechOnUserGesture();
+    return;
+  }
+  ExamEngine.answers[no] = value;
+  if (btnEl) {
+    document.querySelectorAll('.omr-mc-bubble[data-q="'+no+'"]').forEach(function(b){ b.classList.remove('selected'); });
+    btnEl.classList.add('selected');
+  }
+  _scheduleExamAutosave();
+  _primeSpeechOnUserGesture();
+};
+
+// 아이폰/아이패드(iOS Safari)는 타이머에서 자동으로 울리는 음성을 엄격하게 막는데,
+// "직접 터치한 순간"에 호출된 음성만 허용하는 경우가 많다. 그래서 학생이 답을 고를 때마다
+// (실제 터치 동작이므로) 무음(0볼륨) 음성을 살짝 같이 재생시켜서, 브라우저가 "최근에 실제
+// 터치가 있었다"고 인식하게 만들어 종료 알림 음성이 막히지 않을 확률을 최대한 높인다.
+// (애플 정책상 100% 보장은 안 되지만, 답을 자주 고르는 시험 특성상 실질적으로 도움이 됨)
+function _primeSpeechOnUserGesture(){
+  // 듣기가 남아 있는 동안에는 음성 합성을 건드리지 않음(아이폰·아이패드에서 듣기 오디오가 끊김). 혹시 멈춰 있으면 이 터치로 이어 재생.
+  if (_examListen.audio && !_examListen.stopped && !_examListen.audio.ended) { _resumeExamListeningIfPaused(); return; }
+  try {
+    if (!('speechSynthesis' in window)) return;
+    var u = new SpeechSynthesisUtterance('');
+    u.volume = 0;
+    speechSynthesis.speak(u);
+  } catch(e){}
+}
+
+// 학생이 직접 눌러서 종료 알림 음성이 실제로 들리는지 확인 + 동시에 음성 엔진을
+// 방금 누른 실제 터치 동작 안에서 다시 한 번 "잠금 해제"함 (아이패드 대응)
+window.testExamWarnSound = function(){
+  var exam = ExamEngine.exam || {};
+  if (exam.ttsProvider === 'custom' && exam.ttsCustomAudio) {
+    var mins = Object.keys(exam.ttsCustomAudio);
+    if (mins.length) {
+      _speakExamAlert('', exam, mins[0]);
+      _showExamWarnBanner('소리 테스트 ('+mins[0]+'분 전 녹음) - 잘 들리시나요?');
+      return;
+    }
+  }
+  _speakExamAlert('소리 테스트입니다. 이렇게 종료 알림이 들립니다', exam);
+  _showExamWarnBanner('소리 테스트 - 잘 들리시나요?');
+};
+
+window.setExamDigitAnswer = function(no, col, digit, btnEl){
+  if (!ExamEngine.answers[no] || typeof ExamEngine.answers[no] !== 'object') {
+    ExamEngine.answers[no] = {digits:[0,0,0]};
+  }
+  ExamEngine.answers[no].digits[col] = digit;
+  document.querySelectorAll('.omr-digit-btn[data-q="'+no+'"][data-col="'+col+'"]').forEach(function(b){ b.classList.remove('selected'); b.classList.remove('default-selected'); });
+  btnEl.classList.add('selected');
+  _scheduleExamAutosave();
+  _primeSpeechOnUserGesture();
+};
+
+function restoreExamAnswersToUi(subj){
+  Object.keys(ExamEngine.answers).forEach(function(noStr){
+    var no = parseInt(noStr,10);
+    var val = ExamEngine.answers[noStr];
+    var q = subj.questions.find(function(x){return x.no===no;});
+    if (!q) return;
+    if (q.type === 'mc') {
+      var btn = document.querySelector('.omr-mc-bubble[data-q="'+no+'"][data-v="'+val+'"]');
+      if (btn) btn.classList.add('selected');
+    } else if (q.shortMode === 'digit' && val && val.digits) {
+      val.digits.forEach(function(d, ci){
+        document.querySelectorAll('.omr-digit-btn[data-q="'+no+'"][data-col="'+ci+'"]').forEach(function(b){ b.classList.remove('default-selected'); });
+        var btn = document.querySelector('.omr-digit-btn[data-q="'+no+'"][data-col="'+ci+'"][data-v="'+d+'"]');
+        if (btn) btn.classList.add('selected');
+      });
+    } else {
+      var input = document.querySelector('.omr-short-input[data-q="'+no+'"]');
+      if (input) input.value = val;
+    }
+  });
+}
+
+function _scheduleExamAutosave(){
+  if (ExamEngine.saveTimer) clearTimeout(ExamEngine.saveTimer);
+  ExamEngine.saveTimer = setTimeout(function(){
+    if (!ExamEngine.sessionId) return;
+    updateDoc(doc(db,'examSessions',ExamEngine.sessionId), {currentAnswers: ExamEngine.answers}).catch(function(){});
+  }, 600);
+}
+
+// 과목별 실제 수능 시간표 (공식 기준 시각 - 국어 08:40 시작 등). "수능 시간 모드"에서
+// 이 시각을 기준으로 시계를 보여주되, 흐르는 속도는 항상 실제 시간과 정확히 1:1로
+// 맞춰서(그냥 표시 기준점만 다르게) 오차 없이 흐르도록 함.
+var CSAT_TIMETABLE = {
+  ko:{h:8,m:40}, ma:{h:10,m:30}, en:{h:13,m:10},
+  // 4교시(한국사/탐구)는 한국사 - 탐구1 - 탐구2 순서로 각각 다른 시각에 시작함
+  hi:{h:14,m:50}, ex1:{h:15,m:35}, ex2:{h:16,m:17}
+};
+
+var _examClockMode = localStorage.getItem('examClockMode') || 'real'; // 'real' | 'csat'
+
+window.toggleExamClockMode = function(){
+  _examClockMode = (_examClockMode === 'real') ? 'csat' : 'real';
+  localStorage.setItem('examClockMode', _examClockMode);
+  _updateExamClockModeBtn();
+  _updateExamTimeRangeLabel();
+};
+
+function _updateExamClockModeBtn(){
+  var btn = document.getElementById('exam-clock-mode-btn');
+  if (!btn) return;
+  // 지금 어떤 모드인지가 아니라, "누르면 뭘로 바뀌는지"를 보여줘야 헷갈리지 않음
+  btn.textContent = (_examClockMode === 'real') ? '📅 수능 시간으로 보기' : '🕐 실제 시각으로 보기';
+}
+
+function _updateExamTimeRangeLabel(){
+  var el = document.getElementById('exam-clock-timerange');
+  if (!el || !ExamEngine.deadlineMs) return;
+  var subj = ExamEngine.subject;
+  var startMs = ExamEngine.deadlineMs - subj.durationMin*60000;
+  var fmt = function(h,m){ return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0'); };
+  if (_examClockMode === 'csat' && CSAT_TIMETABLE[subj.subject]) {
+    var base = CSAT_TIMETABLE[subj.subject];
+    var endTotalMin = base.h*60+base.m+subj.durationMin;
+    var electiveLabel = (ExamEngine.electiveChoice) ? '('+ExamEngine.electiveChoice+') ' : '';
+    el.textContent = electiveLabel + fmt(base.h,base.m) + ' ~ ' + fmt(Math.floor(endTotalMin/60)%24, endTotalMin%60) + ' (수능 시간표 기준)';
+  } else {
+    var sd = new Date(startMs), ed = new Date(ExamEngine.deadlineMs);
+    el.textContent = fmt(sd.getHours(),sd.getMinutes()) + ' ~ ' + fmt(ed.getHours(),ed.getMinutes());
+  }
+}
+
+function _examClockTick(){
+  var remaining = ExamEngine.deadlineMs - _nowSynced();
+  if (remaining <= 0) {
+    clearInterval(ExamEngine.clockInterval);
+    _forceSubmitSession(ExamEngine.sessionId, ExamEngine.exam, ExamEngine.subject, ExamEngine.subjectIndex, ExamEngine.answers);
+    return;
+  }
+  var totalSec = Math.floor(remaining/1000);
+  var mm = Math.floor(totalSec/60), ss = totalSec%60;
+
+  // 아날로그 시계 - 기본은 실제 현재시각, "수능 시간" 모드면 수능 공식 시간표 기준으로
+  // 표시하되 흐르는 속도는 실제 시간과 정확히 같게(그냥 표시 시작점만 옮김 - 오차 없음)
+  var h, m, s;
+  if (_examClockMode === 'csat' && CSAT_TIMETABLE[ExamEngine.subject.subject]) {
+    var base = CSAT_TIMETABLE[ExamEngine.subject.subject];
+    var examStartMs = ExamEngine.deadlineMs - ExamEngine.subject.durationMin*60000;
+    var elapsedMs = _nowSynced() - examStartMs; // 실제로 시험 시작한 뒤 지금까지 흐른 시간(ms)
+    var baseMs = new Date(); baseMs.setHours(base.h, base.m, 0, 0);
+    var displayDate = new Date(baseMs.getTime() + elapsedMs);
+    h = displayDate.getHours()%12; m = displayDate.getMinutes(); s = displayDate.getSeconds();
+  } else {
+    var now = new Date();
+    h = now.getHours()%12; m = now.getMinutes(); s = now.getSeconds();
+  }
+  var hourDeg = (h + m/60) * 30;
+  var minDeg = (m + s/60) * 6;
+  var secDeg = s * 6;
+  _setClockHand('exam-clock-hour-g', hourDeg);
+  _setClockHand('exam-clock-min-g', minDeg);
+  _setClockHand('exam-clock-sec-g', secDeg);
+
+  // 종료 경고 (여러 시점 각각 한 번씩만)
+  var warnList = ExamEngine.exam.warnMinutesList || [5];
+  if (!ExamEngine.warnedSet) ExamEngine.warnedSet = {};
+  warnList.forEach(function(min){
+    if (ExamEngine.warnedSet[min]) return;
+    if (totalSec <= min*60) {
+      ExamEngine.warnedSet[min] = true;
+      var msg = min+'분 남았습니다';
+      _showExamWarnBanner(msg);
+      if (ExamEngine.exam.ttsEnabled && window._examTtsOn !== false) _speakExam(msg, min);
+    }
+  });
+}
+
+function _setClockHand(id, deg, len){
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.setAttribute('transform', 'rotate('+deg+' 120 120)');
+}
+
+function _showExamWarnBanner(text){
+  var banner = document.getElementById('exam-warn-banner');
+  if (!banner) return;
+  banner.textContent = '⏰ ' + text;
+  banner.classList.remove('hide');
+  banner.style.display = 'block';
+  if (banner._hideTimer) clearTimeout(banner._hideTimer);
+  if (banner._removeTimer) clearTimeout(banner._removeTimer);
+  // 음성이 기기(특히 아이패드) 정책상 안 나올 수 있어서, 시각적으로도 확실히 눈에 띄도록
+  // 화면 전체를 잠깐 깜빡이고(플래시), 진동 지원 기기는 진동까지 함께 울림
+  var flash = document.getElementById('exam-warn-flash');
+  if (flash) {
+    flash.classList.remove('exam-warn-flash-active');
+    void flash.offsetWidth; // 애니메이션 재시작을 위한 리플로우 강제
+    flash.classList.add('exam-warn-flash-active');
+  }
+  if ('vibrate' in navigator) { try { navigator.vibrate([200,100,200,100,200]); } catch(e){} }
+  banner._hideTimer = setTimeout(function(){
+    if (!banner) return;
+    banner.classList.add('hide');
+    banner._removeTimer = setTimeout(function(){ if (banner) banner.style.display = 'none'; }, 300);
+  }, 10000);
+}
+
+function _speakExam(text, minutesLeft){
+  var exam = ExamEngine.exam || {};
+  _speakExamAlert(text, exam, minutesLeft);
+}
+
+function _speakExamWithOptions(text, voiceURI, volume){
+  try {
+    if (!('speechSynthesis' in window)) { console.warn('[TTS] speechSynthesis 미지원 브라우저'); return; }
+    var utter = new SpeechSynthesisUtterance(text);
+    utter.lang = 'ko-KR';
+    utter.volume = (volume == null) ? 1 : Math.max(0, Math.min(1, volume));
+    if (voiceURI) {
+      var match = (speechSynthesis.getVoices()||[]).find(function(v){ return v.voiceURI === voiceURI; });
+      if (match) { utter.voice = match; }
+      else { console.warn('[TTS] 저장된 목소리를 찾지 못해 기본 목소리로 대체:', voiceURI); }
+    }
+    utter.onerror = function(ev){ console.error('[TTS 재생 실패]', ev.error, 'text=', text); };
+    utter.onstart = function(){ console.log('[TTS] 재생 시작:', text); };
+    if (speechSynthesis.paused) { speechSynthesis.resume(); } // 혹시 일시정지 상태로 걸려있으면 풀어줌
+    console.log('[TTS] speak() 호출, pending=', speechSynthesis.pending, 'speaking=', speechSynthesis.speaking, 'paused=', speechSynthesis.paused);
+    speechSynthesis.speak(utter);
+  } catch(e){ console.error('[TTS 예외 발생]', e); }
+}
+
+window.toggleExamTts = function(){
+  window._examTtsOn = !(window._examTtsOn !== false);
+};
+
+window.confirmSubmitExam = function(){
+  if (!confirm('시험을 제출하시겠습니까?\n제출 후에는 답을 수정할 수 없습니다.')) return;
+  _finalizeExamSubmit(ExamEngine.sessionId, ExamEngine.exam, ExamEngine.subject, ExamEngine.subjectIndex, ExamEngine.answers, false);
+};
+
+function _forceSubmitSession(sessionId, exam, subj, subjIdx, answers){
+  alert('시험 시간이 종료되어 자동 제출됩니다.');
+  _finalizeExamSubmit(sessionId, exam, subj, subjIdx, answers, true);
+}
+
+function _examTodayDateStr(){
+  var now = new Date();
+  var kst = new Date(now.getTime() + (9*60 + now.getTimezoneOffset())*60000);
+  var y = kst.getFullYear(), m = String(kst.getMonth()+1).padStart(2,'0'), d = String(kst.getDate()).padStart(2,'0');
+  return y+'-'+m+'-'+d;
+}
+
+// 시험 자동채점 결과를 기존 성적탭(모의고사/내신)에 그대로 저장
+// 채점 결과(results)를 성적탭이 쓰는 scores/wrongBySubj 형태로 변환하는 공통 로직.
+// 새로 채점해서 저장할 때(_writeExamResultToGrades)와, 나중에 "다시 채점하기"로
+// 기존 성적을 업데이트할 때 둘 다 이 함수를 재사용해서 완전히 같은 규칙을 따르게 함.
+function _buildGradesScoresFromResults(exam, results, electiveChoices, unknownBySubjIdx){
+  var scores = {}, wrongBySubj = {}, unknownBySubj = {};
+  var usedExploreKeys = [];
+  results.forEach(function(r){
+    if (!r) return;
+    var subjDef = (exam.subjects && exam.subjects[r.subjectIndex]) || null;
+    var isExplore = subjDef && (subjDef.subject === 'ex1' || subjDef.subject === 'ex2');
+    var chosenElective = electiveChoices && electiveChoices[r.subjectIndex];
+    // 선택과목별 등급컷이 있으면 그걸 우선 쓰고, 없으면(선택과목이 없거나 그 선택과목에
+    // 대한 등급컷이 따로 없는 예전 시험) 공용 등급컷으로 폴백함
+    var cutoffsSource = (subjDef && chosenElective && subjDef.gradeCutoffsByElective && subjDef.gradeCutoffsByElective[chosenElective]) ? subjDef.gradeCutoffsByElective[chosenElective] : (subjDef ? subjDef.gradeCutoffs : null);
+    var cutoffs = (subjDef && subjDef.gradeCutoffsEnabled) ? cutoffsSource : null;
+    var grade = cutoffs ? computeGradeFromCutoffs(cutoffs, r.score) : '';
+
+    var key, label, group, option;
+    if (isExplore) {
+      group = subjDef.exCategory || 'sc';
+      var n = usedExploreKeys.filter(function(g){return g===group;}).length;
+      key = group + (n===0 ? '1' : '3');
+      usedExploreKeys.push(group);
+      label = chosenElective || (group==='sc'?'과학탐구':'사회탐구');
+    } else {
+      key = r.subject; group = key;
+      label = subjectNames[key] || key;
+      if (chosenElective) { option = chosenElective; label = label + ' (' + chosenElective + ')'; }
+    }
+
+    scores[key] = { score: r.score, grade: grade, label: label, group: group };
+    if (option) scores[key].option = option;
+    if (r.wrongNumbers && r.wrongNumbers.length) {
+      wrongBySubj[key] = r.wrongNumbers.join(', ');
+    }
+    // 학생이 시험 중 '모름(?)'으로 표시한 문항 (맞혔어도 표시) - 성적탭·성적표·답안 보기에서 함께 보여 줌
+    var unk = unknownBySubjIdx && (unknownBySubjIdx[r.subjectIndex] || unknownBySubjIdx[String(r.subjectIndex)]);
+    if (unk && unk.length) unknownBySubj[key] = unk.slice().sort(function(a,b){return a-b;}).join(', ');
+  });
+  return { scores: scores, wrongBySubj: wrongBySubj, unknownBySubj: unknownBySubj };
+}
+
+function _writeExamResultToGrades(studentUid, sessionId, exam, results, electiveChoices, unknownBySubjIdx){
+  var built = _buildGradesScoresFromResults(exam, results, electiveChoices, unknownBySubjIdx);
+  return addDoc(collection(db,'grades'), {
+    uid: studentUid,
+    type: exam.gradeType || 'mock',
+    examName: exam.title,
+    examDate: _examTodayDateStr(),
+    scores: built.scores,
+    wrongBySubj: built.wrongBySubj,
+    unknownBySubj: built.unknownBySubj,
+    examSessionId: sessionId,
+    examId: exam.id || null,
+    examSource: examSourceLabel(exam.examSource) || null,
+    source: 'exam_auto',
+    createdAt: serverTimestamp()
+  }).then(function(docRef){
+    // 이 시험이 "시험 묶기"로 다른 시험과 묶여있는 경우, 이 학생이 묶음 안의 시험을
+    // 전부 다 냈는지 바로 확인해서 자동으로 합쳐줌 - 예전엔 "묶기"를 누른 그 순간에
+    // 이미 채점된 사람만 합쳐지고, 그 이후에 채점된 사람은 선생님이 "새로 합치기"를
+    // 다시 눌러야만 반영되던 문제가 있었음.
+    // 예전엔 이 합치기를 기다리지 않고(fire-and-forget) 그냥 넘어갔는데, 그러면
+    // 호출한 쪽에서 "방금 만든 문서가 잘 저장됐는지" 확인하려는 시점과 실제 합쳐져서
+    // 원본 문서가 사라지는 시점이 경쟁 상태(race condition)에 놓여, 정상 처리됐는데도
+    // "저장 실패"로 잘못 보이는 문제가 있었음. 이제는 합치기까지 다 끝난 뒤에 반환함.
+    // [등불] 채점 직후 개인 복습지(48시간 기한) 자동 생성 - 실패해도 성적 저장에는 영향 없음
+    try { if (window.DB_onExamGraded && sessionId) window.DB_onExamGraded(sessionId); } catch(e) { console.warn('[등불]', e); }
+    if (!exam.id) return docRef;
+    return _autoMergeIfPartOfGroup(exam.id, studentUid).then(function(){ return docRef; });
+  });
+}
+
+// 방금 채점된 시험(examId)이 속한 묶음이 있으면, 그 학생 기준으로 즉시 합치기를 시도함.
+// 묶음이 없거나 아직 다른 시험을 안 냈으면 조용히 아무 일도 안 하고 넘어감.
+function _autoMergeIfPartOfGroup(examId, uid){
+  return getDocs(query(collection(db,'examMergeGroups'), where('examIds','array-contains',examId))).then(function(snap){
+    return Promise.all(snap.docs.map(function(d){
+      return runExamGroupGradeMergeForStudent(d.id, uid).catch(function(e){ console.warn('[자동 성적 합치기 실패]', e); });
+    }));
+  }).catch(function(){});
+}
+
+// 같은 유형(모의고사/내신)의 과목별 "직전" 점수를 조회 (성적 향상 판정용)
+// 같은 유형(모의고사/내신) + 같은 시험 분류(연습용/평가원 등) 안에서, 과목별 "역대 최고점"을
+// 조회 (성적 향상 판정용). 분류를 구분 안 하면 총점 규모가 다른 시험끼리 섞여서 비교가
+// 이상해질 수 있고("연습용 17점→평가원 90점"), 직전 점수만 보면 왔다갔다하는 것만으로도
+// 상점을 받을 수 있어서, "그 분류 안에서 지금까지 낸 최고점보다 진짜로 올랐을 때"만
+// 인정하도록 함.
+function _getPrevSubjectScores(studentUid, gradeType, examSource){
+  return getDocs(query(collection(db,'grades'), where('uid','==',studentUid))).then(function(snap){
+    var docs = snap.docs.map(function(d){return d.data();})
+      .filter(function(g){
+        return (g.type||'mock') === (gradeType||'mock') && (g.examSource||'') === (examSource||'');
+      });
+    var maxBySubj = {};
+    docs.forEach(function(g){
+      if (!g.scores) return;
+      Object.keys(g.scores).forEach(function(key){
+        var s = (g.scores[key] && g.scores[key].score != null) ? parseFloat(g.scores[key].score) : null;
+        if (s == null) return;
+        if (maxBySubj[key] === undefined || s > maxBySubj[key]) maxBySubj[key] = s;
+      });
+    });
+    return maxBySubj;
+  }).catch(function(){ return {}; });
+}
+
+// 오늘(이 기능 도입일) 이후 응시/입력한 성적에 한해 등급 기반 상점을 적용
+var GRADE_REWARD_START_DATE = '2026-08-22';
+
+// 등급 기반 상점 (1등급 +10 / 2등급 +5) - 어디서 호출되든(자동채점/수동검토/수동입력) 동일하게 동작,
+// 이미 지급된 적 있으면 중복 지급하지 않음(재저장/재수정에도 안전)
+function _awardGradeLevelReward(studentUid, branch, subjectLabel, gradeValue, examName, examDateStr){
+  if (!examDateStr || examDateStr < GRADE_REWARD_START_DATE) return;
+  var pts = gradeValue === '1' ? 10 : gradeValue === '2' ? 5 : 0;
+  if (!pts) return;
+  var reason = subjectLabel+' '+gradeValue+'등급 달성 ('+examName+') (자동)';
+  getDocs(query(collection(db,'points'), where('studentUid','==',studentUid), where('reason','==',reason))).then(function(snap){
+    if (!snap.empty) return; // 이미 지급됨 - 중복 방지
+    addDoc(collection(db,'points'), {
+      branch: branch, studentUid: studentUid, type:'plus', reason: reason, points: pts,
+      givenBy:'system', givenByName:'자동지급', createdAt: serverTimestamp()
+    }).catch(function(){});
+  }).catch(function(){});
+}
+
+function _awardExamRewards(studentUid, exam, results, prevScores, electiveChoices){
+  var branch = getBranch();
+  var examDateStr = _examTodayDateStr();
+
+  // 1) 시험 응시 자체에 대한 상점 (+3, 시험 1회 완주당 1번)
+  addDoc(collection(db,'points'), {
+    branch: branch, studentUid: studentUid, type:'plus',
+    reason: '시험 응시 완료 ('+exam.title+') (자동)', points: 3,
+    givenBy:'system', givenByName:'자동지급', createdAt: serverTimestamp()
+  }).catch(function(){});
+
+  results.forEach(function(r){
+    if (!r) return;
+    var subj = r.subject;
+    var subjName = _resultSubjName(r, exam, electiveChoices);
+    var subjDef = (exam.subjects && exam.subjects[r.subjectIndex]) || null;
+
+    // 2) 이전 시험 대비 점수 상승 시 과목당 +10
+    // 같은 과목(subj 키)끼리만 비교되므로 이걸로 충분함 - 연습용 시험도 향상 판정에 포함
+    if (prevScores && prevScores[subj] != null && r.score > prevScores[subj]) {
+      addDoc(collection(db,'points'), {
+        branch: branch, studentUid: studentUid, type:'plus',
+        reason: subjName+' 성적 향상 ('+prevScores[subj]+'점→'+r.score+'점, '+exam.title+') (자동)', points: 10,
+        givenBy:'system', givenByName:'자동지급', createdAt: serverTimestamp()
+      }).catch(function(){});
+    }
+
+    // 3) 등급 기반 상점 - 1등급 +10, 2등급 +5 (선택과목별 등급컷이 있으면 그걸 우선 씀)
+    if (subjDef && subjDef.gradeCutoffsEnabled && subjDef.gradeCutoffs) {
+      var chosenElectiveForReward = electiveChoices && electiveChoices[r.subjectIndex];
+      var cutoffsForReward = (chosenElectiveForReward && subjDef.gradeCutoffsByElective && subjDef.gradeCutoffsByElective[chosenElectiveForReward]) ? subjDef.gradeCutoffsByElective[chosenElectiveForReward] : subjDef.gradeCutoffs;
+      var grade = computeGradeFromCutoffs(cutoffsForReward, r.score);
+      _awardGradeLevelReward(studentUid, branch, subjName, grade, exam.title, examDateStr);
+    }
+  });
+}
+
+function _finalizeExamSubmit(sessionId, exam, subj, subjIdx, answers, autoSubmitted){
+  if (ExamEngine.submitting) return;
+  ExamEngine.submitting = true;
+  if (ExamEngine.clockInterval) clearInterval(ExamEngine.clockInterval);
+  _releaseExamWakeLock();
+  _stopExamListening();
+
+  var graded = gradeExamAnswers(_resolveSubjForGrading(subj, ExamEngine.electiveChoice), answers);
+
+  var subjectResult = {
+    subject: subj.subject,
+    subjectIndex: subjIdx,
+    startedAtMs: ExamEngine.deadlineMs - subj.durationMin*60000,
+    submittedAtMs: _nowSynced(),
+    autoSubmitted: !!autoSubmitted,
+    score: graded.score,
+    totalScore: graded.totalScore,
+    correctCount: graded.correctCount,
+    wrongNumbers: graded.wrongNumbers,
+    mcAccuracy: graded.mcAccuracy,
+    shortAccuracy: graded.shortAccuracy,
+    answers: graded.details
+  };
+
+  var isLastSubject = (subjIdx >= exam.subjects.length - 1);
+
+  getDoc(doc(db,'examSessions',sessionId)).then(function(sessDoc){
+    var sess = sessDoc.data() || {};
+    var results = (sess.subjectResults || []).slice();
+    results[subjIdx] = subjectResult;
+
+    if (isLastSubject) {
+      // 마지막 과목 - 시험 전체 종료
+      return updateDoc(doc(db,'examSessions',sessionId), {
+        status: 'submitted',
+        subjectResults: results,
+        currentAnswers: {}
+      }).then(function(){
+        return updateDoc(doc(db,'examSessions',sessionId), {status:'graded'});
+      }).then(function(){
+        var studentUid = sess.studentUid || currentUser.uid;
+        return _getPrevSubjectScores(studentUid, exam.gradeType, examSourceLabel(exam.examSource)).then(function(prevScores){
+          return _writeExamResultToGrades(studentUid, sessionId, exam, results, sess.electiveChoices, sess.unknownBySubj).then(function(){
+            _awardExamRewards(studentUid, exam, results, prevScores, sess.electiveChoices);
+          });
+        }).then(function(){
+          // 일정표 연동: 오늘 투두를 자동 완료하고 시험 시간을 기록 (실패해도 제출은 영향 없음)
+          return MP_onExamCompleted(studentUid, exam.id, results, exam);
+        });
+      }).then(function(){
+        var totalScore = _r2(results.reduce(function(s,r){return s + (r?r.score:0);}, 0));
+        _enterReflectionScreen(sessionId, exam, results, totalScore, function(){
+          alert('제출 완료!\n총점: ' + totalScore + '점\n\n성적탭(' + (exam.gradeType==='school'?'내신':'모의고사') + ')에 자동으로 저장되었습니다. (주관식은 선생님 검토 후 최종 반영될 수 있습니다)');
+          showScreen(currentProfile.role==='student' ? 'screen-student' : 'screen-teacher');
+          if (currentProfile.role==='student') {
+            studentTab(1);
+            setTimeout(function(){ gradeSubTab(exam.gradeType==='school' ? 1 : 0); }, 50);
+          }
+        }, null, null, sess.electiveChoices);
+      });
+    } else {
+      // 다음 과목 있음 - 쉬는시간으로 전환. 예정 시각이 있는 시험은 일찍 제출해도
+      // 원래 정해진 다음 과목 시작 시각까지 그대로 기다리게 함(_getBreakDeadline이 처리).
+      var now2 = _nowSynced();
+      var breakDeadline = _getBreakDeadline(exam, subjIdx, now2);
+      return updateDoc(doc(db,'examSessions',sessionId), {
+        status: 'break',
+        subjectResults: results,
+        currentAnswers: {},
+        currentSubjectIndex: subjIdx+1,
+        breakDeadlineMs: breakDeadline
+      }).then(function(){
+        // 예전엔 여기서 alert()를 띄웠는데, alert는 사용자가 확인을 누를 때까지 화면
+        // 전체를 멈춰버려서, 그 몇 초~몇십 초가 그대로 쉬는시간에서 깎여나가는 문제가
+        // 있었음(2분 설정해놓고 실제로는 1분 40초만 도는 등). 이제는 alert 없이 바로
+        // 쉬는시간 화면으로 넘어가고, 제출 결과는 그 화면 안에 표시함.
+        if (breakDeadline > _nowSynced()) {
+          _enterBreakScreen(sessionId, exam, subjIdx, breakDeadline, graded.score);
+        } else {
+          _startNextSubject(sessionId, exam, subjIdx+1);
+        }
+      });
+    }
+  }).catch(function(e){
+    alert('제출 저장 실패: ' + e.message);
+    ExamEngine.submitting = false;
+  });
+}
+
+// ═══════════════════════════════════════
+// 시험 전 전략 / 시험 후 회고
+// ═══════════════════════════════════════
+var REFLECTION_PROMPTS = [
+  {key:'q1', label:'이번 시험을 어떻게 쳤나요?', hint:'문제를 어떻게 풀어나갔는지 구체적으로 적어주세요'},
+  {key:'q2', label:'부족했다고 느낀 부분은?', hint:'이번 시험에서 부족하다고 느낀 부분을 구체적으로 적어주세요'},
+  {key:'q3', label:'앞으로 개선할 점은?', hint:'다음 시험을 위해 개선해야 할 점을 구체적으로 적어주세요'}
+];
+
+function _reflectionDocId(uid, examId, subject){ return uid+'_'+examId+'_'+subject; }
+// 한 시험에 같은 과목 코드(ex1 등)가 두 번 들어가면 회고 문서가 겹쳐 하나만 남던 문제 → 그 경우만 순번을 붙인다
+function _reflSubjKey(exam, idx){ var subs=(exam&&exam.subjects)||[], s=subs[idx]||{}; return subs.filter(function(x){return x.subject===s.subject;}).length>1 ? s.subject+'_'+idx : s.subject; }
+// 회고에 보일 과목명: 탐구는 학생이 고른 선택과목명(물리학Ⅰ 등), 없으면 과학탐구/사회탐구
+function _reflSubjLabel(subj, idx, choices){ var c=choices&&(choices[idx]||choices[String(idx)]); return c || _resolveSubjDisplayName(subj); }
+function _reflPreferSame(prior, label){ var same=prior.filter(function(r){ return r.subjectLabel && r.subjectLabel===label; }); return same.length?same:prior; }
+
+// 이 과목을 시작하기 전, 지난 시험 회고가 있으면 보여주고 이번 전략을 쓰게 함
+function _maybeShowStrategyThenStart(sessionId, exam, subj, subjIdx, proceedFn){
+  var uid = currentUser.uid;
+  var docId = _reflectionDocId(uid, exam.id, _reflSubjKey(exam, subjIdx));
+  getDoc(doc(db,'examReflections',docId)).then(function(curDoc){
+    if (curDoc.exists() && curDoc.data().strategy) { proceedFn(); return; } // 이미 이번 시험 전략 작성함
+
+    getDocs(query(collection(db,'examReflections'), where('uid','==',uid), where('subject','==',subj.subject))).then(function(snap){
+      var prior = snap.docs.map(function(d){return d.data();})
+        .filter(function(r){ return r.examId !== exam.id && r.q1; })
+        .sort(function(a,b){
+          var at=a.reflectionAt?a.reflectionAt.toMillis():0, bt=b.reflectionAt?b.reflectionAt.toMillis():0;
+          return bt-at;
+        });
+      if (!prior.length) { proceedFn(); return; }
+      prior = _reflPreferSame(prior, _resolveSubjDisplayName(subj));
+      _enterStrategyScreen(sessionId, exam, subj, subjIdx, prior[0], proceedFn);
+    }).catch(function(){ proceedFn(); });
+  }).catch(function(){ proceedFn(); });
+}
+
+function _enterStrategyScreen(sessionId, exam, subj, subjIdx, priorReflection, proceedFn){
+  showScreen('screen-exam');
+  var subjName = _resolveSubjDisplayName(subj);
+  var el = document.getElementById('screen-exam');
+  el.innerHTML = '<div class="refl-wrap">'
+    + '<div class="refl-card">'
+    +   '<div class="refl-kicker">STRATEGY NOTE</div>'
+    +   '<div class="refl-title">'+escapeHtml(subjName)+' 시험 전략 노트</div>'
+    +   '<div class="refl-sub">지난 "'+escapeHtml(priorReflection.examTitle||'')+'" 회고를 참고해서, 이번 시험은 어떻게 풀어나갈지 전략을 세워보세요.</div>'
+    +   '<div class="refl-prior-box">'
+    +     '<div class="refl-prior-label">📖 지난 시험 - 다음 걸음을 위하여</div>'
+    +     REFLECTION_PROMPTS.map(function(p){
+            var val = priorReflection[p.key];
+            if (!val) return '';
+            return '<div class="refl-prior-item"><div class="refl-prior-q">'+escapeHtml(p.label)+'</div><div class="refl-prior-a">'+escapeHtml(val)+'</div></div>';
+          }).join('')
+    +   '</div>'
+    +   '<div class="refl-field">'
+    +     '<div class="refl-q">✍️ 이번 시험, 어떻게 풀어나갈 건가요?</div>'
+    +     '<div class="refl-hint">지난 회고를 바탕으로 이번엔 어떤 전략으로 접근할지 적어주세요</div>'
+    +     '<textarea id="refl-strategy-input" class="refl-textarea" placeholder="예: 시간 배분을 다시 해서 어려운 문제는 표시만 해두고 넘어가고, 마지막에 다시 풀겠다..."></textarea>'
+    +   '</div>'
+    +   '<button class="modal-btn primary" onclick="_submitStrategyAndProceed()">전략 저장하고 시험 시작하기</button>'
+    + '</div>'
+    + '</div>';
+
+  window._strategyProceedCtx = {sessionId:sessionId, exam:exam, subj:subj, subjIdx:subjIdx, proceedFn:proceedFn};
+}
+
+window._submitStrategyAndProceed = function(){
+  var ctx = window._strategyProceedCtx;
+  if (!ctx) return;
+  var text = document.getElementById('refl-strategy-input').value.trim();
+  if (!text) { alert('전략을 간단히라도 적어주세요'); return; }
+  var uid = currentUser.uid;
+  var docId = _reflectionDocId(uid, ctx.exam.id, _reflSubjKey(ctx.exam, ctx.subjIdx));
+  setDoc(doc(db,'examReflections',docId), {
+    uid: uid, examId: ctx.exam.id, examTitle: ctx.exam.title, subject: ctx.subj.subject,
+    subjectKey: _reflSubjKey(ctx.exam, ctx.subjIdx), subjectLabel: _resolveSubjDisplayName(ctx.subj),
+    subjectIndex: ctx.subjIdx, branch: getBranch(), sessionId: ctx.sessionId,
+    strategy: text, strategyAt: serverTimestamp()
+  }, {merge:true}).then(function(){
+    ctx.proceedFn();
+  }).catch(function(e){ alert('저장 실패: '+e.message); });
+};
+
+// 시험(모든 과목) 종료 직후 - 과목별 회고 3문항 작성
+function _enterReflectionScreen(sessionId, exam, results, totalScore, proceedFn, existingReflections, backFn, electiveChoices){
+  showScreen('screen-exam');
+  var el = document.getElementById('screen-exam');
+  var subjectsWithResults = exam.subjects.map(function(subj, idx){ return {subj:subj, idx:idx, result:results[idx]}; }).filter(function(x){ return x.result; });
+  existingReflections = existingReflections || {};
+
+  subjectsWithResults.forEach(function(x){ x.key = _reflSubjKey(exam, x.idx); x.label = _reflSubjLabel(x.subj, x.idx, electiveChoices); });
+  var dots = subjectsWithResults.map(function(x, si){
+    var subjName = x.label;
+    return '<div class="refl-step-dot" id="refl-dot-'+si+'" onclick="_reflGoToStep('+si+')">'
+      + '<span class="refl-step-dot-num">'+(si+1)+'</span><span class="refl-step-dot-label">'+escapeHtml(subjName)+'</span>'
+      + '</div>';
+  }).join('<div class="refl-step-connector"></div>');
+
+  var panels = subjectsWithResults.map(function(x, si){
+    var subjName = x.label;
+    var isLast = si === subjectsWithResults.length - 1;
+    var existing = existingReflections[x.key] || {};
+    return '<div class="refl-panel" id="refl-panel-'+si+'" style="display:'+(si===0?'block':'none')+';">'
+      + '<div class="refl-subject-heading">'+escapeHtml(subjName)+' <span class="refl-subject-score">'+x.result.score+'점</span></div>'
+      + REFLECTION_PROMPTS.map(function(p,i){
+          var prefill = existing[p.key] ? escapeHtml(existing[p.key]) : '';
+          return '<div class="refl-field">'
+            + '<div class="refl-q"><span class="refl-q-num">'+(i+1)+'</span>'+escapeHtml(p.label)+'</div>'
+            + '<div class="refl-hint">'+escapeHtml(p.hint)+'</div>'
+            + '<textarea id="refl-input-'+si+'-'+p.key+'" class="refl-textarea" placeholder="구체적으로 적을수록 다음 시험 전략에 큰 도움이 됩니다" oninput="_reflAutoGrow(this)" rows="1">'+prefill+'</textarea>'
+            + '</div>';
+        }).join('')
+      + '<div class="refl-panel-nav">'
+      +   (si>0 ? '<button type="button" class="refl-nav-btn secondary" onclick="_reflGoToStep('+(si-1)+')">← 이전 과목</button>' : '<span></span>')
+      +   (isLast
+            ? '<button type="button" class="refl-nav-btn primary" onclick="_submitReflectionAndProceed()">작성 완료</button>'
+            : '<button type="button" class="refl-nav-btn primary" onclick="_reflGoToStep('+(si+1)+')">다음 과목 →</button>')
+      + '</div>'
+      + '</div>';
+  }).join('');
+
+  el.innerHTML = '<div class="refl-wrap">'
+    + '<div class="refl-card">'
+    +   (backFn ? '<button type="button" class="refl-back-btn" onclick="_reflGoBack()">← 나가기</button>' : '')
+    +   '<div class="refl-brand">'
+    +     '<img src="'+MONO_LOGO_DATAURI+'" alt="Mono Planner" class="refl-brand-logo"/>'
+    +   '</div>'
+    +   '<div class="refl-catchphrase">&ldquo;너의 꾸준함과 우리의 치열함이 기적을 이루길&rdquo;</div>'
+    +   '<div class="refl-kicker">NEXT STEP</div>'
+    +   '<div class="refl-title">다음 걸음을 위하여</div>'
+    +   '<div class="refl-sub">'+escapeHtml(exam.title)+' · 총점 '+totalScore+'점 · 과목별로 아래 세 가지를 구체적으로 적어주세요</div>'
+    +   '<div class="refl-steps">'+dots+'</div>'
+    +   panels
+    +   '<div class="refl-footer-brand">'
+    +     '<img src="'+LIGHTHOUSE_LOGO_DATAURI+'" alt="" class="refl-footer-icon"/>'
+    +     '<span>멘토즈 스터디카페 울산송정점</span>'
+    +   '</div>'
+    + '</div>'
+    + '</div>';
+
+  window._reflGoBackFn = backFn || null;
+  window._reflectionProceedCtx = {sessionId:sessionId, exam:exam, subjectsWithResults:subjectsWithResults, proceedFn:proceedFn, currentStep:0};
+};
+
+window._reflGoToStep = function(idx){
+  var ctx = window._reflectionProceedCtx;
+  if (!ctx) return;
+  var total = ctx.subjectsWithResults.length;
+  if (idx < 0 || idx >= total) return;
+  for (var i=0;i<total;i++){
+    var panel = document.getElementById('refl-panel-'+i);
+    var dot = document.getElementById('refl-dot-'+i);
+    if (panel) panel.style.display = (i===idx) ? 'block' : 'none';
+    if (dot) dot.classList.toggle('active', i===idx);
+    if (dot) dot.classList.toggle('done', i<idx);
+  }
+  ctx.currentStep = idx;
+  var card = document.querySelector('.refl-card');
+  if (card) card.scrollTop = 0;
+  var wrap = document.querySelector('.refl-wrap');
+  if (wrap) wrap.scrollTop = 0;
+};
+
+window._reflAutoGrow = function(el){
+  el.style.height = 'auto';
+  el.style.height = Math.max(el.scrollHeight, 90) + 'px';
+};
+
+window._reflGoBack = function(){
+  var fn = window._reflGoBackFn;
+  if (fn) fn();
+};
+
+// 이미 끝난 시험을 나중에 학생이 직접 열어서 회고를 쓰거나 수정할 수 있게 함
+window.openReflectionForPastExam = function(sessionId){
+  Promise.all([
+    getDoc(doc(db,'examSessions',sessionId)),
+    getDocs(query(collection(db,'examReflections'), where('sessionId','==',sessionId), where('uid','==',currentUser.uid))) // [보안] 본인 회고만 조회
+  ]).then(function(res){
+    var sessDoc = res[0], reflSnap = res[1];
+    if (!sessDoc.exists()) { alert('시험 세션을 찾을 수 없습니다'); return; }
+    var sess = sessDoc.data();
+    if (!sess.subjectResults || !sess.subjectResults.length) { alert('아직 채점되지 않은 시험입니다'); return; }
+
+    var existingBySubject = {};
+    reflSnap.docs.forEach(function(d){
+      var data = d.data();
+      existingBySubject[data.subjectKey || data.subject] = data;
+    });
+
+    getDoc(doc(db,'exams',sess.examId)).then(function(examDoc){
+      if (!examDoc.exists()) { alert('시험 정보를 찾을 수 없습니다'); return; }
+      var exam = Object.assign({id:sess.examId}, examDoc.data());
+      var totalScore = _r2(sess.subjectResults.reduce(function(s,r){return s+(r?r.score:0);}, 0));
+      _enterReflectionScreen(sessionId, exam, sess.subjectResults, totalScore, function(){
+        alert('저장되었습니다!');
+        showScreen('screen-student');
+        studentTab(4);
+      }, existingBySubject, function(){
+        showScreen('screen-student');
+        studentTab(4);
+      }, sess.electiveChoices);
+    });
+  }).catch(function(e){
+    alert('불러오기 실패: ' + e.message);
+  });
+};
+
+window._submitReflectionAndProceed = function(){
+  var ctx = window._reflectionProceedCtx;
+  if (!ctx) return;
+  var uid = currentUser.uid;
+  var payloads = [];
+  for (var si=0; si<ctx.subjectsWithResults.length; si++){
+    var x = ctx.subjectsWithResults[si];
+    var values = {};
+    for (var i=0;i<REFLECTION_PROMPTS.length;i++){
+      var p = REFLECTION_PROMPTS[i];
+      var elInput = document.getElementById('refl-input-'+si+'-'+p.key);
+      var v = elInput ? elInput.value.trim() : '';
+      if (v.length < 10) {
+        var subjName = x.label;
+        alert('"'+subjName+'" 과목의 "'+p.label+'" 항목을 조금 더 구체적으로 적어주세요 (최소 10자)');
+        _reflGoToStep(si);
+        return;
+      }
+      values[p.key] = v;
+    }
+    var docId = _reflectionDocId(uid, ctx.exam.id, x.key);
+    payloads.push({docId:docId, values:Object.assign({
+      uid: uid, examId: ctx.exam.id, examTitle: ctx.exam.title, subject: x.subj.subject, subjectKey: x.key, subjectLabel: x.label,
+      subjectIndex: x.idx, branch: getBranch(), sessionId: ctx.sessionId,
+      reflectionAt: serverTimestamp()
+    }, values)});
+  }
+
+  Promise.all(payloads.map(function(p){
+    return setDoc(doc(db,'examReflections',p.docId), p.values, {merge:true});
+  })).then(function(){
+    ctx.proceedFn();
+  }).catch(function(e){ alert('저장 실패: '+e.message); });
+};
+
+// ── 채점 엔진 ──
+// 채점된 답안(subjectResult.answers)에서 학생이 실제로 고른/입력한 값만 다시 뽑아내서,
+// gradeExamAnswers가 요구하는 {문항번호: 답} 형태로 되돌린다. "다시 채점하기"에서
+// 새 배점/정답으로 재계산할 때, 학생이 새로 답을 입력할 필요 없이 이미 낸 답 그대로
+// 다시 채점하기 위해 필요함.
+function _reconstructAnswersFromResult(subjectResult){
+  var answers = {};
+  (subjectResult.answers || []).forEach(function(d){
+    if (d.shortMode === 'digit') {
+      answers[d.no] = { digits: String(d.studentAnswer||'000').split('').map(function(c){ return parseInt(c,10)||0; }) };
+    } else if (d.type === 'mc') {
+      answers[d.no] = d.studentAnswer != null ? parseInt(d.studentAnswer,10) : null;
+    } else {
+      answers[d.no] = d.studentAnswer || '';
+    }
+  });
+  return answers;
+}
+
+// 시험 설정(배점/정답/등급컷)을 고친 뒤, 이미 채점 완료된 학생들의 성적에도 새 설정을
+// 반영하고 싶을 때 쓰는 기능. 학생이 실제로 낸 답은 그대로 두고, 그 답을 새 배점/정답
+// 기준으로 다시 채점해서 세션과 성적탭 데이터를 함께 업데이트한다.
+// 시험별 전체 순위 - 학생명/점수/순위를 한 화면에서 한꺼번에 확인 (선생님/마스터 전용).
+// 과목이 여러 개인 시험(예: 국어+수학 같이 치는 시험)은 과목별로 각각 순위표를 따로 보여줌.
+// ═══════════════════════════════════════
+// 시험 묶기 - 시험(문항/응시 세션) 자체는 각자 그대로 독립적으로 두고, "이 시험들은
+// 한 세트다"라고 묶어만 둠. 묶으면 그 시험들의 성적을 다 낸 학생들 성적탭 기록을
+// 자동으로 하나로 합쳐줌 (완전 실시간은 아니고, 새로 채점된 학생이 생기면 버튼 한 번으로
+// 일괄 처리하는 방식).
+// ═══════════════════════════════════════
+window._examMergeMode = false;
+
+window._toggleExamMergeMode = function(){
+  window._examMergeMode = !window._examMergeMode;
+  document.querySelectorAll('.exam-merge-checkbox').forEach(function(cb){
+    cb.style.display = window._examMergeMode ? 'block' : 'none';
+    if (!window._examMergeMode) cb.checked = false;
+  });
+  var toggleBtn = document.getElementById('exam-merge-toggle-btn');
+  if (toggleBtn) toggleBtn.textContent = window._examMergeMode ? '✕ 묶기 취소' : '🔗 시험 묶기';
+  _syncExamMergeBtn();
+};
+
+window._syncExamMergeBtn = function(){
+  var confirmBtn = document.getElementById('exam-merge-confirm-btn');
+  if (!confirmBtn) return;
+  var checkedCount = document.querySelectorAll('.exam-merge-checkbox:checked').length;
+  confirmBtn.style.display = (window._examMergeMode && checkedCount >= 2) ? 'inline-block' : 'none';
+};
+
+window.openMergeExamsModal = function(){
+  var ids = Array.from(document.querySelectorAll('.exam-merge-checkbox:checked')).map(function(cb){return cb.value;});
+  if (ids.length < 2) { alert('묶을 시험을 2개 이상 선택해주세요'); return; }
+  window._mergeExamIds = ids;
+
+  Promise.all(ids.map(function(id){ return getDoc(doc(db,'exams',id)); })).then(function(docs){
+    var exams = docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
+    window._mergeExamSources = exams;
+    var listHtml = exams.map(function(ex){ return '<div style="font-size:12px;color:var(--tx2);padding:4px 0;">· '+escapeHtml(ex.title)+'</div>'; }).join('');
+    document.getElementById('merge-exams-source-list').innerHTML = listHtml;
+    document.getElementById('merge-exams-name-input').value = exams[0].title;
+
+    // "시험 묶기"는 국어+수학처럼 서로 다른 과목을 하나로 합치기 위한 기능임. 만약 선택한
+    // 시험들이 전부 같은 과목(예: 국어 여러 회차)이면, 합치는 순간 한 회차만 남고 나머지
+    // 회차 점수가 사라지는 사고가 날 수 있어서 미리 강하게 경고함.
+    var subjects = exams.map(function(ex){ return ex.subjects && ex.subjects[0] ? ex.subjects[0].subject : null; }).filter(Boolean);
+    var uniqueSubjects = Array.from(new Set(subjects));
+    var warnEl = document.getElementById('merge-exams-warning');
+    if (uniqueSubjects.length === 1 && subjects.length === exams.length) {
+      warnEl.style.display = 'block';
+      warnEl.innerHTML = '⚠️ 선택한 시험들이 전부 같은 과목("'+(subjectNames[uniqueSubjects[0]]||uniqueSubjects[0])+'")이에요. "시험 묶기"는 국어+수학처럼 <b>서로 다른 과목</b>을 하나로 합치는 기능이라, 같은 과목 여러 회차를 묶으면 한 회차만 남고 나머지 점수가 사라집니다. 여러 회차 성적은 묶지 말고 각각 따로 두시는 걸 권장해요.';
+    } else {
+      warnEl.style.display = 'none';
+    }
+
+    openModal('modal-merge-exams');
+  });
+};
+
+window.confirmMergeExams = function(){
+  var mergedTitle = document.getElementById('merge-exams-name-input').value.trim();
+  if (!mergedTitle) { alert('묶음 이름을 입력해주세요'); return; }
+  var exams = window._mergeExamSources;
+  if (!exams || exams.length < 2) return;
+
+  getDocs(query(collection(db,'examMergeGroups'), where('branch','==',getBranch()))).then(function(existingSnap){
+    var usedColors = existingSnap.docs.map(function(d){ return d.data().color; }).filter(Boolean);
+    var color = _autoAssignGroupColor(usedColors);
+    return addDoc(collection(db,'examMergeGroups'), {
+      branch: getBranch(),
+      mergedTitle: mergedTitle,
+      examIds: exams.map(function(e){return e.id;}),
+      examTitles: exams.map(function(e){return e.title;}),
+      color: color,
+      createdAt: serverTimestamp()
+    });
+  }).then(function(groupDoc){
+    closeModal('modal-merge-exams');
+    window._examMergeMode = false;
+    // 묶는 즉시, 지금 이미 두 시험 성적을 다 낸 학생들 성적을 바로 합쳐줌
+    return runExamGroupGradeMerge(groupDoc.id);
+  }).then(function(mergedCount){
+    alert('시험을 묶었습니다.\n\n지금 바로 성적이 합쳐진 학생: '+(mergedCount||0)+'명\n(앞으로 새로 채점되는 학생은 "🔄 새로 합치기" 버튼으로 다시 확인해서 합쳐주세요)');
+    invalidateTeacherTabCache(7);
+    renderTeacher(7);
+  }).catch(function(e){ alert('묶기 실패: ' + e.message); });
+};
+
+// 이 묶음에 속한 시험들의 성적을 다 가진 학생을 찾아서, 아직 안 합쳐진 사람만 골라
+// 자동으로 합쳐줌 (이미 합쳐진 사람은 건드리지 않음 - mergedFrom 그룹아이디로 식별)
+window.runExamGroupGradeMerge = function(groupId){
+  return getDoc(doc(db,'examMergeGroups',groupId)).then(function(groupDoc){
+    var group = groupDoc.data();
+    var examIds = group.examIds;
+    return getDocs(query(collection(db,'grades'), where('examId','in',examIds))).then(function(snap1){
+      // 이 묶음으로 이미 합쳐진 기록(mergeGroupId===groupId)은 examId가 없어서 위 쿼리로는
+      // 안 잡힘 - 새로 들어온 시험을 "기존 합쳐진 기록 위에 이어붙이기" 위해 따로 조회
+      return getDocs(query(collection(db,'grades'), where('mergeGroupId','==',groupId))).then(function(snap2){
+        var byUid = {};
+        snap1.docs.forEach(function(d){
+          var g = Object.assign({_id:d.id}, d.data());
+          if (g.mergedFrom) return; // 다른 묶음으로 이미 합쳐진 성적은 건드리지 않음
+          if (!byUid[g.uid]) byUid[g.uid] = [];
+          byUid[g.uid].push(g);
+        });
+        snap2.docs.forEach(function(d){
+          var g = Object.assign({_id:d.id}, d.data());
+          if (!byUid[g.uid]) byUid[g.uid] = [];
+          byUid[g.uid].push(g);
+        });
+
+        var tasks = [];
+        var mergedCount = 0;
+        Object.keys(byUid).forEach(function(uid){
+          if (_tryMergeGradesForUid(groupId, group, examIds, byUid[uid], uid)) mergedCount++;
+        });
+        return Promise.all(_pendingMergeTasks.splice(0)).then(function(){ return mergedCount; });
+      });
+    });
+  });
+};
+
+// 특정 학생 한 명만 대상으로 묶음 합치기를 시도함 (채점 직후 자동 트리거용) - 위 전체
+// 버전과 완전히 같은 조건/로직을 재사용해서, 어느 경로로 실행되든 결과가 일관되게 함
+window.runExamGroupGradeMergeForStudent = function(groupId, uid){
+  return getDoc(doc(db,'examMergeGroups',groupId)).then(function(groupDoc){
+    if (!groupDoc.exists()) return 0;
+    var group = groupDoc.data();
+    var examIds = group.examIds;
+    return getDocs(query(collection(db,'grades'), where('examId','in',examIds), where('uid','==',uid))).then(function(snap1){
+      return getDocs(query(collection(db,'grades'), where('mergeGroupId','==',groupId), where('uid','==',uid))).then(function(snap2){
+        var gradesForUid = snap1.docs.map(function(d){ return Object.assign({_id:d.id}, d.data()); }).filter(function(g){ return !g.mergedFrom; });
+        gradesForUid = gradesForUid.concat(snap2.docs.map(function(d){ return Object.assign({_id:d.id}, d.data()); }));
+        var merged = _tryMergeGradesForUid(groupId, group, examIds, gradesForUid, uid);
+        return Promise.all(_pendingMergeTasks.splice(0)).then(function(){ return merged ? 1 : 0; });
+      });
+    });
+  });
+};
+
+// 한 학생의 성적 목록을 확인해서, 이미 이 묶음으로 합쳐진 기록이 있으면 새로 들어온
+// 시험 성적을 그 위에 이어붙이고(업데이트), 없으면 지금 있는 것만으로(전부 안 모여도,
+// 2개 이상이면) 새로 합쳐서 만듦. 이렇게 하면 "아직 하나가 안 끝났어도 나머지 먼저
+// 합치고, 나중에 그 하나가 끝나면 자동으로 마저 합쳐지는" 방식이 됨.
+var _pendingMergeTasks = [];
+function _tryMergeGradesForUid(groupId, group, examIds, gradesForUid, uid){
+  if (!gradesForUid || !gradesForUid.length) return false;
+  var existingMerged = gradesForUid.find(function(g){ return g.mergeGroupId === groupId; });
+  var newOnes = gradesForUid.filter(function(g){ return g.mergeGroupId !== groupId; });
+  if (!newOnes.length) return false; // 새로 합칠 게 없으면 아무 것도 안 함
+
+  if (existingMerged) {
+    // 이미 합쳐진 기록이 있으면, 새로 들어온 시험만 그 위에 이어붙임
+    var mergedScores = Object.assign({}, existingMerged.scores);
+    var mergedWrong = Object.assign({}, existingMerged.wrongBySubj), mergedUnk = Object.assign({}, existingMerged.unknownBySubj);
+    var newMergedFrom = (existingMerged.mergedFrom||[]).slice();
+    var newSourceExamIds = (existingMerged.sourceExamIds||[]).slice();
+    var newSourceSessionIds = (existingMerged.sourceExamSessionIds||[]).slice();
+    newOnes.forEach(function(g){
+      // 이미 합쳐진 시험을 다시 친 경우(배정 취소 후 재배정·재응시) - 그 시험 몫의 과목을 새 성적으로 교체.
+      // 같은 과목군(예: 탐구 sc·so)의 예전 과목은 지우고 새 과목·오답·모름으로 덮어씀.
+      var isRetake = g.examId && (existingMerged.sourceExamIds||[]).indexOf(g.examId) >= 0;
+      if (isRetake) {
+        var grpOf = function(sc, k){ return ((sc||{})[k]||{}).group || k; };
+        var newGroups = {}; Object.keys(g.scores||{}).forEach(function(k){ newGroups[grpOf(g.scores,k)] = 1; });
+        Object.keys(mergedScores).forEach(function(k){
+          if (newGroups[grpOf(mergedScores,k)]) { delete mergedScores[k]; delete mergedWrong[k]; delete mergedUnk[k]; }
+        });
+        Object.keys(g.scores||{}).forEach(function(k){ mergedScores[k] = g.scores[k]; delete mergedWrong[k]; delete mergedUnk[k]; });
+        Object.keys(g.wrongBySubj||{}).forEach(function(k){ mergedWrong[k] = g.wrongBySubj[k]; });
+        Object.keys(g.unknownBySubj||{}).forEach(function(k){ mergedUnk[k] = g.unknownBySubj[k]; });
+      }
+      Object.keys(g.scores||{}).forEach(function(k){ if (mergedScores[k]===undefined) mergedScores[k] = g.scores[k]; });
+      Object.keys(g.wrongBySubj||{}).forEach(function(k){ if (mergedWrong[k]===undefined) mergedWrong[k] = g.wrongBySubj[k]; });
+      Object.keys(g.unknownBySubj||{}).forEach(function(k){ if (mergedUnk[k]===undefined) mergedUnk[k] = g.unknownBySubj[k]; });
+      newMergedFrom.push(g._id);
+      if (g.examId && newSourceExamIds.indexOf(g.examId) === -1) newSourceExamIds.push(g.examId);
+      if (g.examSessionId && newSourceSessionIds.indexOf(g.examSessionId) === -1) newSourceSessionIds.push(g.examSessionId);
+    });
+    var p1 = updateDoc(doc(db,'grades',existingMerged._id), { scores: mergedScores, wrongBySubj: mergedWrong, unknownBySubj: mergedUnk, mergedFrom: newMergedFrom, sourceExamIds: newSourceExamIds, sourceExamSessionIds: newSourceSessionIds })
+      .then(function(){ return Promise.all(newOnes.map(function(g){ return deleteDoc(doc(db,'grades',g._id)); })); });
+    _pendingMergeTasks.push(p1);
+    return true;
+  }
+
+  // 아직 합쳐진 기록이 없는 경우 - 최소 2개는 모여야 "합치는 의미"가 있음 (1개뿐이면
+  // 그냥 그 성적 그대로 두고 다음 시험이 나올 때까지 기다림)
+  if (newOnes.length < 2) return false;
+
+  var mergedScores2 = {}, mergedWrong2 = {}, mergedUnk2 = {};
+  var sourceExamIds2 = [];
+  var sourceSessionIds2 = [];
+  newOnes.forEach(function(g){
+    Object.keys(g.scores||{}).forEach(function(k){ if (mergedScores2[k]===undefined) mergedScores2[k] = g.scores[k]; });
+    Object.keys(g.wrongBySubj||{}).forEach(function(k){ if (mergedWrong2[k]===undefined) mergedWrong2[k] = g.wrongBySubj[k]; });
+    Object.keys(g.unknownBySubj||{}).forEach(function(k){ if (mergedUnk2[k]===undefined) mergedUnk2[k] = g.unknownBySubj[k]; });
+    if (g.examId && sourceExamIds2.indexOf(g.examId) === -1) sourceExamIds2.push(g.examId);
+    if (g.examSessionId && sourceSessionIds2.indexOf(g.examSessionId) === -1) sourceSessionIds2.push(g.examSessionId);
+  });
+  var earliestDate = newOnes.map(function(g){return g.examDate;}).sort()[0];
+  var base = newOnes[0];
+
+  var p2 = addDoc(collection(db,'grades'), {
+    uid: uid, type: base.type||'mock', examName: group.mergedTitle, examDate: earliestDate,
+    scores: mergedScores2, wrongBySubj: mergedWrong2, unknownBySubj: mergedUnk2, examSource: base.examSource||null,
+    source: 'merged_group', mergedFrom: newOnes.map(function(g){return g._id;}), mergeGroupId: groupId,
+    // 원본 시험 ID들을 따로 기록해둠 - 나중에 그중 한 시험의 분류(examSource)가 바뀌었을 때
+    // 이 합쳐진 성적도 같이 찾아서 업데이트할 수 있게 하기 위함 (합쳐지면 examId 필드
+    // 자체가 없어져서, 이게 없으면 분류 변경이 반영이 안 되는 문제가 있었음)
+    sourceExamIds: sourceExamIds2,
+    // 원본 세션ID들도 같이 기록 - "누락 성적 검사"가 examId/examSessionId로 찾는데,
+    // 합쳐지는 순간 이 연결고리가 사라져서 "복구했는데 다시 누락으로 뜨는" 문제가
+    // 있었음. 이 필드로 합쳐진 성적 안에도 원래 어떤 세션들이 커버됐는지 추적 가능해짐.
+    sourceExamSessionIds: sourceSessionIds2,
+    createdAt: serverTimestamp()
+  }).then(function(){
+    return Promise.all(newOnes.map(function(g){ return deleteDoc(doc(db,'grades',g._id)); }));
+  });
+  _pendingMergeTasks.push(p2);
+  return true;
+}
+
+// 지금까지 만들어둔 시험 묶음 목록을 보여주고, 각각 "새로 합치기"로 재실행할 수 있게 함
+// 실시간 응시 현황 - 지점 전체에서 지금 이 순간 응시 중/대기 중인 학생을 한 화면에서 확인
+// (여러 시험이 동시에 진행 중일 수 있어서, 어떤 학생이 어떤 시험을 언제 시작해서 언제
+// 끝나는지까지 한눈에 보여줌). 필요하면 그 자리에서 특정 학생만 강제제출도 가능.
+// ═══════════════════════════════════════
+// 시험 진행 화면 (외부 공개용) - 시험장에 띄워두는 대형 화면. 시작 전엔 참가자 명단과
+// 카운트다운, 시작되면 시계와 남은시간만 크게 보여줌(OMR 없음). 종료 알림은 항상 울리고,
+// 듣기 파일 자동재생은 선생님이 켜고 끌 수 있음.
+// ═══════════════════════════════════════
+var ExamDisplay = { examId:null, exam:null, schedule:null, tickInterval:null, listeningEnabled:true, playedListeningFor:{}, warnedSet:{} };
+
+// 기기마다 시스템 시계가 조금씩 다를 수 있어서(선생님 기기, 학생 기기 각자 몇 초씩 오차가
+// 날 수 있음), 서버 시각을 한 번 확인해서 "이 기기 시계가 서버보다 얼마나 빠르거나
+// 느린지" 보정값을 구해두고, 이후 모든 시간 계산에 이 보정값을 더해서 씀. 이렇게 하면
+// 기기 시계가 어긋나 있어도 서버 기준으로 정확히 맞춰짐.
+var _serverTimeOffsetMs = 0;
+function _syncServerTimeOffset(){
+  var localBefore = Date.now();
+  return setDoc(doc(db,'serverTimeSync', currentUser.uid), { t: serverTimestamp() }).then(function(){
+    return getDoc(doc(db,'serverTimeSync', currentUser.uid));
+  }).then(function(d){
+    var data = d.data();
+    if (!data || !data.t) return;
+    var serverMs = data.t.toMillis();
+    var localAfter = Date.now();
+    var roundTrip = localAfter - localBefore;
+    // 왕복 시간의 절반만큼은 서버 응답이 오는 데 걸린 시간이라, 그만큼 보정해서
+    // "요청을 보낸 시점"의 서버 시각에 더 가깝게 추정함
+    _serverTimeOffsetMs = (serverMs + roundTrip/2) - localAfter;
+  }).catch(function(e){ console.warn('[서버 시각 동기화 실패]', e); _serverTimeOffsetMs = 0; });
+}
+function _nowSynced(){ return Date.now() + _serverTimeOffsetMs; }
+
+window.openExamDisplayScreen = function(examId){
+  // 진행 화면은 여는 순간(사용자가 직접 누른 시점)에 음성 재생을 한 번 "잠금 해제"해 둬야
+  // 나중에 타이머로 자동 재생되는 "N분 남았습니다"가 브라우저에 막히지 않음
+  try { if ('speechSynthesis' in window) { speechSynthesis.cancel(); var _pu = new SpeechSynthesisUtterance('시작'); _pu.volume = 0.01; _pu.rate = 10; speechSynthesis.speak(_pu); } } catch(e){}
+  try { var _AC = window.AudioContext || window.webkitAudioContext; if (_AC) { var _c = new _AC(); if (_c.state === 'suspended') _c.resume(); } } catch(e){}
+  ExamDisplay.examId = examId;
+  ExamDisplay.playedListeningFor = {};
+  ExamDisplay.warnedSet = {};
+  showScreen('screen-exam-display');
+  document.getElementById('screen-exam-display').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--tx3);font-size:16px;background:var(--bg);">불러오는 중...</div>';
+
+  Promise.all([
+    getDoc(doc(db,'exams',examId)),
+    _syncServerTimeOffset()
+  ]).then(function(results){
+    var d = results[0];
+    if (!d.exists()) { alert('시험을 찾을 수 없습니다'); showScreen('screen-teacher'); return; }
+    ExamDisplay.exam = Object.assign({id:examId}, d.data());
+    ExamDisplay.schedule = _computeExamDisplaySchedule(ExamDisplay.exam);
+    _renderExamDisplayFrame();
+    _tickExamDisplay();
+    if (ExamDisplay.tickInterval) clearInterval(ExamDisplay.tickInterval);
+    ExamDisplay.tickInterval = setInterval(_tickExamDisplay, 1000);
+  });
+};
+
+window.closeExamDisplayScreen = function(){
+  if (ExamDisplay.tickInterval) clearInterval(ExamDisplay.tickInterval);
+  ExamDisplay.tickInterval = null;
+  showScreen('screen-teacher');
+  renderTeacher(7);
+};
+
+// exam.startAtMs와 각 과목 durationMin/breakAfterMin을 이어붙여서, "지금 몇 교시 진행중인지 /
+// 쉬는시간인지 / 아직 시작 전인지 / 다 끝났는지"를 실시간 시각만으로 계산할 수 있는 일정표를 만듦
+// (일괄 시작 시험은 전원이 동시에 시작하므로, 개별 학생 세션을 조회할 필요 없이 이 계산만으로 충분함)
+function _computeExamDisplaySchedule(exam){
+  var subjects = exam.subjects || [];
+  var phases = [];
+  var cursor = exam.startAtMs || _nowSynced();
+  subjects.forEach(function(subj, i){
+    var startMs = cursor;
+    var endMs = startMs + (subj.durationMin||0)*60000;
+    phases.push({ type:'subject', idx:i, subj:subj, startMs:startMs, endMs:endMs });
+    cursor = endMs;
+    if (i < subjects.length-1 && subj.breakAfterMin) {
+      var bStart = cursor, bEnd = bStart + subj.breakAfterMin*60000;
+      phases.push({ type:'break', afterIdx:i, startMs:bStart, endMs:bEnd });
+      cursor = bEnd;
+    }
+  });
+  return phases;
+}
+
+function _renderExamDisplayFrame(){
+  var el = document.getElementById('screen-exam-display');
+  el.innerHTML = '<div class="exdisp-wrap">'
+    + '<div class="exdisp-topbar">'
+    +   '<div class="exdisp-title">'+escapeHtml(ExamDisplay.exam.title)+'</div>'
+    +   '<label class="exdisp-listening-toggle"><input type="checkbox" id="exdisp-listening-toggle" checked onchange="ExamDisplay.listeningEnabled=this.checked;"/> 🎧 듣기 파일 자동재생</label>'
+    +   '<button class="exdisp-close-btn" onclick="closeExamDisplayScreen()">✕ 닫기</button>'
+    + '</div>'
+    + '<div id="exdisp-body" class="exdisp-body"></div>'
+    + '<div id="exdisp-warn-flash" class="exam-warn-flash"></div>'
+    + '</div>';
+}
+
+function _tickExamDisplay(){
+  if (!ExamDisplay.exam) return;
+  var now = _nowSynced();
+  var schedule = ExamDisplay.schedule;
+  var body = document.getElementById('exdisp-body');
+  if (!body) return;
+
+  // 1) 아직 시작 전 (대기실)
+  if (now < (ExamDisplay.exam.startAtMs || 0)) {
+    _renderExamDisplayWaitingRoom(now);
+    return;
+  }
+  // 2) 진행중인 phase 찾기
+  var current = schedule.find(function(p){ return now >= p.startMs && now < p.endMs; });
+  // 3) 다 끝난 경우
+  if (!current) {
+    var last = schedule[schedule.length-1];
+    if (!last || now >= last.endMs) {
+      body.innerHTML = '<div class="exdisp-done">🎉<div class="exdisp-done-text">모든 시험 일정이 종료되었습니다</div></div>';
+      return;
+    }
+    return;
+  }
+
+  if (current.type === 'break') {
+    var remainSec = Math.max(0, Math.round((current.endMs-now)/1000));
+    body.innerHTML = '<div class="exdisp-break">'
+      + '<div class="exdisp-break-label">☕ 쉬는 시간</div>'
+      + '<div class="exdisp-break-timer">'+_fmtMMSS(remainSec)+'</div>'
+      + '<div class="exdisp-break-sub">다음 과목 '+String(new Date(current.endMs).getHours()).padStart(2,'0')+':'+String(new Date(current.endMs).getMinutes()).padStart(2,'0')+' 시작</div>'
+      + '</div>';
+    return;
+  }
+
+  // 4) 과목 진행중 - 시계 + 시작/종료 시각 (학생 화면과 완전히 동일한 시계 디자인)
+  var subj = current.subj;
+  var subjName = _resolveSubjDisplayName(subj);
+  if (!document.getElementById('exdisp-clock')) {
+    body.innerHTML = _buildExamDisplayLiveHtml(subjName, current);
+  }
+  var remainSec = Math.max(0, Math.round((current.endMs-now)/1000));
+
+  // 아날로그 시계 (실제 현재시각 표시 - 학생 화면과 동일 방식, 서버시각 보정 적용)
+  var d = new Date(now);
+  var h=d.getHours()%12, m=d.getMinutes(), s=d.getSeconds();
+  _setClockHand('exdisp-clock-hour-g', (h+m/60)*30);
+  _setClockHand('exdisp-clock-min-g', (m+s/60)*6);
+  _setClockHand('exdisp-clock-sec-g', s*6);
+
+  // 듣기 파일 - 이 과목이 막 시작된 시점에 한 번만, 토글이 켜져 있을 때만 자동재생
+  if (subj.listeningUrl && ExamDisplay.listeningEnabled && !ExamDisplay.playedListeningFor[current.idx] && (now - current.startMs) < 5000) {
+    ExamDisplay.playedListeningFor[current.idx] = true;
+    try { new Audio(subj.listeningUrl).play().catch(function(){}); } catch(e){}
+  }
+
+  // 종료 알림 - warnMinutesList는 과목별이 아니라 시험 전체(최상위) 필드임. 예전엔
+  // subj.warnMinutesList(항상 undefined)를 찾고 있어서 선생님이 설정한 알림 시각이
+  // 반영이 안 되고 매번 기본값[10,5,1]로만 동작하던 버그가 있었음.
+  (ExamDisplay.exam.warnMinutesList || [10,5,1]).forEach(function(min){
+    var key = current.idx+'_'+min;
+    if (ExamDisplay.warnedSet[key]) return;
+    if (remainSec <= min*60) {
+      ExamDisplay.warnedSet[key] = true;
+      _showExamDisplayWarnBanner(min+'분 남았습니다');
+      // 띠리링 알림음(약 0.5초)이 끝난 뒤 설정된 음성("N분 남았습니다")을 이어서 재생
+      if (ExamDisplay.exam.ttsEnabled !== false && window._examTtsOn !== false) {
+        setTimeout(function(){ try { _speakExamAlert(min+'분 남았습니다', ExamDisplay.exam, min); } catch(e){ console.warn('[진행화면 음성 실패]', e); } }, 700);
+      }
+    }
+  });
+}
+
+function _buildExamDisplayLiveHtml(subjName, phase){
+  var clockNumbers = Array.from({length:12},function(_,i){
+    var n = i+1;
+    var a = n*30*Math.PI/180;
+    var x = 120 + 83*Math.sin(a), y = 120 - 83*Math.cos(a);
+    return '<text x="'+x+'" y="'+y+'" text-anchor="middle" dominant-baseline="central" class="exam-clock-numeral">'+n+'</text>';
+  }).join('');
+  var clockBatons = Array.from({length:12},function(_,i){
+    var a = i*30*Math.PI/180;
+    var r1 = 96, r2 = 107;
+    var x1=120+r1*Math.sin(a),y1=120-r1*Math.cos(a),x2=120+r2*Math.sin(a),y2=120-r2*Math.cos(a);
+    return '<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="var(--burg)" stroke-width="2" stroke-linecap="round"/>';
+  }).join('');
+  var minuteTicks = Array.from({length:60},function(_,i){
+    if (i%5===0) return '';
+    var a=i*6*Math.PI/180;
+    var r1 = 101, r2 = 107;
+    var x1=120+r1*Math.sin(a),y1=120-r1*Math.cos(a),x2=120+r2*Math.sin(a),y2=120-r2*Math.cos(a);
+    return '<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="var(--tx4)" stroke-width="0.6"/>';
+  }).join('');
+  var fmt = function(ms){ var d = new Date(ms); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
+
+  // 학생 응시 화면과 완전히 동일한 손목시계 디자인(그라디언트/눈금/숫자/워터마크)을 그대로
+  // 재사용하되, 진행 화면에서는 훨씬 크게 보여줌
+  return '<div class="exdisp-live">'
+    + '<div class="exdisp-subj-name">'+escapeHtml(subjName)+'</div>'
+    + '<div class="exdisp-watch-frame">'
+    +   '<svg id="exdisp-clock" viewBox="0 0 240 240" class="exdisp-clock-svg">'
+    +     '<defs>'
+    +       '<radialGradient id="exdispWatchFaceGrad" cx="50%" cy="42%" r="65%">'
+    +         '<stop offset="0%" stop-color="#FFFEFA"/>'
+    +         '<stop offset="100%" stop-color="#F6EFDC"/>'
+    +       '</radialGradient>'
+    +       '<clipPath id="exdispWatchFaceClip"><circle cx="120" cy="120" r="118"/></clipPath>'
+    +     '</defs>'
+    +     '<circle cx="120" cy="120" r="118" fill="url(#exdispWatchFaceGrad)" stroke="var(--burg)" stroke-width="2.5"/>'
+    +     '<circle cx="120" cy="120" r="113" fill="none" stroke="var(--gold2)" stroke-width="0.75"/>'
+    +     '<g clip-path="url(#exdispWatchFaceClip)"><g transform="rotate(-14 120 120)"><image href="'+MONO_WATERMARK_DATAURI+'" x="12" y="92" width="216" height="82" opacity="1"/></g></g>'
+    +     minuteTicks
+    +     clockBatons
+    +     clockNumbers
+    +     '<g id="exdisp-clock-hour-g" transform="rotate(0 120 120)"><path d="M120,132 L117,64 L120,50 L123,64 Z" fill="var(--tx1)"/></g>'
+    +     '<g id="exdisp-clock-min-g" transform="rotate(0 120 120)"><path d="M120,138 L118,40 L120,26 L122,40 Z" fill="var(--tx1)"/></g>'
+    +     '<g id="exdisp-clock-sec-g" transform="rotate(0 120 120)"><line x1="120" y1="145" x2="120" y2="30" stroke="var(--burg)" stroke-width="1.4" stroke-linecap="round"/><circle cx="120" cy="145" r="3.5" fill="var(--burg)"/></g>'
+    +     '<circle cx="120" cy="120" r="5" fill="var(--burg)" stroke="var(--gold2)" stroke-width="1.2"/>'
+    +   '</svg>'
+    + '</div>'
+    + '<div class="exdisp-timerange">'+fmt(phase.startMs)+' 시작 &nbsp;·&nbsp; '+fmt(phase.endMs)+' 종료</div>'
+    + '</div>';
+}
+
+function _fmtMMSS(totalSec){
+  var m = Math.floor(totalSec/60), s = totalSec%60;
+  return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+}
+
+function _showExamDisplayWarnBanner(text){
+  var body = document.getElementById('exdisp-body');
+  if (!body) return;
+  var banner = document.createElement('div');
+  banner.className = 'exdisp-warn-banner';
+  banner.textContent = '⏰ ' + text;
+  body.appendChild(banner);
+  var flash = document.getElementById('exdisp-warn-flash');
+  if (flash) { flash.classList.remove('exam-warn-flash-active'); void flash.offsetWidth; flash.classList.add('exam-warn-flash-active'); }
+  _playExamDisplayChime();
+  setTimeout(function(){ banner.remove(); }, 8000);
+}
+
+// 예전엔 무음에 가까운 "자동재생 잠금해제용" 오디오 클립을 알림음으로 잘못 재사용하고
+// 있어서 실제로는 소리가 거의 안 들렸음. Web Audio API로 3음 차임을 직접 만들어서
+// 확실하게 들리는 알림음을 재생함 (별도 음원 파일 없이도 항상 재생 가능).
+function _playExamDisplayChime(){
+  try {
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    var ctx = new Ctx();
+    var notes = [880, 1108, 1318]; // 라-도#-미 (밝고 또렷한 3음 차임)
+    notes.forEach(function(freq, i){
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      var startAt = ctx.currentTime + i*0.16;
+      gain.gain.setValueAtTime(0, startAt);
+      gain.gain.linearRampToValueAtTime(0.35, startAt+0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, startAt+0.35);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(startAt); osc.stop(startAt+0.4);
+    });
+  } catch(e){ console.warn('[진행화면 알림음 재생 실패]', e); }
+}
+
+var _exdispWaitingLastFetch = 0;
+function _renderExamDisplayWaitingRoom(now){
+  var body = document.getElementById('exdisp-body');
+  var remainSec = Math.max(0, Math.round((ExamDisplay.exam.startAtMs-now)/1000));
+
+  // 참가자 목록 자체는 5초에 한 번만 새로 조회 (매초 다시 불러오면 낭비) - 카운트다운
+  // 숫자만 매초 가볍게 갱신
+  var countdownEl = document.getElementById('exdisp-countdown');
+  if (countdownEl && now - _exdispWaitingLastFetch < 5000) {
+    countdownEl.textContent = _fmtMMSS(remainSec);
+    return;
+  }
+  _exdispWaitingLastFetch = now;
+
+  Promise.all([
+    getDocs(query(collection(db,'examSessions'), where('examId','==',ExamDisplay.examId))),
+    loadStudentList()
+  ]).then(function(results){
+    var sessions = results[0].docs.map(function(d){return d.data();});
+    var students = results[1];
+    var statusByUid = {}; sessions.forEach(function(s){ statusByUid[s.studentUid] = s.status; });
+    var assignedUids = ExamDisplay.exam.assignedTo || [];
+    var participants = students.filter(function(s){ return assignedUids.indexOf(s.uid) !== -1; });
+
+    var joinedCount = participants.filter(function(s){ return statusByUid[s.uid] && statusByUid[s.uid] !== 'not_started'; }).length;
+
+    var cardsHtml = participants.map(function(s){
+      var joined = statusByUid[s.uid] && statusByUid[s.uid] !== 'not_started';
+      return '<div class="exdisp-participant'+(joined?' joined':'')+'">'
+        + '<div class="exdisp-participant-av">'+escapeHtml((s.name||'?').slice(0,1))+'</div>'
+        + '<div class="exdisp-participant-name">'+escapeHtml(s.name)+'</div>'
+        + '<div class="exdisp-participant-status">'+(joined?'✓ 참가중':'대기')+'</div>'
+        + '</div>';
+    }).join('');
+
+    var currentRemainSec = Math.max(0, Math.round((ExamDisplay.exam.startAtMs-_nowSynced())/1000));
+    body.innerHTML = '<div class="exdisp-waiting">'
+      + '<div class="exdisp-countdown-label">시험 시작까지</div>'
+      + '<div class="exdisp-countdown" id="exdisp-countdown">'+_fmtMMSS(currentRemainSec)+'</div>'
+      + '<div class="exdisp-join-count">참가 확인 '+joinedCount+' / '+participants.length+'명</div>'
+      + '<div class="exdisp-participant-grid">'+(cardsHtml||'<div style="color:#999;">배정된 학생이 없습니다</div>')+'</div>'
+      + '</div>';
+  });
+}
+
+// 성적 복구 도구 - 시험은 "채점 완료(graded)" 상태인데, 실제로 grades 컬렉션에
+// 그 시험 성적이 없는 경우를 찾아서 복구함. 원인: 채점 자체는 세션에 저장된 뒤, 성적탭에
+// 실제로 옮겨 적는 단계가 별도로 한 번 더 있는데, 이 단계가 중간에 실패해도(네트워크 등)
+// 세션은 이미 "완료"로 표시돼버려서 학생/선생님 모두 눈치채기 어려운 구조였음.
+// subjectResults는 세션에 이미 저장되어 있으므로, 그걸 그대로 다시 성적탭에 옮겨 적음.
+// 학생-시험 정밀 진단 - 특정 학생이 특정 시험(이름으로 검색)과 관련해서 어떤 상태에
+// 있는지 전부 다 보여줌. "누락 성적 검사"는 status가 정확히 'graded'인 세션만 훑기
+// 때문에, 세션이 다른 상태(응시중/제출만 됨/아예 배정만 되고 시작 안 함 등)에 멈춰있는
+// 경우는 못 잡아냄 - 이 도구는 그런 경우까지 포함해서 전체 그림을 보여줌.
+// 선생님/마스터가 특정 학생의 수시/정시 합격 플래너를 조회 (읽기 전용) - 수능최저 충족
+// 여부는 학생용과 완전히 같은 로직(_computeMinReqStatus)으로 계산해서 동일하게 보여줌
+window._openAdmissionPlanFromSelect = function(){
+  var sel = document.getElementById('t-grade-student');
+  var uid = sel ? sel.value : '';
+  if (!uid) { alert('먼저 학생을 선택해주세요'); return; }
+  var name = sel.options[sel.selectedIndex].text;
+  openStudentAdmissionPlanModal(uid, name);
+};
+
+var _teacherAdmissionTab = 'susi', _teacherAdmissionPlansCache = null, _teacherAdmissionGradesCache = null, _teacherAdmissionUid = null;
+
+window.openStudentAdmissionPlanModal = function(uid, name){
+  _teacherAdmissionUid = uid;
+  _teacherAdmissionTab = 'susi';
+  document.getElementById('t-admplan-title').textContent = '🎯 '+name+' 학생 합격 플래너';
+  document.getElementById('t-admplan-body').innerHTML = '<div style="color:var(--tx3);font-size:12px;padding:10px 0;">불러오는 중...</div>';
+  openModal('modal-teacher-admission-plan');
+
+  Promise.all([
+    getDoc(doc(db,'admissionPlans',uid)),
+    getDocs(query(collection(db,'grades'), where('uid','==',uid)))
+  ]).then(function(results){
+    var planDoc = results[0];
+    _teacherAdmissionPlansCache = planDoc.exists() ? planDoc.data() : {susi:[], jeongsi:[]};
+    _teacherAdmissionGradesCache = results[1].docs.map(function(d){ return d.data(); });
+    _renderTeacherAdmissionPlanBody();
+  }).catch(function(e){
+    document.getElementById('t-admplan-body').innerHTML = '<div style="color:var(--red);font-size:12px;">불러오기 실패: '+e.message+'</div>';
+  });
+};
+
+window._switchTeacherAdmissionTab = function(tab){
+  _teacherAdmissionTab = tab;
+  _renderTeacherAdmissionPlanBody();
+};
+
+function _renderTeacherAdmissionPlanBody(){
+  var body = document.getElementById('t-admplan-body');
+  if (!body || !_teacherAdmissionPlansCache) return;
+
+  var tabsHtml = '<div style="display:flex;gap:6px;margin-bottom:14px;">'
+    + '<button onclick="_switchTeacherAdmissionTab(\'susi\')" style="flex:1;padding:9px;background:'+(_teacherAdmissionTab==='susi'?'var(--burg-l2)':'var(--surface2)')+';border:1px solid '+(_teacherAdmissionTab==='susi'?'rgba(201,168,76,0.4)':'var(--border)')+';border-radius:8px;color:'+(_teacherAdmissionTab==='susi'?'var(--burg)':'var(--tx3)')+';font-size:13px;font-weight:'+(_teacherAdmissionTab==='susi'?'700':'400')+';cursor:pointer;">수시 합격 플래너</button>'
+    + '<button onclick="_switchTeacherAdmissionTab(\'jeongsi\')" style="flex:1;padding:9px;background:'+(_teacherAdmissionTab==='jeongsi'?'var(--burg-l2)':'var(--surface2)')+';border:1px solid '+(_teacherAdmissionTab==='jeongsi'?'rgba(201,168,76,0.4)':'var(--border)')+';border-radius:8px;color:'+(_teacherAdmissionTab==='jeongsi'?'var(--burg)':'var(--tx3)')+';font-size:13px;font-weight:'+(_teacherAdmissionTab==='jeongsi'?'700':'400')+';cursor:pointer;">정시 합격 플래너</button>'
+    + '</div>';
+
+  var list = _teacherAdmissionPlansCache[_teacherAdmissionTab] || [];
+  var listHtml;
+  if (!list.length) {
+    listHtml = '<div style="color:var(--tx4);font-size:12px;text-align:center;padding:16px 0;">등록된 '+(_teacherAdmissionTab==='susi'?'수시':'정시')+' 지원 계획이 없습니다.</div>';
+  } else {
+    listHtml = list.map(function(plan){
+      var interviewBadge = plan.hasInterview ? '<span style="font-size:10px;font-weight:700;color:var(--gold);background:var(--gold-l);padding:2px 8px;border-radius:5px;margin-left:6px;">🗣 면접</span>' : '';
+      var confirmedBadge = plan.confirmed ? '<span style="font-size:10px;font-weight:700;color:var(--green);background:var(--green-l);padding:2px 8px;border-radius:5px;margin-left:6px;">✅ 지원 확정</span>' : '';
+      var minReqHtml = '';
+      if (plan.minReq) {
+        var mustLabel = (plan.minReq.mustInclude||[]).map(function(k){return MIN_REQ_SUBJECT_LABELS[k];}).join('+');
+        var tamguModeLabel = plan.minReq.tamguMode === 'avg2' ? '탐구 2과목 평균' : '탐구 1과목(높은 등급)';
+        var capParts = [];
+        Object.keys(plan.minReq.subjectCaps||{}).forEach(function(k){
+          if (plan.minReq.subjectCaps[k]) capParts.push(MIN_REQ_SUBJECT_LABELS[k]+' '+plan.minReq.subjectCaps[k]+'등급 이내');
+        });
+        if (plan.minReq.hanguksaCap) capParts.push('한국사 '+plan.minReq.hanguksaCap+'등급 이내');
+        var reqText = (mustLabel?mustLabel+' 포함 ':'') + plan.minReq.targetCount+'개 합 '+plan.minReq.thresholdSum+'등급 이내 · '+tamguModeLabel
+          + (capParts.length ? ' · '+capParts.join(', ') : '');
+        minReqHtml = '<div style="margin-top:8px;padding:8px 10px;background:var(--surface2);border-radius:8px;font-size:11px;">'
+          + '<div style="color:var(--tx3);">수능최저: '+escapeHtml(reqText)+'</div>'
+          + '<div style="color:var(--tx4);margin-top:3px;">충족 여부는 학생 성적탭의 각 시험 카드에서 확인 가능합니다</div>'
+          + '</div>';
+      }
+      return '<div style="background:var(--surface);border:1px solid '+(plan.confirmed?'var(--green)':'var(--border)')+';border-radius:12px;padding:14px 16px;margin-bottom:10px;">'
+        + '<div style="font-size:15px;font-weight:700;color:var(--tx1);">'+escapeHtml(plan.school)+interviewBadge+confirmedBadge+'</div>'
+        + '<div style="font-size:12px;color:var(--tx3);margin-top:3px;">'+escapeHtml(plan.department)+' · '+escapeHtml(plan.admissionType)+'</div>'
+        + minReqHtml
+        + '</div>';
+    }).join('');
+  }
+  body.innerHTML = tabsHtml + listHtml;
+}
+
+window.openStudentExamDiagnosisModal = function(){
+  document.getElementById('student-exam-diag-body').innerHTML =
+    '<div class="modal-label">학생</div>'
+    + '<select class="modal-select" id="diag-student-select" style="margin-bottom:10px;"></select>'
+    + '<div class="modal-label">시험명 (일부만 입력해도 됨)</div>'
+    + '<input class="modal-input" id="diag-exam-input" placeholder="예: 문학 나침반" style="margin-bottom:10px;"/>'
+    + '<button onclick="_runStudentExamDiagnosis()" style="width:100%;padding:10px;background:var(--burg);border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">진단 실행</button>'
+    + '<div id="diag-result-area" style="margin-top:14px;"></div>';
+  openModal('modal-student-exam-diag');
+  loadStudentList().then(function(students){
+    var sel = document.getElementById('diag-student-select');
+    if (sel) sel.innerHTML = students.map(function(s){ return '<option value="'+s.uid+'">'+escapeHtml(s.name)+'</option>'; }).join('');
+    // 성적탭에서 이미 학생을 골라둔 상태였다면 그 학생으로 미리 선택해둠
+    var mainSel = document.getElementById('t-grade-student');
+    if (mainSel && mainSel.value && sel) sel.value = mainSel.value;
+  });
+};
+
+window._runStudentExamDiagnosis = function(){
+  var uid = document.getElementById('diag-student-select').value;
+  var keyword = document.getElementById('diag-exam-input').value.trim();
+  var resultEl = document.getElementById('diag-result-area');
+  if (!uid || !keyword) { alert('학생과 시험명을 모두 입력해주세요'); return; }
+  resultEl.innerHTML = '<div style="color:var(--tx3);font-size:12px;">진단 중...</div>';
+
+  Promise.all([
+    getDocs(query(collection(db,'exams'), where('branch','==',getBranch()))),
+    getDocs(query(collection(db,'examSessions'), where('studentUid','==',uid))),
+    getDocs(query(collection(db,'grades'), where('uid','==',uid)))
+  ]).then(function(results){
+    var allExams = results[0].docs.map(function(d){ return Object.assign({}, d.data(), {id:d.id}); });
+    var matchedExams = allExams.filter(function(e){ return (e.title||'').indexOf(keyword) !== -1; });
+    var allSessions = results[1].docs.map(function(d){ return Object.assign({}, d.data(), {_id:d.id}); });
+    var allGrades = results[2].docs.map(function(d){ return Object.assign({_id:d.id}, d.data()); });
+
+    if (!matchedExams.length) {
+      resultEl.innerHTML = '<div style="color:var(--red);font-size:13px;padding:10px 0;">⚠️ "'+escapeHtml(keyword)+'"가 포함된 시험을 이 지점에서 찾을 수 없습니다. 시험명 철자를 확인해주세요 (시험 자체가 삭제됐을 수도 있어요).</div>';
+      return;
+    }
+
+    var html = matchedExams.map(function(exam){
+      var isAssigned = (exam.assignedTo||[]).indexOf(uid) !== -1;
+      var sessionsForExam = allSessions.filter(function(s){ return s.examId === exam.id; });
+      var gradesForExam = allGrades.filter(function(g){
+        return g.examId === exam.id || (g.sourceExamIds && g.sourceExamIds.indexOf(exam.id) !== -1);
+      });
+
+      var lines = [];
+      lines.push('<div style="font-size:11px;">배정 여부: '+(isAssigned?'✅ 배정됨':'❌ 배정 안 됨')+'</div>');
+      if (!sessionsForExam.length) {
+        lines.push('<div style="font-size:11px;color:var(--red);">⚠️ 응시 세션 자체가 없습니다 (한 번도 시작 안 했거나, 세션이 생성되지 않은 상태)</div>');
+      } else {
+        sessionsForExam.forEach(function(s){
+          var statusLabel = {not_started:'미시작', waiting:'대기중', in_progress:'응시중', break:'쉬는시간', submitted:'제출됨(채점대기)', graded:'채점완료'}[s.status]||s.status;
+          lines.push('<div style="font-size:11px;">세션 상태: <b>'+statusLabel+'</b> (세션ID: '+s._id+', 과목진행: '+((s.subjectResults||[]).filter(Boolean).length)+'/'+(exam.subjects?exam.subjects.length:'?')+')</div>');
+        });
+      }
+      if (!gradesForExam.length) {
+        lines.push('<div style="font-size:11px;color:var(--red);font-weight:700;">⚠️ 성적탭에 이 시험 기록이 전혀 없습니다</div>');
+      } else {
+        gradesForExam.forEach(function(g){
+          lines.push('<div style="font-size:11px;color:var(--green);">✅ 성적 존재 - "'+escapeHtml(g.examName)+'" (과목: '+Object.keys(g.scores||{}).join(', ')+', source: '+(g.source||'-')+(g.mergeGroupId?', 묶음의 일부':'')+')</div>');
+        });
+      }
+
+      return '<div style="background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
+        + '<div style="font-size:13px;font-weight:700;color:var(--tx1);margin-bottom:6px;">'+escapeHtml(exam.title)+'</div>'
+        + lines.join('')
+        + '</div>';
+    }).join('');
+
+    resultEl.innerHTML = html;
+  }).catch(function(e){
+    resultEl.innerHTML = '<div style="color:var(--red);font-size:12px;">진단 실패: '+e.message+'</div>';
+  });
+};
+
+window.openMissingGradesRecoveryModal = function(){
+  document.getElementById('missing-grades-body').innerHTML = '<div style="color:var(--tx3);font-size:12px;padding:10px 0;">지점 전체 시험을 검사하는 중... (시험이 많으면 시간이 걸릴 수 있어요)</div>';
+  openModal('modal-missing-grades');
+
+  getDocs(query(collection(db,'exams'), where('branch','==',getBranch()))).then(function(examSnap){
+    var exams = examSnap.docs.map(function(d){ return Object.assign({}, d.data(), {id:d.id}); });
+
+    return Promise.all(exams.map(function(exam){
+      return getDocs(query(collection(db,'examSessions'), where('examId','==',exam.id), where('status','==','graded'))).then(function(sessSnap){
+        // _id는 반드시 문서 데이터보다 나중에 덮어써서, 혹시라도 데이터 안에 우연히 같은
+        // 이름의 필드가 있어도 진짜 문서ID가 항상 우선하도록 함(안전장치)
+        var sessions = sessSnap.docs.map(function(d){ return Object.assign({}, d.data(), {_id:d.id}); });
+        if (!sessions.length) return [];
+        // 이 시험에 연결된 성적(grades) 중 examSessionId가 있는 것들을 조회해서
+        // "채점된 세션인데 성적 기록이 없는" 세션만 골라냄. 다만 "시험 묶기"로 합쳐진
+        // 성적은 examId 필드 자체가 사라지고 sourceExamSessionIds로만 추적되므로,
+        // 그것도 같이 조회해서 합쳐야 놓치지 않음 (안 그러면 복구 직후 자동합치기로
+        // 흡수된 성적을 다시 "누락"으로 잘못 판정하는 문제가 있었음).
+        // array-contains-any는 최대 10개까지만 허용되어, 세션이 많으면 10개씩 나눠서 조회함.
+        var sessionIdChunks = [];
+        var allSessionIds = sessions.map(function(s){return s._id;});
+        for (var i=0;i<allSessionIds.length;i+=10) sessionIdChunks.push(allSessionIds.slice(i,i+10));
+
+        return Promise.all([
+          getDocs(query(collection(db,'grades'), where('examId','==',exam.id))),
+          Promise.all(sessionIdChunks.map(function(chunk){
+            return getDocs(query(collection(db,'grades'), where('sourceExamSessionIds','array-contains-any', chunk)));
+          }))
+        ]).then(function(gradeResults){
+          var recordedSessionIds = new Set();
+          gradeResults[0].docs.forEach(function(d){ var v=d.data().examSessionId; if(v) recordedSessionIds.add(v); });
+          gradeResults[1].forEach(function(snap){
+            snap.docs.forEach(function(d){ (d.data().sourceExamSessionIds||[]).forEach(function(sid){ recordedSessionIds.add(sid); }); });
+          });
+          console.log('[누락성적검사] 시험:', exam.title, '| graded 세션:', sessions.map(function(s){return s._id;}), '| grades에 기록된 examSessionId:', Array.from(recordedSessionIds));
+          var missing = sessions.filter(function(s){ return !recordedSessionIds.has(s._id); });
+          return missing.map(function(s){ return { exam: exam, session: s }; });
+        });
+      });
+    })).then(function(results){
+      var missingList = [].concat.apply([], results);
+      return loadStudentList().then(function(students){
+        var nameByUid = {}; students.forEach(function(s){ nameByUid[s.uid]=s.name; });
+        window._missingGradesList = missingList.map(function(m){
+          return Object.assign(m, { studentName: nameByUid[m.session.studentUid] || m.session.studentUid });
+        });
+        _renderMissingGradesList();
+      });
+    });
+  }).catch(function(e){
+    document.getElementById('missing-grades-body').innerHTML = '<div style="color:var(--red);font-size:12px;">검사 실패: '+e.message+'</div>';
+  });
+};
+
+function _renderMissingGradesList(){
+  var list = window._missingGradesList || [];
+  var body = document.getElementById('missing-grades-body');
+  if (!list.length) {
+    body.innerHTML = '<div style="color:var(--green);font-size:13px;font-weight:600;padding:10px 0;">✅ 누락된 성적이 없습니다. 모두 정상적으로 성적탭에 반영되어 있어요.</div>';
+    return;
+  }
+  body.innerHTML = '<div style="font-size:12px;color:var(--red);font-weight:700;margin-bottom:10px;">⚠️ 채점은 완료됐지만 성적탭에 안 옮겨진 기록 '+list.length+'건 발견</div>'
+    + list.map(function(m, i){
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:var(--surface2);border-radius:8px;margin-bottom:6px;">'
+        + '<span style="font-size:12px;"><b>'+escapeHtml(m.studentName)+'</b> · '+escapeHtml(m.exam.title)+'<br><span style="font-size:9px;color:var(--tx4);">세션ID: '+escapeHtml(m.session._id||'없음!')+'</span></span>'
+        + '<button onclick="_recoverMissingGrade('+i+',this)" style="padding:4px 9px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;">복구</button>'
+        + '</div>';
+    }).join('')
+    + '<button onclick="_recoverAllMissingGrades()" style="width:100%;padding:10px;background:var(--burg);border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;margin-top:8px;">전체 한번에 복구 ('+list.length+'건)</button>';
+}
+
+// 특정 시험(examId)의 특정 세션(sessionId)이, 원본 형태로든 합쳐진 형태로든 지금
+// 성적탭에 정상적으로 반영되어 있는지 확인함. "복구했는데 다시 누락으로 뜨는" 문제의
+// 원인이 "합쳐지면 examSessionId 연결고리가 원본 문서와 함께 사라지는 것"이었어서,
+// 원본(examSessionId 직접 매칭) + 합쳐진 성적(sourceExamSessionIds 안에 포함) 둘 다 확인함.
+function _isSessionCoveredByGrades(examId, sessionId){
+  return Promise.all([
+    getDocs(query(collection(db,'grades'), where('examId','==',examId))),
+    getDocs(query(collection(db,'grades'), where('sourceExamSessionIds','array-contains',sessionId)))
+  ]).then(function(results){
+    var direct = results[0].docs.some(function(d){ return d.data().examSessionId === sessionId; });
+    var merged = results[1].docs.length > 0;
+    return direct || merged;
+  });
+}
+
+window._recoverMissingGrade = function(idx, btnEl){
+  var m = window._missingGradesList[idx];
+  if (!m) return;
+  if (!m.session._id) {
+    alert('⚠️ 이 항목은 세션 ID를 찾을 수 없어 복구할 수 없습니다. 개발자에게 문의해주세요.');
+    return;
+  }
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = '복구 중...'; }
+  var results = m.session.subjectResults || [];
+  console.log('[성적복구] 시작 - 학생:', m.studentName, '시험:', m.exam.title, '세션ID:', m.session._id);
+  _getPrevSubjectScores(m.session.studentUid, m.exam.gradeType, examSourceLabel(m.exam.examSource)).then(function(prevScores){
+    return _writeExamResultToGrades(m.session.studentUid, m.session._id, m.exam, results, m.session.electiveChoices, m.session.unknownBySubj).then(function(docRef){
+      _awardExamRewards(m.session.studentUid, m.exam, results, prevScores, m.session.electiveChoices);
+      return docRef;
+    });
+  }).then(function(){
+    // 저장 직후(합쳐졌을 수도 있는 상태 그대로) 다시 확인해서, 원본이든 합쳐진 형태든
+    // 이 세션이 실제로 커버되고 있는지 검증한 뒤에만 "복구 완료"로 처리함
+    return _isSessionCoveredByGrades(m.exam.id, m.session._id).then(function(covered){
+      console.log('[성적복구] 완료 확인 - 커버됨:', covered);
+      if (!covered) throw new Error('저장 확인 실패 - 서버에 실제로 반영되지 않았습니다 (권한 문제일 수 있습니다)');
+      window._missingGradesList = window._missingGradesList.filter(function(x){ return x !== m; });
+      _renderMissingGradesList();
+    });
+  }).catch(function(e){
+    alert('복구 실패: ' + e.message);
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = '복구'; }
+  });
+};
+
+window._recoverAllMissingGrades = function(){
+  var list = (window._missingGradesList||[]).slice();
+  if (!list.length) return;
+  if (!confirm(list.length+'건을 전체 복구하시겠습니까?')) return;
+  var chain = Promise.resolve();
+  var done = 0, failed = 0;
+  var succeededItems = [];
+  list.forEach(function(m){
+    chain = chain.then(function(){
+      var results = m.session.subjectResults || [];
+      return _getPrevSubjectScores(m.session.studentUid, m.exam.gradeType, examSourceLabel(m.exam.examSource)).then(function(prevScores){
+        return _writeExamResultToGrades(m.session.studentUid, m.session._id, m.exam, results, m.session.electiveChoices, m.session.unknownBySubj).then(function(docRef){
+          _awardExamRewards(m.session.studentUid, m.exam, results, prevScores, m.session.electiveChoices);
+          // 개별 복구와 마찬가지로, 원본이든 합쳐진 형태든 실제로 커버되고 있는지 재확인함
+          return _isSessionCoveredByGrades(m.exam.id, m.session._id).then(function(covered){
+            if (!covered) throw new Error('저장 확인 실패');
+            done++;
+            succeededItems.push(m);
+          });
+        });
+      }).catch(function(){ failed++; });
+    });
+  });
+  chain.then(function(){
+    alert('복구 완료: '+done+'건 성공'+(failed?', '+failed+'건 실패(권한 문제 등으로 실제 반영 안 됨 - 목록에 남겨둠)':''));
+    // 실패한 항목은 목록에서 지우지 않고 남겨둬서, 다시 시도하거나 원인을 확인할 수 있게 함
+    // (예전엔 성공/실패 상관없이 전부 지워버려서, 실패한 것도 사라진 것처럼 보이는 문제가 있었음)
+    window._missingGradesList = (window._missingGradesList||[]).filter(function(m){ return succeededItems.indexOf(m) === -1; });
+    _renderMissingGradesList();
+    invalidateTeacherTabCache(2);
+  });
+};
+
+window.openLiveExamStatusModal = function(){
+  document.getElementById('live-exam-status-body').innerHTML = '<div style="color:var(--tx3);font-size:12px;padding:10px 0;">불러오는 중...</div>';
+  openModal('modal-live-exam-status');
+  _loadLiveExamStatus();
+};
+
+window._loadLiveExamStatus = function(){
+  Promise.all([
+    getDocs(query(collection(db,'examSessions'), where('branch','==',getBranch()), where('status','in',['waiting','in_progress','break']))),
+    loadStudentList()
+  ]).then(function(results){
+    var sessions = results[0].docs.map(function(d){return Object.assign({id:d.id}, d.data());});
+    var students = results[1];
+    var nameMap = {}; students.forEach(function(s){ nameMap[s.uid]=s.name; });
+
+    if (!sessions.length) {
+      document.getElementById('live-exam-status-body').innerHTML = '<div style="color:var(--tx4);font-size:12px;padding:14px 0;text-align:center;">지금 응시 중이거나 대기 중인 학생이 없습니다.</div>';
+      return;
+    }
+
+    var examIds = Array.from(new Set(sessions.map(function(s){return s.examId;})));
+    Promise.all(examIds.map(function(eid){ return getDoc(doc(db,'exams',eid)); })).then(function(examDocs){
+      var examMap = {};
+      examDocs.forEach(function(d,i){ examMap[examIds[i]] = d.exists() ? d.data() : null; });
+
+      var statusLabel = {waiting:'대기중(출석)', in_progress:'응시중', break:'쉬는시간'};
+      var fmtTime = function(ms){ if(!ms) return '-'; var d=new Date(ms); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
+
+      var rows = sessions.map(function(sess){
+        var exam = examMap[sess.examId];
+        var subjIdx = sess.currentSubjectIndex || 0;
+        var subj = exam && exam.subjects ? exam.subjects[subjIdx] : null;
+        var startMs = sess.deadlineMs && subj ? sess.deadlineMs - subj.durationMin*60000 : null;
+        var remainMin = sess.deadlineMs ? Math.max(0, Math.round((sess.deadlineMs - _nowSynced())/60000)) : null;
+        return {
+          name: nameMap[sess.studentUid]||'?', examTitle: exam ? exam.title : '(삭제된 시험)',
+          status: statusLabel[sess.status]||sess.status, startMs: startMs, endMs: sess.deadlineMs,
+          remainMin: remainMin, examId: sess.examId, uid: sess.studentUid
+        };
+      }).sort(function(a,b){ return (a.remainMin==null?9999:a.remainMin) - (b.remainMin==null?9999:b.remainMin); });
+
+      var html = '<div style="font-size:11px;color:var(--tx3);margin-bottom:10px;">현재 '+rows.length+'명 · 남은 시간 적은 순</div>'
+        + rows.map(function(r){
+          var urgent = r.remainMin != null && r.remainMin <= 10;
+          return '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:10px 12px;background:var(--surface2);border-radius:10px;margin-bottom:6px;'+(urgent?'border:1px solid rgba(220,38,38,0.3);':'')+'">'
+            + '<div style="flex:1 1 100%;display:flex;justify-content:space-between;align-items:center;">'
+            +   '<div><b style="font-size:13px;color:var(--tx1);">'+escapeHtml(r.name)+'</b> <span style="font-size:11px;color:var(--tx3);">· '+escapeHtml(r.examTitle)+'</span></div>'
+            +   '<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:5px;background:'+(r.status==='응시중'?'var(--burg-l)':'var(--gold-l)')+';color:'+(r.status==='응시중'?'var(--burg)':'var(--gold)')+';">'+r.status+'</span>'
+            + '</div>'
+            + '<div style="font-size:11px;color:var(--tx3);">'+fmtTime(r.startMs)+' 시작 ~ '+fmtTime(r.endMs)+' 종료'+(r.remainMin!=null?' · 남은 '+r.remainMin+'분':'')+'</div>'
+            + '<button onclick="_runExamForceSubmitForStudent(\''+r.examId+'\',\''+r.uid+'\',\''+escapeHtml(r.name).replace(/'/g,"\\'")+'\')" style="margin-left:auto;font-size:10px;padding:4px 8px;background:#fef2f2;border:1px solid rgba(220,38,38,0.25);border-radius:6px;color:#dc2626;cursor:pointer;">⚡ 강제제출</button>'
+            + '</div>';
+        }).join('');
+      document.getElementById('live-exam-status-body').innerHTML = html;
+    });
+  }).catch(function(e){
+    document.getElementById('live-exam-status-body').innerHTML = '<div style="color:var(--red);font-size:12px;">불러오기 실패: '+e.message+'</div>';
+  });
+};
+
+// 저장된 성적표(보관함 cardArchive·학생 공개 studentReports)의 시험명 정정 - 시험명/묶음 이름 변경 시 호출.
+// 점수·한마디 등은 그대로 두고, 값이 옛 이름과 정확히 같은 문자열만 새 이름으로 바꾼다(제목은 부분 치환). uids를 주면 그 학생 것만.
+window.mpSyncCardExamName = async function(from, to, uids){
+  if (!from || !to || from === to) return 0;
+  try { var r = await mpArchiveApi({ action: 'renameExam', from: from, to: to, uids: uids || null }); return (r && r.n) || 0; }
+  catch (e) { console.warn('저장된 성적표 시험명 정정 실패', e); return 0; }
+};
+
+// 묶음 이름 수정 - 묶음 문서의 mergedTitle과, 이 묶음으로 합쳐진 성적(mergeGroupId 일치)의 examName을 함께 바꿈
+window._renameExamMergeGroup = function(groupId){
+  getDoc(doc(db,'examMergeGroups',groupId)).then(function(gd){
+    if (!gd.exists()) { alert('묶음을 찾을 수 없습니다.'); return; }
+    var oldTitle = gd.data().mergedTitle || '';
+    var t = prompt('묶음 이름을 입력해주세요.\n(이 묶음으로 합쳐진 학생 성적의 시험명도 함께 바뀝니다)', oldTitle);
+    if (t === null) return;
+    t = t.trim();
+    if (!t) { alert('이름을 비울 수 없습니다.'); return; }
+    if (t === oldTitle) return;
+    var gExamIds = gd.data().examIds || [];
+    return updateDoc(doc(db,'examMergeGroups',groupId), { mergedTitle: t }).then(function(){
+      // 묶음을 해제했다가 다시 만든 경우 예전 성적은 옛 묶음 ID를 갖고 있으므로, 원본 시험이 모두 이 묶음에 속한 합쳐진 성적도 함께 찾는다
+      return Promise.all([
+        getDocs(query(collection(db,'grades'), where('mergeGroupId','==',groupId))),
+        gExamIds.length ? getDocs(query(collection(db,'grades'), where('sourceExamIds','array-contains',gExamIds[0]))) : Promise.resolve({docs:[]})
+      ]);
+    }).then(function(rs){
+      var seen = {}, docs = rs[0].docs.concat(rs[1].docs.filter(function(d){
+        var x = d.data(), src = x.sourceExamIds || [];
+        return x.source === 'merged_group' && src.length && src.every(function(i){ return gExamIds.indexOf(i) >= 0; });
+      })).filter(function(d){ if (seen[d.id]) return false; seen[d.id] = true; return true; });
+      var snap = { docs: docs };
+      var ups = snap.docs.filter(function(d){ return d.data().examName !== t || d.data().mergeGroupId !== groupId; })
+        .map(function(d){ return updateDoc(doc(db,'grades',d.id), { examName: t, mergeGroupId: groupId }); });
+      var uids = snap.docs.map(function(d){ return d.data().uid; });
+      return Promise.all(ups).then(function(){ return mpSyncCardExamName(oldTitle, t, uids); }).then(function(c){ return [ups.length, c]; });
+    }).then(function(r){
+      var n = r[0], c = r[1];
+      alert('묶음 이름을 "'+t+'"(으)로 바꿨습니다.\n합쳐진 성적 '+n+'건'+(c?', 저장된 성적표 '+c+'건':'')+'의 시험명도 함께 수정했습니다.');
+      try { var m = document.getElementById('modal-exam-merge-groups'); if (m && m.classList.contains('open')) openExamMergeGroupsModal(); } catch(e){}
+      try { invalidateTeacherTabCache(7); renderTeacher(7); } catch(e){}
+    });
+  }).catch(function(e){ alert('이름 수정 실패: ' + e.message); });
+};
+
+window.openExamMergeGroupsModal = function(){
+  document.getElementById('exam-merge-groups-body').innerHTML = '<div style="color:var(--tx3);font-size:12px;padding:10px 0;">불러오는 중...</div>';
+  openModal('modal-exam-merge-groups');
+  getDocs(query(collection(db,'examMergeGroups'), where('branch','==',getBranch()))).then(function(snap){
+    if (snap.empty) {
+      document.getElementById('exam-merge-groups-body').innerHTML = '<div style="color:var(--tx4);font-size:12px;padding:10px 0;">아직 묶은 시험이 없습니다. 시험 관리에서 "🔗 시험 묶기"로 만들 수 있어요.</div>';
+      return;
+    }
+    var html = snap.docs.map(function(d){
+      var g = Object.assign({id:d.id}, d.data());
+      return '<div style="background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:8px;">'
+        + '<div style="font-size:13px;font-weight:700;color:var(--tx1);margin-bottom:4px;">'+escapeHtml(g.mergedTitle)+'</div>'
+        + '<div style="font-size:11px;color:var(--tx3);margin-bottom:8px;">'+ (g.examTitles||[]).map(escapeHtml).join(' + ') + '</div>'
+        + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">'
+        + '<button onclick="_renameExamMergeGroup(\''+g.id+'\')" style="padding:5px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--tx1);font-size:11px;cursor:pointer;">✏️ 이름 수정</button>'
+        + '<button onclick="_rerunExamGroupMerge(\''+g.id+'\',this)" style="padding:5px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;">🔄 새로 합치기</button>'
+        + '<button onclick="_diagnoseExamGroupMerge(\''+g.id+'\')" style="padding:5px 10px;background:rgba(74,127,255,0.1);border:1px solid rgba(74,127,255,0.2);border-radius:6px;color:var(--blue);font-size:11px;cursor:pointer;">🔍 진단</button>'
+        + '<button onclick="_ungroupExamMergeGroup(\''+g.id+'\')" style="padding:5px 10px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:6px;color:var(--red);font-size:11px;cursor:pointer;">묶음 해제</button>'
+        + '<button onclick="_ungroupAndCleanupMerged(\''+g.id+'\')" style="padding:5px 10px;background:#fef2f2;border:1px solid rgba(220,38,38,0.3);border-radius:6px;color:#dc2626;font-size:11px;cursor:pointer;font-weight:700;">⚠️ 해제+합쳐진 성적 삭제</button>'
+        + '<span id="exam-merge-group-result-'+g.id+'" style="font-size:11px;color:var(--green);"></span>'
+        + '</div>'
+        + '</div>';
+    }).join('');
+    document.getElementById('exam-merge-groups-body').innerHTML = html;
+  }).catch(function(e){
+    document.getElementById('exam-merge-groups-body').innerHTML = '<div style="color:var(--red);font-size:12px;">불러오기 실패: '+e.message+'</div>';
+  });
+};
+
+// 묶음 해제 - 묶음 "기록"만 지우는 것이고, 이미 합쳐진 성적(merged_group)은 그대로 둠.
+// 해제하고 다시 "시험 묶기"로 새로 만들면 처음부터 다시 시도할 수 있음.
+window._ungroupExamMergeGroup = function(groupId){
+  if (!confirm('이 묶음을 해제하시겠습니까?\n\n이미 합쳐져서 저장된 성적은 그대로 남고, "묶음"이라는 연결 정보만 삭제됩니다. 해제 후 다시 "시험 묶기"로 새로 만들 수 있어요.')) return;
+  deleteDoc(doc(db,'examMergeGroups',groupId)).then(function(){
+    alert('묶음을 해제했습니다.');
+    openExamMergeGroupsModal();
+  }).catch(function(e){ alert('해제 실패: ' + e.message); });
+};
+
+// 묶음 해제 + 합쳐진 성적까지 완전히 정리 - "같은 과목 여러 회차"처럼 애초에 묶으면
+// 안 됐던 경우를 위한 복구용. 묶음 기록 삭제 + 이미 합쳐진 성적(merged_group) 삭제까지
+// 한 번에 하고, 그 뒤 "누락 성적 검사"로 원본 세션들에서 개별 성적을 다시 만들 수 있게 함
+// (세션 자체는 지워진 적이 없어서 원본 점수 복구가 가능함).
+window._ungroupAndCleanupMerged = function(groupId){
+  if (!confirm('⚠️ 묶음 해제 + 합쳐진 성적 완전 정리\n\n묶음 연결을 없애고, 지금까지 합쳐져서 저장된 성적 기록도 전부 삭제합니다.\n(응시 세션 자체는 안 지워지니, 이후 "누락 성적 검사"로 각 회차 점수를 다시 개별로 만들어낼 수 있어요.)\n\n계속하시겠습니까?')) return;
+  getDocs(query(collection(db,'grades'), where('mergeGroupId','==',groupId))).then(function(snap){
+    return Promise.all(snap.docs.map(function(d){ return deleteDoc(doc(db,'grades',d.id)); })).then(function(){
+      return snap.docs.length;
+    });
+  }).then(function(deletedCount){
+    return deleteDoc(doc(db,'examMergeGroups',groupId)).then(function(){ return deletedCount; });
+  }).then(function(deletedCount){
+    alert('묶음을 해제하고, 합쳐져 있던 성적 '+deletedCount+'건을 삭제했습니다.\n\n이제 "🔧 누락 성적 검사"를 실행하시면, 각 회차의 응시 세션에서 개별 성적을 다시 만들어낼 수 있어요.');
+    openExamMergeGroupsModal();
+  }).catch(function(e){ alert('정리 실패: ' + e.message); });
+};
+
+window._rerunExamGroupMerge = function(groupId, btnEl){
+  btnEl.disabled = true; btnEl.textContent = '합치는 중...';
+  runExamGroupGradeMerge(groupId).then(function(count){
+    btnEl.disabled = false; btnEl.textContent = '🔄 새로 합치기 (새로 채점된 학생 반영)';
+    var resultEl = document.getElementById('exam-merge-group-result-'+groupId);
+    if (resultEl) resultEl.textContent = '✓ '+count+'명 합쳐짐';
+    invalidateTeacherTabCache(2);
+    // 0명 합쳐졌으면 왜 안 됐는지 바로 진단해서 보여줌
+    if (!count) _diagnoseExamGroupMerge(groupId);
+  }).catch(function(e){
+    btnEl.disabled = false; btnEl.textContent = '🔄 새로 합치기 (새로 채점된 학생 반영)';
+    alert('합치기 실패: ' + e.message);
+  });
+};
+
+// "새로 합치기"를 눌러도 0명이 합쳐졌을 때, 실제로 어떤 성적이 조회됐고 왜 조건에
+// 안 맞는지 학생별로 자세히 보여줌 (examId 연결이 안 돼있는 경우, 시험을 하나만 낸
+// 경우 등 원인을 눈으로 바로 확인할 수 있게)
+window._diagnoseExamGroupMerge = function(groupId){
+  document.getElementById('exam-merge-diag-body').innerHTML = '<div style="color:var(--tx3);font-size:12px;padding:10px 0;">진단 중...</div>';
+  openModal('modal-exam-merge-diag');
+  window._diagExamGroupId = groupId;
+
+  getDoc(doc(db,'examMergeGroups',groupId)).then(function(groupDoc){
+    var group = groupDoc.data();
+    var examIds = group.examIds || [];
+    var examTitles = group.examTitles || [];
+    var titleByExamId = {}; examIds.forEach(function(eid, i){ titleByExamId[eid] = examTitles[i] || eid; });
+
+    return getDocs(query(collection(db,'grades'), where('examId','in',examIds))).then(function(snap){
+      return getDocs(query(collection(db,'grades'), where('mergeGroupId','==',groupId))).then(function(mergedSnap){
+      var byUid = {};
+      snap.docs.forEach(function(d){
+        var g = d.data();
+        if (!byUid[g.uid]) byUid[g.uid] = [];
+        byUid[g.uid].push(g);
+      });
+      var mergedByUid = {};
+      mergedSnap.docs.forEach(function(d){
+        var g = d.data();
+        mergedByUid[g.uid] = g; // 학생당 이 묶음에 대한 합쳐진 기록은 최대 1개
+        if (!byUid[g.uid]) byUid[g.uid] = [];
+      });
+      var uids = Object.keys(byUid);
+
+      // 시험별로 "이 시험을 낸 학생 수"를 계산 - 유독 적은 시험이 있으면 그게
+      // 잘못 묶여있는 시험일 가능성이 높음
+      var countByExamId = {}; examIds.forEach(function(eid){ countByExamId[eid] = 0; });
+      snap.docs.forEach(function(d){ var eid = d.data().examId; if (countByExamId[eid]!==undefined) countByExamId[eid]++; });
+      // 이미 합쳐진 기록도 원래 어떤 시험들이었는지 mergedFrom 개수로 어림잡아 카운트에 반영은 생략(표시만 목적)
+
+      return loadStudentList().then(function(students){
+        var nameByUid = {}; students.forEach(function(s){ nameByUid[s.uid]=s.name; });
+
+        var examListHtml = examIds.map(function(eid){
+          return '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;background:var(--surface);border-radius:7px;margin-bottom:5px;font-size:12px;">'
+            + '<span>'+escapeHtml(titleByExamId[eid])+' <span style="color:var(--tx4);">('+countByExamId[eid]+'명 응시완료)</span></span>'
+            + '<button onclick="_removeExamFromMergeGroup(\''+groupId+'\',\''+eid+'\')" style="padding:3px 8px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:5px;color:var(--red);font-size:11px;cursor:pointer;">이 시험 묶음에서 빼기</button>'
+            + '</div>';
+        }).join('');
+
+        var studentListHtml = uids.length ? uids.map(function(uid){
+          var g = byUid[uid] || [];
+          var covered = g.map(function(x){return x.examId;});
+          var missing = examIds.filter(function(eid){ return covered.indexOf(eid) === -1; });
+          var hasMerged = !!mergedByUid[uid];
+          var status;
+          if (!missing.length && hasMerged) status = '✅ 모든 시험 합쳐짐 완료';
+          else if (hasMerged && missing.length) status = '🔶 일부 합쳐짐 (아직 안 낸 시험: '+missing.map(function(eid){return titleByExamId[eid];}).join(', ')+' - 나중에 내면 자동으로 이어붙음)';
+          else if (missing.length) status = '❌ 아직 안 낸 시험: ' + missing.map(function(eid){return titleByExamId[eid];}).join(', ');
+          else status = '✅ 조건 충족 (곧 합쳐짐)';
+          return '<div style="font-size:12px;padding:6px 0;border-bottom:1px dashed var(--border2);">'+escapeHtml(nameByUid[uid]||uid)+' - '+status+'</div>';
+        }).join('') : '<div style="color:var(--tx4);font-size:12px;">연결된 성적이 없습니다.</div>';
+
+        document.getElementById('exam-merge-diag-body').innerHTML =
+          '<div class="modal-label">묶음에 포함된 시험 ('+examIds.length+'개)</div>'
+          + examListHtml
+          + '<div class="modal-label" style="margin-top:14px;">학생별 현황</div>'
+          + studentListHtml
+          + (!snap.docs.length && !mergedSnap.docs.length ? '<div style="margin-top:12px;padding:10px 12px;background:var(--gold-l);border-radius:8px;font-size:12px;color:var(--tx2);">⚠️ 연결된 성적이 0건이에요. 수동으로 입력한 성적이거나 examId 연결이 없는 경우일 수 있어요.</div>' : '');
+      });
+      });
+    });
+  }).catch(function(e){ document.getElementById('exam-merge-diag-body').innerHTML = '<div style="color:var(--red);font-size:12px;">진단 실패: '+e.message+'</div>'; });
+};
+
+// 진단 화면에서 "이 시험 묶음에서 빼기"를 누르면, 그 시험만 묶음 목록에서 제외하고
+// 바로 다시 합치기를 시도함 (예: 실수로 더 들어가있던 시험, 또는 아직 아무도 안 본 시험)
+window._removeExamFromMergeGroup = function(groupId, examId){
+  if (!confirm('이 시험을 묶음에서 빼시겠습니까?\n(이미 낸 학생들의 성적은 이 묶음과 상관없이 그대로 남아있습니다)')) return;
+  getDoc(doc(db,'examMergeGroups',groupId)).then(function(d){
+    var group = d.data();
+    var idx = (group.examIds||[]).indexOf(examId);
+    if (idx === -1) return;
+    var newExamIds = group.examIds.slice(); newExamIds.splice(idx,1);
+    var newExamTitles = group.examTitles.slice(); newExamTitles.splice(idx,1);
+    return updateDoc(doc(db,'examMergeGroups',groupId), { examIds: newExamIds, examTitles: newExamTitles });
+  }).then(function(){
+    return runExamGroupGradeMerge(groupId);
+  }).then(function(count){
+    alert('시험을 뺐습니다.\n\n지금 바로 합쳐진 학생: '+(count||0)+'명');
+    _diagnoseExamGroupMerge(groupId);
+    invalidateTeacherTabCache(2);
+  }).catch(function(e){ alert('실패: ' + e.message); });
+};
+
+window.openExamFullRanking = function(examId, examTitle){
+  document.getElementById('exam-ranking-title').textContent = '🏆 '+examTitle+' 전체 순위';
+  document.getElementById('exam-ranking-body').innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--tx3);">불러오는 중...</div>';
+  openModal('modal-exam-ranking');
+
+  getDocs(query(collection(db,'grades'), where('examId','==',examId))).then(function(snap){
+    if (snap.empty) {
+      document.getElementById('exam-ranking-body').innerHTML = '<div style="color:var(--tx3);padding:20px;">아직 이 시험으로 채점된 성적이 없습니다.</div>';
+      return;
+    }
+    var grades = snap.docs.map(function(d){ return d.data(); });
+    var uids = Array.from(new Set(grades.map(function(g){return g.uid;})));
+
+    // 과목 키별로 {uid, score} 목록을 모음
+    var bySubj = {}; // key -> [{uid, score, label}]
+    grades.forEach(function(g){
+      Object.keys(g.scores||{}).forEach(function(k){
+        if (!bySubj[k]) bySubj[k] = [];
+        var sc = g.scores[k];
+        bySubj[k].push({ uid: g.uid, score: parseFloat(sc.score)||0, label: sc.label || subjectNames[k] || k });
+      });
+    });
+
+    // 학생 이름을 한 번에 조회
+    return Promise.all(uids.map(function(uid){ return getDoc(doc(db,'users',uid)); })).then(function(userDocs){
+      var nameByUid = {};
+      userDocs.forEach(function(ud){ nameByUid[ud.id] = ud.exists() ? (ud.data().name||'?') : '?'; });
+
+      var subjKeys = Object.keys(bySubj);
+      var tablesHtml = subjKeys.map(function(k){
+        var list = bySubj[k].slice().sort(function(a,b){ return b.score - a.score; });
+        var subjLabel = list[0] ? list[0].label : (subjectNames[k]||k);
+        var rows = list.map(function(r, i){
+          return '<tr><td class="exam-ranking-rank">'+(i+1)+'위</td><td>'+escapeHtml(nameByUid[r.uid]||'?')+'</td><td class="exam-ranking-score">'+r.score+'점</td></tr>';
+        }).join('');
+        return '<div class="exam-ranking-subj-block">'
+          + '<div class="exam-ranking-subj-title">'+escapeHtml(subjLabel)+' <span style="color:var(--tx4);font-weight:400;">('+list.length+'명 응시)</span></div>'
+          + '<table class="exam-ranking-table"><thead><tr><th>순위</th><th>학생</th><th>점수</th></tr></thead><tbody>'+rows+'</tbody></table>'
+          + '</div>';
+      }).join('');
+
+      document.getElementById('exam-ranking-body').innerHTML = tablesHtml || '<div style="color:var(--tx3);padding:20px;">표시할 데이터가 없습니다.</div>';
+    });
+  }).catch(function(e){
+    document.getElementById('exam-ranking-body').innerHTML = '<div style="color:var(--red);padding:20px;">불러오기 실패: '+e.message+'</div>';
+  });
+};
+
+window.reGradeExamSessions = function(examId, examTitle){
+  if (!confirm('"'+examTitle+'" 시험을 새 설정(배점/정답/등급컷)으로 다시 채점하시겠습니까?\n\n이미 채점 완료된 학생들의 성적이 새 설정 기준으로 갱신됩니다.\n(학생이 낸 답 자체는 그대로 유지되고, 채점 결과만 다시 계산됩니다)')) return;
+
+  getDoc(doc(db,'exams',examId)).then(function(examDoc){
+    if (!examDoc.exists()) { alert('시험을 찾을 수 없습니다'); return; }
+    var exam = Object.assign({id:examId}, examDoc.data());
+
+    return getDocs(query(collection(db,'examSessions'), where('examId','==',examId), where('status','==','graded'))).then(function(sessSnap){
+      if (sessSnap.empty) { alert('다시 채점할 완료된 응시 기록이 없습니다.'); return; }
+
+      var chain = Promise.resolve();
+      var successCount = 0, failCount = 0;
+
+      sessSnap.docs.forEach(function(sessDoc){
+        chain = chain.then(function(){
+          var sess = sessDoc.data();
+          var oldResults = sess.subjectResults || [];
+          var newResults = oldResults.map(function(oldR, idx){
+            if (!oldR) return oldR;
+            var subjDef = exam.subjects[idx];
+            if (!subjDef) return oldR; // 그 사이 과목 자체가 삭제됐으면 예전 결과 그대로 둠
+            var reconstructed = _reconstructAnswersFromResult(oldR);
+            var graded = gradeExamAnswers(_resolveSubjForGrading(subjDef, sess.electiveChoices && sess.electiveChoices[idx]), reconstructed);
+            return Object.assign({}, oldR, {
+              score: graded.score, totalScore: graded.totalScore, correctCount: graded.correctCount,
+              wrongNumbers: graded.wrongNumbers, mcAccuracy: graded.mcAccuracy, shortAccuracy: graded.shortAccuracy,
+              answers: graded.details, regradedAt: Date.now()
+            });
+          });
+
+          var built = _buildGradesScoresFromResults(exam, newResults, sess.electiveChoices, sess.unknownBySubj);
+
+          return updateDoc(doc(db,'examSessions',sessDoc.id), { subjectResults: newResults }).then(function(){
+            // [등불] 다시 채점으로 정오가 바뀌면 개인 복습지도 갱신
+            try { if (window.DB_onExamGraded) window.DB_onExamGraded(sessDoc.id); } catch(e) {}
+            // 이 세션에서 만들어진 성적 문서를 찾아서 같은 규칙으로 업데이트 (새로 만들지 않음)
+            return getDocs(query(collection(db,'grades'), where('examSessionId','==',sessDoc.id)));
+          }).then(function(gradeSnap){
+            if (gradeSnap.empty) return; // 성적탭에 반영된 적 없으면 세션만 갱신하고 끝
+            var gradeDocRef = doc(db,'grades',gradeSnap.docs[0].id);
+            return updateDoc(gradeDocRef, { scores: built.scores, wrongBySubj: built.wrongBySubj, unknownBySubj: built.unknownBySubj });
+          }).then(function(){ successCount++; })
+            .catch(function(e){ console.error('재채점 실패', sessDoc.id, e); failCount++; });
+        });
+      });
+
+      return chain.then(function(){
+        alert('다시 채점 완료!\n\n성공: '+successCount+'명\n'+(failCount ? ('실패: '+failCount+'명\n') : '')+'\n※ 성적 향상 등 자동 상점은 중복 지급을 막기 위해 재채점 시에는 다시 지급되지 않습니다.');
+        invalidateTeacherTabCache(2); invalidateTeacherTabCache(7);
+        renderTeacher(7);
+      });
+    });
+  }).catch(function(e){ alert('다시 채점 실패: ' + e.message); });
+};
+
+// 선택과목별로 문항/정답이 따로 설정되어 있으면(questionsByElective), 학생이 그 시험에서
+// 실제로 고른 선택과목 기준으로 문항을 바꿔치기해서 채점 대상 subj를 만들어줌.
+// 등급컷도 마찬가지로 선택과목별(gradeCutoffsByElective)로 바꿔치기함 - 안 그러면
+// "언어와 매체"를 고른 학생도 "화법과 작문"용(또는 공용) 등급컷으로 채점되는 문제가 생김.
+// 선택과목이 없거나, 그 선택과목에 대한 설정이 따로 없으면 원래 subj 그대로 씀.
+// 등급 재계산 시(등급표 수정 후 다시 적용 등) 쓸 등급컷을 정확히 찾음. 선택과목이
+// 있는 과목은 scores[key].label에 실제로 어떤 선택과목이었는지 저장되어 있어서,
+// 그걸로 gradeCutoffsByElective에서 맞는 등급컷을 찾아옴. 못 찾으면(선택과목이 없거나
+// 예전 시험 데이터라 label이 없는 경우) 공용 gradeCutoffs로 폴백함.
+function _getCutoffsForScoreEntry(subjDef, scoreEntry){
+  if (!subjDef) return null;
+  if (subjDef.gradeCutoffsByElective && scoreEntry && scoreEntry.label && subjDef.gradeCutoffsByElective[scoreEntry.label]) {
+    return subjDef.gradeCutoffsByElective[scoreEntry.label];
+  }
+  return subjDef.gradeCutoffs;
+}
+
+function _resolveSubjForGrading(subj, electiveChoice){
+  if (!subj) return subj;
+  var patch = {};
+  if (subj.questionsByElective && electiveChoice && subj.questionsByElective[electiveChoice] && subj.questionsByElective[electiveChoice].length) {
+    patch.questions = subj.questionsByElective[electiveChoice];
+  }
+  if (subj.gradeCutoffsByElective && electiveChoice && subj.gradeCutoffsByElective[electiveChoice] && subj.gradeCutoffsByElective[electiveChoice].length) {
+    patch.gradeCutoffs = subj.gradeCutoffsByElective[electiveChoice];
+  }
+  if (Object.keys(patch).length) return Object.assign({}, subj, patch);
+  return subj;
+}
+
+function gradeExamAnswers(subj, answers){
+  var details = [];
+  var score = 0, totalScore = 0, correctCount = 0;
+  var wrongNumbers = [];
+  var mcTotal=0, mcCorrect=0, shortTotal=0, shortCorrect=0;
+
+  subj.questions.forEach(function(q){
+    totalScore += q.point;
+    var studentRaw = answers[q.no];
+    var studentAnswerDisplay, isCorrect, normalizedStudent;
+
+    if (q.type === 'mc') {
+      mcTotal++;
+      studentAnswerDisplay = studentRaw != null ? String(studentRaw) : null;
+      // q.answer가 (예전 버그로) 문자열로 저장된 기존 시험 데이터가 있을 수 있어 양쪽 다 숫자로 맞춰서 비교
+      isCorrect = studentAnswerDisplay != null && parseInt(studentAnswerDisplay,10) === parseInt(q.answer,10);
+      if (isCorrect) mcCorrect++;
+    } else if (q.shortMode === 'digit') {
+      shortTotal++;
+      var digits = (studentRaw && studentRaw.digits) ? studentRaw.digits : [0,0,0];
+      normalizedStudent = digits.map(function(d){return String(d);}).join('');
+      studentAnswerDisplay = normalizedStudent;
+      isCorrect = normalizedStudent === q.answer;
+      if (isCorrect) shortCorrect++;
+    } else {
+      shortTotal++;
+      var raw = (studentRaw||'').toString().trim().toLowerCase().replace(/\\s+/g,'');
+      var correctNorm = (q.answer||'').toString().trim().toLowerCase().replace(/\\s+/g,'');
+      studentAnswerDisplay = studentRaw || '';
+      isCorrect = raw === correctNorm && raw !== '';
+      if (isCorrect) shortCorrect++;
+    }
+
+    var earned = isCorrect ? q.point : 0;
+    score += earned;
+    if (isCorrect) correctCount++; else wrongNumbers.push(q.no);
+
+    details.push({
+      no: q.no, type: q.type, shortMode: q.shortMode||null,
+      studentAnswer: studentAnswerDisplay, correctAnswer: q.answer,
+      isCorrect: isCorrect, point: q.point, earned: earned,
+      choices: q.type==='mc' ? (q.choices||5) : null,
+      gradingMode: 'auto'
+    });
+  });
+
+  return {
+    score: _r2(score), totalScore: _r2(totalScore), correctCount: correctCount,
+    wrongNumbers: wrongNumbers, details: details,
+    mcAccuracy: mcTotal ? Math.round(mcCorrect/mcTotal*100) : null,
+    shortAccuracy: shortTotal ? Math.round(shortCorrect/shortTotal*100) : null
+  };
+}
+
+// ── 선생님 수동 검토 (모든 문항 유형 수정 가능) ──
+window.openManualReviewModal = function(sessionId){
+  window._reviewSessionId = sessionId;
+  window._reviewSubjIdx = 0;
+  openModal('modal-manual-review');
+  document.getElementById('manual-review-body').innerHTML = '불러오는 중...';
+  getDoc(doc(db,'examSessions',sessionId)).then(function(sessDoc){
+    var sess = sessDoc.data();
+    window._reviewStudentUid = sess.studentUid;
+    window._reviewChoices = sess.electiveChoices || {};
+    window._reviewUnknown = sess.unknownBySubj || {};
+    // 깊은 복사 - 저장 누르기 전까지는 로컬에서만 편집
+    window._reviewAllResults = (sess.subjectResults || []).map(function(r){
+      return r ? Object.assign({}, r, { answers: r.answers.map(function(a){ return Object.assign({}, a); }) }) : r;
+    });
+    renderManualReviewModal();
+  });
+};
+
+function renderManualReviewModal(){
+  var results = window._reviewAllResults || [];
+  var idx = window._reviewSubjIdx || 0;
+  var subj0 = results[idx];
+  var body = document.getElementById('manual-review-body');
+  var scoreEl = document.getElementById('manual-review-score');
+  if (!subj0) { body.innerHTML = '<div style="color:var(--tx3);font-size:12px;">데이터 없음</div>'; return; }
+
+  var tabsHtml = '';
+  if (results.length > 1) {
+    tabsHtml = '<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">' + results.map(function(r,i){
+      var name = r ? _resultSubjName(r, null, window._reviewChoices) : '?';
+      var sc = r ? r.score : 0;
+      return '<button type="button" onclick="switchManualReviewSubject('+i+')" style="padding:6px 12px;border-radius:8px;border:1px solid '+(i===idx?'var(--burg)':'var(--border)')+';background:'+(i===idx?'var(--burg)':'var(--surface)')+';color:'+(i===idx?'#fff':'var(--tx2)')+';font-size:12px;font-weight:600;cursor:pointer;">'+escapeHtml(name)+' ('+sc+'점)</button>';
+    }).join('') + '</div>';
+  }
+
+  scoreEl.textContent = subj0.score + ' / ' + subj0.totalScore + '점';
+  var UNKR = _unkSet({unknownBySubj: window._reviewUnknown}, subj0.subjectIndex);
+  var rows = subj0.answers.map(function(a, i){
+    var badge = (UNKR[a.no] ? '<span class="unkmark" title="학생이 모름(?) 표시">?</span>' : '') + (a.isCorrect ? '<span style="color:var(--green);font-weight:700;">정답</span>' : '<span style="color:var(--red);font-weight:700;">오답</span>');
+    var typeLabel = a.type==='mc' ? '객관식' : (a.shortMode==='digit'?'주관식(자릿수)':'주관식');
+    var editedTag = a.gradingMode==='manual' ? '<span style="font-size:9px;color:var(--gold);font-weight:700;">(수정됨)</span>' : '';
+    return '<div style="display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid var(--border2);font-size:13px;">'
+      + '<span style="width:32px;font-weight:700;">'+a.no+'번</span>'
+      + '<span style="width:74px;color:var(--tx3);font-size:11px;">'+typeLabel+'</span>'
+      + '<span style="flex:1;">학생: <b>'+escapeHtml(String(a.studentAnswer!=null?a.studentAnswer:'(무응답)'))+'</b> / 정답: '+escapeHtml(String(a.correctAnswer))+'</span>'
+      + badge + editedTag
+      + '<button type="button" onclick="editManualAnswer('+i+')" style="font-size:11px;padding:4px 8px;background:var(--burg-l);border:1px solid var(--burg-l2);border-radius:6px;color:var(--burg);cursor:pointer;">✏️ 답 수정</button>'
+      + '<button type="button" onclick="toggleManualCorrect('+i+')" style="font-size:11px;padding:4px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;">뒤집기</button>'
+      + '</div>';
+  }).join('');
+  body.innerHTML = tabsHtml + rows;
+}
+
+window.switchManualReviewSubject = function(idx){
+  window._reviewSubjIdx = idx;
+  renderManualReviewModal();
+};
+
+// 학생이 실제로 낸 답 자체를 선생님이 고쳐서, 그 답으로 자동 재채점되게 함
+// (지금까지는 O/X만 뒤집을 수 있었는데, "학생이 답을 3번으로 냈는데 4번으로 잘못 기록됐다"
+// 같은 경우엔 답 자체를 바로잡아야 정확함 - gradeExamAnswers와 완전히 같은 채점 규칙을 그대로 씀)
+window.editManualAnswer = function(idx){
+  var results = window._reviewAllResults;
+  var subjIdx = window._reviewSubjIdx || 0;
+  var subj = results[subjIdx];
+  if (!subj) return;
+  var a = subj.answers[idx];
+
+  var newVal;
+  if (a.type === 'mc') {
+    var maxChoice = a.choices || 5;
+    newVal = prompt(a.no+'번 - 학생이 낸 답을 1~'+maxChoice+' 중에서 입력해주세요', a.studentAnswer!=null?a.studentAnswer:'');
+    if (newVal === null) return;
+    newVal = newVal.trim();
+    var n = parseInt(newVal,10);
+    if (!n || n < 1 || n > maxChoice) { alert('1~'+maxChoice+' 사이 숫자를 입력해주세요'); return; }
+    a.studentAnswer = String(n);
+    a.isCorrect = parseInt(a.studentAnswer,10) === parseInt(a.correctAnswer,10);
+  } else if (a.shortMode === 'digit') {
+    newVal = prompt(a.no+'번 - 학생이 낸 답(3자리 숫자)을 입력해주세요', a.studentAnswer!=null?a.studentAnswer:'');
+    if (newVal === null) return;
+    var digits = String(newVal).replace(/\D/g,'').padStart(3,'0').slice(-3);
+    a.studentAnswer = digits;
+    a.isCorrect = digits === String(a.correctAnswer);
+  } else {
+    newVal = prompt(a.no+'번 - 학생이 낸 답을 입력해주세요', a.studentAnswer!=null?a.studentAnswer:'');
+    if (newVal === null) return;
+    a.studentAnswer = newVal;
+    var rawN = newVal.toString().trim().toLowerCase().replace(/\s+/g,'');
+    var correctN = String(a.correctAnswer||'').trim().toLowerCase().replace(/\s+/g,'');
+    a.isCorrect = rawN === correctN && rawN !== '';
+  }
+
+  a.earned = a.isCorrect ? a.point : 0;
+  a.gradingMode = 'manual';
+  subj.score = _r2(subj.answers.reduce(function(s,x){return s+x.earned;},0));
+  subj.wrongNumbers = subj.answers.filter(function(x){return !x.isCorrect;}).map(function(x){return x.no;});
+  subj.correctCount = subj.answers.filter(function(x){return x.isCorrect;}).length;
+  renderManualReviewModal();
+};
+
+window.toggleManualCorrect = function(idx){
+  var results = window._reviewAllResults;
+  var subjIdx = window._reviewSubjIdx || 0;
+  var subj = results[subjIdx];
+  if (!subj) return;
+  var a = subj.answers[idx];
+  a.isCorrect = !a.isCorrect;
+  a.earned = a.isCorrect ? a.point : 0;
+  a.gradingMode = 'manual';
+  subj.score = _r2(subj.answers.reduce(function(s,x){return s+x.earned;},0));
+  subj.wrongNumbers = subj.answers.filter(function(x){return !x.isCorrect;}).map(function(x){return x.no;});
+  subj.correctCount = subj.answers.filter(function(x){return x.isCorrect;}).length;
+  renderManualReviewModal(); // 서버 재조회 없이 로컬 상태로만 재렌더 (뒤집기 버그 수정 지점)
+};
+
+window.saveManualReview = function(){
+  var sessionId = window._reviewSessionId;
+  var results = window._reviewAllResults;
+
+  getDoc(doc(db,'examSessions',sessionId)).then(function(sessDoc){
+    var sess = sessDoc.data();
+    return updateDoc(doc(db,'examSessions',sessionId), { subjectResults: results }).then(function(){
+      // [등불] 선생님 수동 검토로 정오가 바뀌면 개인 복습지도 갱신
+      try { if (window.DB_onExamGraded) window.DB_onExamGraded(sessionId); } catch(e) {}
+      return _syncGradesAfterManualReview(sessionId, results, sess);
+    }).then(function(){
+      closeModal('modal-manual-review');
+      var totalScore = _r2(results.reduce(function(s,r){return s + (r?r.score:0);}, 0));
+      alert('검토 결과가 저장되었습니다 (총 ' + totalScore + '점)');
+      openExamMonitor(sess.examId);
+    });
+  }).catch(function(e){ alert('저장 실패: ' + e.message); });
+};
+
+function _syncGradesAfterManualReview(sessionId, results, sess){
+  // 처음 채점 때와 같은 규칙(_buildGradesScoresFromResults)으로 다시 만든다 - 예전엔 탐구가 ex1·ex2 키/이름으로 덮어써지고
+  // 선택과목 등급표가 빠지던 문제가 있었음
+  return getDocs(query(collection(db,'grades'), where('examSessionId','==',sessionId))).then(function(snap){
+    if (snap.empty) return;
+    var gDoc = snap.docs[0];
+    var gData = gDoc.data();
+    var examId = gData.examId;
+    return (examId ? getDoc(doc(db,'exams',examId)) : Promise.resolve(null)).then(function(examDoc){
+      var exam = (examDoc && examDoc.exists()) ? Object.assign({id:examId}, examDoc.data()) : null;
+      if (!exam) return;
+      var built = _buildGradesScoresFromResults(exam, results, (sess && sess.electiveChoices) || {}, sess && sess.unknownBySubj);
+      Object.keys(built.scores).forEach(function(k){
+        var sc = built.scores[k];
+        if (sc.grade) _awardGradeLevelReward(gData.uid, gData.branch||getBranch(), sc.label, sc.grade, gData.examName||exam.title||'', gData.examDate||_examTodayDateStr());
+      });
+      var upd = { scores: built.scores, wrongBySubj: built.wrongBySubj };
+      if (built.unknownBySubj) upd.unknownBySubj = built.unknownBySubj;
+      return updateDoc(doc(db,'grades',gDoc.id), upd);
+    });
+  });
+}
+
+// ── 학생 결과 보기 (성적표 스타일) ──
+// ═══════════════════════════════════════
+// 성적 메모 - 학생/선생님/마스터 각자 자기 메모를 남길 수 있고, 마스터만 전체 수정 가능
+// grades 문서 안에 memos 맵(작성자 uid → {name, role, content, updatedAt})으로 저장
+// ═══════════════════════════════════════
+window.openGradeMemoModal = function(gradeId){
+  window._gradeMemoTargetId = gradeId;
+  document.getElementById('grade-memo-list').innerHTML = '<div style="color:var(--tx3);font-size:12px;">불러오는 중...</div>';
+  openModal('modal-grade-memo');
+  getDoc(doc(db,'grades',gradeId)).then(function(d){
+    var memos = (d.exists() && d.data().memos) || {};
+    _renderGradeMemoList(memos);
+  }).catch(function(){
+    document.getElementById('grade-memo-list').innerHTML = '<div style="color:var(--red);font-size:12px;">불러오기 실패</div>';
+  });
+};
+
+function _renderGradeMemoList(memos){
+  var host = document.getElementById('grade-memo-list');
+  var myUid = currentUser.uid;
+  var isMaster = currentProfile && currentProfile.role === 'master';
+  var roleOrder = {master:0, teacher:1, student:2};
+  var entries = Object.keys(memos).map(function(uid){ return Object.assign({uid:uid}, memos[uid]); })
+    .sort(function(a,b){ return (roleOrder[a.role]||9) - (roleOrder[b.role]||9); });
+
+  var myMemo = memos[myUid];
+  var roleLabel = {master:'마스터', teacher:'선생님', student:'학생'};
+
+  var listHtml = entries.map(function(m){
+    var canEdit = isMaster || m.uid === myUid;
+    var updatedStr = m.updatedAt ? new Date(m.updatedAt).toLocaleDateString('ko-KR',{month:'long',day:'numeric'}) : '';
+    return '<div style="background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:8px;">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+      +   '<div style="font-size:12px;font-weight:700;color:var(--tx2);">'+escapeHtml(m.name||'')+' <span style="font-weight:400;color:var(--tx4);">('+  (roleLabel[m.role]||m.role) +')</span></div>'
+      +   (canEdit ? '<div style="display:flex;gap:5px;"><button onclick="_editGradeMemoInline(\''+m.uid+'\')" style="font-size:11px;padding:3px 9px;background:var(--surface);border:1px solid var(--border);border-radius:5px;cursor:pointer;color:var(--tx2);">수정</button><button onclick="_deleteGradeMemoInline(\''+m.uid+'\')" style="font-size:11px;padding:3px 9px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:5px;cursor:pointer;color:var(--red);">삭제</button></div>' : '')
+      + '</div>'
+      + '<div id="grade-memo-content-'+m.uid+'" style="font-size:13px;color:var(--tx1);white-space:pre-wrap;word-break:break-word;">'+escapeHtml(m.content||'')+'</div>'
+      + (updatedStr ? '<div style="font-size:10px;color:var(--tx4);margin-top:6px;">'+updatedStr+' 수정</div>' : '')
+      + '</div>';
+  }).join('');
+
+  var addBtn = !myMemo ? '<button onclick="_editGradeMemoInline(\''+myUid+'\')" class="exam-add-chip-btn" style="width:100%;">+ 내 메모 추가하기</button>' : '';
+
+  host.innerHTML = (listHtml || '<div style="color:var(--tx4);font-size:12px;padding:8px 0;">아직 메모가 없습니다.</div>') + addBtn;
+}
+
+window._editGradeMemoInline = function(targetUid){
+  var isMe = targetUid === currentUser.uid;
+  var isMaster = currentProfile && currentProfile.role === 'master';
+  if (!isMe && !isMaster) { alert('본인 메모만 수정할 수 있습니다.'); return; }
+
+  getDoc(doc(db,'grades',window._gradeMemoTargetId)).then(function(d){
+    var memos = (d.exists() && d.data().memos) || {};
+    var existing = memos[targetUid];
+    var current = existing ? existing.content : '';
+    var next = prompt('메모를 입력해주세요', current);
+    if (next === null) return; // 취소
+    var roleLabel = isMe ? (currentProfile.role) : (existing ? existing.role : 'student');
+    var nameLabel = isMe ? currentProfile.name : (existing ? existing.name : '');
+
+    var field = {};
+    field['memos.'+targetUid] = { name: nameLabel, role: roleLabel, content: next.trim(), updatedAt: Date.now() };
+    updateDoc(doc(db,'grades',window._gradeMemoTargetId), field).then(function(){
+      getDoc(doc(db,'grades',window._gradeMemoTargetId)).then(function(d2){
+        _renderGradeMemoList((d2.exists() && d2.data().memos) || {});
+      });
+    }).catch(function(e){ alert('저장 실패: ' + e.message); });
+  });
+};
+
+// 메모 삭제 - 수정과 같은 권한 규칙(마스터는 전체, 본인은 자기 것만)
+window._deleteGradeMemoInline = function(targetUid){
+  var isMe = targetUid === currentUser.uid;
+  var isMaster = currentProfile && currentProfile.role === 'master';
+  if (!isMe && !isMaster) { alert('본인 메모만 삭제할 수 있습니다.'); return; }
+  if (!confirm('이 메모를 삭제하시겠습니까?')) return;
+
+  var field = {};
+  field['memos.'+targetUid] = deleteField();
+  updateDoc(doc(db,'grades',window._gradeMemoTargetId), field).then(function(){
+    getDoc(doc(db,'grades',window._gradeMemoTargetId)).then(function(d2){
+      _renderGradeMemoList((d2.exists() && d2.data().memos) || {});
+    });
+  }).catch(function(e){ alert('삭제 실패: ' + e.message); });
+};
+
+
+window.viewExamResult = function(sessionId){
+  openModal('modal-exam-result');
+  document.getElementById('exam-result-body').innerHTML = '<div style="text-align:center;padding:60px 20px;color:var(--tx3);">불러오는 중...</div>';
+  getDoc(doc(db,'examSessions',sessionId)).then(function(sessDoc){
+    var sess = sessDoc.data();
+    sess._sessionId = sessionId;
+    return getDoc(doc(db,'exams',sess.examId)).then(function(examDoc){
+      var exam = examDoc.exists() ? examDoc.data() : { title: '(삭제된 시험)' };
+      _renderExamReportCard(sess, exam);
+    });
+  }).catch(function(e){
+    document.getElementById('exam-result-body').innerHTML = '<div style="color:var(--red);padding:20px;">불러오기 실패: '+e.message+'</div>';
+  });
+};
+
+// 실제 응시 화면과 완전히 같은 스타일(둥근 마킹 버튼)로, 학생이 실제로 마킹했던 그대로를
+// 읽기전용으로 다시 보여줌. 정답은 초록 테두리로, 학생이 고른 게 오답이면 빨갛게 채워서
+// 어디를 놓쳤는지 한눈에 보이게 함.
+// 실제 수능 시험장에서 쓰는 OMR 답안지와 비슷한 형태로 그림 - 원문자(①②③④⑤)를 쓰고,
+// 마킹된 자리는 연필로 칠한 것처럼 까맣게 채워서 진짜 답안지 느낌을 내려고 함.
+var CIRCLED_NUMS = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨'];
+// 실제 수능 시험장에서 쓰는 OMR 답안지(문번-답란 여러 열이 나란히 붙는 격자 표)와
+// 최대한 비슷하게 그림. 객관식은 문항을 10개씩 묶어 "문번|답란" 열을 여러 블록으로
+// 나란히 배치하고, 단답형(자릿수)은 백/십/일 열에 0~9 전체를 보여주고 실제로 마킹된
+// 자리만 채워서 표시함.
+function _buildOmrMcBlocks(mcAnswers){
+  var CHUNK = 10; // 실제 답안지처럼 10문항씩 한 블록으로 묶음
+  var chunks = [];
+  for (var i=0; i<mcAnswers.length; i+=CHUNK) chunks.push(mcAnswers.slice(i, i+CHUNK));
+
+  var blocksHtml = chunks.map(function(chunk){
+    var rows = chunk.map(function(a){
+      var maxChoice = a.choices || 5;
+      var studentVal = a.studentAnswer != null ? parseInt(a.studentAnswer,10) : null;
+      var correctVal = parseInt(a.correctAnswer,10);
+      var cells = Array.from({length:maxChoice},function(_,i){
+        var n = i+1;
+        var isStudent = studentVal === n;
+        var isCorrectChoice = correctVal === n;
+        var cls = 'omr-sheet-bubble';
+        if (isStudent) cls += a.isCorrect ? ' marked' : ' marked-wrong';
+        if (isCorrectChoice && !isStudent) cls += ' correct-hint';
+        return '<td><span class="'+cls+'">'+n+'</span></td>';
+      }).join('');
+      return '<tr><td class="omr-sheet-qno-cell">'+a.no+(a._unk?'<span class="unkq">?</span>':'')+'</td>'+cells+'</tr>';
+    }).join('');
+    var maxChoiceInChunk = Math.max.apply(null, chunk.map(function(a){return a.choices||5;}));
+    var headCells = Array.from({length:maxChoiceInChunk},function(){return '<th></th>';}).join('');
+    return '<table class="omr-sheet-table"><thead><tr><th class="omr-sheet-qno-cell">문번</th><th colspan="'+maxChoiceInChunk+'">답란</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  }).join('');
+  return '<div class="omr-sheet-blocks">'+blocksHtml+'</div>';
+}
+
+function _buildOmrDigitBlocks(digitAnswers){
+  // 각 단답형 문항을 백/십/일 열로 나눠서, 0~9 중 실제 마킹된 자리만 채워서 표시
+  var blocksHtml = digitAnswers.map(function(a){
+    var myAns = (a.studentAnswer!=null && a.studentAnswer!=='') ? String(a.studentAnswer) : '';
+    var digits = myAns.padStart(3,'0').split('').map(function(d){return parseInt(d,10);});
+    var correctDigits = String(a.correctAnswer||'').padStart(3,'0').split('').map(function(d){return parseInt(d,10);});
+    var labels = ['백','십','일'];
+    var cols = labels.map(function(label, ci){
+      var rows = Array.from({length:10},function(_,n){
+        var isStudent = digits[ci] === n;
+        var isCorrectDigit = correctDigits[ci] === n;
+        var cls = 'omr-sheet-bubble small';
+        if (isStudent) cls += a.isCorrect ? ' marked' : ' marked-wrong';
+        if (isCorrectDigit && !isStudent) cls += ' correct-hint';
+        return '<div class="'+cls+'">'+n+'</div>';
+      }).join('');
+      return '<div class="omr-sheet-digitcol"><div class="omr-sheet-digitcol-label">'+label+'</div>'+rows+'</div>';
+    }).join('');
+    return '<div class="omr-sheet-digitblock"><div class="omr-sheet-digitblock-qno">'+a.no+'번</div><div class="omr-sheet-digitblock-cols">'+cols+'</div></div>';
+  }).join('');
+  return '<div class="omr-sheet-digit-wrap">'+blocksHtml+'</div>';
+}
+
+function _buildOmrReplayHtml(subjName, answers, unk){
+  unk = unk || {};
+  answers = (answers||[]).map(function(a){ return unk[a.no] ? Object.assign({}, a, {_unk:true}) : a; });
+  var mcAnswers = (answers||[]).filter(function(a){ return a.type === 'mc'; });
+  var digitAnswers = (answers||[]).filter(function(a){ return a.type !== 'mc' && a.shortMode === 'digit'; });
+  var textAnswers = (answers||[]).filter(function(a){ return a.type !== 'mc' && a.shortMode !== 'digit'; });
+
+  var textRows = textAnswers.map(function(a){
+    var myAns = (a.studentAnswer!=null && a.studentAnswer!=='') ? a.studentAnswer : '무응답';
+    return '<div class="omr-sheet-textrow">'
+      + '<span class="omr-sheet-qno-cell">'+a.no+'번'+(a._unk?'<span class="unkq">?</span>':'')+'</span>'
+      + '<span style="'+(a.isCorrect?'color:#1a1a1a;':'color:#b91c1c;')+'">내 답: '+escapeHtml(String(myAns))+'</span>'
+      + '<span style="margin-left:auto;color:#555;">정답: '+escapeHtml(String(a.correctAnswer))+'</span>'
+      + '</div>';
+  }).join('');
+
+  return '<div class="omr-sheet">'
+    + '<div class="omr-sheet-header">'
+    +   '<div class="omr-sheet-header-title">답 안 지</div>'
+    +   '<div class="omr-sheet-header-sub">'+escapeHtml(subjName)+'</div>'
+    + '</div>'
+    + '<div class="omr-sheet-legend">'
+    +   '<span><i class="omr-sheet-legend-mark ok"></i>정답으로 마킹</span>'
+    +   '<span><i class="omr-sheet-legend-mark ng"></i>오답으로 마킹</span>'
+    +   '<span><i class="omr-sheet-legend-mark hint"></i>정답 (미마킹)</span>'
+    +   (Object.keys(unk).length ? '<span><b style="color:#c58a10">?</b> 모름 표시</span>' : '')
+    + '</div>'
+    + (Object.keys(unk).length ? '<div style="font-size:11px;color:#8a6410;padding:2px 10px 6px">모름(?) 표시한 문항: '+Object.keys(unk).sort(function(a,b){return a-b;}).join(', ')+'번</div>' : '')
+    + '<div class="omr-sheet-body">'
+    +   (mcAnswers.length ? _buildOmrMcBlocks(mcAnswers) : '')
+    +   (digitAnswers.length ? _buildOmrDigitBlocks(digitAnswers) : '')
+    +   (textRows ? '<div class="omr-sheet-textwrap">'+textRows+'</div>' : '')
+    + '</div>'
+    + '</div>';
+}
+
+window.openExamOmrReplay = function(sessionId){
+  openModal('modal-omr-replay');
+  document.getElementById('omr-replay-body').innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--tx3);">불러오는 중...</div>';
+  getDoc(doc(db,'examSessions',sessionId)).then(function(sessDoc){
+    var sess = sessDoc.data();
+    var results = sess.subjectResults || [];
+    var html = results.map(function(r){
+      if (!r) return '';
+      var subjName = _resultSubjName(r, null, sess.electiveChoices);
+      return _buildOmrReplayHtml(subjName, r.answers, _unkSet(sess, r.subjectIndex));
+    }).join('<div style="height:20px;"></div>');
+    window._lastOmrReplayHtml = html; // 확대보기에서 재사용
+    document.getElementById('omr-replay-body').innerHTML = html
+      ? '<div class="omr-sheet-zoom-hint">🔍 눌러서 확대해서 보기</div>' + html
+      : '<div style="color:var(--tx3);padding:20px;">표시할 답안이 없습니다.</div>';
+    if (html) {
+      document.getElementById('omr-replay-body').querySelectorAll('.omr-sheet').forEach(function(el){
+        el.style.cursor = 'zoom-in';
+        el.onclick = function(){ openOmrZoomView(); };
+      });
+    }
+  }).catch(function(e){
+    document.getElementById('omr-replay-body').innerHTML = '<div style="color:var(--red);padding:20px;">불러오기 실패: '+e.message+'</div>';
+  });
+};
+
+// OMR 답안지를 크게 확대해서 보여줌 - 문항이 많으면 원래 크기론 마킹이 잘 안 보일 수 있어서,
+// 눌렀을 때 전체화면에 가깝게 크게 띄워줌
+window.openOmrZoomView = function(){
+  if (!window._lastOmrReplayHtml) return;
+  var body = document.getElementById('omr-zoom-body');
+  body.style.transform = 'none'; // 실제(확대 전) 크기부터 먼저 재야 함
+  body.style.width = 'auto';
+  body.innerHTML = window._lastOmrReplayHtml;
+  openModal('modal-omr-zoom');
+  // transform:scale()는 화면에 보이는 크기만 키우고 레이아웃/스크롤 계산에는 원래 크기로
+  // 잡히기 때문에, 확대한 만큼 잘려 보이는 문제가 있었음. 실제 크기를 측정한 뒤 그 배율만큼
+  // 부모가 정확히 그 공간을 확보하도록 폭/높이를 직접 지정해줌.
+  requestAnimationFrame(function(){
+    var rect = body.getBoundingClientRect();
+    var scale = window.innerWidth <= 600 ? 1.3 : 1.7;
+    body.style.width = rect.width + 'px';
+    body.style.height = rect.height + 'px';
+    var wrapper = body.parentElement;
+    wrapper.style.width = (rect.width*scale) + 'px';
+    wrapper.style.maxWidth = '96vw';
+    body.style.transform = 'scale('+scale+')';
+    body.style.transformOrigin = 'top left';
+  });
+};
+
+function _renderExamReportCard(sess, exam){
+  var results = sess.subjectResults || [];
+  var totalScore = _r2(results.reduce(function(s,r){return s+(r?r.score:0);},0));
+  var totalMax = _r2(results.reduce(function(s,r){return s+(r?r.totalScore:0);},0));
+  var studentName = (currentProfile && currentProfile.name) || '';
+  var lastResult = results[results.length-1];
+  var dateStr = (lastResult && lastResult.submittedAtMs) ? new Date(lastResult.submittedAtMs).toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric'}) : '';
+
+  var header = '<div class="exam-report-header">'
+    + '<div class="exam-report-brand">Mono <span>PLANNER</span></div>'
+    + '<div class="exam-report-title">'+escapeHtml(exam.title||'시험 결과')+'</div>'
+    + '<div class="exam-report-meta">'+escapeHtml(studentName)+(dateStr?' · '+dateStr:'')+'</div>'
+    + '</div>';
+
+  var scoreBand = '<div class="exam-report-scoreband">'
+    + '<div class="exam-report-total-label">TOTAL SCORE</div>'
+    + '<div class="exam-report-total-score">'+totalScore+'<span>/ '+totalMax+'점</span></div>'
+    + '<button onclick="openExamOmrReplay(\''+sess._sessionId+'\')" style="margin-top:10px;padding:8px 16px;background:#fff;border:1px solid var(--burg-l2);border-radius:8px;color:var(--burg);font-size:12px;font-weight:700;cursor:pointer;">🗒 내 OMR 답안지 보기</button>'
+    + '</div>';
+
+  var subjectCards = results.map(function(r){
+    if (!r) return '';
+    var subjName = _resultSubjName(r, exam, sess.electiveChoices);
+    var pct = r.totalScore ? Math.round(r.score/r.totalScore*100) : 0;
+    var UNK = _unkSet(sess, r.subjectIndex);
+    var questionGrid = (r.answers||[]).map(function(a){
+      var cls = (a.isCorrect ? 'correct' : 'wrong') + (UNK[a.no] ? ' unk' : '');
+      var tip = a.no+'번 · 내 답: '+(a.studentAnswer!=null&&a.studentAnswer!==''?a.studentAnswer:'무응답')+' · 정답: '+a.correctAnswer+(UNK[a.no]?' · 모름(?) 표시':'');
+      return '<div class="exam-report-qcell '+cls+'" title="'+escapeHtml(String(tip))+'">'+a.no+(UNK[a.no]?'<i>?</i>':'')+'</div>';
+    }).join('');
+    // 호버 툴팁은 모바일에서는 볼 수 없어서, 문항번호/내 답/정답을 눈에 바로 보이는
+    // 목록으로도 같이 보여줌 (특히 틀린 문항은 강조)
+    var answerList = (r.answers||[]).map(function(a){
+      var myAns = (a.studentAnswer!=null && a.studentAnswer!=='') ? a.studentAnswer : '무응답';
+      return '<div class="exam-report-answer-row'+(a.isCorrect?'':' wrong')+'">'
+        + '<span class="qno">'+a.no+'번</span>'
+        + '<span class="myans">내 답 '+escapeHtml(String(myAns))+'</span>'
+        + '<span class="correctans">정답 '+escapeHtml(String(a.correctAnswer))+'</span>'
+        + (UNK[a.no] ? '<span class="unkmark" title="모름(?) 표시">?</span>' : '')
+        + '<span class="mark">'+(a.isCorrect?'✓':'✕')+'</span>'
+        + '</div>';
+    }).join('');
+    return '<div class="exam-report-subject-card">'
+      + '<div class="exam-report-subject-head">'
+      +   '<div class="exam-report-subject-name">'+escapeHtml(subjName)+'</div>'
+      +   '<div class="exam-report-subject-score">'+r.score+'<span> / '+r.totalScore+'점</span></div>'
+      + '</div>'
+      + '<div class="exam-report-subject-stats">정답 '+r.correctCount+'/'+(r.answers||[]).length+'문항 · 정답률 '+pct+'%'+((r.wrongNumbers&&r.wrongNumbers.length)?' · 오답 '+r.wrongNumbers.join(', ')+'번':'')+'</div>'
+      + '<div class="exam-report-qgrid">'+questionGrid+'</div>'
+      + '<div class="exam-report-legend"><span><i class="dot correct"></i>정답</span><span><i class="dot wrong"></i>오답</span></div>'
+      + '<details class="exam-report-answers-detail">'
+      +   '<summary>📋 문항별 내 답 · 정답 확인</summary>'
+      +   '<div class="exam-report-answer-list">'+answerList+'</div>'
+      + '</details>'
+      + '</div>';
+  }).join('');
+
+  document.getElementById('exam-result-body').innerHTML = header + scoreBand + subjectCards;
+}
+
+// ── 코멘트 작성 - 학생 검색 콤보박스 ──
+window.showCommentStudentList = function() {
+  filterCommentStudentList(document.getElementById('comment-student-search').value);
+};
+
+window.filterCommentStudentList = function(q) {
+  var sel = document.getElementById('comment-student-select');
+  var dropdown = document.getElementById('comment-student-dropdown');
+  if (!sel || !dropdown) return;
+  q = (q || '').trim().toLowerCase();
+
+  var options = Array.from(sel.querySelectorAll('option')).filter(function(o){ return o.value; });
+  var matched = options.filter(function(o){ return o.textContent.toLowerCase().includes(q); });
+
+  if (!matched.length) {
+    dropdown.innerHTML = '<div style="padding:14px;text-align:center;color:var(--tx4);font-size:12px;">검색 결과가 없습니다</div>';
+  } else {
+    dropdown.innerHTML = matched.map(function(o){
+      var grade = o.getAttribute('data-grade') || '';
+      var school = o.getAttribute('data-school') || '';
+      var meta = [grade, school].filter(Boolean).join(' · ');
+      return '<div class="comment-student-item" onclick="pickCommentStudent(\''+o.value.replace(/'/g,"\\'")+'\',\''+o.textContent.replace(/'/g,"\\'")+'\')" '
+        + 'style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border2);display:flex;justify-content:space-between;align-items:center;">'
+        + '<span style="font-size:13px;font-weight:600;color:var(--tx1);">'+escapeHtml(o.textContent)+'</span>'
+        + (meta?'<span style="font-size:11px;color:var(--tx3);">'+escapeHtml(meta)+'</span>':'')
+        + '</div>';
+    }).join('');
+    // 호버 스타일
+    dropdown.querySelectorAll('.comment-student-item').forEach(function(el){
+      el.addEventListener('mouseenter', function(){ el.style.background='var(--surface2)'; });
+      el.addEventListener('mouseleave', function(){ el.style.background=''; });
+    });
+  }
+  dropdown.style.display = 'block';
+};
+
+window.pickCommentStudent = function(value, name) {
+  var sel = document.getElementById('comment-student-select');
+  var search = document.getElementById('comment-student-search');
+  var dropdown = document.getElementById('comment-student-dropdown');
+  if (sel) { sel.value = value; }
+  if (search) { search.value = name; }
+  if (dropdown) { dropdown.style.display = 'none'; }
+  loadCommentHistory(value);
+};
+
+// 바깥 영역 클릭 시 드롭다운 닫기
+document.addEventListener('click', function(e) {
+  var dropdown = document.getElementById('comment-student-dropdown');
+  var search = document.getElementById('comment-student-search');
+  if (!dropdown || dropdown.style.display === 'none') return;
+  if (e.target === search || dropdown.contains(e.target)) return;
+  dropdown.style.display = 'none';
+});
+
+
+window.setStudentSortMode = function(mode) {
+  window._studentSortMode = mode;
+  renderTeacher(0);
+};
+
+
+window.openChatPartnerProfile = function(uid) {
+  if (!uid) return;
+  var roleNorm = ((currentProfile && currentProfile.role) || '').trim().toLowerCase();
+  var canView = (roleNorm === 'teacher' || roleNorm === 'master');
+  if (!canView) return;
+
+  var body = document.getElementById('chat-partner-profile-body');
+  if (body) body.innerHTML = '<div style="text-align:center;color:var(--tx3);font-size:12px;padding:20px;">불러오는 중...</div>';
+  openModal('modal-chat-partner-profile');
+
+  getDoc(doc(db, 'users', uid)).then(function(d){
+    if (!d.exists() || !body) return;
+    var u = d.data();
+    var roleLabel = u.role === 'master' ? '마스터' : u.role === 'teacher' ? '선생님' : (u.grade || '학생');
+    var avatarBg = u.role === 'student' ? 'background:linear-gradient(135deg,#D4A04A,#B8841A);' : 'background:linear-gradient(135deg,var(--burg),var(--burg2));';
+    var rows = '';
+    if (u.role === 'student') {
+      rows += '<div class="cpp-row"><span class="cpp-label">학교</span><span class="cpp-value">'+escapeHtml(u.school||'-')+'</span></div>';
+      rows += '<div class="cpp-row"><span class="cpp-label">학년</span><span class="cpp-value">'+escapeHtml(u.grade||'-')+'</span></div>';
+      if (u.grade === '성인') {
+        rows += '<div class="cpp-row"><span class="cpp-label">목표</span><span class="cpp-value">'+escapeHtml(u.goal||'-')+'</span></div>';
+      } else {
+        rows += '<div class="cpp-row"><span class="cpp-label">목표대학</span><span class="cpp-value">'+escapeHtml(u.univ||'-')+(u.dept?' '+escapeHtml(u.dept):'')+'</span></div>';
+      }
+    } else {
+      rows += '<div class="cpp-row"><span class="cpp-label">역할</span><span class="cpp-value">'+roleLabel+'</span></div>';
+      rows += '<div class="cpp-row"><span class="cpp-label">지점</span><span class="cpp-value">'+escapeHtml(u.branch||'-')+'</span></div>';
+    }
+    rows += '<div class="cpp-row"><span class="cpp-label">아이디</span><span class="cpp-value">'+escapeHtml(u.username||'-')+'</span></div>';
+
+    body.innerHTML = '<div style="text-align:center;margin-bottom:16px;">'
+      + '<div style="margin:0 auto 10px;width:64px;">'+avatarCircleHtml(u.name, u.avatar, 64, {fontSizePx:22, bg:avatarBg})+'</div>'
+      + '<div style="font-size:17px;font-weight:700;color:var(--tx1);">'+escapeHtml(u.name||'')+'</div>'
+      + '<div style="font-size:12px;color:var(--tx3);margin-top:2px;">'+roleLabel+'</div>'
+      + '</div>'
+      + '<div class="cpp-rows">'+rows+'</div>';
+  }).catch(function(){
+    if (body) body.innerHTML = '<div style="text-align:center;color:var(--red);font-size:12px;padding:20px;">불러오기 실패</div>';
+  });
+};
+
+
+window.filterAccountStudentList = function(q) {
+  q = (q||'').trim().toLowerCase();
+  var rows = document.querySelectorAll('#account-student-list .account-row');
+  rows.forEach(function(row){
+    var text = row.getAttribute('data-search') || '';
+    row.style.display = (!q || text.includes(q)) ? 'flex' : 'none';
+  });
+};
+
+window.setAccountSortMode = function(mode) {
+  window._accountSortMode = mode;
+  invalidateTeacherTabCache(6);renderTeacher(6);
+};
+
+
+function getPlannerDate() {
+  // 한국 시간(UTC+9) 기준으로 날짜 계산
+  var now = new Date();
+  var kstOffset = 9 * 60; // 분
+  var kst = new Date(now.getTime() + (kstOffset + now.getTimezoneOffset()) * 60000);
+  // 새벽 4시 이전이면 전날로 처리
+  if (kst.getHours() < 4) kst.setDate(kst.getDate() - 1);
+  var y = kst.getFullYear();
+  var m = String(kst.getMonth() + 1).padStart(2, '0');
+  var d = String(kst.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + d;
+}
+
+var currentUser = null, currentProfile = null;
+var _lectureFilterUid = ''; // 인강 관리 학생 필터 - 리렌더링 후에도 유지되도록 전역에 보관
+var currentBranch = '송정점'; // 로그인 시 profile.branch로 덮어씀
+function getBranch(){ return currentBranch || '송정점'; }
+var unsubTodos = null, unsubNotices = null, unsubChat = null;
+var timerInterval = null, timerAutoSave = null;
+var TIMER_SCHEMA_VERSION = 2;
+var TIMER_MAX_MS = 6 * 60 * 60 * 1000;
+var TimerEngine = {
+  todoId: null,
+  subject: '',
+  title: '',
+  status: 'idle', // idle | running | paused
+  accumMs: 0,
+  startedAtMs: null,
+  sessionId: null,
+  operationVersion: 0
+};
+var selectedFile = null, teacherSelectedFile = null, teacherChatUid = null;
+var notifications = [];
+window._loginType = 'student';
+
+var DEFAULT_SUBJECTS = [
+  {key:'ko', name:'국어', color:'#FEE2E2'},
+  {key:'en', name:'영어', color:'#DBEAFE'},
+  {key:'ma', name:'수학', color:'#DCFCE7'},
+  {key:'hi', name:'한국사', color:'#FEF3C7'},
+  {key:'sc', name:'과학탐구', color:'#E0E7FF'},
+  {key:'so', name:'사회탐구', color:'#FCE7F3'}
+];
+function getUserSubjects() {
+  if (currentProfile && Array.isArray(currentProfile.subjects) && currentProfile.subjects.length > 0) {
+    return currentProfile.subjects;
+  }
+  return DEFAULT_SUBJECTS;
+}
+// 하위 호환: subjectNames 객체로 변환 (subjectNames[key] 형태 사용처용)
+function getSubjectNamesMap() {
+  var m = {};
+  getUserSubjects().forEach(function(s){ m[s.key] = s.name; });
+  // 시험의 탐구 칸 코드(ex1·ex2)가 그대로 보이지 않게 기본 이름을 둔다(선택과목명을 알면 그쪽이 우선)
+  if (!m.ex1) m.ex1 = '탐구1'; if (!m.ex2) m.ex2 = '탐구2';
+  return m;
+}
+// 전역 - 기존 코드 호환
+var subjectNames = {ko:'국어',en:'영어',ma:'수학',hi:'한국사',sc:'과학탐구',so:'사회탐구',ex1:'탐구1',ex2:'탐구2'};
+function refreshSubjectNames() {
+  subjectNames = getSubjectNamesMap();
+  return subjectNames;
+}
+// 과목 select에 옵션 채우기
+function fillSubjectSelect(selectId, selectedKey) {
+  var el = document.getElementById(selectId);
+  if (!el) return;
+  var subjs = getUserSubjects();
+  el.innerHTML = subjs.map(function(s){
+    return '<option value="'+s.key+'"'+(s.key===selectedKey?' selected':'')+'>'+s.name+'</option>';
+  }).join('');
+}
+window.fillSubjectSelect = fillSubjectSelect;
+
+// 모든 과목 select 동기화 (과목 변경 후 호출)
+function syncAllSubjectSelects() {
+  refreshSubjectNames();
+  var ids = ['todo-subject', 'edit-todo-subject'];
+  ids.forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) {
+      var cur = el.value;
+      fillSubjectSelect(id, cur);
+    }
+  });
+}
+window.syncAllSubjectSelects = syncAllSubjectSelects;
+
+// ========= 과목 관리 모달 =========
+window.openSubjectManageModal = function() {
+  if (!currentProfile || currentProfile.grade !== '성인') {
+    alert('과목 관리는 성인 회원만 이용할 수 있습니다.');
+    return;
+  }
+  closeModal('modal-profile-student');
+  renderSubjectManageList();
+  openModal('modal-subject-manage');
+};
+
+window.renderSubjectManageList = function() {
+  var list = document.getElementById('subject-manage-list');
+  if (!list) return;
+  var subjs = getUserSubjects();
+  list.innerHTML = subjs.map(function(s, i){
+    return '<div class="subject-manage-row" style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--surface2);border-radius:8px;margin-bottom:6px;">'
+      + '<input class="modal-input" data-key="'+s.key+'" value="'+s.name+'" style="flex:1;margin:0;height:36px;font-size:13px;" placeholder="과목명"/>'
+      + '<input type="color" data-color="'+s.key+'" value="'+(s.color||'#cccccc')+'" style="width:36px;height:36px;border:1px solid var(--border);border-radius:6px;cursor:pointer;padding:2px;"/>'
+      + '<button onclick="deleteSubject(\''+s.key+'\')" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:6px;width:36px;height:36px;cursor:pointer;font-size:14px;" title="삭제">🗑</button>'
+      + '</div>';
+  }).join('');
+};
+
+window.addSubject = function() {
+  var name = document.getElementById('new-subject-name').value.trim();
+  if (!name) { alert('과목명을 입력해주세요'); return; }
+  var subjs = getUserSubjects().slice();
+  // 새 key 자동 생성
+  var newKey = 'custom_' + Date.now();
+  subjs.push({key:newKey, name:name, color:'#E5E7EB'});
+  currentProfile.subjects = subjs;
+  document.getElementById('new-subject-name').value = '';
+  renderSubjectManageList();
+};
+
+window.deleteSubject = function(key) {
+  if (!confirm('이 과목을 삭제하시겠습니까?\n\n주의: 이 과목으로 등록된 할 일과 학습 기록은 그대로 유지됩니다.')) return;
+  var subjs = getUserSubjects().filter(function(s){ return s.key !== key; });
+  currentProfile.subjects = subjs;
+  renderSubjectManageList();
+};
+
+window.saveSubjectManage = function() {
+  // 모달의 input 값을 모아서 subjects 배열 재구성
+  var rows = document.querySelectorAll('#subject-manage-list .subject-manage-row');
+  var subjs = [];
+  rows.forEach(function(row){
+    var nameInput = row.querySelector('input[data-key]');
+    var colorInput = row.querySelector('input[data-color]');
+    if (nameInput && colorInput) {
+      var key = nameInput.getAttribute('data-key');
+      var name = nameInput.value.trim();
+      var color = colorInput.value;
+      if (name) {
+        subjs.push({key:key, name:name, color:color});
+      }
+    }
+  });
+  if (subjs.length === 0) { alert('최소 1개 이상의 과목이 필요합니다'); return; }
+  // Firestore 저장
+  updateDoc(doc(db, 'users', currentUser.uid), {subjects: subjs}).then(function(){
+    currentProfile.subjects = subjs;
+    syncAllSubjectSelects();
+    closeModal('modal-subject-manage');
+    alert('과목 설정이 저장되었습니다');
+  }).catch(function(e){ alert('저장 실패: ' + e.message); });
+};
+
+window.resetSubjectsToDefault = function() {
+  if (!confirm('기본 과목 (국어, 영어, 수학, 한국사, 과학탐구, 사회탐구)으로 되돌리시겠습니까?')) return;
+  updateDoc(doc(db, 'users', currentUser.uid), {subjects: null}).then(function(){
+    currentProfile.subjects = null;
+    syncAllSubjectSelects();
+    renderSubjectManageList();
+    alert('기본 과목으로 되돌렸습니다');
+  }).catch(function(e){ alert('실패: '+e.message); });
+};
+
+// ═══════════════════════════════════════
+// 학생 과목 관리 (선생님/마스터 전용)
+// ═══════════════════════════════════════
+var _tsmTargetUid = null;
+var _tsmTargetSubjects = null; // 현재 편집 중인 로컬 배열 (저장 전까지 서버에 반영 안 됨)
+
+window.openTeacherSubjectManageModal = function(uid, name) {
+  var myRole = (currentProfile && currentProfile.role || '').trim().toLowerCase();
+  if (myRole !== 'teacher' && myRole !== 'master') { alert('선생님/마스터 계정만 이용할 수 있습니다.'); return; }
+  _tsmTargetUid = uid;
+  document.getElementById('tsm-student-name').textContent = name || '학생';
+  document.getElementById('tsm-list').innerHTML = '<div style="color:var(--tx3);font-size:12px;padding:10px 0;">불러오는 중...</div>';
+  openModal('modal-teacher-subject-manage');
+  getDoc(doc(db, 'users', uid)).then(function(d){
+    var data = d.exists() ? d.data() : {};
+    _tsmTargetSubjects = (Array.isArray(data.subjects) && data.subjects.length > 0)
+      ? data.subjects.map(function(s){ return Object.assign({}, s); })
+      : DEFAULT_SUBJECTS.map(function(s){ return Object.assign({}, s); });
+    renderTeacherSubjectManageList();
+  }).catch(function(e){
+    document.getElementById('tsm-list').innerHTML = '<div style="color:var(--red);font-size:12px;">불러오기 실패: '+e.message+'</div>';
+  });
+};
+
+window.renderTeacherSubjectManageList = function() {
+  var list = document.getElementById('tsm-list');
+  if (!list || !_tsmTargetSubjects) return;
+  list.innerHTML = _tsmTargetSubjects.map(function(s, i){
+    return '<div class="subject-manage-row" style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--surface2);border-radius:8px;margin-bottom:6px;">'
+      + '<input class="modal-input" data-tsm-key="'+s.key+'" value="'+escapeHtml(s.name)+'" style="flex:1;margin:0;height:36px;font-size:13px;" placeholder="과목명"/>'
+      + '<input type="color" data-tsm-color="'+s.key+'" value="'+(s.color||'#cccccc')+'" style="width:36px;height:36px;border:1px solid var(--border);border-radius:6px;cursor:pointer;padding:2px;"/>'
+      + '<button onclick="deleteTeacherSubject(\''+s.key+'\')" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:6px;width:36px;height:36px;cursor:pointer;font-size:14px;" title="삭제">🗑</button>'
+      + '</div>';
+  }).join('');
+};
+
+window.addTeacherSubject = function() {
+  var input = document.getElementById('tsm-new-subject-name');
+  var name = input.value.trim();
+  if (!name) { alert('과목명을 입력해주세요'); return; }
+  var newKey = 'custom_' + Date.now();
+  _tsmTargetSubjects.push({key:newKey, name:name, color:'#E5E7EB'});
+  input.value = '';
+  renderTeacherSubjectManageList();
+};
+
+window.deleteTeacherSubject = function(key) {
+  if (!confirm('이 과목을 삭제하시겠습니까?\n\n주의: 이 과목으로 등록된 학생의 할 일과 학습 기록은 그대로 유지됩니다.')) return;
+  _tsmTargetSubjects = _tsmTargetSubjects.filter(function(s){ return s.key !== key; });
+  renderTeacherSubjectManageList();
+};
+
+window.saveTeacherSubjectManage = function() {
+  var rows = document.querySelectorAll('#tsm-list .subject-manage-row');
+  var subjs = [];
+  rows.forEach(function(row){
+    var nameInput = row.querySelector('input[data-tsm-key]');
+    var colorInput = row.querySelector('input[data-tsm-color]');
+    if (nameInput && colorInput) {
+      var key = nameInput.getAttribute('data-tsm-key');
+      var name = nameInput.value.trim();
+      var color = colorInput.value;
+      if (name) subjs.push({key:key, name:name, color:color});
+    }
+  });
+  if (subjs.length === 0) { alert('최소 1개 이상의 과목이 필요합니다'); return; }
+  if (!_tsmTargetUid) return;
+  updateDoc(doc(db, 'users', _tsmTargetUid), {subjects: subjs}).then(function(){
+    // 전역 subjectNames 맵에도 즉시 반영 (다른 화면에서 바로 정상 표시되도록)
+    subjs.forEach(function(s){ subjectNames[s.key] = s.name; });
+    _studentListCache = null; _studentListCacheTime = 0; // 목록 캐시 무효화
+    closeModal('modal-teacher-subject-manage');
+    alert('과목 설정이 저장되었습니다');
+  }).catch(function(e){ alert('저장 실패: '+e.message); });
+};
+
+window.resetTeacherSubjectsToDefault = function() {
+  if (!confirm('기본 과목 (국어, 영어, 수학, 한국사, 과학탐구, 사회탐구)으로 되돌리시겠습니까?')) return;
+  _tsmTargetSubjects = DEFAULT_SUBJECTS.map(function(s){ return Object.assign({}, s); });
+  renderTeacherSubjectManageList();
+};
+
+// ═══════════════════════════════════════
+// 학생 과목 이름 일괄 수정 (마스터 전용)
+// ═══════════════════════════════════════
+window.openBulkSubjectEditModal = function() {
+  var myRole = (currentProfile && currentProfile.role || '').trim().toLowerCase();
+  if (myRole !== 'master') { alert('마스터 계정만 이용할 수 있습니다.'); return; }
+  document.getElementById('bulk-subj-old').value = '';
+  document.getElementById('bulk-subj-new').value = '';
+  document.getElementById('bulk-subj-status').textContent = '';
+  openModal('modal-bulk-subject-edit');
+};
+
+window.runBulkSubjectEdit = function() {
+  var oldName = document.getElementById('bulk-subj-old').value.trim();
+  var newName = document.getElementById('bulk-subj-new').value.trim();
+  var statusEl = document.getElementById('bulk-subj-status');
+  if (!oldName || !newName) { alert('기존 과목명과 새 과목명을 모두 입력해주세요'); return; }
+  if (oldName === newName) { alert('기존 이름과 새 이름이 같습니다'); return; }
+  if (!confirm('"'+oldName+'" 과목을 가진 모든 학생을 찾아 "'+newName+'"(으)로 일괄 변경합니다.\n\n계속할까요?')) return;
+
+  statusEl.textContent = '⏳ 전체 학생 조회 중...';
+  var myBranch = getBranch();
+
+  getDocs(query(collection(db,'users'), where('role','==','student'))).then(function(snap){
+    var students = snap.docs
+      .filter(function(d){ var b=d.data().branch; return !b||b===myBranch; })
+      .map(function(d){ return Object.assign({uid:d.id}, d.data()); });
+
+    var matchedCount = 0;
+    var tasks = students.map(function(s){
+      var subjs = Array.isArray(s.subjects) && s.subjects.length > 0
+        ? s.subjects.map(function(x){ return Object.assign({}, x); })
+        : DEFAULT_SUBJECTS.map(function(x){ return Object.assign({}, x); });
+
+      var hit = false;
+      var newSubjs = subjs.map(function(x){
+        if ((x.name||'').trim() === oldName) { hit = true; return Object.assign({}, x, {name:newName}); }
+        return x;
+      });
+
+      if (!hit) return Promise.resolve();
+      matchedCount++;
+      return updateDoc(doc(db,'users', s.uid), {subjects: newSubjs}).catch(function(e){
+        console.error('학생 '+s.name+' 과목 변경 실패', e);
+      });
+    });
+
+    Promise.all(tasks).then(function(){
+      subjectNames = subjectNames || {};
+      // 전역 캐시에도 즉시 반영 (해당 key가 뭐였든 새 이름으로)
+      Object.keys(subjectNames).forEach(function(k){
+        if (subjectNames[k] === oldName) subjectNames[k] = newName;
+      });
+      _studentListCache = null; _studentListCacheTime = 0;
+      statusEl.textContent = '✓ ' + matchedCount + '명 변경 완료';
+      alert('완료!\n\n"'+oldName+'" → "'+newName+'"(으)로 변경된 학생: ' + matchedCount + '명');
+      closeModal('modal-bulk-subject-edit');
+      invalidateTeacherTabCache(6);renderTeacher(6);
+    });
+  }).catch(function(e){
+    statusEl.textContent = '✗ 오류: ' + e.message;
+    alert('일괄 변경 실패: ' + e.message);
+  });
+};
+
+var subjectColors = {ko:'#4a7fff',en:'#3dba7e',ma:'#e8943a',hi:'#c9a84c',sc:'#a855f7',so:'#e05252'};
+
+var defaultRules = '【 상점 】\n• 주 단위 생활관리 벌점 없음 – 상점 5점 (자동)\n• 주 단위 결석 없음 – 상점 5점 (자동)\n• 모의고사·내신시험 성적향상 과목당 – 상점 10점 (자동)\n• 모의고사·내신시험 1등급 과목당 – 상점 10점 (자동, 오늘 이후 응시분부터)\n• 모의고사·내신시험 2등급 과목당 – 상점 5점 (자동, 오늘 이후 응시분부터)\n• 시험 응시 완료 – 상점 3점 (자동)\n• 월간 학습 50시간 이상 달성 – 상점 10점\n• 순공시간 TOP5 진입 – 상점 5점 (자동, 월 1회)\n• 매월 말일 순공시간 TOP5 시상 – 상점 30점 (자동)\n• 플래너 목표 100% 달성 (6개 항목 이상) – 상점 3점 (자동)\n• 플래너 30일 연속 제출 – 상점 20점 (자동)\n\n【 벌점 】\n• 무단 결석 – 벌점 20점\n• 무단 지각 – 벌점 10점\n• 무단 외출 – 벌점 5점\n• 교시중 입퇴실 – 벌점 3점\n• 핸드폰 미제출 – 벌점 15점\n• 3회 이상 수면 경고 – 벌점 2점\n• 출입카드 미지참 – 벌점 1점\n• 소음 발생 – 벌점 3점\n• 플래너 미제출 – 벌점 1점 (자동)\n• 학습 시간 중 인터넷 및 SNS 적발 – 벌점 10점\n• 게릴라 알림 하루 3회 이상 미응답 – 벌점 3점';
+
+// ── Auth ──
+var _authResolved = false;
+var _splashStartTime = Date.now();
+var _splashMinDuration = 3800; // 스플래시 최소 표시 시간 (ms)
+function _goToScreen(user) {
+  if (_authResolved) return;
+  _authResolved = true;
+  var elapsed = Date.now() - _splashStartTime;
+  var delay = Math.max(0, _splashMinDuration - elapsed);
+  if (delay > 0) {
+    setTimeout(function(){ _doGoToScreen(user); }, delay);
+  } else {
+    _doGoToScreen(user);
+  }
+}
+function _doGoToScreen(user) {
+  console.log('[_doGoToScreen] user:', user ? user.uid : 'null');
+  if (user) {
+    currentUser = user;
+    getDoc(doc(db, 'users', user.uid)).then(function(pd) {
+      console.log('[_doGoToScreen] users doc exists:', pd.exists());
+      if (pd.exists()) {
+        currentProfile = pd.data();
+        currentBranch = currentProfile.branch || '송정점';
+        // 이용정지 계정 차단
+        if (currentProfile.suspended === true) {
+          alert('이용이 정지된 계정입니다.\n관리자에게 문의하세요.');
+          import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js").then(function(m){m.getAuth(app).signOut();});
+          showScreen('screen-login');
+          return;
+        }
+        // 지점 변경 시 캐시 초기화
+        _studentListCache = null; _studentListCacheTime = 0;
+        _rankingsCache = null; _rankingsCacheTime = 0; _rankingsCacheMonth = '';
+        // 이용정지 주기적 체크 (5분마다)
+        if (window._suspendCheckInterval) clearInterval(window._suspendCheckInterval);
+        window._suspendCheckInterval = setInterval(function(){
+          if (!currentUser) { clearInterval(window._suspendCheckInterval); return; }
+          getDoc(doc(db,'users',currentUser.uid)).then(function(d){
+            if(d.exists()&&d.data().suspended===true){
+              clearInterval(window._suspendCheckInterval);
+              alert('이용이 정지된 계정입니다.\n관리자에게 문의하세요.');
+              import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js").then(function(m){m.getAuth(app).signOut();});
+            }
+          }).catch(function(){});
+        }, 300000); // 5분
+        if (currentProfile.role === 'student') {
+          showScreen('screen-student'); syncStudentUI();
+          _renderTimerBanner(false);
+          studentTab(0); listenNotices(); listenChatNotifs();
+          registerFCMToken(user.uid);
+          setTimeout(function() { autoWeeklyPoints(); autoPlannerPenalty(); autoTop5EntryPoints(); resumeActiveTimer(); _maybeShowInstallNudge(); }, 3000);
+        } else if (currentProfile.role === 'teacher' || currentProfile.role === 'master') {
+          showScreen('screen-teacher'); syncTeacherUI(); listenChatNotifs(); setTimeout(function(){ try{ _backfillUnknownGrades(); }catch(e){} }, 8000);
+          registerFCMToken(user.uid);
+          buildTeacherTabs(currentProfile.role === 'master'); renderTeacher(0);
+        } else { signOut(auth); showScreen('screen-login'); }
+        // 알림 클릭으로 앱이 새로 열린 경우 - URL의 openChat 파라미터로 해당 채팅방까지 자동 이동
+        _maybeOpenChatFromUrl();
+      } else { signOut(auth); showScreen('screen-login'); }
+    }).catch(function(e) { console.error('[_doGoToScreen] getDoc 실패:', e); showScreen('screen-login'); });
+  } else {
+    showScreen('screen-login');
+  }
+}
+// onAuthStateChanged: 인증 상태 확인 → _splashMinDuration 대기 후 화면 전환
+onAuthStateChanged(auth, function(user) {
+  if (_authResolved) return;
+  _authResolved = true;
+  var elapsed = Date.now() - _splashStartTime;
+  var delay = Math.max(0, _splashMinDuration - elapsed);
+  setTimeout(function() { _doGoToScreen(user); }, delay);
+});
+// 안전장치: 6초 후에도 로딩 중이면 강제 전환
+setTimeout(function() {
+  var loading = document.getElementById('screen-loading');
+  if (loading && loading.classList.contains('active')) {
+    console.warn('[splash] 6초 타임아웃 - 강제 전환');
+    showScreen('screen-login');
+  }
+}, 6000);
+
+window.doLogin = function() {
+  var id = document.getElementById('login-id').value.trim();
+  var pw = document.getElementById('login-pw').value.trim();
+  var err = document.getElementById('login-err');
+  err.textContent = '';
+  if (!id || !pw) { err.textContent = '아이디와 비밀번호를 입력해주세요.'; return; }
+  // [보안] 로그인 전에는 users 컬렉션을 읽을 수 없으므로 서버(/api/login-lookup)에서 로그인 이메일만 조회
+  var isTeacher = window._loginType === 'teacher';
+  fetch('/api/login-lookup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: id, type: isTeacher ? 'teacher' : 'student' }) })
+  .then(function(r) { if (!r.ok) throw new Error('lookup ' + r.status); return r.json(); }).then(function(info) {
+    if (!info.found) { showScreen('screen-login'); document.getElementById('login-err').textContent = '아이디 또는 비밀번호가 올바르지 않습니다.'; return; }
+    var matched = info.accounts || [];
+    if (!matched.length) { showScreen('screen-login'); document.getElementById('login-err').textContent = '해당 탭에 맞는 계정이 없습니다.'; return; }
+    signInWithEmailAndPassword(auth, matched[0].email, pw).then(function(cred) {
+      // 로그인 성공 - 스플래시 시간 무시하고 즉시 화면 전환
+      _authResolved = true;
+      _doGoToScreen(cred.user);
+    }).catch(function() { showScreen('screen-login'); document.getElementById('login-err').textContent = '아이디 또는 비밀번호가 올바르지 않습니다.'; });
+  }).catch(function() { showScreen('screen-login'); document.getElementById('login-err').textContent = '오류가 발생했습니다.'; });
+};
+
+window.doLogout = function() {
+  showScreen('screen-login');
+  if (unsubTodos) { unsubTodos(); unsubTodos = null; }
+  if (unsubNotices) { unsubNotices(); unsubNotices = null; }
+  if (unsubChat) { unsubChat(); unsubChat = null; }
+  if (unsubChatNotif) { unsubChatNotif(); unsubChatNotif = null; }
+  try{ MP_stopComments(); MP_stopCommentHistory(); }catch(e){}
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  if (timerAutoSave) { clearInterval(timerAutoSave); timerAutoSave = null; }
+  TimerEngine.operationVersion += 1;
+  TimerEngine.todoId = null; TimerEngine.accumMs = 0; TimerEngine.status = 'idle'; TimerEngine.startedAtMs = null;
+  currentUser = null; currentProfile = null;
+  signOut(auth).catch(function(){});
+};
+
+window.setLoginType = function(t) {
+  window._loginType = t;
+  var s = document.getElementById('ltab-s'), tv = document.getElementById('ltab-t');
+  if (!s||!tv) return;
+  if (t==='student') {
+    s.style.cssText='flex:1;height:100%;font-size:16px;cursor:pointer;border:none;background:var(--burg-l2);color:var(--burg);font-weight:600;';
+    tv.style.cssText='flex:1;height:100%;font-size:16px;cursor:pointer;border:none;background:transparent;color:var(--tx3);';
+  } else {
+    tv.style.cssText='flex:1;height:100%;font-size:16px;cursor:pointer;border:none;background:var(--burg-l2);color:var(--burg);font-weight:600;';
+    s.style.cssText='flex:1;height:100%;font-size:16px;cursor:pointer;border:none;background:transparent;color:var(--tx3);';
+  }
+};
+
+// ── 프로필 ──
+function syncStudentUI() {
+  if (window.refreshSubjectNames) refreshSubjectNames();
+  var p = currentProfile || {};
+  _applyAvatar(document.getElementById('student-avatar'), p.name, p.avatar);
+  _applyAvatar(document.getElementById('dt-student-avatar'), p.name, p.avatar);
+  var fields = {name:'ps-name',school:'ps-school',univ:'ps-univ',dept:'ps-dept',goal:'ps-goal'};
+  Object.keys(fields).forEach(function(k) { var el = document.getElementById(fields[k]); if(el) el.value=p[k]||''; });
+  window._psUnivLogoUrl = undefined; // 모달 다시 열 때마다 "변경 안 함" 상태로 리셋
+  renderProfileUnivLogoPreview(p.univLogo || null);
+  var univLogoStatusEl = document.getElementById('ps-univ-logo-status'); if (univLogoStatusEl) univLogoStatusEl.textContent = '';
+  var univLogoCandEl = document.getElementById('ps-univ-logo-candidates'); if (univLogoCandEl) univLogoCandEl.innerHTML = '';
+  var g = document.getElementById('ps-grade');
+  if (g && p.grade) { for (var i=0;i<g.options.length;i++) { if(g.options[i].value===p.grade){g.options[i].selected=true;break;} } }
+  if (window.onGradeChange && g) onGradeChange(g.value);
+  // 과목 select 동기화
+  if (window.syncAllSubjectSelects) syncAllSubjectSelects();
+}
+function syncTeacherUI() {
+  var p = currentProfile || {};
+  var gr = document.getElementById('teacher-greeting');
+  var rl = document.getElementById('teacher-role-label');
+  if (gr) gr.textContent = '안녕하세요, '+p.name+' 👋';
+  if (rl) rl.textContent = (p.role==='master'?'마스터 관리자':'관리자');
+  _applyAvatar(document.getElementById('teacher-avatar-btn'), p.name, p.avatar);
+  _applyAvatar(document.getElementById('dt-teacher-avatar'), p.name, p.avatar);
+  var ptn = document.getElementById('pt-name'); if(ptn) ptn.value=p.name||'';
+}
+window._psUnivLogoUrl = undefined; // undefined면 안 바꿈, null이면 삭제, 문자열이면 새로 설정
+
+// 위키백과 공개 API로 대학 로고를 자동으로 찾아본다 (요청 API 키 필요없음, 무료).
+// 100% 정확하지는 않을 수 있어서 - 위키 문서가 없거나 로고가 아닌 다른 사진이 걸려있을 수 있음 -
+// 찾은 이미지를 먼저 미리보기로 보여주고, 학생이 확인 후 "직접 선택"으로 바꿀 수 있게 해둠.
+// 학교 홈페이지 주소로 파비콘(브라우저 탭 아이콘)을 가져옴. 대부분 대학 사이트가
+// 파비콘으로 자기네 상징을 쓰기 때문에 위키 검색보다 훨씬 정확한 경우가 많고,
+// 이미지 태그로 직접 불러오는 방식이라 CORS 문제 자체가 없어 훨씬 안정적임.
+window.fetchUnivFavicon = function(){
+  var domain = document.getElementById('ps-univ-domain-input').value.trim()
+    .replace(/^https?:\/\//,'').replace(/\/.*$/,''); // http(s):// 나 뒤에 붙은 경로 제거
+  if (!domain) { alert('학교 홈페이지 주소를 입력해주세요 (예: yonsei.ac.kr)'); return; }
+
+  // 구글 파비콘 서비스는 sz(크기)를 크게 요청해도, 실제로는 작은 원본(16~32px)을 그냥
+  // 늘려서 주는 경우가 많아 화질이 안 좋을 수 있음. 애플 터치 아이콘(아이폰 홈화면용으로
+  // 원래 180px 이상으로 만들어두는 경우가 많음)을 시도해보면 더 선명한 경우가 있어서 같이 후보로 둠.
+  renderUnivLogoCandidates([
+    { label: '애플 터치 아이콘(더 선명할 수 있음)', url: 'https://' + domain + '/apple-touch-icon.png' },
+    { label: '홈페이지 아이콘', url: 'https://www.google.com/s2/favicons?domain=' + encodeURIComponent(domain) + '&sz=256' }
+  ]);
+  document.getElementById('ps-univ-logo-status').innerHTML = '아래에서 확인하고 선택해주세요. <b>둘 다 화질이 안 좋으면, 이건 이 사이트가 원래 작은 아이콘만 갖고 있다는 뜻이라 자동으로는 한계가 있어요</b> - 이럴 땐 대학 홈페이지의 "CI/BI" 페이지에서 로고를 받아 "직접 선택"으로 올리시는 게 가장 확실합니다.';
+};
+
+function renderUnivLogoCandidates(candidates){
+  var host = document.getElementById('ps-univ-logo-candidates');
+  host.innerHTML = candidates.map(function(c, i){
+    var url = c.url || ('https://commons.wikimedia.org/wiki/Special:FilePath/' + encodeURIComponent(c.filename));
+    return '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;" onclick="selectUnivLogoCandidate(\''+url.replace(/'/g,"\\'")+'\')">'
+      + '<img src="'+escapeHtml(url)+'" style="width:56px;height:56px;border-radius:10px;object-fit:contain;background:var(--surface2);border:1.5px solid var(--border);padding:4px;"/>'
+      + '<span style="font-size:10px;color:var(--tx3);">'+escapeHtml(c.label)+'</span>'
+      + '</div>';
+  }).join('');
+}
+
+window.selectUnivLogoCandidate = function(url){
+  window._psUnivLogoUrl = url;
+  renderProfileUnivLogoPreview(url);
+  document.getElementById('ps-univ-logo-status').textContent = '✓ 선택 완료';
+  document.getElementById('ps-univ-logo-candidates').innerHTML = '';
+};
+
+window.uploadProfileUnivLogo = function(input){
+  if (!input.files || !input.files[0]) return;
+  var file = input.files[0];
+  var preview = document.getElementById('ps-univ-logo-preview');
+  var statusEl = document.getElementById('ps-univ-logo-status');
+  if (statusEl) statusEl.textContent = '';
+  preview.innerHTML = '<span style="font-size:12px;color:var(--tx3);">⏳ 업로드 중...</span>';
+
+  var fd = new FormData();
+  fd.append('file', file);
+  fd.append('upload_preset', CLOUDINARY_PRESET);
+  fd.append('resource_type', 'image');
+
+  fetch('https://api.cloudinary.com/v1_1/'+CLOUDINARY_CLOUD+'/image/upload', {method:'POST', body:fd})
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if (!data.secure_url) throw new Error('업로드 실패');
+      window._psUnivLogoUrl = data.secure_url;
+      renderProfileUnivLogoPreview(data.secure_url);
+    })
+    .catch(function(){ preview.innerHTML = '<span style="font-size:12px;color:var(--red);">업로드 실패</span>'; });
+};
+
+function renderProfileUnivLogoPreview(url){
+  var preview = document.getElementById('ps-univ-logo-preview');
+  if (!preview) return;
+  if (!url) { preview.innerHTML = '<span style="font-size:12px;color:var(--tx4);">등록된 로고 없음 (이니셜로 표시됩니다)</span>'; return; }
+  preview.innerHTML = '<img src="'+escapeHtml(url)+'" onclick="openImageLightbox(\''+url.replace(/'/g,"\\'")+'\')" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid var(--border);cursor:pointer;"/>'
+    + '<button type="button" onclick="window._psUnivLogoUrl=null;renderProfileUnivLogoPreview(null);" style="font-size:11px;color:var(--red);background:none;border:none;cursor:pointer;text-decoration:underline;">삭제</button>';
+}
+
+window.saveProfileStudent = function() {
+  var fields = {name:document.getElementById('ps-name').value,school:document.getElementById('ps-school').value,grade:document.getElementById('ps-grade').value,univ:document.getElementById('ps-univ').value,dept:document.getElementById('ps-dept').value,goal:document.getElementById('ps-goal').value};
+  if (window._psUnivLogoUrl !== undefined) fields.univLogo = window._psUnivLogoUrl; // null이면 삭제, 문자열이면 새로 설정
+  var newPw = document.getElementById('ps-pw').value;
+  setDoc(doc(db,'users',currentUser.uid), fields, {merge:true}).then(function() {
+    currentProfile = Object.assign({}, currentProfile, fields);
+    if (newPw && newPw.length>=6) updatePassword(currentUser, newPw);
+    syncStudentUI(); closeModal('modal-profile-student'); studentTab(0);
+  });
+};
+window.saveProfileTeacher = function() {
+  var name = document.getElementById('pt-name').value;
+  var newPw = document.getElementById('pt-pw').value;
+  setDoc(doc(db,'users',currentUser.uid), {name:name}, {merge:true}).then(function() {
+    currentProfile = Object.assign({}, currentProfile, {name:name});
+    if (newPw && newPw.length>=6) updatePassword(currentUser, newPw);
+    syncTeacherUI(); closeModal('modal-profile-teacher');
+  });
+};
+
+// ── 학생 탭 ──
+window.studentTab = function(i) {
+  var prev = window._prevStudentTab || 0;
+  window._prevStudentTab = i;
+  for (var j=0;j<5;j++) {
+    var n=document.getElementById('snav-'+j); if(n) n.classList.toggle('active',i===j);
+    var s=document.getElementById('sb-'+j); if(s) s.classList.toggle('active',i===j);
+  }
+  var c = document.getElementById('student-content');
+  var html = '';
+  if (i===0) html = buildDashboard();
+  else if (i===1) html = buildGradePage();
+  else if (i===2) html = buildRewardPage();
+  else if (i===3) html = buildChatPage();
+  else if (i===4) html = buildExamListPage();
+  c.innerHTML = html;
+  // 합격 플래너는 timer-banner-host와 같은 칸에 있어서 모든 탭에서 계속 보이는
+  // 구조였는데, 채팅탭에서는 화면이 좁아서 안 보이는 게 맞음 - 채팅탭일 때만 숨김
+  var admHost = document.getElementById('admission-plan-host');
+  if (admHost) admHost.style.display = (i === 3) ? 'none' : '';
+  if (i===0) { listenTodos(); try { if (window.WT) WT.studentHomePin(document.getElementById('wt-home-pin')); } catch(e){} }
+  if (i===1) loadGrades('mock');
+  if (i===2) loadRewardData();
+  if (i===3) listenKChatRooms();
+  if (i===4) { loadExamList(); MP_renderStudentSchedule(); MP_renderStudentReports(); try { if (window.WT) WT.studentExamSection(document.getElementById('wt-exam-sec')); } catch(e){} }
+  if (i !== 0 && prev !== i) {
+    pushHistory(function(){ studentTab(0); });
+  }
+  // 채팅 탭이면 chat-mode 클래스로 우측 패널 숨김
+  var stuScreen = document.getElementById('screen-student');
+  if (stuScreen) {
+    if (i === 3) stuScreen.classList.add('chat-mode');
+    else stuScreen.classList.remove('chat-mode');
+  }
+  updateDesktopRightPanel(i);
+};
+
+function updateDesktopRightPanel(tab) {
+  var panel = document.getElementById('dt-right-content');
+  if (!panel) return;
+  var p = currentProfile || {};
+  var now = new Date();
+  var kst = new Date(now.getTime() + (9*60 + now.getTimezoneOffset())*60000);
+  var days = ['일','월','화','수','목','금','토'];
+  var dateStr = kst.getFullYear() + '. ' + (kst.getMonth()+1) + '. ' + kst.getDate() + ' (' + days[kst.getDay()] + ')';
+  var today = getPlannerDate();
+  var html = '<div style="font-size:11px;color:var(--tx3);font-weight:600;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border2);letter-spacing:.05em;">'+dateStr+'</div>';
+  var _goalT = (p.grade === '성인') ? (p.goal||'') : (p.univ||'');
+  var _goalS = (p.grade === '성인') ? '' : (p.dept||'');
+  if (_goalT) {
+    html += '<div style="background:var(--burg-l);border-radius:10px;padding:11px 13px;margin-bottom:14px;">'
+      +'<div style="font-size:9px;color:var(--burg);font-weight:700;letter-spacing:.06em;margin-bottom:3px;">목표</div>'
+      +'<div style="font-size:14px;font-weight:700;color:var(--burg);">'+_goalT+'</div>'
+      +(_goalS?'<div style="font-size:11px;color:var(--tx3);margin-top:2px;">'+_goalS+'</div>':'')
+      +'</div>';
+  }
+  if (tab === 0) {
+    html += '<div style="font-size:10px;color:var(--tx3);font-weight:600;letter-spacing:.06em;margin-bottom:8px;">오늘 학습</div>'
+      +'<div id="dt-today-summary" style="font-size:12px;color:var(--tx3);">로딩 중...</div>';
+  } else {
+    var labels={1:'성적관리',2:'리워드',3:'채팅'};
+    html += '<div style="font-size:11px;color:var(--tx4);text-align:center;padding-top:30px;">'+labels[tab]+' 탭</div>';
+  }
+  panel.innerHTML = html;
+  if (tab === 0 && currentUser) {
+    getDocs(query(collection(db,'todos'), where('uid','==',currentUser.uid), where('date','==',today))).then(function(snap){
+      var todos = snap.docs.map(function(d){return d.data();});
+      var done = todos.filter(function(t){return t.status==='done';}).length;
+      var totalSec = 0;
+      todos.forEach(function(t){
+        if(t.studyTime){
+          var pp=t.studyTime.split(':');
+          totalSec += (parseInt(pp[0])||0)*3600 + (parseInt(pp[1])||0)*60 + (parseInt(pp[2])||0);
+        }
+      });
+      var h=Math.floor(totalSec/3600), m=Math.floor((totalSec%3600)/60);
+      var el = document.getElementById('dt-today-summary');
+      if(el) el.innerHTML =
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
+        +'<div style="background:var(--surface2);border-radius:8px;padding:10px;text-align:center;">'
+        +'<div style="font-size:18px;font-weight:700;color:var(--burg);">'+done+'<span style="font-size:11px;color:var(--tx3);">/'+todos.length+'</span></div>'
+        +'<div style="font-size:9px;color:var(--tx3);margin-top:2px;">완료</div></div>'
+        +'<div style="background:var(--surface2);border-radius:8px;padding:10px;text-align:center;">'
+        +'<div style="font-size:18px;font-weight:700;color:var(--burg);">'+h+'h '+String(m).padStart(2,'0')+'</div>'
+        +'<div style="font-size:9px;color:var(--tx3);margin-top:2px;">학습</div></div>'
+        +'</div>';
+    }).catch(function(){});
+  }
+};
+
+// ═══════════════════════════════════════
+// 합격 플래너 - 수시/정시 지원 계획표 (학교/학과/전형/면접/수능최저)
+// ═══════════════════════════════════════
+
+// 국어/영어/수학/탐구1/탐구2 다섯 과목을 전부 응시한 시험 성적(등급 있는 것)만 골라냄.
+// 여러 시험 날짜의 과목을 섞어서 가져오지 않고, "한 시험에서 5과목을 다 봤을 때"만
+// 수능최저 판정에 쓸 수 있게 하기 위함 (실제 수능최저는 같은 회차 응시 기준이라서).
+// 한국사(hi)는 응시 안 했을 수도 있으니 "5과목 완주" 판정에는 안 넣고, 있으면 별도로
+// 같이 담아둬서 한국사 조건이 있을 때만 참고함.
+function _extractFullMockScores(grade){
+  var s = grade.scores || {};
+  if (!s.ko || !s.ko.grade || !s.en || !s.en.grade || !s.ma || !s.ma.grade) return null;
+  var tanKeys = Object.keys(s).filter(function(k){ return /^(sc|so)\d+$/.test(k) && s[k] && s[k].grade; }).sort();
+  if (tanKeys.length < 2) return null;
+  var picked = tanKeys.slice(0,2);
+  var g = function(k){ return parseInt(s[k].grade,10); };
+  if ([g('ko'),g('en'),g('ma'),g(picked[0]),g(picked[1])].some(function(v){return isNaN(v);})) return null;
+  var hi = (s.hi && s.hi.grade) ? parseInt(s.hi.grade,10) : null;
+  return {
+    ko: g('ko'), en: g('en'), ma: g('ma'), tan1: g(picked[0]), tan2: g(picked[1]),
+    hi: (hi!==null && !isNaN(hi)) ? hi : null,
+    examName: grade.examName, examDate: grade.examDate
+  };
+}
+
+// 탐구를 어떻게 반영할지에 따라 "탐구 점수 하나"를 계산함.
+// best1(1과목 반영) - 2과목 중 더 좋은(숫자가 작은) 등급 하나만 사용
+// avg2(2과목 평균 반영) - 두 과목 평균을 반올림해서 사용 (수능최저 실무 관행)
+function _computeTamguValue(fullScores, tamguMode){
+  if (tamguMode === 'avg2') return Math.round((fullScores.tan1 + fullScores.tan2) / 2);
+  return Math.min(fullScores.tan1, fullScores.tan2);
+}
+
+// 수능최저 조건 하나를 특정 "5과목 완주 시험 성적"에 대입해서 만족 여부 계산.
+// req = { targetCount, mustInclude, thresholdSum, tamguMode, subjectCaps:{ko,en,ma,tan 각각
+//        선택적 개별 최고등급}, hanguksaCap: 선택적 한국사 개별 최고등급 }
+// 탐구는 반영 방식에 따라 국어/영어/수학과 같은 "과목 하나"로 취급됨.
+// 필수 포함 과목의 등급은 무조건 다 넣고, 나머지 필요한 개수만큼은 남은 과목 중
+// 등급이 좋은(숫자가 작은) 순으로 채워서 목표 과목수를 맞춤. 그 다음 "합"이 기준
+// 이내인지 + (설정했다면) 골라진 과목들이 각자 개별 상한 이내인지 + (설정했다면)
+// 한국사가 별도 상한 이내인지까지 전부 확인해야 최종 만족으로 침.
+function _evaluateMinReq(fullScores, req){
+  var tamguValue = _computeTamguValue(fullScores, req.tamguMode);
+  var values = { ko: fullScores.ko, en: fullScores.en, ma: fullScores.ma, tan: tamguValue };
+  var ALL = ['ko','en','ma','tan'];
+  var must = req.mustInclude || [];
+  var needMore = req.targetCount - must.length;
+  if (needMore < 0) return null; // 잘못된 설정(필수 과목이 목표 개수보다 많음)
+  var remaining = ALL.filter(function(k){ return must.indexOf(k) === -1; })
+    .map(function(k){ return {key:k, grade:values[k]}; })
+    .sort(function(a,b){ return a.grade - b.grade; });
+  var chosenKeys = must.slice();
+  remaining.slice(0, needMore).forEach(function(r){ chosenKeys.push(r.key); });
+  var sum = chosenKeys.reduce(function(acc,k){ return acc + values[k]; }, 0);
+  var sumOk = sum <= req.thresholdSum;
+
+  // 과목별 개별 상한 확인 (합산에 골라진 과목들만 대상)
+  var capFails = [];
+  var caps = req.subjectCaps || {};
+  chosenKeys.forEach(function(k){
+    if (caps[k] && values[k] > caps[k]) capFails.push({key:k, grade:values[k], cap:caps[k]});
+  });
+
+  // 한국사 별도 조건 확인 (합산과 무관하게 항상 별도로 체크)
+  var hanguksaOk = true, hanguksaInfo = null;
+  if (req.hanguksaCap) {
+    if (fullScores.hi === null) { hanguksaOk = false; hanguksaInfo = 'no_data'; }
+    else { hanguksaOk = fullScores.hi <= req.hanguksaCap; hanguksaInfo = {grade: fullScores.hi, cap: req.hanguksaCap}; }
+  }
+
+  return {
+    sum: sum, sumOk: sumOk, chosenKeys: chosenKeys,
+    capFails: capFails, hanguksaOk: hanguksaOk, hanguksaInfo: hanguksaInfo,
+    satisfied: sumOk && capFails.length===0 && hanguksaOk
+  };
+}
+
+var MIN_REQ_SUBJECT_LABELS = {ko:'국어', en:'영어', ma:'수학', tan:'탐구', hi:'한국사'};
+
+// 이 학생의 수능최저 조건 하나를, "5과목을 다 본 시험 전부"에 대해 각각 판정해서
+// 배열로 돌려줌 (예전엔 가장 최근 시험 하나만 봤는데, 이제는 성적탭에서 시험별로
+// 각각 확인할 수 있어야 해서 전체 목록을 반환하도록 바꿈).
+function _computeMinReqStatusPerExam(allGrades, req){
+  var fullSittings = allGrades.map(_extractFullMockScores).filter(Boolean)
+    .sort(function(a,b){ return (b.examDate||'').localeCompare(a.examDate||''); });
+  return fullSittings.map(function(sitting){
+    var result = _evaluateMinReq(sitting, req);
+    if (!result) return { sitting: sitting, status:'invalid_config' };
+    return Object.assign({ sitting: sitting, status: result.satisfied ? 'satisfied' : 'not_satisfied' }, result);
+  });
+}
+
+// 특정 시험(examName+examDate로 식별) 하나에 대해서만, 이 학생이 등록해둔 모든
+// 수능최저 조건(합격 플래너의 수시+정시 전체)을 판정해서 배열로 돌려줌 - 성적탭의
+// 시험 카드 하나에 붙일 때 사용.
+function _computeAllMinReqForExam(grade, admissionPlansDoc){
+  var fullScores = _extractFullMockScores(grade);
+  if (!fullScores) return [];
+  var plans = [];
+  ['susi','jeongsi'].forEach(function(tab){
+    (admissionPlansDoc[tab]||[]).forEach(function(p){ if (p.minReq) plans.push(Object.assign({tabLabel: tab==='susi'?'수시':'정시'}, p)); });
+  });
+  return plans.map(function(p){
+    var result = _evaluateMinReq(fullScores, p.minReq);
+    return { plan: p, result: result };
+  });
+}
+
+// ═══════════════════════════════════════
+// 수능 D-Day 배너 - 모든 계정(학생/선생님/마스터)에서 공용으로 씀
+// ═══════════════════════════════════════
+// 확정된 수능 날짜(교육부/평가원 공식 발표분)를 연도별로 기록해둠. 목록에 없는
+// 미래 연도는 실제 수능 시행 관례(11월 셋째주 목요일)로 자동 계산해서 대체함 -
+// 그래야 올해 수능이 지나도 안내판이 계속 "지난 시험"만 보여주지 않고 자동으로
+// 다음 해로 넘어감.
+var CSAT_CONFIRMED_DATES = {
+  2026: '2026-11-19' // 2027학년도 대학수학능력시험
+};
+function _getCsatDateForYear(year){
+  if (CSAT_CONFIRMED_DATES[year]) return CSAT_CONFIRMED_DATES[year];
+  // 11월 1일의 요일을 구해서, 그 달의 첫 목요일 + 2주 = 셋째주 목요일을 계산
+  var nov1 = new Date(year, 10, 1);
+  var firstThursdayDate = 1 + ((4 - nov1.getDay() + 7) % 7);
+  var thirdThursdayDate = firstThursdayDate + 14;
+  return year+'-11-'+String(thirdThursdayDate).padStart(2,'0');
+}
+// 오늘 기준으로 "다음에 다가오는 수능"을 찾음 - 올해 걸 이미 지났으면 자동으로
+// 내년 걸로 넘어감 (그 해의 대입 기준 "OOOO학년도"는 응시 다음해이므로 +1)
+function _getUpcomingCsat(todayStr){
+  var todayYear = parseInt(todayStr.substring(0,4),10);
+  for (var y = todayYear; y <= todayYear+1; y++){
+    var dateStr = _getCsatDateForYear(y);
+    if (dateStr >= todayStr) return { dateStr: dateStr, admissionYear: y+1 };
+  }
+  // 이론상 여기 안 옴(위 루프가 항상 하나는 찾음)이지만 안전장치
+  var fallback = _getCsatDateForYear(todayYear+1);
+  return { dateStr: fallback, admissionYear: todayYear+2 };
+}
+
+function _buildDdayBannerHtml(){
+  var now = new Date();
+  var kst = new Date(now.getTime() + (9*60 + now.getTimezoneOffset())*60000);
+  var todayStr = kst.getFullYear()+'-'+String(kst.getMonth()+1).padStart(2,'0')+'-'+String(kst.getDate()).padStart(2,'0');
+  var upcoming = _getUpcomingCsat(todayStr);
+  var csat = new Date(upcoming.dateStr+'T00:00:00+09:00');
+  var today0 = new Date(todayStr+'T00:00:00+09:00');
+  var diffDays = Math.round((csat - today0) / (1000*60*60*24));
+  var examLabel = upcoming.admissionYear+'학년도 대학수학능력시험';
+  var dObj = new Date(upcoming.dateStr+'T00:00:00+09:00');
+  var weekdayNames = ['일','월','화','수','목','금','토'];
+  var dateDisplay = dObj.getFullYear()+'년 '+(dObj.getMonth()+1)+'월 '+dObj.getDate()+'일 ('+weekdayNames[dObj.getDay()]+')';
+
+  var dLabel, subLabel;
+  if (diffDays > 0) { dLabel = 'D-'+diffDays; subLabel = examLabel+'까지'; }
+  else { dLabel = 'D-DAY'; subLabel = '오늘은 '+examLabel+'일입니다'; }
+
+  return '<div style="background:linear-gradient(135deg,var(--burg),var(--burg2));border-radius:16px;padding:18px 22px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 6px 20px rgba(123,29,29,0.18);">'
+    + '<div>'
+    + '<div style="font-size:11px;color:rgba(255,255,255,0.85);font-weight:600;letter-spacing:.04em;margin-bottom:4px;">'+subLabel+'</div>'
+    + '<div style="font-size:15px;color:#fff;font-weight:600;">'+dateDisplay+'</div>'
+    + '</div>'
+    + '<div style="font-family:Georgia,\'Nanum Myeongjo\',serif;font-size:38px;font-weight:800;color:#fff;letter-spacing:.02em;text-shadow:0 2px 8px rgba(0,0,0,0.15);">'+dLabel+'</div>'
+    + '</div>';
+}
+
+function buildDashboard() {
+  var p = currentProfile || {};
+  var p_name = p.name||'학생';
+  var _univDeptText = (p.grade==='성인'&&p.goal) ? (' · 목표 '+p.goal) : (p.univ ? (' · 목표 '+p.univ+(p.dept?' '+p.dept:'')) : '');
+  var _univBadge = (p.grade!=='성인' && p.univ) ? avatarCircleHtml(p.univ, p.univLogo ? {type:'image', value:p.univLogo} : null, 18, {fontSizePx:10, chars:1, onclick: p.univLogo ? "openImageLightbox('"+p.univLogo.replace(/'/g,"\\'")+"')" : null}) : '';
+  var dt_header = '<div class="dt-header dt-only"><div><div class="dt-header-title">안녕하세요, '+p_name+' 👋</div><div class="dt-header-sub" style="display:flex;align-items:center;gap:5px;">'
+    + '<span>'+(p.school||'')+(p.school?' · ':'')+(p.grade||'')+'</span>'
+    + (_univDeptText ? '<span style="display:flex;align-items:center;gap:4px;">'+_univBadge+'<span>'+_univDeptText+'</span></span>' : '')
+    + '</div></div></div>';
+  var content = ''
+    +_buildDdayBannerHtml()
+    +'<div class="card card-gold mentor-card-host"><div id="mentor-comment-area"><div style="color:var(--tx3);font-size:12px;text-align:center;padding:8px;">멘토 코멘트 로딩 중...</div></div></div>'
+    +'<div id="lecture-dashboard"></div>'
+    +'<div class="card" id="daily-memo-card"><div class="card-h"><div class="card-title">📮 내일의 나에게</div><span id="daily-memo-save-status" style="font-size:10px;color:var(--tx4);"></span></div>'
+    +'<div id="daily-memo-yesterday-box" style="display:none;"></div>'
+    +'<div style="font-size:11px;color:var(--tx3);margin-bottom:6px;">오늘 못다한 것, 내일 꼭 해야 할 것을 남겨두면 내일 플래너 쓰기 전에 다시 보여드려요.</div>'
+    +'<textarea id="daily-memo-input" placeholder="예: 영어 단어 30개 못 외움 → 내일 아침에 마저 하기" oninput="saveDailyMemoDebounced()" style="width:100%;min-height:64px;border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;resize:vertical;background:var(--surface2);color:var(--tx1);box-sizing:border-box;"></textarea>'
+    +'</div>'
+    +'<div class="card"><div class="card-h"><div class="card-title">오늘의 플래너</div><div style="display:flex;gap:6px;align-items:center;"><span id="planner-progress-text" style="font-size:10px;color:var(--tx3);"></span><button class="btn-secondary" onclick="showPlannerHistory()" style="padding:5px 9px;font-size:10px;">📅 기록</button><button class="btn-primary" onclick="openModal(\'modal-submit-planner\')" style="padding:5px 11px;font-size:10px;">제출</button></div></div><div class="planner-progress"><div class="planner-progress-fill" id="planner-progress-fill" style="width:0%"></div></div><div id="wt-home-pin"></div><div id="todo-list" class="planner-list"><div style="color:var(--tx3);font-size:12px;padding:8px;text-align:center;">불러오는 중...</div></div><button class="add-btn" onclick="openModal(\'modal-todo\')">+ 할 일 추가</button></div>'
+    +'<div class="card"><div class="card-h"><div class="card-title">오늘 학습 요약</div></div><div id="study-report"><div style="color:var(--tx3);font-size:12px;text-align:center;padding:8px;">불러오는 중...</div></div></div>'
+    +'<div class="card"><div class="card-h"><div class="card-title">주간 과목 몰입도</div></div><div id="weekly-report"><div style="color:var(--tx3);font-size:12px;text-align:center;padding:8px;">불러오는 중...</div></div></div>'
+    +'<div class="card"><div class="card-h"><div class="card-title">🏅 이달의 우수학생 & 순공 TOP5</div></div><div id="study-rankings-student"><div style="color:var(--tx3);font-size:12px;text-align:center;padding:8px;">불러오는 중...</div></div></div>';
+  return dt_header + '<div class="dt-main-grid">' + content + '</div>';
+}
+
+function listenTodos() {
+  if (!currentUser) return;
+  if (unsubTodos) { unsubTodos(); unsubTodos = null; }
+  // 오늘 날짜의 모의고사 일정이 있으면 투두에 자동으로 추가한 뒤 목록을 그림 (실패해도 목록은 그대로 표시)
+  MP_ensureScheduleTodos().then(loadTodos, loadTodos);
+  loadTodos();
+  try{ MP_listenComments(); }catch(e){}
+  // 타이머 배너 상태 동기화
+  _renderTimerBanner(!!TimerEngine.todoId);
+  if (TimerEngine.todoId) _tickDisplay();
+  loadMentorComment(); renderWeeklyReport(); loadLectureDashboard(); loadStudyRankings('study-rankings-student'); loadDailyMemo(); loadAdmissionPlans();
+}
+
+// "내일의 나에게" - 오늘 날짜로 메모를 남기면, 다음날 접속했을 때(플래너 쓰기 전) 어제
+// 남긴 메모를 다시 보여줌. 하루에 하나씩(uid+날짜로 문서 식별), 입력하는 대로 자동저장.
+var _dailyMemoSaveTimer = null;
+var _currentAdmissionTab = 'susi';
+window.switchAdmissionPlanTab = function(tab){
+  _currentAdmissionTab = tab;
+  var susiTab = document.getElementById('admplan-tab-susi'), jsTab = document.getElementById('admplan-tab-jeongsi');
+  if (susiTab) { susiTab.style.background = tab==='susi' ? 'var(--burg-l2)' : 'var(--surface2)'; susiTab.style.color = tab==='susi' ? 'var(--burg)' : 'var(--tx3)'; susiTab.style.fontWeight = tab==='susi' ? '700' : '400'; susiTab.style.borderColor = tab==='susi' ? 'rgba(201,168,76,0.4)' : 'var(--border)'; }
+  if (jsTab) { jsTab.style.background = tab==='jeongsi' ? 'var(--burg-l2)' : 'var(--surface2)'; jsTab.style.color = tab==='jeongsi' ? 'var(--burg)' : 'var(--tx3)'; jsTab.style.fontWeight = tab==='jeongsi' ? '700' : '400'; jsTab.style.borderColor = tab==='jeongsi' ? 'rgba(201,168,76,0.4)' : 'var(--border)'; }
+  renderAdmissionPlanList();
+};
+
+var _admissionPlansCache = null, _admissionGradesCache = null;
+// 합격 플래너 카드는 timer-banner-host와 같은 세로 칸(dt-timer-admplan-col)에 렌더링함 -
+// 그래야 데스크탑(가로 배치 레이아웃)에서도 타이머 바로 아래에 오게 됨
+function _renderAdmissionPlanCardShell(){
+  var host = document.getElementById('admission-plan-host');
+  if (!host) return;
+  host.innerHTML = '<div class="card"><div class="card-h"><div class="card-title">🎯 합격 플래너</div></div>'
+    +'<div style="display:flex;gap:6px;margin-bottom:12px;">'
+    +'<button id="admplan-tab-susi" onclick="switchAdmissionPlanTab(\'susi\')" style="flex:1;padding:9px;background:var(--burg-l2);border:1px solid rgba(201,168,76,0.4);border-radius:8px;color:var(--burg);font-size:13px;font-weight:700;cursor:pointer;">수시 합격 플래너</button>'
+    +'<button id="admplan-tab-jeongsi" onclick="switchAdmissionPlanTab(\'jeongsi\')" style="flex:1;padding:9px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--tx3);font-size:13px;cursor:pointer;">정시 합격 플래너</button>'
+    +'</div>'
+    +'<div id="admission-plan-list" style="max-height:420px;overflow-y:auto;"><div style="color:var(--tx3);font-size:12px;text-align:center;padding:8px;">불러오는 중...</div></div>'
+    +'<button class="add-btn" onclick="openAdmissionPlanModal()">+ 지원 계획 추가</button>'
+    +'</div>';
+}
+
+function loadAdmissionPlans(){
+  if (!currentUser) return;
+  _renderAdmissionPlanCardShell();
+  Promise.all([
+    getDoc(doc(db,'admissionPlans',currentUser.uid)),
+    getDocs(query(collection(db,'grades'), where('uid','==',currentUser.uid)))
+  ]).then(function(results){
+    var planDoc = results[0];
+    _admissionPlansCache = planDoc.exists() ? planDoc.data() : {susi:[], jeongsi:[]};
+    _admissionGradesCache = results[1].docs.map(function(d){ return d.data(); });
+    renderAdmissionPlanList();
+  }).catch(function(e){
+    var el = document.getElementById('admission-plan-list');
+    if (el) el.innerHTML = '<div style="color:var(--red);font-size:12px;">불러오기 실패: '+e.message+'</div>';
+  });
+}
+
+function renderAdmissionPlanList(){
+  var el = document.getElementById('admission-plan-list');
+  if (!el || !_admissionPlansCache) return;
+  var list = _admissionPlansCache[_currentAdmissionTab] || [];
+  if (!list.length) {
+    el.innerHTML = '<div style="color:var(--tx4);font-size:12px;text-align:center;padding:16px 0;">아직 등록된 '+(_currentAdmissionTab==='susi'?'수시':'정시')+' 지원 계획이 없습니다.</div>';
+    return;
+  }
+  el.innerHTML = list.map(function(plan, idx){
+    var interviewBadge = plan.hasInterview ? '<span style="font-size:10px;font-weight:700;color:var(--gold);background:var(--gold-l);padding:2px 8px;border-radius:5px;margin-left:6px;">🗣 면접</span>' : '';
+    var confirmedBadge = plan.confirmed ? '<span style="font-size:10px;font-weight:700;color:var(--green);background:var(--green-l);padding:2px 8px;border-radius:5px;margin-left:6px;">✅ 지원 확정</span>' : '';
+    var minReqHtml = '';
+    if (plan.minReq) {
+      var mustLabel = (plan.minReq.mustInclude||[]).map(function(k){return MIN_REQ_SUBJECT_LABELS[k];}).join('+');
+      var tamguModeLabel = plan.minReq.tamguMode === 'avg2' ? '탐구 2과목 평균' : '탐구 1과목(높은 등급)';
+      var capParts = [];
+      Object.keys(plan.minReq.subjectCaps||{}).forEach(function(k){
+        if (plan.minReq.subjectCaps[k]) capParts.push(MIN_REQ_SUBJECT_LABELS[k]+' '+plan.minReq.subjectCaps[k]+'등급 이내');
+      });
+      if (plan.minReq.hanguksaCap) capParts.push('한국사 '+plan.minReq.hanguksaCap+'등급 이내');
+      var reqText = (mustLabel?mustLabel+' 포함 ':'') + plan.minReq.targetCount+'개 합 '+plan.minReq.thresholdSum+'등급 이내 · '+tamguModeLabel
+        + (capParts.length ? ' · '+capParts.join(', ') : '');
+      // 실제 충족 여부는 이 카드가 아니라 성적탭의 개별 시험마다 확인함(전과목 응시한
+      // 시험이 여러 개면 시험마다 다를 수 있어서, 여기서 하나의 결과로 뭉뚱그리지 않음)
+      minReqHtml = '<div style="margin-top:8px;padding:8px 10px;background:var(--surface2);border-radius:8px;font-size:11px;">'
+        + '<div style="color:var(--tx3);margin-bottom:3px;">수능최저: '+escapeHtml(reqText)+'</div>'
+        + '<div style="color:var(--tx4);">충족 여부는 성적탭의 각 시험 카드에서 확인하세요 →</div>'
+        + '</div>';
+    }
+    return '<div style="background:var(--surface);border:1px solid '+(plan.confirmed?'var(--green)':'var(--border)')+';border-radius:12px;padding:14px 16px;margin-bottom:10px;">'
+      + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+      +   '<div>'
+      +     '<div style="font-size:15px;font-weight:700;color:var(--tx1);">'+escapeHtml(plan.school)+interviewBadge+confirmedBadge+'</div>'
+      +     '<div style="font-size:12px;color:var(--tx3);margin-top:3px;">'+escapeHtml(plan.department)+' · '+escapeHtml(plan.admissionType)+'</div>'
+      +   '</div>'
+      +   '<div style="display:flex;gap:5px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">'
+      +     '<button onclick="toggleAdmissionPlanConfirmed(\''+_currentAdmissionTab+'\','+idx+')" style="padding:4px 9px;background:'+(plan.confirmed?'rgba(27,107,58,0.1)':'var(--gold-l)')+';border:1px solid '+(plan.confirmed?'rgba(27,107,58,0.25)':'rgba(184,132,26,0.3)')+';border-radius:6px;color:'+(plan.confirmed?'var(--green)':'var(--gold)')+';font-size:11px;cursor:pointer;white-space:nowrap;">'+(plan.confirmed?'확정 취소':'지원 확정')+'</button>'
+      +     '<button onclick="openAdmissionPlanModal(\''+_currentAdmissionTab+'\','+idx+')" style="padding:4px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--tx2);font-size:11px;cursor:pointer;">수정</button>'
+      +     '<button onclick="deleteAdmissionPlan(\''+_currentAdmissionTab+'\','+idx+')" style="padding:4px 9px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:6px;color:var(--red);font-size:11px;cursor:pointer;">삭제</button>'
+      +   '</div>'
+      + '</div>'
+      + minReqHtml
+      + '</div>';
+  }).join('');
+}
+
+window.openAdmissionPlanModal = function(tab, idx){
+  var editing = (tab !== undefined && idx !== undefined);
+  var plan = editing ? (_admissionPlansCache[tab]||[])[idx] : null;
+  window._editingAdmissionPlan = editing ? {tab:tab, idx:idx} : {tab:_currentAdmissionTab, idx:null};
+
+  document.getElementById('admplan-modal-title').textContent = editing ? '지원 계획 수정' : '지원 계획 추가';
+  document.getElementById('admplan-school').value = plan ? plan.school : '';
+  document.getElementById('admplan-department').value = plan ? plan.department : '';
+  document.getElementById('admplan-type').value = plan ? plan.admissionType : '';
+  document.getElementById('admplan-interview').checked = plan ? !!plan.hasInterview : false;
+
+  var hasMinReq = plan && plan.minReq;
+  document.getElementById('admplan-minreq-toggle').checked = !!hasMinReq;
+  document.getElementById('admplan-minreq-count').value = hasMinReq ? plan.minReq.targetCount : 3;
+  document.getElementById('admplan-minreq-sum').value = hasMinReq ? plan.minReq.thresholdSum : 6;
+  var tamguMode = hasMinReq ? (plan.minReq.tamguMode || 'best1') : 'best1';
+  document.getElementById('admplan-tamgu-best1').checked = tamguMode === 'best1';
+  document.getElementById('admplan-tamgu-avg2').checked = tamguMode === 'avg2';
+  ['ko','en','ma','tan'].forEach(function(k){
+    var cb = document.getElementById('admplan-must-'+k);
+    if (cb) cb.checked = hasMinReq ? (plan.minReq.mustInclude||[]).indexOf(k) !== -1 : false;
+    var capInput = document.getElementById('admplan-cap-'+k);
+    if (capInput) capInput.value = (hasMinReq && plan.minReq.subjectCaps && plan.minReq.subjectCaps[k]) ? plan.minReq.subjectCaps[k] : '';
+  });
+  document.getElementById('admplan-cap-hi').value = (hasMinReq && plan.minReq.hanguksaCap) ? plan.minReq.hanguksaCap : '';
+  _toggleAdmissionMinReqFields();
+  openModal('modal-admission-plan');
+};
+
+window._toggleAdmissionMinReqFields = function(){
+  var on = document.getElementById('admplan-minreq-toggle').checked;
+  document.getElementById('admplan-minreq-fields').style.display = on ? 'block' : 'none';
+};
+
+window.saveAdmissionPlan = function(){
+  var school = document.getElementById('admplan-school').value.trim();
+  var department = document.getElementById('admplan-department').value.trim();
+  var admissionType = document.getElementById('admplan-type').value.trim();
+  if (!school || !department || !admissionType) { alert('지원 학교, 학과, 전형을 모두 입력해주세요'); return; }
+  var hasInterview = document.getElementById('admplan-interview').checked;
+
+  var minReq = null;
+  if (document.getElementById('admplan-minreq-toggle').checked) {
+    var targetCount = parseInt(document.getElementById('admplan-minreq-count').value,10);
+    var thresholdSum = parseInt(document.getElementById('admplan-minreq-sum').value,10);
+    var tamguMode = document.getElementById('admplan-tamgu-avg2').checked ? 'avg2' : 'best1';
+    var mustInclude = ['ko','en','ma','tan'].filter(function(k){ var cb=document.getElementById('admplan-must-'+k); return cb && cb.checked; });
+    if (!targetCount || !thresholdSum) { alert('수능최저 과목수/등급합을 입력해주세요'); return; }
+    if (mustInclude.length > targetCount) { alert('필수 포함 과목 수가 목표 과목수보다 많을 수 없습니다'); return; }
+    var subjectCaps = {};
+    ['ko','en','ma','tan'].forEach(function(k){
+      var v = parseInt(document.getElementById('admplan-cap-'+k).value,10);
+      if (v) subjectCaps[k] = v;
+    });
+    var hanguksaCap = parseInt(document.getElementById('admplan-cap-hi').value,10) || null;
+    minReq = { targetCount: targetCount, thresholdSum: thresholdSum, mustInclude: mustInclude, tamguMode: tamguMode, subjectCaps: subjectCaps, hanguksaCap: hanguksaCap };
+  }
+
+  var target = window._editingAdmissionPlan;
+  var existing = (target.idx !== null) ? (_admissionPlansCache[target.tab]||[])[target.idx] : null;
+  var plan = { school: school, department: department, admissionType: admissionType, hasInterview: hasInterview, minReq: minReq, confirmed: existing ? !!existing.confirmed : false };
+  var list = (_admissionPlansCache[target.tab] || []).slice();
+  if (target.idx !== null) list[target.idx] = plan; else list.push(plan);
+  _admissionPlansCache[target.tab] = list;
+
+  setDoc(doc(db,'admissionPlans',currentUser.uid), _admissionPlansCache, {merge:true}).then(function(){
+    closeModal('modal-admission-plan');
+    renderAdmissionPlanList();
+  }).catch(function(e){ alert('저장 실패: ' + e.message); });
+};
+
+window.toggleAdmissionPlanConfirmed = function(tab, idx){
+  var list = (_admissionPlansCache[tab] || []).slice();
+  list[idx] = Object.assign({}, list[idx], { confirmed: !list[idx].confirmed });
+  _admissionPlansCache[tab] = list;
+  setDoc(doc(db,'admissionPlans',currentUser.uid), _admissionPlansCache, {merge:true}).then(function(){
+    renderAdmissionPlanList();
+  }).catch(function(e){ alert('저장 실패: ' + e.message); });
+};
+
+window.deleteAdmissionPlan = function(tab, idx){
+  if (!confirm('이 지원 계획을 삭제하시겠습니까?')) return;
+  var list = (_admissionPlansCache[tab] || []).slice();
+  list.splice(idx, 1);
+  _admissionPlansCache[tab] = list;
+  setDoc(doc(db,'admissionPlans',currentUser.uid), _admissionPlansCache, {merge:true}).then(function(){
+    renderAdmissionPlanList();
+  }).catch(function(e){ alert('삭제 실패: ' + e.message); });
+};
+
+function loadDailyMemo(){
+  if (!currentUser) return;
+  var today = getPlannerDate();
+  var yEl = document.getElementById('daily-memo-yesterday-box');
+  var input = document.getElementById('daily-memo-input');
+  if (!input) return;
+
+  // 오늘 메모 불러오기
+  getDoc(doc(db,'dailyMemos', currentUser.uid+'_'+today)).then(function(d){
+    input.value = (d.exists() && d.data().content) ? d.data().content : '';
+  }).catch(function(){});
+
+  // 어제 메모 불러오기 (오늘 날짜 기준으로 하루 전 - getPlannerDate와 같은 방식으로 계산)
+  var yDate = new Date(today+'T00:00:00+09:00');
+  yDate.setDate(yDate.getDate()-1);
+  var yStr = yDate.getFullYear()+'-'+String(yDate.getMonth()+1).padStart(2,'0')+'-'+String(yDate.getDate()).padStart(2,'0');
+  getDoc(doc(db,'dailyMemos', currentUser.uid+'_'+yStr)).then(function(d){
+    if (yEl) {
+      if (d.exists() && d.data().content && d.data().content.trim()) {
+        yEl.style.display = 'block';
+        yEl.innerHTML = '<div style="background:var(--gold-l);border:1px solid rgba(184,132,26,0.25);border-radius:10px;padding:10px 12px;margin-bottom:10px;">'
+          + '<div style="font-size:11px;font-weight:700;color:var(--gold);margin-bottom:4px;">🔔 어제 남긴 메모</div>'
+          + '<div style="font-size:13px;color:var(--tx1);white-space:pre-wrap;word-break:break-word;">'+escapeHtml(d.data().content)+'</div>'
+          + '</div>';
+      } else {
+        yEl.style.display = 'none';
+        yEl.innerHTML = '';
+      }
+    }
+  }).catch(function(){});
+}
+
+window.saveDailyMemoDebounced = function(){
+  if (_dailyMemoSaveTimer) clearTimeout(_dailyMemoSaveTimer);
+  var statusEl = document.getElementById('daily-memo-save-status');
+  if (statusEl) statusEl.textContent = '입력 중...';
+  _dailyMemoSaveTimer = setTimeout(function(){
+    if (!currentUser) return;
+    var today = getPlannerDate();
+    var content = document.getElementById('daily-memo-input').value;
+    setDoc(doc(db,'dailyMemos', currentUser.uid+'_'+today), {
+      uid: currentUser.uid, date: today, content: content, updatedAt: serverTimestamp()
+    }, {merge:true}).then(function(){
+      if (statusEl) statusEl.textContent = '✓ 저장됨';
+    }).catch(function(){
+      if (statusEl) statusEl.textContent = '저장 실패';
+    });
+  }, 700);
+};
+
+function loadTodos() {
+  if (!currentUser) return;
+  var today = getPlannerDate();
+  getDocs(query(collection(db,'todos'), where('uid','==',currentUser.uid), where('date','==',today))).then(function(snap) {
+    var todos = snap.docs.map(function(d) { return Object.assign({id:d.id},d.data()); })
+      .sort(function(a,b){var at=a.createdAt?a.createdAt.toMillis():0,bt=b.createdAt?b.createdAt.toMillis():0;return at-bt;});
+    renderTodos(todos); renderStudyReport(todos);
+  }).catch(function(){});
+}
+
+function loadMentorComment() {
+  var area = document.getElementById('mentor-comment-area');
+  if (!area) return;
+  getDocs(query(collection(db,'comments'), where('studentUid','==',currentUser.uid))).then(function(snap) {
+    if (snap.empty) { area.innerHTML='<div style="color:var(--tx3);font-size:12px;padding:6px 0;">아직 코멘트가 없습니다</div>'; return; }
+    var docs=snap.docs.map(function(d){return Object.assign({id:d.id},d.data());}).sort(function(a,b){
+      var at=a.createdAt?a.createdAt.toMillis():0, bt=b.createdAt?b.createdAt.toMillis():0;
+      return bt-at;
+    });
+    MP_renderMentorComments(area, docs);
+  }).catch(function(e) { area.innerHTML='<div style="color:var(--tx3);font-size:12px;">코멘트 로딩 실패</div>'; });
+}
+
+function loadLectureDashboard() {
+  var el = document.getElementById('lecture-dashboard');
+  if (!el||!currentUser) return;
+  getDocs(query(collection(db,'lectures'), where('studentUid','==',currentUser.uid))).then(function(snap) {
+    if (snap.empty) return;
+    var subjOrder=['국어','영어','수학','한국사','과탐','사탐','물리','화학','생명','지구','생활','윤리','한국지리','세계지리','동아시아','세계사','경제','정치','사회'];
+    function subjRank(lc){
+      var s=lc.subject||'';
+      var idx=subjOrder.findIndex(function(k){return s.includes(k);});
+      return idx>=0?idx:99;
+    }
+    var lectures=snap.docs.map(function(d){return d.data();});
+    // 과목 순서 정렬
+    lectures.sort(function(a,b){return subjRank(a)-subjRank(b);});
+    var activeLectures=lectures.filter(function(lc){var done=parseInt(lc.completedLessons)||0,total=parseInt(lc.totalLessons)||0;return done<total;});
+    var doneLectures=lectures.filter(function(lc){var done=parseInt(lc.completedLessons)||0,total=parseInt(lc.totalLessons)||0;return done>=total;});
+    var showDone=false;
+    function renderLectures(){
+      var html='<div class="card" style="background:var(--blue-l);border-color:rgba(29,78,216,0.2)"><div class="card-title" style="color:var(--blue)">📚 내 인강 현황</div>';
+      activeLectures.forEach(function(lc){html+=makeLectureItem(lc);});
+      if(doneLectures.length){
+        html+='<div style="margin-top:8px">'
+          +'<button onclick="var d=document.getElementById(\'done-lec-list\');var b=document.getElementById(\'done-lec-btn\');if(d.style.display===\'none\'){d.style.display=\'\';b.textContent=\'완강 목록 숨기기 ▲\';}else{d.style.display=\'none\';b.textContent=\'완강 '+doneLectures.length+'개 보기 ▼\';}" id="done-lec-btn" style="width:100%;padding:8px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--tx3);font-size:12px;cursor:pointer">완강 '+doneLectures.length+'개 보기 ▼</button>'
+          +'<div id="done-lec-list" style="display:none;margin-top:8px">';
+        doneLectures.forEach(function(lc){html+=makeLectureItem(lc);});
+        html+='</div></div>';
+      }
+      html+='</div>';
+      el.innerHTML=html;
+    }
+    function makeLectureItem(lc){
+      var total=parseInt(lc.totalLessons)||0,done=parseInt(lc.completedLessons)||0;
+      var pct=total>0?Math.round(done/total*100):0;
+      var isDone=done>=total;
+      var eta='';
+      if(lc.scheduleCount&&!isDone){
+        var remaining=total-done;
+        var weeksNeeded=Math.ceil(remaining/(parseInt(lc.scheduleCount)||1));
+        var etaDate=new Date();etaDate.setDate(etaDate.getDate()+weeksNeeded*7);
+        eta=etaDate.toLocaleDateString('ko-KR');
+      }
+      return '<div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border2);'+(isDone?'opacity:0.6;':'')+'">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
+        +'<div><div style="font-size:13px;font-weight:600">'+(isDone?'✅ ':'')+lc.lectureName+'</div>'
+        +'<div style="font-size:11px;color:var(--tx3)">'+lc.company+' · '+lc.instructor+'</div></div>'
+        +'<span style="font-size:12px;font-weight:700;color:'+(isDone?'var(--green)':'#7aa8ff')+'">'+done+'/'+total+'강</span></div>'
+        +'<div style="background:var(--surface3);border-radius:6px;height:6px;overflow:hidden;margin-bottom:6px">'
+        +'<div style="width:'+pct+'%;height:100%;background:'+(isDone?'linear-gradient(90deg,var(--green),#5dd4a0)':'linear-gradient(90deg,#4a7fff,#7aa8ff)')+';border-radius:6px;"></div></div>'
+        +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
+        +(lc.schedule?'<span style="font-size:11px;padding:3px 8px;background:var(--burg-l);border-radius:5px;color:var(--burg)">📅 '+lc.schedule+'</span>':'')
+        +(lc.scheduleCount?'<span style="font-size:11px;padding:3px 8px;background:var(--burg-l);border-radius:5px;color:var(--burg)">주 '+lc.scheduleCount+'강</span>':'')
+        +(eta?'<span style="font-size:11px;padding:3px 8px;background:rgba(61,186,126,0.08);border-radius:5px;color:var(--green)">완료 예상 '+eta+'</span>':'')
+        +'</div></div>';
+    }
+    renderLectures();
+  }).catch(function(){});
+}
+
+function renderTodos(todos) {
+  var list = document.getElementById('todo-list');
+  if (!list) return;
+  // 진행률 표시
+  var done = todos.filter(function(t){return t.status==='done';}).length;
+  var pct = todos.length ? Math.round(done/todos.length*100) : 0;
+  var fill = document.getElementById('planner-progress-fill');
+  var txt = document.getElementById('planner-progress-text');
+  if (fill) fill.style.width = pct+'%';
+  if (txt) txt.textContent = done+'/'+todos.length+' · '+pct+'%';
+
+  if (!todos.length) {
+    list.innerHTML='<div style="color:var(--tx3);font-size:12px;padding:14px 0;text-align:center;">할 일을 추가해주세요</div>';
+    return;
+  }
+  list.innerHTML = todos.map(function(t) {
+    var safeTitle = t.title.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"');
+    var safeSubj = t.subject||'ko';
+    var statusClass = t.status==='progressing'?'progressing':t.status==='done'?'done':'';
+    var subjShort = (subjectNames[t.subject]||t.subject||'').slice(0,1) || {ko:'국',en:'영',ma:'수',hi:'한',sc:'과',so:'사'}[t.subject]||t.subject;
+    var measuring = TimerEngine.todoId===t.id;
+    var timeHtml = '';
+    if (t.studyTime) {
+      timeHtml = '<span class="todo-time" style="color:var(--green);">'+t.studyTime+'</span>';
+    } else if (measuring) {
+      timeHtml = '<span class="todo-time" style="color:var(--burg);">⏱</span>';
+    }
+    return '<div class="todo-item '+statusClass+'" data-todo-id="'+t.id+'">'
+      +'<div class="todo-check-hit" onclick="cycleTodoStatus(\''+t.id+'\',\''+t.status+'\')"><div class="todo-check"></div></div>'
+      +'<div class="todo-title" onclick="startTimerFor(\''+t.id+'\',\''+t.subject+'\',\''+safeTitle+'\')">'+escapeHtml(t.title)+'</div>'
+      +'<span class="todo-subj subj-'+t.subject+'">'+subjShort+'</span>'
+      +timeHtml
+      +'<button class="todo-edit" onclick="openEditTodoModal(\''+t.id+'\',\''+safeTitle+'\',\''+safeSubj+'\')" title="수정">✏</button>'
+      +'</div>';
+  }).join('');
+}
+
+function renderStudyReport(todos) {
+  var el = document.getElementById('study-report');
+  if (!el) return;
+  var done = todos.filter(function(t) { return t.studyTime; });
+  if (!done.length) { el.innerHTML='<div style="color:var(--tx3);font-size:12px;padding:6px 0;text-align:center;">아직 학습 기록이 없습니다</div>'; return; }
+  var totalSec=0, bySubj={};
+  done.forEach(function(t) {
+    var p=t.studyTime.split(':');
+    var s=parseInt(p[0])*3600+parseInt(p[1])*60+parseInt(p[2]||0);
+    bySubj[t.subject]=(bySubj[t.subject]||0)+s; totalSec+=s;
+  });
+  var h=Math.floor(totalSec/3600),m=Math.floor((totalSec%3600)/60),s=totalSec%60;
+  // 큰 시간 + subj-bars (가로 누적 막대)
+  var sortedSubjects = Object.keys(bySubj).sort(function(a,b){return bySubj[b]-bySubj[a];});
+  var subjColorMap = {ko:'var(--blue)', en:'var(--green)', ma:'var(--orange)', hi:'var(--gold)', sc:'var(--purple)', so:'var(--red)'};
+  var bars = sortedSubjects.map(function(subj) {
+    var pct=totalSec>0?(bySubj[subj]/totalSec*100):0;
+    return '<div style="width:'+pct+'%;background:'+(subjColorMap[subj]||'var(--burg)')+';"></div>';
+  }).join('');
+  var legend = sortedSubjects.map(function(subj){
+    var hh=Math.floor(bySubj[subj]/3600), mm=Math.floor((bySubj[subj]%3600)/60);
+    return '<div style="display:flex;align-items:center;gap:4px;"><div style="width:8px;height:8px;border-radius:2px;background:'+(subjColorMap[subj]||'var(--burg)')+';"></div><span style="color:'+(subjColorMap[subj]||'var(--burg)')+';font-weight:600;">'+(subjectNames[subj]||subj)+'</span><span style="color:var(--tx3);">'+hh+':'+String(mm).padStart(2,'0')+'</span></div>';
+  }).join('');
+  el.innerHTML='<div class="study-summary">'
+    +'<div class="study-summary-time">'+h+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')+'</div>'
+    +'<div class="study-summary-label">오늘 총 학습 시간</div>'
+    +'</div>'
+    +'<div class="subj-bars">'+bars+'</div>'
+    +'<div class="subj-bars-legend">'+legend+'</div>';
+}
+
+var _weeklyReportCache=null,_weeklyReportDate='';
+function renderWeeklyReport() {
+  var today=getPlannerDate();
+  var el = document.getElementById('weekly-report');
+  if (!el||!currentUser) return;
+  if(_weeklyReportCache&&_weeklyReportDate===today){el.innerHTML=_weeklyReportCache;return;}
+  var weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate()-7);
+  getDocs(query(collection(db,'todos'), where('uid','==',currentUser.uid), where('completedAt','>',weekAgo), orderBy('completedAt','desc'))).then(function(snap) {
+    var bySubj={};
+    snap.docs.forEach(function(d) {
+      var t=d.data(); if(!t.studyTime) return;
+      var p=t.studyTime.split(':');
+      var s=parseInt(p[0])*3600+parseInt(p[1])*60+parseInt(p[2]||0);
+      bySubj[t.subject]=(bySubj[t.subject]||0)+s;
+    });
+    var sorted=Object.keys(bySubj).sort(function(a,b){return bySubj[b]-bySubj[a];});
+    if (!sorted.length) { var h='<div style="color:var(--tx3);font-size:12px;padding:6px 0;text-align:center;">이번 주 학습 기록이 없습니다</div>'; _weeklyReportCache=h;_weeklyReportDate=today;el.innerHTML=h; return; }
+    var maxSec = bySubj[sorted[0]] || 1;
+    var subjColorMap = {ko:'var(--blue)', en:'var(--green)', ma:'var(--orange)', hi:'var(--gold)', sc:'var(--purple)', so:'var(--red)'};
+    var subjShortFallback = {ko:'국',en:'영',ma:'수',hi:'한',sc:'과',so:'사'};
+    var html='<div style="display:flex;flex-direction:column;gap:7px;">'+sorted.map(function(subj,i) {
+      var h=Math.floor(bySubj[subj]/3600),m=Math.floor((bySubj[subj]%3600)/60);
+      var pct = (bySubj[subj]/maxSec*100);
+      var color = subjColorMap[subj]||'var(--burg)';
+      return '<div class="rank-item">'
+        +'<div class="rank-num" style="color:'+color+'">'+(i+1)+'</div>'
+        +'<span class="todo-subj subj-'+subj+'">'+((subjectNames[subj]||subj||'').slice(0,1)||subjShortFallback[subj]||subj)+'</span>'
+        +'<div class="rank-bar-wrap">'
+        +'<div class="rank-bar-top"><span style="color:var(--tx1);font-weight:600;">'+(subjectNames[subj]||subj)+'</span><span style="color:'+color+';font-weight:600;font-size:10px;">'+h+'h '+String(m).padStart(2,'0')+'m</span></div>'
+        +'<div class="rank-bar"><div class="rank-bar-fill" style="width:'+pct+'%;background:'+color+';"></div></div>'
+        +'</div></div>';
+    }).join('')+'</div>';
+    _weeklyReportCache=html; _weeklyReportDate=today;
+    el.innerHTML=html;
+  }).catch(function() { el.innerHTML='<div style="color:var(--tx3);font-size:12px;">불러오기 실패</div>'; });
+}
+
+window.cycleTodoStatus = function(id, current) {
+  var order=['none','progressing','done'];
+  var next = order[(order.indexOf(current)+1)%3];
+
+  // 즉시 화면에 반영 (서버 응답 기다리지 않음 - 태블릿 등에서 체감 딜레이 제거)
+  var itemEl = document.querySelector('.todo-item[data-todo-id="'+id+'"]');
+  if (itemEl) {
+    itemEl.classList.remove('none','progressing','done');
+    itemEl.classList.add(next);
+    var hitEl = itemEl.querySelector('.todo-check-hit');
+    if (hitEl) hitEl.setAttribute('onclick', "cycleTodoStatus('"+id+"','"+next+"')");
+
+    // 진행률 표시(X/N · %)도 즉시 재계산
+    var list = document.getElementById('todo-list');
+    if (list) {
+      var allItems = list.querySelectorAll('.todo-item');
+      var doneCount = list.querySelectorAll('.todo-item.done').length;
+      var total = allItems.length;
+      var pct = total ? Math.round(doneCount/total*100) : 0;
+      var fill = document.getElementById('planner-progress-fill');
+      var txt = document.getElementById('planner-progress-text');
+      if (fill) fill.style.width = pct+'%';
+      if (txt) txt.textContent = doneCount+'/'+total+' · '+pct+'%';
+    }
+  }
+
+  updateDoc(doc(db,'todos',id), {status:next}).catch(function(){
+    // 저장 실패 시에만 서버 상태로 되돌려 재동기화
+    loadTodos();
+  });
+};
+window.openEditTodoModal = function(id, title, subject) {
+  document.getElementById('edit-todo-id').value = id;
+  document.getElementById('edit-todo-title').value = title;
+  var sel = document.getElementById('edit-todo-subject');
+  for(var i=0;i<sel.options.length;i++){ if(sel.options[i].value===subject){sel.options[i].selected=true;break;} }
+  openModal('modal-edit-todo');
+};
+window.saveEditTodo = function() {
+  var id = document.getElementById('edit-todo-id').value;
+  var title = document.getElementById('edit-todo-title').value.trim();
+  var subject = document.getElementById('edit-todo-subject').value;
+  if(!title){alert('학습 내용을 입력해주세요.');return;}
+  updateDoc(doc(db,'todos',id),{title:title,subject:subject}).then(function(){closeModal('modal-edit-todo');loadTodos();});
+};
+window.confirmDeleteTodo = function() {
+  var id = document.getElementById('edit-todo-id').value;
+  if(!confirm('이 할 일을 삭제하시겠습니까?')) return;
+  // 타이머 실행 중이면 중단
+  if(TimerEngine.todoId===id){
+    if(timerInterval){clearInterval(timerInterval);timerInterval=null;}
+    if(timerAutoSave){clearInterval(timerAutoSave);timerAutoSave=null;}
+    clearTimerLocal(id);
+    clearActiveTimerIndex();
+    TimerEngine.operationVersion += 1;
+    TimerEngine.todoId=null; TimerEngine.accumMs=0; TimerEngine.status='idle'; TimerEngine.startedAtMs=null; TimerEngine.sessionId=null;
+    window._timerCurSubj=null; window._timerCurTitle=null;
+  }
+  try{ if(id.indexOf('sch_')===0) localStorage.setItem('mp_sch_dismiss_'+id.slice(4),'1'); }catch(e){}
+  deleteDoc(doc(db,'todos',id)).then(function(){closeModal('modal-edit-todo');loadTodos();});
+};
+// 학생이 "제출" 버튼을 안 눌러도, 실제로 플래너에서 할 일을 추가하거나 완료하는 등
+// 진짜 활동을 하면 그 흔적이 남도록 함. submittedAt(공식 제출 시각)과는 별개로
+// lastActivityAt만 살짝 갱신 - 연속제출 스트릭/보너스에는 영향 없고, 순수하게
+// "이 날 이 학생이 플래너를 실제로 만졌다"는 기록만 남김 (선생님이 확인할 때 씀).
+function _touchPlannerActivity(){
+  if (!currentUser || !currentProfile) return;
+  var today = getPlannerDate();
+  var planKey = currentUser.uid+'_'+today;
+  setDoc(doc(db,'planners',planKey), {
+    uid: currentUser.uid, name: currentProfile.name, date: today, branch: getBranch(),
+    lastActivityAt: serverTimestamp()
+  }, {merge:true}).catch(function(e){ console.warn('[플래너 활동 기록 실패]', e); });
+}
+
+window.addTodo = function() {
+  var title=document.getElementById('todo-title-input').value.trim();
+  if(!title) return;
+  var today=getPlannerDate();
+  var btn = document.getElementById('todo-add-confirm-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '추가 중...'; }
+  addDoc(collection(db,'todos'),{uid:currentUser.uid,title:title,subject:document.getElementById('todo-subject').value,status:'none',studyTime:null,certified:false,date:today,branch:getBranch(),createdAt:serverTimestamp()}).then(function(){
+    closeModal('modal-todo');document.getElementById('todo-title-input').value='';loadTodos();_touchPlannerActivity();
+  }).catch(function(e){
+    // 예전엔 여기서 실패해도 아무 표시 없이 조용히 넘어가서, 학생은 할 일을 추가했다고
+    // 생각했는데 실제로는 저장이 안 된 채로 남는 문제가 있었음(제출 버튼과 같은 종류의 버그).
+    // 이제는 실패를 명확히 알리고, 모달도 안 닫혀서 바로 다시 시도할 수 있게 함.
+    alert('⚠️ 할 일 추가에 실패했습니다. 인터넷 연결을 확인하고 다시 눌러주세요.\n('+e.message+')');
+  }).finally(function(){
+    if (btn) { btn.disabled = false; btn.textContent = '추가하기'; }
+  });
+};
+window.doSubmitPlanner = function() {
+  var today=getPlannerDate();
+  var planKey = currentUser.uid+'_'+today;
+
+  // 제출 전에 오늘 할 일 목록을 먼저 조회함 - 1) 하나도 없으면 제출 자체를 막고,
+  // 2) 있으면 그 순간의 목록을 스냅샷으로 같이 저장해서, 나중에 todos 원본이 무슨
+  // 이유로든 사라지거나 날짜가 어긋나도 "제출 당시엔 이런 할 일이 있었다"는 기록이
+  // 영구히 남도록 함 (예전엔 이 기록이 없어서, 제출은 됐는데 할 일 목록은 안 보이는
+  // 상황이 생기면 원인 파악이 불가능했음).
+  getDocs(query(collection(db,'todos'), where('uid','==',currentUser.uid), where('date','==',today))).then(function(todoSnap){
+    if (todoSnap.empty) {
+      alert('오늘 등록된 할 일이 없습니다.\n할 일을 먼저 추가한 뒤 제출해주세요.');
+      return;
+    }
+    var todosSnapshot = todoSnap.docs.map(function(d){
+      var t = d.data();
+      return { title:t.title||'', subject:t.subject||'', status:t.status||'none', studyTime:t.studyTime||null };
+    });
+
+    getDoc(doc(db,'planners',planKey)).then(function(existing){
+      if (existing.exists()) {
+        // 이미 오늘 제출한 기록이 있으면 스트릭 재계산 없이 갱신만
+        setDoc(doc(db,'planners',planKey),{uid:currentUser.uid,name:currentProfile.name,date:today,branch:getBranch(),submittedAt:serverTimestamp(),todosSnapshot:todosSnapshot},{merge:true}).then(function(){
+          closeModal('modal-submit-planner');alert('플래너가 제출되었습니다!');
+        }).catch(function(e){
+          alert('⚠️ 제출 중 오류가 발생했습니다. 다시 시도해주세요.\n('+e.message+')');
+        });
+        return;
+      }
+
+      // KST 기준 오후 2시(14:00) 이후 제출이면 "제출 지연"으로 기록 (출입 지각과는 무관 - 순수 제출 시각 기준)
+      var now=new Date();
+      var kst=new Date(now.getTime()+(9*60+now.getTimezoneOffset())*60000);
+      var isLate = kst.getHours() >= 14;
+
+      setDoc(doc(db,'planners',planKey),{
+        uid:currentUser.uid,name:currentProfile.name,date:today,branch:getBranch(),
+        submittedAt:serverTimestamp(), late:isLate, todosSnapshot:todosSnapshot
+      }).then(function(){
+        closeModal('modal-submit-planner');
+        alert('플래너가 제출되었습니다!' + (isLate ? '\n(오후 2시 이후 제출 - 제출 지연으로 처리되어 연속제출 기록에는 반영되지 않습니다)' : ''));
+        _updatePlannerStreakAfterSubmit(today, isLate);
+        _awardPlannerGoalBonus(today);
+      }).catch(function(e){
+        // 예전엔 여기서 실패해도 아무 표시 없이 조용히 넘어가서, 학생은 제출했다고 생각했는데
+        // 실제로는 저장이 안 된 채로 남는 문제가 있었음. 이제는 실패를 명확히 알리고
+        // 모달도 닫지 않아서 다시 시도할 수 있게 함.
+        alert('⚠️ 제출에 실패했습니다. 인터넷 연결을 확인하고 다시 눌러주세요.\n('+e.message+')');
+      });
+    }).catch(function(e){
+      alert('⚠️ 제출 처리 중 오류가 발생했습니다. 다시 시도해주세요.\n('+e.message+')');
+    });
+  }).catch(function(e){
+    alert('⚠️ 할 일 목록을 불러오는 중 오류가 발생했습니다. 다시 시도해주세요.\n('+e.message+')');
+  });
+};
+
+// 오늘 할 일 100% 달성 시 상점 +3 (단, 항목 5개 초과일 때만 - 너무 적은 목표로 쉽게 채우는 것 방지)
+function _awardPlannerGoalBonus(today){
+  getDocs(query(collection(db,'todos'), where('uid','==',currentUser.uid), where('date','==',today))).then(function(snap){
+    var todos = snap.docs.map(function(d){return d.data();});
+    if (todos.length <= 5) return; // 5개 이하는 제외
+    var doneCount = todos.filter(function(t){ return t.status === 'done'; }).length;
+    if (doneCount !== todos.length) return; // 100% 아니면 제외
+    addDoc(collection(db,'points'), {
+      branch: getBranch(), studentUid: currentUser.uid, type:'plus',
+      reason: '플래너 목표 100% 달성 ('+today+', '+todos.length+'개) (자동)', points: 3,
+      givenBy:'system', givenByName:'자동지급', createdAt: serverTimestamp()
+    }).then(function(){
+      alert('🎉 오늘 플래너 목표를 100% 달성했어요! 상점 3점이 자동 지급되었습니다.');
+    }).catch(function(){});
+  }).catch(function(){});
+}
+
+// 연속 제출일수 갱신 + 30일 달성 시 자동 상점
+function _updatePlannerStreakAfterSubmit(today, isLate){
+  getDoc(doc(db,'users',currentUser.uid)).then(function(uDoc){
+    var data = uDoc.data() || {};
+    var prevStreak = data.plannerStreak || 0;
+    var lastDate = data.plannerStreakLastDate || null;
+
+    if (isLate) {
+      // 제출 지연은 "제출은 했으나" 연속 기록에는 반영하지 않음 (스트릭 끊김 처리)
+      updateDoc(doc(db,'users',currentUser.uid), {plannerStreak: 0, plannerStreakLastDate: today}).catch(function(){});
+      return;
+    }
+
+    var yesterday = _dateStrAddDays(today, -1);
+    var newStreak = (lastDate === yesterday) ? prevStreak + 1 : 1;
+
+    updateDoc(doc(db,'users',currentUser.uid), {
+      plannerStreak: newStreak,
+      plannerStreakLastDate: today
+    }).then(function(){
+      if (newStreak > 0 && newStreak % 30 === 0) {
+        addDoc(collection(db,'points'), {
+          branch: getBranch(), studentUid: currentUser.uid, type:'plus',
+          reason: '플래너 '+newStreak+'일 연속 제출 (자동)', points: 20,
+          givenBy:'system', givenByName:'자동지급', createdAt: serverTimestamp()
+        }).then(function(){
+          alert('🎉 플래너 '+newStreak+'일 연속 제출 달성! 상점 20점이 자동 지급되었습니다.');
+        });
+      }
+    }).catch(function(){});
+  });
+}
+
+function _dateStrAddDays(dateStr, days){
+  var parts = dateStr.split('-').map(Number);
+  var d = new Date(parts[0], parts[1]-1, parts[2]);
+  d.setDate(d.getDate()+days);
+  var y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), dd=String(d.getDate()).padStart(2,'0');
+  return y+'-'+m+'-'+dd;
+}
+
+// ── 이달의 우수학생 + 순공시간 TOP5 캐시 ──
+var _rankingsCache = null;
+var _rankingsCacheTime = 0;
+var _rankingsCacheMonth = '';
+
+// 순공시간 TOP5의 이전달/다음달 이동 - 미래 달로는 못 넘어가게 막음
+window._navigateStudyRankingsMonth = function(containerId, currentMonth, direction){
+  var parts = currentMonth.split('-');
+  var d = new Date(parseInt(parts[0],10), parseInt(parts[1],10)-1+direction, 1);
+  var now = new Date();
+  var kstNow = new Date(now.getTime() + (9*60 + now.getTimezoneOffset())*60000);
+  var thisMonth = kstNow.getFullYear()+'-'+String(kstNow.getMonth()+1).padStart(2,'0');
+  var target = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  if (target > thisMonth) return; // 미래로는 이동 불가
+  loadStudyRankings(containerId, target);
+};
+
+function loadStudyRankings(containerId, monthOverride) {
+  var el = document.getElementById(containerId);
+  if (!el) return;
+
+  var now = new Date();
+  var kstNow = new Date(now.getTime() + (9*60 + now.getTimezoneOffset())*60000);
+  var month = monthOverride || (kstNow.getFullYear()+'-'+String(kstNow.getMonth()+1).padStart(2,'0'));
+  var isCurrentMonth = month === (kstNow.getFullYear()+'-'+String(kstNow.getMonth()+1).padStart(2,'0'));
+
+  // 10분 캐시 (지점별 분리) - 과거 달 조회는 캐시 안 씀(자주 안 쓰이고, 매번 최신 상태 볼 필요는 없어서 단순화)
+  var cacheKey = month + '_' + getBranch();
+  if (isCurrentMonth && _rankingsCache && _rankingsCacheMonth === cacheKey && Date.now() - _rankingsCacheTime < 600000) {
+    el.innerHTML = _rankingsCache;
+    return;
+  }
+
+  el.innerHTML = '<div style="color:var(--tx3);font-size:13px">불러오는 중...</div>';
+
+  var monthParts = month.split('-');
+  var y = parseInt(monthParts[0],10), m = parseInt(monthParts[1],10);
+  var lastDay = new Date(y, m, 0).getDate();
+  var startDate = month + '-01';
+  var endDate = month + '-' + String(lastDay).padStart(2,'0');
+
+  Promise.all([
+    // 이번달 todos 전체 조회 (studyTime 필드 JS에서 필터)
+    getDocs(query(collection(db,'todos'), where('date','>=',startDate), where('date','<=',endDate))),
+    getDocs(query(collection(db,'users'), where('role','==','student'))),
+    getDoc(doc(db,'scholars',month))
+  ]).then(function(results) {
+    var todoSnap = results[0];
+    var studentSnap = results[1];
+    var scholarDoc = results[2];
+
+    var nameMap = {};
+    var myBranchR=getBranch();
+    studentSnap.docs
+      .filter(function(d){var data=d.data();var b=data.branch;return (!b||b===myBranchR)&&data.suspended!==true;})
+      .forEach(function(d){ nameMap[d.id] = d.data().name; });
+
+    var timeMap = {};
+    todoSnap.docs.forEach(function(d){
+      var t = d.data();
+      if (!t.studyTime || !t.uid) return;
+      // branch 필터 - 이 지점 학생만 (nameMap에 없으면 다른 지점)
+      if (!nameMap[t.uid]) return;
+      var parts = t.studyTime.split(':');
+      var secs = (parseInt(parts[0])||0)*3600 + (parseInt(parts[1]||0))*60 + (parseInt(parts[2]||0));
+      if (secs > 0) timeMap[t.uid] = (timeMap[t.uid]||0) + secs;
+    });
+
+    var sorted = Object.keys(timeMap).filter(function(uid){ return nameMap[uid]; })
+      .sort(function(a,b){ return timeMap[b]-timeMap[a]; }).slice(0,5);
+
+    function secsToStr(s) {
+      var h=Math.floor(s/3600), m=Math.floor((s%3600)/60);
+      return h+'h '+String(m).padStart(2,'0')+'m';
+    }
+
+    var scholarHtml = '';
+    if (scholarDoc.exists()) {
+      var sd = scholarDoc.data();
+      var sName = nameMap[sd.studentUid] || sd.studentName || '?';
+      scholarHtml = '<div style="background:linear-gradient(135deg,rgba(201,168,76,0.15),rgba(201,168,76,0.05));border:1px solid rgba(201,168,76,0.4);border-radius:12px;padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;gap:12px">'
+        +'<div style="font-size:26px">🏆</div>'
+        +'<div style="flex:1"><div style="font-size:10px;color:var(--burg);font-weight:700;letter-spacing:1px;margin-bottom:2px">이달의 장학생</div>'
+        +'<div style="font-size:16px;font-weight:700;color:var(--burg)">'+sName+'</div>'
+        +(sd.reason?'<div style="font-size:11px;color:var(--tx3);margin-top:2px;white-space:pre-wrap;word-break:break-word;">'+sd.reason+'</div>':'')
+        +(sd.prize?'<div style="font-size:11px;color:var(--burg);margin-top:2px">🎁 '+sd.prize+'</div>':'')
+        +'</div></div>';
+    }
+
+    var medals = ['🥇','🥈','🥉','4️⃣','5️⃣'];
+    var monthNavHtml = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'
+      + '<button onclick="_navigateStudyRankingsMonth(\''+containerId+'\',\''+month+'\',-1)" style="background:none;border:none;color:var(--tx3);font-size:13px;cursor:pointer;padding:2px 6px;">◀</button>'
+      + '<span style="font-size:11px;font-weight:700;color:var(--tx3);letter-spacing:1px;">'+month+' 순공시간 TOP5</span>'
+      + (isCurrentMonth ? '<span style="width:20px;"></span>' : '<button onclick="_navigateStudyRankingsMonth(\''+containerId+'\',\''+month+'\',1)" style="background:none;border:none;color:var(--tx3);font-size:13px;cursor:pointer;padding:2px 6px;">▶</button>')
+      + '</div>';
+
+    var top5Html = '';
+    if (sorted.length) {
+      top5Html = monthNavHtml
+        + sorted.map(function(uid, i){
+          var secs = timeMap[uid];
+          var pct = sorted[0] ? Math.round(secs/timeMap[sorted[0]]*100) : 0;
+          var isMe = (typeof currentUser !== 'undefined' && currentUser && uid === currentUser.uid);
+          return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border2)">'
+            +'<span style="font-size:18px;width:24px;text-align:center;flex-shrink:0">'+medals[i]+'</span>'
+            +'<div style="flex:1;min-width:0">'
+            +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'
+            +'<span style="font-size:13px;font-weight:'+(isMe?'700':'600')+';color:'+(isMe?'var(--burg)':'var(--tx1)')+'">'+nameMap[uid]+(isMe?' (나)':'')+'</span>'
+            +'<span style="font-size:12px;font-weight:700;color:var(--burg)">'+secsToStr(secs)+'</span>'
+            +'</div>'
+            +'<div style="background:var(--surface3);border-radius:4px;height:4px;overflow:hidden">'
+            +'<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,var(--gold),var(--burg));border-radius:4px"></div>'
+            +'</div></div></div>';
+        }).join('');
+    } else {
+      top5Html = monthNavHtml + '<div style="color:var(--tx3);font-size:12px;padding:8px 0">이 달의 학습 기록이 없습니다</div>';
+    }
+
+    var html = scholarHtml
+      + '<div style="background:var(--surface2);border:1px solid var(--border2);border-radius:12px;padding:12px 14px">'
+      + top5Html + '</div>';
+
+    // 캐시 저장 - 과거 달 조회는 캐시하지 않음(자주 안 쓰이는 경로라 단순하게 매번 새로 조회)
+    if (isCurrentMonth) {
+      _rankingsCache = html;
+      _rankingsCacheTime = Date.now();
+      _rankingsCacheMonth = cacheKey;
+    }
+
+    el.innerHTML = html;
+  }).catch(function(e){
+    var el2 = document.getElementById(containerId);
+    if(el2) el2.innerHTML = '<div style="color:var(--tx3);font-size:12px">불러오기 실패: '+e.message+'</div>';
+  });
+}
+
+function timerStorageKey(id) {
+  var uid = currentUser ? currentUser.uid : '';
+  return 'timer_v2_' + uid + '_' + id;
+}
+
+function getElapsedMs(nowMs) {
+  var now = typeof nowMs === 'number' ? nowMs : Date.now();
+  if (TimerEngine.status !== 'running' || TimerEngine.startedAtMs === null) {
+    return TimerEngine.accumMs;
+  }
+  return Math.max(0, TimerEngine.accumMs + (now - TimerEngine.startedAtMs));
+}
+
+function formatElapsedMs(totalMs) {
+  var totalSec = Math.floor(Math.max(0, totalMs) / 1000);
+  var h = Math.floor(totalSec / 3600);
+  var m = Math.floor((totalSec % 3600) / 60);
+  var s = totalSec % 60;
+  return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+}
+
+// localStorage 저장 (ms 기준, v1 구데이터 자동 마이그레이션)
+function saveTimerLocal() {
+  if (!TimerEngine.todoId) return;
+  try {
+    localStorage.setItem(timerStorageKey(TimerEngine.todoId), JSON.stringify({
+      schemaVersion: TIMER_SCHEMA_VERSION,
+      todoId: TimerEngine.todoId,
+      status: TimerEngine.status,
+      accumMs: TimerEngine.accumMs,
+      startedAtMs: TimerEngine.startedAtMs,
+      subject: TimerEngine.subject,
+      title: TimerEngine.title,
+      savedAtMs: Date.now()
+    }));
+  } catch (error) { console.error('타이머 localStorage 저장 실패:', error); }
+}
+
+// ── 활성 타이머 인덱스 (앱 완전 종료 후에도 로컬만으로 복구하기 위한 단일 키) ──
+function activeTimerIndexKey() {
+  var uid = currentUser ? currentUser.uid : '';
+  return 'active_timer_v3_' + uid;
+}
+
+function saveActiveTimerIndex() {
+  if (!currentUser) return;
+  try {
+    if (!TimerEngine.todoId || TimerEngine.status === 'idle') {
+      localStorage.removeItem(activeTimerIndexKey());
+      return;
+    }
+    localStorage.setItem(activeTimerIndexKey(), JSON.stringify({
+      schemaVersion: 3,
+      todoId: TimerEngine.todoId,
+      status: TimerEngine.status,
+      accumMs: TimerEngine.accumMs,
+      startedAtMs: TimerEngine.startedAtMs,
+      subject: TimerEngine.subject,
+      title: TimerEngine.title,
+      date: getPlannerDate(),
+      sessionId: TimerEngine.sessionId || null,
+      savedAtMs: Date.now()
+    }));
+  } catch (error) { console.error('활성 타이머 인덱스 저장 실패:', error); }
+}
+
+function loadActiveTimerIndex() {
+  try {
+    var raw = localStorage.getItem(activeTimerIndexKey());
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) { return null; }
+}
+
+function clearActiveTimerIndex() {
+  try { localStorage.removeItem(activeTimerIndexKey()); } catch (error) {}
+}
+
+// saveTimerLocal + saveActiveTimerIndex를 함께 (상태 변경 시마다 호출)
+function saveAllTimerLocalState() {
+  saveTimerLocal();
+  saveActiveTimerIndex();
+}
+
+function loadTimerLocal(id) {
+  try {
+    var raw = localStorage.getItem(timerStorageKey(id));
+    if (raw) return JSON.parse(raw);
+    // 기존 v1 데이터 호환 (accum은 초 단위였음)
+    var oldKey = 'timer_' + (currentUser ? currentUser.uid : '') + '_' + id;
+    var oldRaw = localStorage.getItem(oldKey);
+    if (!oldRaw) return null;
+    var old = JSON.parse(oldRaw);
+    return {
+      schemaVersion: 1,
+      todoId: id,
+      status: old.startAt ? 'running' : 'paused',
+      accumMs: Number(old.accum || 0) * 1000,
+      startedAtMs: old.startAt || null,
+      savedAtMs: old.savedAt || Date.now()
+    };
+  } catch (error) { console.error('타이머 localStorage 읽기 실패:', error); return null; }
+}
+
+function clearTimerLocal(id) {
+  try {
+    localStorage.removeItem(timerStorageKey(id));
+    var oldKey = 'timer_' + (currentUser ? currentUser.uid : '') + '_' + id;
+    localStorage.removeItem(oldKey);
+  } catch (error) {}
+}
+
+function _tickDisplay() {
+  var el = document.getElementById('timer-banner-display');
+  if (!el || !TimerEngine.todoId) return;
+  var elapsedMs = getElapsedMs();
+  if (elapsedMs >= TIMER_MAX_MS) { stopTimer(); return; }
+  var _t = formatElapsedMs(elapsedMs);
+  if (el.textContent !== _t) el.textContent = _t;   // 같은 글자를 다시 쓰지 않음(0.5초마다 화면 재계산 방지)
+}
+
+function _startAutoSave() {
+  if (timerAutoSave) clearInterval(timerAutoSave);
+  timerAutoSave = setInterval(async function () {
+    if (TimerEngine.status !== 'running') return;
+    await persistTimerCheckpoint();
+  }, 60000);
+}
+
+function _stopAutoSave() {
+  if (timerAutoSave) { clearInterval(timerAutoSave); timerAutoSave = null; }
+}
+
+// Firestore 저장 체크포인트 (ms 필드 + 구 필드 정리 동시 기록)
+async function persistTimerCheckpoint() {
+  if (!TimerEngine.todoId) return;
+  var activeId = TimerEngine.todoId; // 함수 시작 시점 ID를 고정 - 저장 중 다른 항목으로 전환돼도 엉뚱한 문서에 쓰지 않도록
+  var myVersion = TimerEngine.operationVersion;
+  var now = Date.now();
+
+  if (TimerEngine.status === 'running') {
+    TimerEngine.accumMs = getElapsedMs(now);
+    TimerEngine.startedAtMs = now;
+  }
+
+  if (!TimerEngine.sessionId) {
+    TimerEngine.sessionId = (currentUser ? currentUser.uid : '') + '-' + now;
+  }
+
+  saveAllTimerLocalState();
+
+  var payload = {
+    timerSchemaVersion: TIMER_SCHEMA_VERSION,
+    timerAccumMs: TimerEngine.accumMs,
+    timerStartedAtMs: TimerEngine.startedAtMs,
+    timerRunning: TimerEngine.status === 'running',
+    timerSessionId: TimerEngine.sessionId,
+    timerUpdatedAt: serverTimestamp(),
+    // 구버전 코드가 남아있어도 과대 계산하지 않도록 정리
+    timerAccum: Math.floor(TimerEngine.accumMs / 1000),
+    timerStartAt: null
+  };
+
+  try {
+    await updateDoc(doc(db, 'todos', activeId), payload);
+  } catch (error) {
+    console.error('타이머 서버 저장 실패:', error);
+  }
+
+  // 저장 완료 후 이미 다른 타이머로 전환됐다면(경쟁 상태) 이후 처리를 건너뜀
+  if (myVersion !== TimerEngine.operationVersion) return;
+}
+
+function resetTimerMemory() {
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  _stopAutoSave();
+  TimerEngine.operationVersion += 1;
+  TimerEngine.todoId = null;
+  TimerEngine.subject = '';
+  TimerEngine.title = '';
+  TimerEngine.status = 'idle';
+  TimerEngine.accumMs = 0;
+  TimerEngine.startedAtMs = null;
+  TimerEngine.sessionId = null;
+  window._timerCurSubj = null;
+  window._timerCurTitle = null;
+}
+
+window.startTimerFor = async function(id, subject, title) {
+  if (!id) return;
+
+  if (TimerEngine.todoId === id) {
+    await togglePause();
+    return;
+  }
+
+  // 기존 타이머가 있으면 먼저 정확한 ms로 정지·저장
+  if (TimerEngine.todoId) {
+    var currentName = (TimerEngine.subject ? (subjectNames[TimerEngine.subject]||TimerEngine.subject)+' · ' : '') + (TimerEngine.title || '진행중인 항목');
+
+    if (TimerEngine.status === 'running') {
+      var changeConfirmed = confirm(
+        '현재 [' + currentName + '] 타이머가 실행 중입니다.\n\n' +
+        '기존 타이머를 일시정지하고 새 항목을 시작할까요?\n' +
+        '(기존 측정 시간은 저장됩니다)\n\n' +
+        '취소하면 기존 타이머가 계속 진행됩니다.'
+      );
+      if (!changeConfirmed) return;
+    }
+
+    var stopNow = Date.now();
+    if (TimerEngine.status === 'running') {
+      TimerEngine.accumMs = getElapsedMs(stopNow);
+    }
+    TimerEngine.status = 'paused';
+    TimerEngine.startedAtMs = null;
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    _stopAutoSave();
+    saveAllTimerLocalState();
+
+    // 기존 항목 저장 완료를 기다린 뒤 새 항목 시작 (경쟁 상태 방지)
+    await persistTimerCheckpoint();
+  }
+
+  var myVersion = ++TimerEngine.operationVersion;
+
+  var local = loadTimerLocal(id);
+  var serverData = null;
+  try {
+    var snap = await getDoc(doc(db, 'todos', id));
+    if (snap.exists()) serverData = snap.data();
+  } catch (error) {
+    console.error('타이머 서버 상태 조회 실패:', error);
+  }
+
+  // 조회하는 동안 사용자가 또 다른 항목으로 전환했으면 이 응답은 폐기
+  if (myVersion !== TimerEngine.operationVersion) return;
+
+  var localMs = local ? Number(local.accumMs || 0) : 0;
+  if (local && local.status === 'running' && local.startedAtMs) {
+    localMs += Math.max(0, Date.now() - local.startedAtMs);
+  }
+
+  var serverMs = 0;
+  if (serverData) {
+    if (typeof serverData.timerAccumMs === 'number') {
+      serverMs = serverData.timerAccumMs;
+      if (serverData.timerRunning && typeof serverData.timerStartedAtMs === 'number') {
+        serverMs += Math.max(0, Date.now() - serverData.timerStartedAtMs);
+      }
+    } else {
+      // 구 데이터(초 단위) 마이그레이션
+      serverMs = Number(serverData.timerAccum || 0) * 1000;
+      var oldStart = serverData.timerStartAt;
+      if (oldStart) {
+        var oldStartMs = (typeof oldStart.toMillis === 'function') ? oldStart.toMillis() : Number(oldStart||0);
+        if (oldStartMs > 0 && serverData.timerRunning) {
+          serverMs += Math.max(0, Date.now() - oldStartMs);
+        }
+      }
+    }
+  }
+
+  TimerEngine.todoId = id;
+  TimerEngine.subject = subject || '';
+  TimerEngine.title = title || '';
+  TimerEngine.status = 'running';
+  TimerEngine.accumMs = Math.max(localMs, serverMs);
+  TimerEngine.startedAtMs = Date.now();
+  TimerEngine.sessionId = currentUser.uid + '-' + Date.now();
+
+  window._timerCurSubj = TimerEngine.subject;
+  window._timerCurTitle = TimerEngine.title;
+
+  saveAllTimerLocalState();
+  _renderTimerBanner(true);
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(_tickDisplay, 500);
+  _startAutoSave();
+  _tickDisplay();
+
+  await persistTimerCheckpoint();
+};
+
+window.togglePause = async function() {
+  if (!TimerEngine.todoId) return;
+
+  if (TimerEngine.status === 'paused') {
+    TimerEngine.status = 'running';
+    TimerEngine.startedAtMs = Date.now();
+    saveAllTimerLocalState();
+    if (!timerInterval) timerInterval = setInterval(_tickDisplay, 500);
+    _startAutoSave();
+    await persistTimerCheckpoint();
+  } else if (TimerEngine.status === 'running') {
+    var now = Date.now();
+    TimerEngine.accumMs = getElapsedMs(now);
+    TimerEngine.startedAtMs = null;
+    TimerEngine.status = 'paused';
+    _stopAutoSave();
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    saveAllTimerLocalState();
+    await persistTimerCheckpoint();
+  }
+  _renderTimerBanner(true);
+  _tickDisplay();
+};
+
+window.stopTimer = async function() {
+  if (!TimerEngine.todoId) return;
+  var now = Date.now();
+  var totalMs = getElapsedMs(now);
+  var timeText = formatElapsedMs(totalMs);
+  var wasRunning = TimerEngine.status === 'running'; // 완료 버튼 누르기 전 원래 상태 기억
+
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  _stopAutoSave();
+
+  var ok = confirm('학습을 완료하시겠습니까?\n\n측정 시간: ' + timeText);
+  if (!ok) {
+    // 취소 시 원래 상태(실행 중이었으면 실행, 일시정지였으면 일시정지)로 복원
+    TimerEngine.accumMs = totalMs;
+    if (wasRunning) {
+      TimerEngine.status = 'running';
+      TimerEngine.startedAtMs = Date.now();
+      timerInterval = setInterval(_tickDisplay, 500);
+      _startAutoSave();
+    } else {
+      TimerEngine.status = 'paused';
+      TimerEngine.startedAtMs = null;
+    }
+    saveTimerLocal();
+    saveActiveTimerIndex();
+    _renderTimerBanner(true);
+    _tickDisplay();
+    await persistTimerCheckpoint();
+    return;
+  }
+
+  await finalizeTimer(false, totalMs, timeText);
+};
+
+window.doResetTimer = async function() {
+  if (!TimerEngine.todoId) { closeModal('modal-reset-confirm'); return; }
+  var resetId = TimerEngine.todoId;
+  clearTimerLocal(resetId);
+  clearActiveTimerIndex();
+  try {
+    await updateDoc(doc(db,'todos',resetId), {
+      timerSchemaVersion: TIMER_SCHEMA_VERSION,
+      timerAccumMs: 0, timerStartedAtMs: null, timerRunning: false,
+      timerAccum: 0, timerStartAt: null
+    });
+  } catch (error) {
+    console.error('타이머 초기화 저장 실패:', error);
+  }
+  resetTimerMemory();
+  _renderTimerBanner(false);
+  closeModal('modal-reset-confirm');
+};
+
+async function finalizeTimer(certified, totalMsOverride, timeTextOverride) {
+  if (TimerEngine.todoId) {
+    var totalMs = typeof totalMsOverride === 'number' ? totalMsOverride : getElapsedMs();
+    var timeText = timeTextOverride || formatElapsedMs(totalMs);
+    var finishedId = TimerEngine.todoId;
+    clearTimerLocal(finishedId);
+    clearActiveTimerIndex();
+    var _mpExtra = null;
+    try {
+      // 모의고사 투두(시험 시간이 이미 기록된 항목)는 학습시간을 덮어쓰지 않고 '추가 학습'으로 더함
+      var _mpSnap = await getDoc(doc(db,'todos',finishedId));
+      if (_mpSnap.exists()) _mpExtra = MPCore.additiveFinalize(_mpSnap.data(), totalMs);
+    } catch (e) { console.warn('[시험 투두 확인 실패]', e); }
+    try {
+      await updateDoc(doc(db,'todos',finishedId), Object.assign({
+        status:'done',
+        studyTime: timeText,
+        certified: false,
+        completedAt: serverTimestamp(),
+        timerSchemaVersion: TIMER_SCHEMA_VERSION,
+        timerAccumMs: 0, timerStartedAtMs: null, timerRunning: false,
+        timerAccum: 0, timerStartAt: null
+      }, _mpExtra || {}));
+    } catch (error) {
+      console.error('학습 완료 저장 실패:', error);
+      alert('완료 저장에 실패했습니다. 다시 시도해주세요.');
+      return;
+    }
+    _touchPlannerActivity();
+  }
+  resetTimerMemory();
+  _renderTimerBanner(false);
+  loadTodos();
+}
+
+// ── 이전 플래너 조회 ──
+// ── 플래너 기록 조회 ──
+
+// 학생: 홈 화면 내 슬라이드 패널 (모달 없이)
+window.showPlannerHistory=function(){
+  if(!currentUser||!currentProfile) return;
+  var uid=currentUser.uid; // 반드시 본인 uid
+  var content=document.getElementById('student-content');
+  if(!content) return;
+  // 기존 패널 있으면 제거
+  var existing=document.getElementById('planner-hist-panel');
+  if(existing){existing.remove();return;}
+  var panel=document.createElement('div');
+  panel.id='planner-hist-panel';
+  panel.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:500;overflow-y:auto;padding:16px;';
+  panel.innerHTML='<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">'
+    +'<button onclick="document.getElementById(\'planner-hist-panel\').remove()" style="background:none;border:none;color:var(--burg);font-size:20px;cursor:pointer;padding:0">←</button>'
+    +'<div style="font-size:16px;font-weight:700;color:var(--burg)">📅 나의 플래너 기록</div>'
+    +'</div>'
+    +'<div id="hist-date-list"><div style="color:var(--tx3);font-size:13px">불러오는 중...</div></div>'
+    +'<div id="hist-day-detail" style="display:none"></div>';
+  document.body.appendChild(panel);
+  pushHistory(function(){var p=document.getElementById('planner-hist-panel');if(p)p.remove();});
+  getDocs(query(collection(db,'todos'),where('uid','==',uid),limit(180))).then(function(snap){
+    var dateMap={};
+    snap.docs.forEach(function(d){var dt=d.data().date;if(dt){if(!dateMap[dt])dateMap[dt]={count:0,done:0};dateMap[dt].count++;if(d.data().status==='done')dateMap[dt].done++;}});
+    var dates=Object.keys(dateMap).sort(function(a,b){return b>a?1:-1;});
+    var dateList=document.getElementById('hist-date-list');
+    if(!dateList)return;
+    if(!dates.length){dateList.innerHTML='<div style="color:var(--tx3);font-size:13px">기록이 없습니다</div>';return;}
+    // 제출 여부도 확인
+    getDocs(query(collection(db,'planners'),where('uid','==',uid))).then(function(pSnap){
+      var submitted={};
+      pSnap.docs.forEach(function(d){ if(d.data().submittedAt) submitted[d.data().date]=true; }); // planners 문서가 있어도 submittedAt이 없으면(활동만 기록된 것) 제출로 안 침
+      dateList.innerHTML=dates.map(function(dt){
+        var info=dateMap[dt];
+        var pct=info.count?Math.round(info.done/info.count*100):0;
+        var isSubmit=submitted[dt];
+        return '<div onclick="histShowDay(\''+dt+'\',\''+uid+'\')" style="display:flex;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid var(--border2);cursor:pointer">'
+          +'<div style="flex:1">'
+          +'<div style="font-size:14px;font-weight:600;margin-bottom:4px">'+dt+'</div>'
+          +'<div style="display:flex;align-items:center;gap:8px">'
+          +'<div style="flex:1;background:var(--surface3);border-radius:4px;height:5px;overflow:hidden;max-width:100px"><div style="width:'+pct+'%;height:100%;background:'+(pct>=80?'var(--green)':pct>=50?'var(--gold)':'var(--red)')+';border-radius:4px"></div></div>'
+          +'<span style="font-size:11px;color:var(--tx3)">'+info.done+'/'+info.count+'개 완료</span>'
+          +(isSubmit?'<span style="font-size:10px;padding:2px 6px;background:var(--green-l);border-radius:4px;color:var(--green)">제출✓</span>':'')
+          +'</div></div>'
+          +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--tx3)" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>'
+          +'</div>';
+      }).join('');
+    }).catch(function(){
+      dateList.innerHTML=dates.map(function(dt){
+        return '<div onclick="histShowDay(\''+dt+'\',\''+uid+'\')" style="display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-bottom:1px solid var(--border2);cursor:pointer"><div style="font-size:14px;font-weight:600">'+dt+'</div><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--tx3)" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></div>';
+      }).join('');
+    });
+  }).catch(function(){var d=document.getElementById('hist-date-list');if(d)d.innerHTML='<div style="color:var(--tx3);font-size:13px">불러오기 실패</div>';});
+};
+
+window.histShowDay=function(date,uid){
+  var dateList=document.getElementById('hist-date-list');
+  var detail=document.getElementById('hist-day-detail');
+  if(!detail) return;
+  if(dateList) dateList.style.display='none';
+  detail.style.display='block';
+  detail.innerHTML='<button onclick="document.getElementById(\'hist-date-list\').style.display=\'\';document.getElementById(\'hist-day-detail\').style.display=\'none\';" style="display:flex;align-items:center;gap:6px;background:none;border:none;color:var(--burg);font-size:13px;cursor:pointer;padding:0;margin-bottom:12px">← 날짜 목록</button>'
+    +'<div style="font-size:15px;font-weight:700;color:var(--burg);margin-bottom:12px">'+date+'</div>'
+    +'<div id="hist-day-items"><div style="color:var(--tx3);font-size:13px">불러오는 중...</div></div>';
+  getDocs(query(collection(db,'todos'),where('uid','==',uid),where('date','==',date))).then(function(snap){
+    var el=document.getElementById('hist-day-items');if(!el)return;
+    if(snap.empty){el.innerHTML='<div style="color:var(--tx3);font-size:13px">기록 없음</div>';return;}
+    var todos=snap.docs.map(function(d){return d.data();}).sort(function(a,b){var at=a.createdAt?a.createdAt.toMillis():0,bt=b.createdAt?b.createdAt.toMillis():0;return at-bt;});
+    var statusMap={'none':'⬜','progressing':'🔄','done':'✅'};
+    var done=todos.filter(function(t){return t.status==='done';}).length;
+    el.innerHTML='<div style="background:var(--surface2);border-radius:10px;padding:10px 12px;margin-bottom:12px;display:flex;gap:16px">'
+      +'<div style="text-align:center"><div style="font-size:20px;font-weight:700;color:var(--burg)">'+todos.length+'</div><div style="font-size:10px;color:var(--tx3)">전체</div></div>'
+      +'<div style="text-align:center"><div style="font-size:20px;font-weight:700;color:var(--green)">'+done+'</div><div style="font-size:10px;color:var(--tx3)">완료</div></div>'
+      +'<div style="text-align:center"><div style="font-size:20px;font-weight:700;color:var(--red)">'+(todos.length-done)+'</div><div style="font-size:10px;color:var(--tx3)">미완료</div></div>'
+      +'</div>'
+      +todos.map(function(t){
+        return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border2)">'
+          +'<span style="font-size:16px">'+(statusMap[t.status]||'⬜')+'</span>'
+          +'<span class="subject-tag subj-'+(t.subject||'ko')+'" style="font-size:10px;flex-shrink:0">'+(subjectNames[t.subject]||t.subject||'')+'</span>'
+          +'<span style="flex:1;font-size:13px;'+(t.status==='done'?'text-decoration:line-through;color:var(--tx3)':'')+'">'+t.title+'</span>'
+          +(t.studyTime?'<span style="font-size:11px;color:var(--burg)">⏱'+t.studyTime+'</span>':'')
+          
+          +'</div>';
+      }).join('');
+  }).catch(function(){var el=document.getElementById('hist-day-items');if(el)el.innerHTML='<div style="color:var(--tx3);font-size:13px">불러오기 실패</div>';});
+};
+
+// 선생님 플래너 탭 내 통합 조회 함수
+window.teacherPlannerHistory=function(){
+  var panel=document.getElementById('teacher-planner-hist');
+  if(!panel) return;
+  panel.innerHTML='<div style="color:var(--tx3);font-size:13px">불러오는 중...</div>';
+  loadStudentList().then(function(students){
+    if(!students.length){panel.innerHTML='<div style="color:var(--tx3);font-size:13px">등록된 학생이 없습니다</div>';return;}
+    panel.innerHTML='<div class="section-label" style="margin-bottom:8px">학생 선택</div>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">'
+      +students.map(function(s){
+        return '<button onclick="teacherSelectStudent(\''+s.uid+'\',\''+s.name+'\')" id="tph-btn-'+s.uid+'" '
+          +'style="padding:7px 13px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--tx2);font-size:13px;cursor:pointer">'+s.name+'</button>';
+      }).join('')
+      +'</div>'
+      +'<div id="tph-date-list" style="display:none"></div>'
+      +'<div id="tph-day-detail" style="display:none"></div>';
+  });
+};
+window.teacherSelectStudent=function(uid,name){
+  // 버튼 활성화
+  document.querySelectorAll('[id^="tph-btn-"]').forEach(function(b){
+    b.style.background='var(--surface2)';b.style.borderColor='var(--border)';b.style.color='var(--tx2)';
+  });
+  var btn=document.getElementById('tph-btn-'+uid);
+  if(btn){btn.style.background='rgba(201,168,76,0.12)';btn.style.borderColor='rgba(201,168,76,0.35)';btn.style.color='var(--burg)';}
+  var dateList=document.getElementById('tph-date-list');
+  var dayDetail=document.getElementById('tph-day-detail');
+  if(!dateList) return;
+  dateList.style.display='block';
+  if(dayDetail) dayDetail.style.display='none';
+  dateList.innerHTML='<div style="color:var(--tx3);font-size:13px">불러오는 중...</div>';
+  getDocs(query(collection(db,'todos'),where('uid','==',uid),limit(180))).then(function(snap){
+    var dateMap={};
+    snap.docs.forEach(function(d){var dt=d.data().date;if(dt){if(!dateMap[dt])dateMap[dt]={count:0,done:0};dateMap[dt].count++;if(d.data().status==='done')dateMap[dt].done++;}});
+    var dates=Object.keys(dateMap).sort(function(a,b){return b>a?1:-1;});
+    if(!dates.length){dateList.innerHTML='<div style="color:var(--tx3);font-size:13px">'+name+' 기록 없음</div>';return;}
+    getDocs(query(collection(db,'planners'),where('uid','==',uid))).then(function(pSnap){
+      var submitted={};
+      pSnap.docs.forEach(function(d){ if(d.data().submittedAt) submitted[d.data().date]=true; }); // planners 문서가 있어도 submittedAt이 없으면(활동만 기록된 것) 제출로 안 침
+      dateList.innerHTML='<div style="font-size:13px;font-weight:700;color:var(--burg);margin-bottom:8px">'+name+' · 날짜 선택</div>'
+        +dates.map(function(dt){
+          var info=dateMap[dt];
+          var pct=info.count?Math.round(info.done/info.count*100):0;
+          return '<div onclick="teacherShowDay(\''+dt+'\',\''+uid+'\',\''+name+'\')" style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border2);cursor:pointer">'
+            +'<div style="flex:1"><div style="font-size:13px;font-weight:600;margin-bottom:4px">'+dt+'</div>'
+            +'<div style="display:flex;align-items:center;gap:8px">'
+            +'<div style="flex:1;max-width:80px;background:var(--surface3);border-radius:4px;height:4px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:'+(pct>=80?'var(--green)':pct>=50?'var(--gold)':'var(--red)')+';border-radius:4px"></div></div>'
+            +'<span style="font-size:11px;color:var(--tx3)">'+info.done+'/'+info.count+'</span>'
+            +(submitted[dt]?'<span style="font-size:10px;padding:2px 6px;background:var(--green-l);border-radius:4px;color:var(--green)">제출✓</span>':'')
+            +'</div></div>'
+            +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--tx3)" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>'
+            +'</div>';
+        }).join('');
+    }).catch(function(){dateList.innerHTML='<div style="color:var(--tx3)">불러오기 실패</div>';});
+  }).catch(function(){dateList.innerHTML='<div style="color:var(--tx3)">불러오기 실패</div>';});
+};
+window.teacherShowDay=function(date,uid,name){
+  var detail=document.getElementById('tph-day-detail');
+  var dateList=document.getElementById('tph-date-list');
+  if(!detail) return;
+  detail.style.display='block';
+  if(dateList) dateList.style.display='none';
+  detail.innerHTML='<button onclick="document.getElementById(\'tph-date-list\').style.display=\'\';document.getElementById(\'tph-day-detail\').style.display=\'none\';" style="display:flex;align-items:center;gap:6px;background:none;border:none;color:var(--burg);font-size:13px;cursor:pointer;padding:0;margin-bottom:12px">← 날짜 목록</button>'
+    +'<div style="font-size:14px;font-weight:700;color:var(--burg);margin-bottom:10px">'+name+' · '+date+'</div>'
+    +'<div id="tph-items"><div style="color:var(--tx3);font-size:13px">불러오는 중...</div></div>';
+  getDocs(query(collection(db,'todos'),where('uid','==',uid),where('date','==',date))).then(function(snap){
+    var el=document.getElementById('tph-items');if(!el) return;
+    if(snap.empty){el.innerHTML='<div style="color:var(--tx3);font-size:13px">기록 없음</div>';return;}
+    var todos=snap.docs.map(function(d){return d.data();}).sort(function(a,b){var at=a.createdAt?a.createdAt.toMillis():0,bt=b.createdAt?b.createdAt.toMillis():0;return at-bt;});
+    var statusMap={'none':'⬜','progressing':'🔄','done':'✅'};
+    var done=todos.filter(function(t){return t.status==='done';}).length;
+    el.innerHTML='<div style="background:var(--surface2);border-radius:10px;padding:10px 12px;margin-bottom:10px;display:flex;gap:16px">'
+      +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--burg)">'+todos.length+'</div><div style="font-size:10px;color:var(--tx3)">전체</div></div>'
+      +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--green)">'+done+'</div><div style="font-size:10px;color:var(--tx3)">완료</div></div>'
+      +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--red)">'+(todos.length-done)+'</div><div style="font-size:10px;color:var(--tx3)">미완료</div></div>'
+      +'</div>'
+      +todos.map(function(t){
+        return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border2)">'
+          +'<span style="font-size:15px">'+(statusMap[t.status]||'⬜')+'</span>'
+          +'<span class="subject-tag subj-'+(t.subject||'ko')+'" style="font-size:10px;flex-shrink:0">'+(subjectNames[t.subject]||t.subject||'')+'</span>'
+          +'<span style="flex:1;font-size:13px;'+(t.status==='done'?'text-decoration:line-through;color:var(--tx3)':'')+'">'+t.title+'</span>'
+          +(t.studyTime?'<span style="font-size:11px;color:var(--burg)">⏱'+t.studyTime+'</span>':'')
+          
+          +'</div>';
+      }).join('');
+  }).catch(function(){var el=document.getElementById('tph-items');if(el)el.innerHTML='<div style="color:var(--tx3)">불러오기 실패</div>';});
+};
+
+function _renderTimerBanner(running) {
+  var host = document.getElementById('timer-banner-host');
+  if (!host) return;
+  if (!running || !TimerEngine.todoId) {
+    host.innerHTML = '<div class="timer-banner-empty"><span class="timer-banner-empty-text">⏱ 공부할 할 일을 선택하면 타이머가 시작돼요</span></div>';
+    return;
+  }
+  var subj = window._timerCurSubj || '';
+  var title = window._timerCurTitle || '';
+  var isPaused = TimerEngine.status === 'paused';
+  host.innerHTML = '<div class="timer-banner">'
+    +'<div class="timer-banner-info">'
+    +'<div class="timer-banner-sub">'
+    +(isPaused?'':'<span class="timer-banner-sub-dot"></span>')
+    +'<span class="timer-banner-sub-text">'+(subjectNames[subj]||subj)+' · '+title+(isPaused?' (일시정지)':' 측정중')+'</span>'
+    +'</div>'
+    +'<div class="timer-banner-time" id="timer-banner-display">00:00:00</div>'
+    +'</div>'
+    +'<div class="timer-banner-buttons">'
+    +'<button class="tbb tbb-pause" onclick="togglePause()">'+(isPaused?'▶':'⏸')+'</button>'
+    +'<button class="tbb tbb-stop" onclick="stopTimer()">완료</button>'
+    +'<button class="tbb tbb-reset" onclick="openModal(\'modal-reset-confirm\')">↺</button>'
+    +'</div>'
+    +'</div>';
+}
+
+async function resumeActiveTimer() {
+  if (!currentUser || TimerEngine.todoId) return;
+  var now = Date.now();
+  var localActive = loadActiveTimerIndex();
+  var candidates = [];
+
+  // 1) 로컬에 남아있는 실행 중 타이머를 후보에 추가 (서버 조회 실패해도 이걸로 복구 가능)
+  if (localActive && localActive.todoId && localActive.status === 'running' && localActive.startedAtMs) {
+    candidates.push({
+      source: 'local',
+      todoId: localActive.todoId,
+      subject: localActive.subject || '',
+      title: localActive.title || '',
+      elapsedMs: Number(localActive.accumMs || 0) + Math.max(0, now - Number(localActive.startedAtMs)),
+      startedAtMs: Number(localActive.startedAtMs),
+      sessionId: localActive.sessionId || null
+    });
+  }
+
+  // 2) 서버 실행 타이머 조회 - 날짜 제한 없이 (자정/새벽4시 경계에도 안전)
+  var serverSnap = null;
+  try {
+    serverSnap = await getDocs(query(collection(db, 'todos'), where('uid', '==', currentUser.uid), where('timerRunning', '==', true)));
+  } catch (error) {
+    console.error('서버 실행 타이머 조회 실패:', error);
+  }
+
+  if (serverSnap) {
+    serverSnap.docs.forEach(function(d) {
+      var data = d.data();
+      if (data.status === 'done') {
+        updateDoc(doc(db,'todos',d.id), {timerAccumMs:0, timerStartedAtMs:null, timerRunning:false, timerAccum:0, timerStartAt:null}).catch(function(){});
+        clearTimerLocal(d.id);
+        return;
+      }
+      var accumMs, startMs;
+      if (typeof data.timerAccumMs === 'number') {
+        accumMs = data.timerAccumMs;
+        startMs = typeof data.timerStartedAtMs === 'number' ? data.timerStartedAtMs : 0;
+      } else {
+        // 구 데이터(초 단위) 마이그레이션
+        accumMs = Number(data.timerAccum || 0) * 1000;
+        var oldStart = data.timerStartAt;
+        startMs = oldStart ? ((typeof oldStart.toMillis === 'function') ? oldStart.toMillis() : Number(oldStart)) : 0;
+      }
+      var elapsedMs = accumMs;
+      if (startMs > 0) elapsedMs += Math.max(0, now - startMs);
+
+      candidates.push({
+        source: 'server',
+        todoId: d.id,
+        subject: data.subject || '',
+        title: data.title || '',
+        elapsedMs: elapsedMs,
+        startedAtMs: startMs,
+        sessionId: data.timerSessionId || null
+      });
+    });
+  }
+
+  if (!candidates.length) return;
+
+  // 3) 동일 todo는 더 큰 경과시간으로 병합, 가장 최근 시작한 항목 선택
+  var merged = {};
+  candidates.forEach(function(c) {
+    var prev = merged[c.todoId];
+    if (!prev || c.elapsedMs > prev.elapsedMs) merged[c.todoId] = c;
+  });
+  var list = Object.keys(merged).map(function(k){ return merged[k]; });
+  list.sort(function(a, b){ return Number(b.startedAtMs||0) - Number(a.startedAtMs||0); });
+
+  var selected = list[0];
+  var cappedMs = Math.min(selected.elapsedMs, TIMER_MAX_MS);
+  var wasCapped = selected.elapsedMs >= TIMER_MAX_MS;
+
+  TimerEngine.todoId = selected.todoId;
+  TimerEngine.subject = selected.subject;
+  TimerEngine.title = selected.title;
+  TimerEngine.status = wasCapped ? 'paused' : 'running';
+  TimerEngine.accumMs = cappedMs;
+  TimerEngine.startedAtMs = TimerEngine.status === 'running' ? now : null;
+  TimerEngine.sessionId = selected.sessionId || (currentUser.uid + '-' + now);
+
+  window._timerCurSubj = TimerEngine.subject;
+  window._timerCurTitle = TimerEngine.title;
+
+  saveAllTimerLocalState();
+  _renderTimerBanner(true);
+  _tickDisplay();
+
+  if (TimerEngine.status === 'running') {
+    if (timerInterval) clearInterval(timerInterval);
+    timerInterval = setInterval(_tickDisplay, 500);
+    _startAutoSave();
+  }
+
+  await persistTimerCheckpoint();
+
+  if (wasCapped) {
+    alert('종료되어 있던 동안의 시간을 포함해 6시간에 도달하여 자동으로 일시정지되었습니다.\n\n이어서 측정하려면 다시 시작해주세요.');
+  }
+
+  // 선택되지 않은 나머지 서버 실행 항목 정리
+  for (var i = 1; i < list.length; i++) {
+    if (list[i].source === 'server') {
+      updateDoc(doc(db, 'todos', list[i].todoId), {
+        timerRunning: false, timerStartedAtMs: null, timerStartAt: null
+      }).catch(function(){});
+    }
+  }
+}
+
+// 백그라운드/화면 복귀 시 동기화
+document.addEventListener('visibilitychange', function () {
+  if (document.visibilityState === 'visible' && currentUser && ('Notification' in window) && Notification.permission === 'granted') {
+    // 백그라운드에서 돌아왔을 때 토큰이 만료/변경되지 않았는지 조용히 재확인 (권한 이미 허용된 경우만, 재요청 없음)
+    registerFCMToken(currentUser.uid, false);
+  }
+  if (!TimerEngine.todoId) return;
+  if (document.visibilityState === 'hidden') {
+    // 종료 직전 네트워크 저장은 보장되지 않으므로 로컬(개별+인덱스)을 최우선 저장
+    saveAllTimerLocalState();
+  } else {
+    _tickDisplay();
+    if (TimerEngine.status === 'running' && !timerInterval) {
+      timerInterval = setInterval(_tickDisplay, 500);
+    }
+  }
+});
+window.addEventListener('pageshow', function () {
+  if (TimerEngine.todoId) _tickDisplay();
+});
+window.addEventListener('pagehide', function () {
+  saveAllTimerLocalState();
+});
+// 오프라인 상태에서 타이머를 조작한 뒤 온라인으로 복귀하면 서버에 재동기화
+window.addEventListener('online', function () {
+  if (TimerEngine.todoId) {
+    persistTimerCheckpoint().catch(function (error) {
+      console.error('온라인 복귀 동기화 실패:', error);
+    });
+  }
+});
+function buildGradePage(){
+  var __dt_h = '<div class="dt-header dt-only"><div><div class="dt-header-title">성적관리</div></div></div>';
+  return __dt_h+'<div class="dt-main-grid"><div style="grid-column:1/3;"><div style="display:flex;gap:8px;margin-bottom:14px"><button class="grade-tab-btn active" id="gtab-0" onclick="gradeSubTab(0)">모의고사</button><button class="grade-tab-btn" id="gtab-1" onclick="gradeSubTab(1)">내신</button></div><button class="appeal-btn" id="grade-add-btn" onclick="openModal(\'modal-add-grade\')">+ 성적 입력하기</button>'
+    +'<div id="grade-cat-tabs" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;"></div>'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;"><span style="font-size:12px;color:var(--tx3);">정렬</span><select class="modal-select" id="grade-sort-select" onchange="switchStudentGradeSort(this.value)" style="margin:0;width:auto;padding:6px 10px;font-size:12px;"><option value="date_desc">최신순</option><option value="date_asc">오래된순</option><option value="name_asc">이름순</option></select></div>'
+    +'<div id="grade-list"><div style="color:var(--tx3);font-size:13px;padding:10px 0">불러오는 중...</div></div>';
+}
+window.gradeSubTab=function(i){
+  ['gtab-0','gtab-1'].forEach(function(id,j){var el=document.getElementById(id);if(el)el.classList.toggle('active',i===j);});
+  loadGrades(i===0?'mock':'school');
+};
+
+var _currentStudentGradeCategory = '전체', _currentStudentGradeSort = 'date_desc';
+window.switchStudentGradeCategory = function(cat){
+  _currentStudentGradeCategory = cat;
+  // 위와 같은 이유로 인라인 스타일을 직접 다시 넣어줘야 버튼 색이 실제로 바뀜
+  document.querySelectorAll('.student-grade-cat-btn').forEach(function(btn){
+    var isActive = btn.textContent === cat;
+    btn.classList.toggle('active', isActive);
+    btn.style.background = isActive ? 'var(--blue-l)' : 'var(--surface2)';
+    btn.style.borderColor = isActive ? 'rgba(29,78,216,0.2)' : 'var(--border)';
+    btn.style.color = isActive ? '#7aa8ff' : 'var(--tx3)';
+  });
+  _renderGradeList();
+};
+window.switchStudentGradeSort = function(sortKey){
+  _currentStudentGradeSort = sortKey;
+  _renderGradeList();
+};
+
+function loadGrades(type) {
+  var el=document.getElementById('grade-list');
+  if(!el||!currentUser) return;
+  window._currentGradeType = type;
+  Promise.all([
+    getDocs(query(collection(db,'grades'),where('uid','==',currentUser.uid),where('type','==',type))),
+    getDoc(doc(db,'admissionPlans',currentUser.uid))
+  ]).then(function(results){
+    var snap = results[0];
+    var admissionPlansDoc = results[1].exists() ? results[1].data() : {susi:[], jeongsi:[]};
+    var grades=snap.docs.map(function(d){return Object.assign({_id:d.id},d.data());});
+    window._gradesCache = grades;
+    window._gradesAdmissionPlansCache = admissionPlansDoc;
+
+    // 분류 탭 렌더링 - 이 학생의 성적에 실제로 쓰인 분류들만 보여줌 (선생님/마스터가
+    // 만드는 분류 관리와 달리, 학생은 조회 필터만 가능하고 추가/수정/삭제는 못 함)
+    var cats = Array.from(new Set(grades.map(function(g){return g.examSource;}).filter(Boolean)));
+    var catTabsEl = document.getElementById('grade-cat-tabs');
+    if (catTabsEl) {
+      if (!cats.length) {
+        catTabsEl.innerHTML = '';
+      } else {
+        _currentStudentGradeCategory = '전체';
+        catTabsEl.innerHTML = ['전체'].concat(cats).map(function(c){
+          return '<button class="student-grade-cat-btn'+(c==='전체'?' active':'')+'" onclick="switchStudentGradeCategory(\''+escapeHtml(c).replace(/'/g,"\\'")+'\')" style="padding:6px 10px;background:'+(c==='전체'?'var(--blue-l)':'var(--surface2)')+';border:1px solid '+(c==='전체'?'rgba(29,78,216,0.2)':'var(--border)')+';border-radius:6px;color:'+(c==='전체'?'#7aa8ff':'var(--tx3)')+';font-size:12px;cursor:pointer;">'+escapeHtml(c)+'</button>';
+        }).join('');
+      }
+    }
+
+    _renderGradeList();
+  }).catch(function(e){el.innerHTML='<div style="color:var(--tx3);font-size:13px">불러오기 실패: '+e.message+'</div>';});
+}
+
+// 캐시된 성적 목록을 지금 선택된 분류/정렬 기준으로 걸러서 다시 그림 - 분류나 정렬을
+// 바꿀 때마다 서버에서 새로 안 받아오고, 이미 받아둔 걸로 그냥 다시 그리기만 함
+function _renderGradeList(){
+  var el=document.getElementById('grade-list');
+  if(!el || !window._gradesCache) return;
+  var grades = window._gradesCache.slice();
+  var admissionPlansDoc = window._gradesAdmissionPlansCache || {susi:[], jeongsi:[]};
+
+  if (_currentStudentGradeCategory && _currentStudentGradeCategory !== '전체') {
+    grades = grades.filter(function(g){ return g.examSource === _currentStudentGradeCategory; });
+  }
+
+  if (_currentStudentGradeSort === 'date_asc') {
+    grades.sort(function(a,b){ return (a.examDate||'').localeCompare(b.examDate||''); });
+  } else if (_currentStudentGradeSort === 'name_asc') {
+    grades.sort(function(a,b){ return (a.examName||'').localeCompare(b.examName||'', 'ko'); });
+  } else { // date_desc (기본값)
+    grades.sort(function(a,b){ return (b.examDate||'').localeCompare(a.examDate||''); });
+  }
+
+  if(!grades.length){el.innerHTML='<div style="color:var(--tx3);font-size:13px;padding:10px 0">입력된 성적이 없습니다</div>';return;}
+
+  el.innerHTML=grades.map(function(g){
+
+      var _sOrder=['ko','en','ma','hi'];
+      var _sKeys=Object.keys(g.scores||{}).sort(function(a,b){
+        var ai=_sOrder.indexOf(a.replace(/\d+$/,''));var bi=_sOrder.indexOf(b.replace(/\d+$/,''));
+        return (ai<0?99:ai)-(bi<0?99:bi);
+      });
+      var subjHtml=_sKeys.map(function(subj){
+        var s=g.scores[subj];
+        var dispName=s.label||(subjectNames[subj]||subj);
+        return '<div class="score-cell"><div class="score-cell-subj">'+dispName+'</div><div class="score-cell-val">'+(s.score||'-')+'</div><div class="score-cell-grade">'+(s.grade?s.grade+'등급':'-')+'</div></div>';
+      }).join('');
+      // 과목별 오답
+      var wrongHtml='';
+      if(g.wrongBySubj&&Object.keys(g.wrongBySubj).length){
+        var wSubjKeys=Object.keys(g.wrongBySubj);
+        wrongHtml='<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border2)"><div style="font-size:11px;color:var(--tx3);margin-bottom:7px">오답 문항 (과목별)</div>'+
+        wSubjKeys.map(function(subj){
+          var sc2=g.scores&&g.scores[subj];
+          if(!sc2&&g.scores){
+            var base3=subj.replace(/\d+$/,'');
+            var baseMatches2=Object.keys(g.scores).filter(function(sk){return sk.replace(/\d+$/,'')=== base3;});
+            if(baseMatches2.length>0){
+              var wKeys2=wSubjKeys.filter(function(wk){return wk.replace(/\d+$/,'')=== base3;});
+              var wIdx2=wKeys2.indexOf(subj);
+              var mk2=baseMatches2[wIdx2]||baseMatches2[0];
+              sc2=g.scores[mk2];
+            }
+          }
+          var label2=sc2&&sc2.label?sc2.label:(subjectNames[subj]||subj);
+          var grp2=(sc2&&sc2.group)||subj.replace(/\d+/g,'');
+          return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px"><span class="subject-tag subj-'+grp2+'" style="font-size:10px;flex-shrink:0">'+label2+'</span><div style="display:flex;gap:4px;flex-wrap:wrap">'+g.wrongBySubj[subj].split(',').map(function(n){return '<span style="background:var(--red-l);border:1px solid rgba(185,28,28,0.2);border-radius:4px;padding:2px 7px;font-size:12px;color:var(--red)">'+n.trim()+'번</span>';}).join('')+'</div></div>';
+        }).join('')+'</div>';
+      } else if(g.wrongNumbers){
+        wrongHtml='<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border2)"><div style="font-size:11px;color:var(--tx3);margin-bottom:7px">오답 문항</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+g.wrongNumbers.split(',').map(function(n){return '<span style="background:var(--red-l);border:1px solid rgba(185,28,28,0.2);border-radius:4px;padding:3px 8px;font-size:12px;color:var(--red)">'+n.trim()+'번</span>';}).join('')+'</div></div>';
+      }
+      // 3분할 다짐
+      var refHtml='';
+      if(g.refMistake||g.refWeak||g.refPlan){
+        refHtml='<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border2)">'
+          +(g.refMistake?'<div style="margin-bottom:8px"><div style="font-size:11px;color:var(--orange);margin-bottom:3px">⚠️ 실수한 부분</div><div style="font-size:13px;color:var(--tx2);line-height:1.7">'+g.refMistake+'</div></div>':'')
+          +(g.refWeak?'<div style="margin-bottom:8px"><div style="font-size:11px;color:var(--red);margin-bottom:3px">📉 부족했던 부분</div><div style="font-size:13px;color:var(--tx2);line-height:1.7">'+g.refWeak+'</div></div>':'')
+          +(g.refPlan?'<div><div style="font-size:11px;color:var(--green);margin-bottom:3px">✅ 다음 시험까지 개선방안</div><div style="font-size:13px;color:var(--tx2);line-height:1.7">'+g.refPlan+'</div></div>':'')
+          +'</div>';
+      } else if(g.reflection){
+        refHtml='<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border2)"><div style="font-size:11px;color:var(--tx3);margin-bottom:4px">나의 다짐</div><div style="font-size:13px;color:var(--tx2);line-height:1.8">'+g.reflection+'</div></div>';
+      }
+      // 수능최저 판정 - 이 시험이 국어/영어/수학/탐구 5과목을 다 응시한 시험이고,
+      // 합격 플래너에 수능최저 조건을 등록해둔 지원 계획이 있으면, 이 시험 기준으로
+      // 각 조건을 만족하는지 여기서 바로 보여줌 (합격 플래너 탭이 아니라 성적탭에서
+      // 시험별로 확인하도록 요청받은 부분)
+      var minReqHtml = '';
+      var minReqResults = _computeAllMinReqForExam(g, admissionPlansDoc);
+      if (minReqResults.length) {
+        minReqHtml = '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border2)">'
+          + '<div style="font-size:11px;color:var(--tx3);margin-bottom:7px;">🎯 수능최저 판정 (이 시험 기준)</div>'
+          + minReqResults.map(function(r){
+            var p = r.plan, res = r.result;
+            var statusText;
+            if (!res) statusText = '<span style="color:var(--red);">⚠️ 조건 설정 오류</span>';
+            else if (res.satisfied) statusText = '<span style="color:var(--green);font-weight:700;">✅ 충족 ('+res.sum+'등급)</span>';
+            else {
+              var reasons = [];
+              if (!res.sumOk) reasons.push('합 '+res.sum+'등급');
+              if (res.capFails && res.capFails.length) reasons.push(res.capFails.map(function(cf){return MIN_REQ_SUBJECT_LABELS[cf.key]+' '+cf.grade+'등급(상한 '+cf.cap+')';}).join(', '));
+              if (res.hanguksaInfo === 'no_data') reasons.push('한국사 미응시');
+              else if (res.hanguksaInfo && !res.hanguksaOk) reasons.push('한국사 '+res.hanguksaInfo.grade+'등급(상한 '+res.hanguksaInfo.cap+')');
+              statusText = '<span style="color:var(--red);font-weight:700;">❌ 미충족 ('+reasons.join(', ')+')</span>';
+            }
+            return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:4px 0;">'
+              + '<span style="color:var(--tx2);">'+escapeHtml(p.tabLabel)+' · '+escapeHtml(p.school)+'</span>'
+              + statusText
+              + '</div>';
+          }).join('')
+          + '</div>';
+      }
+      return '<div class="score-card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-size:14px;font-weight:600">'+g.examName+(g.examSessionId?' <span style="font-size:9px;font-weight:700;color:var(--burg);background:var(--burg-l);padding:2px 6px;border-radius:4px;">자동채점</span>':'')+'</div><div style="font-size:11px;color:var(--tx3)">'+g.examDate+'</div></div><div class="score-subjects">'+subjHtml+'</div>'+wrongHtml+_unknownHtml(g)+refHtml+minReqHtml+'<div style="margin-top:10px;display:flex;gap:6px;">'+(g.examSessionId?'<button onclick="viewExamResult(\''+g.examSessionId+'\')" style="padding:6px 12px;background:var(--burg-l);border:1px solid var(--burg-l2);border-radius:6px;color:var(--burg);font-size:11px;cursor:pointer;flex:1;">📄 문항별 결과 보기</button>':'')+'<button onclick="loadExamStats(\''+encodeURIComponent(g.examName)+'\',\'exam-stats-'+encodeURIComponent(g.examName)+'-'+g.examDate+'\')" style="padding:6px 12px;background:rgba(74,127,255,0.1);border:1px solid rgba(74,127,255,0.2);border-radius:6px;color:var(--blue);font-size:11px;cursor:pointer;flex:1;">📊 같은 시험 전체 통계 보기</button><button onclick="openGradeMemoModal(\''+g._id+'\')" style="padding:6px 12px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;flex:1;">📝 메모</button></div><div id="exam-stats-'+encodeURIComponent(g.examName)+'-'+g.examDate+'" style="display:none"></div></div>';
+  }).join('');
+}
+
+// ── 채팅 알림 ──
+var unsubChatNotif = null;
+var _chatNotifVersion = 0; // 중복 등록 방지용 버전
+function listenChatNotifs() {
+  if (!currentUser) return;
+  if (unsubChatNotif) { unsubChatNotif(); unsubChatNotif = null; }
+  var myVersion = ++_chatNotifVersion; // 현재 버전 기록
+
+  var isTeacher = currentProfile && (currentProfile.role==='teacher'||currentProfile.role==='master');
+  var listId  = isTeacher ? 'teacher-notif-list' : 'notif-list';
+  var badgeId = isTeacher ? 'teacher-notif-badge' : 'notif-badge';
+
+  function _addToPanel(n, quiet) {
+    var senderName = n.senderName||'알 수 없음';
+    var preview    = n.preview||'(메시지)';
+    var list = document.getElementById(listId);
+    if (list) {
+      if (list.querySelector('[data-empty]')) list.innerHTML = '';
+      var item = document.createElement('div');
+      item.setAttribute('data-chat-item','1');
+      item.style.cssText = 'background:var(--gold-l);border:1px solid rgba(184,132,26,0.2);border-radius:10px;padding:12px;margin-bottom:8px;';
+      var dateStr = n.createdAt ? n.createdAt.toDate().toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+      item.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+        +'<span style="font-size:14px">💬</span>'
+        +'<div style="font-size:13px;font-weight:600;color:var(--burg)">'+senderName+'</div>'
+        +'<div style="font-size:10px;color:var(--tx3);margin-left:auto">'+dateStr+'</div>'
+        +'</div>'
+        +'<div style="font-size:12px;color:var(--tx3)">'+preview+'</div>';
+      list.insertBefore(item, list.firstChild);
+    }
+    var badge = document.getElementById(badgeId);
+    if (badge) {
+      var cur = parseInt(badge.textContent)||0;
+      badge.textContent = cur+1;
+      badge.style.display = 'flex';
+    }
+    if (!quiet) showChatNotif(senderName, preview);
+  }
+
+  function _markRead(docId) {
+    updateDoc(doc(db,'chatNotifs',currentUser.uid,'items',docId), {read:true}).catch(function(){});
+  }
+
+  // 미읽은 알림 로드 (read 필드 없거나 false인 것)
+  getDocs(query(
+    collection(db,'chatNotifs',currentUser.uid,'items'),
+    where('read','==',false),
+    orderBy('createdAt','asc')
+  )).then(function(snap){
+    if (myVersion !== _chatNotifVersion) return; // 더 새로운 호출이 있으면 중단
+    var shownIds = {};
+    snap.docs.forEach(function(d){
+      shownIds[d.id] = true;
+      _addToPanel(d.data(), true);
+      _markRead(d.id);
+    });
+    if (myVersion !== _chatNotifVersion) return;
+    unsubChatNotif = onSnapshot(
+      // 알림 기록 전체(수백~수천 건)를 매번 받지 않도록 최근 것만 구독 - 새 알림은 이 창 안으로 들어오므로 그대로 잡힘
+      query(collection(db,'chatNotifs',currentUser.uid,'items'), orderBy('createdAt','desc'), limit(30)),
+      function(snapshot) {
+        snapshot.docChanges().forEach(function(change) {
+          if (change.type !== 'added') return;
+          var docId = change.doc.id;
+          if (shownIds[docId]) return;
+          shownIds[docId] = true;
+          var n = change.doc.data();
+          if (n.read) return;
+          if ((chatTargetUid && chatTargetUid === n.senderUid) ||
+              (teacherChatUid && teacherChatUid === n.senderUid)) {
+            _markRead(docId);
+            return;
+          }
+          _addToPanel(n, false);
+          _markRead(docId);
+        });
+      }
+    );
+  }).catch(function(){
+    if (myVersion !== _chatNotifVersion) return;
+    getDocs(collection(db,'chatNotifs',currentUser.uid,'items')).then(function(snap){
+      if (myVersion !== _chatNotifVersion) return;
+      var shownIds = {};
+      snap.docs.forEach(function(d){
+        var n = d.data();
+        if (n.read) { shownIds[d.id]=true; return; }
+        shownIds[d.id] = true;
+        _addToPanel(n, true);
+        _markRead(d.id);
+      });
+      if (myVersion !== _chatNotifVersion) return;
+      unsubChatNotif = onSnapshot(
+        query(collection(db,'chatNotifs',currentUser.uid,'items'), orderBy('createdAt','desc'), limit(30)),
+        function(snapshot) {
+          snapshot.docChanges().forEach(function(change) {
+            if (change.type !== 'added') return;
+            var docId = change.doc.id;
+            if (shownIds[docId]) return;
+            shownIds[docId] = true;
+            var n = change.doc.data();
+            if (n.read) return;
+            if ((chatTargetUid && chatTargetUid === n.senderUid) ||
+                (teacherChatUid && teacherChatUid === n.senderUid)) {
+              _markRead(docId); return;
+            }
+            _addToPanel(n, false);
+            _markRead(docId);
+          });
+        }
+      );
+    }).catch(function(){});
+  });
+}
+
+function showChatNotif(senderName, preview) {
+  // 1) 토스트 팝업 (공통)
+  var existing = document.getElementById('chat-notif-toast');
+  if (existing) existing.remove();
+  var toast = document.createElement('div');
+  toast.id = 'chat-notif-toast';
+  toast.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:9999;'
+    +'background:var(--burg);'
+    +'border:1px solid rgba(201,168,76,0.4);border-radius:14px;padding:13px 18px;'
+    +'box-shadow:0 8px 32px rgba(0,0,0,0.5);display:flex;align-items:center;gap:12px;'
+    +'min-width:260px;max-width:320px;animation:slideDown 0.3s ease;';
+  toast.innerHTML =
+    '<div style="width:36px;height:36px;border-radius:50%;background:var(--burg);'
+    +'display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">💬</div>'
+    +'<div style="flex:1;min-width:0">'
+    +'<div style="font-size:13px;font-weight:700;color:var(--burg);margin-bottom:2px">'+senderName+'</div>'
+    +'<div style="font-size:12px;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+preview+'</div>'
+    +'</div>'
+    +'<button onclick="this.parentNode.remove()" style="background:none;border:none;color:var(--tx3);font-size:18px;cursor:pointer;padding:0;flex-shrink:0">✕</button>';
+  document.body.appendChild(toast);
+  setTimeout(function(){ if(toast.parentNode) toast.remove(); }, 5000);
+
+  // 2) 역할에 따라 알림 패널 분기
+  var isTeacher = currentProfile && (currentProfile.role==='teacher'||currentProfile.role==='master');
+  var listId = isTeacher ? 'teacher-notif-list' : 'notif-list';
+  var badgeId = isTeacher ? 'teacher-notif-badge' : 'notif-badge';
+
+  var list = document.getElementById(listId);
+  if (list) {
+    if (list.querySelector('[data-empty]')) list.innerHTML = '';
+    var item = document.createElement('div');
+    item.setAttribute('data-chat-item','1');
+    item.style.cssText = 'background:var(--gold-l);border:1px solid rgba(184,132,26,0.2);border-radius:10px;padding:12px;margin-bottom:8px;';
+    item.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+      +'<span style="font-size:14px">💬</span>'
+      +'<div style="font-size:13px;font-weight:600;color:var(--burg)">'+senderName+'</div>'
+      +'<div style="font-size:10px;color:var(--tx3);margin-left:auto">방금</div>'
+      +'</div>'
+      +'<div style="font-size:12px;color:var(--tx3)">'+preview+'</div>';
+    list.insertBefore(item, list.firstChild);
+  }
+
+  // 3) 배지 +1
+  var badge = document.getElementById(badgeId);
+  if (badge) {
+    var cur = parseInt(badge.textContent)||0;
+    badge.textContent = cur+1;
+    badge.style.display = 'flex';
+  }
+}
+window.toggleTeacherNotifPanel = function() {
+  var p=document.getElementById('teacher-notif-panel');
+  var b=document.getElementById('teacher-notif-backdrop');
+  if (!p||!b) return;
+  var isOpen=p.classList.contains('open');
+  if (isOpen) { p.classList.remove('open'); b.style.display='none'; }
+  else {
+    p.classList.add('open'); b.style.display='block';
+    // 배지 초기화
+    var badge=document.getElementById('teacher-notif-badge');
+    if(badge){badge.style.display='none';badge.textContent='0';}
+  }
+};
+
+// 채팅 알림 전송 헬퍼
+
+// ─── 프로필 아바타 렌더링 ───
+// 다른 사람(학생/선생님)의 아바타를 HTML 문자열로 그려주는 공통 헬퍼.
+// 문자열 템플릿으로 화면을 그리는 이 앱 특성상, DOM에 직접 적용하는 _applyAvatar와
+// 별개로 이 함수가 필요함 - 학생현황 카드, 채팅 상대방 정보 등 "다른 사람"의
+// 프로필(이미지/이모지/이니셜)을 어디서든 똑같은 방식으로 보여주기 위해 사용.
+// 이미지(로고 등)를 눌러서 크게 볼 수 있게 하는 공통 함수
+window.openImageLightbox = function(url){
+  if (!url) return;
+  var img = document.getElementById('image-lightbox-img');
+  img.style.width = ''; img.style.height = ''; // 이전 크기 흔적 제거
+  img.src = url;
+  img.onload = function(){
+    // 원본이 작은 이미지(파비콘 등)를 무작정 420px까지 늘리면 뿌옇게 깨져 보이므로,
+    // 원본 크기의 최대 3배까지만 확대하고, 그 이상은 원본 그대로(선명하게) 보여줌
+    var nat = Math.max(img.naturalWidth||128, img.naturalHeight||128);
+    var box = Math.min(420, nat * 3);
+    img.style.width = box + 'px';
+    img.style.height = box + 'px';
+  };
+  openModal('modal-image-lightbox');
+};
+
+function avatarCircleHtml(name, avatar, sizePx, opts){
+  opts = opts || {};
+  sizePx = sizePx || 40;
+  var radius = opts.radius != null ? opts.radius : '50%';
+  var base = 'width:'+sizePx+'px;height:'+sizePx+'px;border-radius:'+radius+';display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;';
+  var cursorStyle = opts.onclick ? 'cursor:pointer;' : '';
+  var clickAttr = opts.onclick ? ' onclick="'+opts.onclick+'"' : '';
+  if (avatar && avatar.type === 'image' && avatar.value) {
+    return '<div style="'+base+cursorStyle+'background:var(--surface2);" class="'+(opts.cls||'')+'"'+clickAttr+'><img src="'+escapeHtml(_thumbUrl(avatar.value, sizePx))+'" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;"/></div>';
+  }
+  if (avatar && avatar.type === 'emoji' && avatar.value) {
+    return '<div style="'+base+cursorStyle+'background:var(--surface2);font-size:'+Math.round(sizePx*0.55)+'px;line-height:1;" class="'+(opts.cls||'')+'"'+clickAttr+'>'+avatar.value+'</div>';
+  }
+  var bg = opts.bg || 'background:linear-gradient(135deg,var(--burg),var(--burg2));';
+  var fontSizePx = opts.fontSizePx || Math.round(sizePx*0.4);
+  return '<div style="'+base+cursorStyle+bg+'color:#fff;font-size:'+fontSizePx+'px;font-weight:700;" class="'+(opts.cls||'')+'"'+clickAttr+'>'+escapeHtml((name||'?').slice(0,opts.chars||1))+'</div>';
+}
+
+function _applyAvatar(el, name, avatar) {
+  if (!el) return;
+  if (avatar && avatar.type === 'image' && avatar.value) {
+    el.textContent = '';
+    el.style.backgroundImage = 'url("'+_thumbUrl(avatar.value, 60)+'")';
+    el.style.backgroundSize = 'cover';
+    el.style.backgroundPosition = 'center';
+  } else if (avatar && avatar.type === 'emoji' && avatar.value) {
+    el.textContent = avatar.value;
+    el.style.backgroundImage = '';
+    el.style.fontSize = '';
+    // 이모지는 약간 작게 조정
+    var w = el.offsetWidth || parseInt(getComputedStyle(el).width) || 30;
+    el.style.fontSize = (w * 0.55) + 'px';
+  } else {
+    el.textContent = (name||'?').slice(0,1);
+    el.style.backgroundImage = '';
+    el.style.fontSize = '';
+  }
+}
+
+window._applyAvatar = _applyAvatar;
+
+// 프로필 아바타 변경 모달
+window.openAvatarEditModal = function() {
+  // 현재 값 표시
+  var cur = currentProfile.avatar || {};
+  document.getElementById('avatar-emoji-input').value = (cur.type==='emoji'?cur.value:'') || '';
+  // 미리보기 업데이트
+  var prev = document.getElementById('avatar-preview');
+  if (prev) {
+    if (cur.type === 'image') {
+      prev.innerHTML = '<img src="'+cur.value+'" style="width:100%;height:100%;object-fit:cover;"/>';
+    } else if (cur.type === 'emoji') {
+      prev.innerHTML = '<div style="font-size:50px;line-height:1;">'+cur.value+'</div>';
+    } else {
+      prev.innerHTML = '<div style="font-size:32px;color:#fff;font-weight:700;">'+(currentProfile.name||'?').slice(0,1)+'</div>';
+    }
+  }
+  openModal('modal-avatar-edit');
+};
+
+window.pickAvatarEmoji = function(emoji) {
+  document.getElementById('avatar-emoji-input').value = emoji;
+  // 미리보기
+  var prev = document.getElementById('avatar-preview');
+  if (prev) prev.innerHTML = '<div style="font-size:50px;line-height:1;">'+emoji+'</div>';
+};
+
+window.saveAvatarEmoji = function() {
+  var emoji = document.getElementById('avatar-emoji-input').value.trim();
+  if (!emoji) { alert('이모지를 입력하거나 선택해주세요'); return; }
+  updateDoc(doc(db, 'users', currentUser.uid), {avatar: {type:'emoji', value:emoji}}).then(function(){
+    currentProfile.avatar = {type:'emoji', value:emoji};
+    _refreshAllAvatars();
+    closeModal('modal-avatar-edit');
+    alert('프로필 아바타가 변경되었습니다');
+  }).catch(function(e){alert('저장 실패: '+e.message);});
+};
+
+window.saveAvatarImage = function(input) {
+  if (!input.files || !input.files[0]) return;
+  var file = input.files[0];
+  if (file.size > 5*1024*1024) { alert('5MB 이하 이미지만 업로드 가능합니다'); return; }
+  // Cloudinary 업로드
+  var fd = new FormData();
+  fd.append('file', file);
+  fd.append('upload_preset', CLOUDINARY_PRESET);
+  document.getElementById('avatar-uploading').style.display = 'block';
+  fetch('https://api.cloudinary.com/v1_1/'+CLOUDINARY_CLOUD+'/image/upload', {method:'POST', body:fd})
+    .then(function(r){return r.json();})
+    .then(function(data){
+      var url = data.secure_url;
+      return updateDoc(doc(db, 'users', currentUser.uid), {avatar: {type:'image', value:url}})
+        .then(function(){
+          currentProfile.avatar = {type:'image', value:url};
+          _refreshAllAvatars();
+          document.getElementById('avatar-uploading').style.display = 'none';
+          closeModal('modal-avatar-edit');
+          alert('프로필 이미지가 변경되었습니다');
+        });
+    })
+    .catch(function(e){
+      document.getElementById('avatar-uploading').style.display = 'none';
+      alert('업로드 실패: '+e.message);
+    });
+};
+
+window.resetAvatar = function() {
+  if (!confirm('아바타를 기본 (이니셜)로 되돌리시겠습니까?')) return;
+  updateDoc(doc(db, 'users', currentUser.uid), {avatar: null}).then(function(){
+    currentProfile.avatar = null;
+    _refreshAllAvatars();
+    closeModal('modal-avatar-edit');
+  }).catch(function(e){alert('실패: '+e.message);});
+};
+
+function _refreshAllAvatars() {
+  var p = currentProfile;
+  // 학생 측 아바타들
+  _applyAvatar(document.getElementById('student-avatar'), p.name, p.avatar);
+  _applyAvatar(document.getElementById('dt-student-avatar'), p.name, p.avatar);
+  // 선생님 측 아바타들
+  _applyAvatar(document.getElementById('teacher-avatar-btn'), p.name, p.avatar);
+  _applyAvatar(document.getElementById('dt-teacher-avatar'), p.name, p.avatar);
+}
+
+
+// ═══════════════════════════════════════════════
+// 옛 채팅 데이터 마이그레이션 (chats → chatRooms)
+// ═══════════════════════════════════════════════
+
+// 자동 마이그레이션 (조용히 실행)
+async function _autoMigrateLegacyChats() {
+  var stats = {rooms: 0, migrated: 0};
+  try {
+    var usersSnap = await getDocs(collection(db, 'users'));
+    var users = {};
+    usersSnap.docs.forEach(function(d){
+      users[d.id] = Object.assign({uid:d.id}, d.data());
+    });
+    var chatsSnap = await getDocs(collection(db, 'chats'));
+    var oldRoomIds = chatsSnap.docs.map(function(d){return d.id;});
+    
+    for (var ri = 0; ri < oldRoomIds.length; ri++) {
+      var oldRoomId = oldRoomIds[ri];
+      var parts = oldRoomId.split('_');
+      if (parts.length !== 2) continue;
+      var u1 = parts[0], u2 = parts[1];
+      if (!users[u1] || !users[u2]) continue;
+      // 현재 사용자가 참여한 방만 마이그레이션 (성능)
+      if (u1 !== currentUser.uid && u2 !== currentUser.uid) continue;
+      
+      var newRoomId = [u1, u2].sort().join('_');
+      var msgsSnap = await getDocs(query(collection(db, 'chats', oldRoomId, 'messages'), orderBy('createdAt', 'asc')));
+      if (msgsSnap.empty) continue;
+      
+      var existingRoom = await getDoc(doc(db, 'chatRooms', newRoomId));
+      var existingMsgIds = {};
+      if (existingRoom.exists()) {
+        var existingMsgs = await getDocs(collection(db, 'chatRooms', newRoomId, 'messages'));
+        existingMsgs.docs.forEach(function(d){
+          var data = d.data();
+          var key = (data.createdAt?data.createdAt.toMillis():0) + '_' + data.senderUid + '_' + (data.text||data.fileUrl||'');
+          existingMsgIds[key] = true;
+        });
+      }
+      
+      var participants = [u1, u2];
+      var participantNames = {};
+      var participantRoles = {};
+      participantNames[u1] = users[u1].name || '?';
+      participantNames[u2] = users[u2].name || '?';
+      participantRoles[u1] = users[u1].role || 'student';
+      participantRoles[u2] = users[u2].role || 'student';
+      
+      var lastMsgData = msgsSnap.docs[msgsSnap.docs.length-1].data();
+      var lastMsg = {
+        text: lastMsgData.text || '',
+        fileName: lastMsgData.fileName || null,
+        fileUrl: lastMsgData.fileUrl || null,
+        senderName: lastMsgData.senderName || '',
+        senderUid: lastMsgData.senderUid || '',
+        createdAt: lastMsgData.createdAt || serverTimestamp()
+      };
+      
+      var unread = {};
+      participants.forEach(function(uid){unread[uid] = 0;});
+      
+      await setDoc(doc(db, 'chatRooms', newRoomId), {
+        participants: participants,
+        participantNames: participantNames,
+        participantRoles: participantRoles,
+        isGroup: false,
+        branch: users[u1].branch || users[u2].branch || '송정점',
+        unread: unread,
+        lastMessage: lastMsg,
+        createdBy: u1,
+        createdAt: serverTimestamp(),
+        migratedFrom: oldRoomId
+      }, {merge: true});
+      
+      for (var mi = 0; mi < msgsSnap.docs.length; mi++) {
+        var m = msgsSnap.docs[mi].data();
+        var key = (m.createdAt?m.createdAt.toMillis():0) + '_' + m.senderUid + '_' + (m.text||m.fileUrl||'');
+        if (existingMsgIds[key]) continue;
+        await addDoc(collection(db, 'chatRooms', newRoomId, 'messages'), {
+          text: m.text || '',
+          fileUrl: m.fileUrl || null,
+          fileName: m.fileName || null,
+          senderUid: m.senderUid,
+          senderName: m.senderName || (users[m.senderUid] && users[m.senderUid].name) || '?',
+          readBy: m.readBy || participants,
+          createdAt: m.createdAt || serverTimestamp(),
+          migrated: true
+        });
+        stats.migrated++;
+      }
+      stats.rooms++;
+    }
+    console.log('[auto-migrate] 완료:', stats);
+    return stats;
+  } catch(e) {
+    console.warn('[auto-migrate] 오류:', e);
+    throw e;
+  }
+}
+
+
+// ═══════════════════════════════════════
+// 채팅 첨부파일 자동 정리 (Cloud Functions 연동)
+// ═══════════════════════════════════════
+window.runChatFileCleanupNow = function() {
+  if (!confirm('30일이 지난 채팅 첨부파일을 지금 바로 정리하시겠습니까?\n\n(매일 새벽 3시에도 자동으로 실행됩니다)')) return;
+  var statusEl = document.getElementById('cleanup-status');
+  if (statusEl) statusEl.textContent = '⏳ 정리 중... (최대 몇 분 소요될 수 있어요)';
+
+  currentUser.getIdToken().then(function(idToken) {
+    return fetch('/api/cleanup', {
+      method: 'GET',
+      headers: { 'Authorization': 'Bearer ' + idToken }
+    });
+  }).then(function(r) {
+    if (!r.ok) return r.json().then(function(e){ throw new Error(e.error || ('HTTP ' + r.status)); });
+    return r.json();
+  }).then(function(d) {
+    var msg = '완료!\n\n스캔: ' + d.scanned + '개\n삭제: ' + d.deleted + '개\n실패: ' + d.errors + '개';
+    if (statusEl) statusEl.textContent = '✓ ' + d.scanned + '개 스캔, ' + d.deleted + '개 삭제 완료';
+    alert(msg);
+  }).catch(function(e) {
+    console.error(e);
+    if (statusEl) statusEl.textContent = '✗ 오류: ' + e.message;
+    alert('정리 작업 실패: ' + e.message + '\n\n(Vercel에 /api/cleanup 함수와 환경변수가 설정되어 있는지 확인해주세요)');
+  });
+};
+
+window.migrateLegacyChats = async function() {
+  if (!confirm('옛 대화 기록을 새 시스템으로 복구합니다.\n\n시간이 걸릴 수 있습니다 (계속?)')) return;
+  var statusEl = document.getElementById('migrate-status');
+  function _stat(t) { if(statusEl) statusEl.textContent = t; console.log('[MIGRATE]', t); }
+  
+  try {
+    _stat('사용자 목록 로딩 중...');
+    var usersSnap = await getDocs(collection(db, 'users'));
+    var users = {};
+    usersSnap.docs.forEach(function(d){
+      users[d.id] = Object.assign({uid:d.id}, d.data());
+    });
+    _stat('사용자 ' + Object.keys(users).length + '명 로드');
+
+    _stat('옛 채팅방 목록 로딩 중...');
+    // chats 컬렉션의 모든 방 가져오기
+    // Firestore는 컬렉션의 doc 목록을 직접 못 가져오므로, 가능한 모든 1:1 조합 시도
+    // → 실제로는 chats 컬렉션의 doc 들을 가져오면 됨
+    var chatsSnap = await getDocs(collection(db, 'chats'));
+    var oldRoomIds = chatsSnap.docs.map(function(d){return d.id;});
+    _stat('옛 채팅방 ' + oldRoomIds.length + '개 발견');
+
+    var migratedRooms = 0;
+    var migratedMsgs = 0;
+    var skipped = 0;
+
+    for (var ri = 0; ri < oldRoomIds.length; ri++) {
+      var oldRoomId = oldRoomIds[ri];
+      _stat('('+(ri+1)+'/'+oldRoomIds.length+') 처리 중: ' + oldRoomId);
+
+      // roomId 파싱: "uid1_uid2" → uid1, uid2
+      var parts = oldRoomId.split('_');
+      if (parts.length !== 2) { skipped++; continue; }
+      var u1 = parts[0], u2 = parts[1];
+      if (!users[u1] || !users[u2]) {
+        console.warn('알 수 없는 사용자', u1, u2);
+        skipped++;
+        continue;
+      }
+
+      // 새 roomId: 정렬된 형태
+      var newRoomId = [u1, u2].sort().join('_');
+
+      // 메시지 가져오기
+      var msgsSnap = await getDocs(query(collection(db, 'chats', oldRoomId, 'messages'), orderBy('createdAt', 'asc')));
+      if (msgsSnap.empty) { skipped++; continue; }
+
+      // 이미 존재하는 새 방 확인
+      var existingRoom = await getDoc(doc(db, 'chatRooms', newRoomId));
+      var existingMsgIds = {};
+      if (existingRoom.exists()) {
+        // 기존 메시지 ID 수집 (중복 방지)
+        var existingMsgs = await getDocs(collection(db, 'chatRooms', newRoomId, 'messages'));
+        existingMsgs.docs.forEach(function(d){
+          var data = d.data();
+          // 시간 + 발신자로 중복 키 생성 (정확한 비교는 어려우니 근사)
+          var key = (data.createdAt?data.createdAt.toMillis():0) + '_' + data.senderUid + '_' + (data.text||data.fileUrl||'');
+          existingMsgIds[key] = true;
+        });
+      }
+
+      // 메타데이터 구성
+      var participants = [u1, u2];
+      var participantNames = {};
+      var participantRoles = {};
+      participantNames[u1] = users[u1].name || '?';
+      participantNames[u2] = users[u2].name || '?';
+      participantRoles[u1] = users[u1].role || 'student';
+      participantRoles[u2] = users[u2].role || 'student';
+
+      // 마지막 메시지 정보
+      var lastMsgData = msgsSnap.docs[msgsSnap.docs.length-1].data();
+      var lastMsg = {
+        text: lastMsgData.text || '',
+        fileName: lastMsgData.fileName || null,
+        fileUrl: lastMsgData.fileUrl || null,
+        senderName: lastMsgData.senderName || '',
+        senderUid: lastMsgData.senderUid || '',
+        createdAt: lastMsgData.createdAt || serverTimestamp()
+      };
+
+      var unread = {};
+      participants.forEach(function(uid){unread[uid] = 0;});
+
+      // 메타데이터 저장/병합
+      await setDoc(doc(db, 'chatRooms', newRoomId), {
+        participants: participants,
+        participantNames: participantNames,
+        participantRoles: participantRoles,
+        isGroup: false,
+        branch: users[u1].branch || users[u2].branch || '송정점',
+        unread: unread,
+        lastMessage: lastMsg,
+        createdBy: u1,
+        createdAt: serverTimestamp(),
+        migratedFrom: oldRoomId
+      }, {merge: true});
+
+      // 메시지 복사
+      for (var mi = 0; mi < msgsSnap.docs.length; mi++) {
+        var msgDoc = msgsSnap.docs[mi];
+        var m = msgDoc.data();
+        var key = (m.createdAt?m.createdAt.toMillis():0) + '_' + m.senderUid + '_' + (m.text||m.fileUrl||'');
+        if (existingMsgIds[key]) continue;
+        await addDoc(collection(db, 'chatRooms', newRoomId, 'messages'), {
+          text: m.text || '',
+          fileUrl: m.fileUrl || null,
+          fileName: m.fileName || null,
+          senderUid: m.senderUid,
+          senderName: m.senderName || (users[m.senderUid] && users[m.senderUid].name) || '?',
+          readBy: m.readBy || participants, // 옛 메시지는 모두 읽음 처리
+          createdAt: m.createdAt || serverTimestamp(),
+          migrated: true
+        });
+        migratedMsgs++;
+      }
+      migratedRooms++;
+    }
+
+    _stat('✓ 완료: 채팅방 ' + migratedRooms + '개, 메시지 ' + migratedMsgs + '개 복구 (' + skipped + '개 건너뜀)');
+    alert('마이그레이션 완료!\n\n대화방: ' + migratedRooms + '개\n메시지: ' + migratedMsgs + '개');
+  } catch(e) {
+    console.error(e);
+    _stat('✗ 오류: ' + e.message);
+    alert('마이그레이션 중 오류: ' + e.message);
+  }
+};
+
+function _sendChatNotif(receiverUid, senderName, preview) {
+  // chatNotifs에 저장 - 앱 내 알림 기록/배지용
+  addDoc(collection(db,'chatNotifs',receiverUid,'items'), {
+    senderUid: currentUser.uid,
+    senderName: senderName,
+    preview: preview,
+    read: false,
+    createdAt: serverTimestamp()
+  }).catch(function(){});
+}
+
+// 실제 OS 푸시 알림 발송 (백그라운드/앱 종료 상태에서도 수신되도록)
+function _sendPushNotification(targetUids, title, body, data) {
+  if (!targetUids || !targetUids.length || !currentUser) return;
+  currentUser.getIdToken().then(function(idToken){
+    return fetch('/api/send-push', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', 'Authorization':'Bearer '+idToken},
+      body: JSON.stringify({targetUids: targetUids, title: title, body: body, data: data || {}})
+    });
+  }).then(function(r){
+    if (!r.ok) return r.json().then(function(e){ throw new Error(e.error || ('HTTP '+r.status)); });
+    return r.json();
+  }).then(function(result){
+    console.log('[푸시알림] 발송 결과:', result);
+  }).catch(function(e){ console.error('[푸시알림] 전송 실패:', e); });
+}
+
+// ── 뒤로가기 히스토리 관리 ──
+var _historyStack = [];
+function pushHistory(action) {
+  _historyStack.push(action);
+  history.pushState({idx: _historyStack.length}, '');
+}
+window.addEventListener('popstate', function() {
+  if (_historyStack.length > 0) {
+    var action = _historyStack.pop();
+    if (typeof action === 'function') action();
+    if (_historyStack.length > 0) history.pushState({idx: _historyStack.length}, '');
+  }
+});
+
+var _gradeRowCount = 0;
+var _gradeRowMeta = {}; // rowId -> {type, label}
+
+window.addGradeRow = function(type) {
+  var id = ++_gradeRowCount;
+  var cfg = {
+    sc: {label:'과탐', cls:'subj-sc', bg:'rgba(74,127,255,0.06)', bd:'rgba(74,127,255,0.2)', tc:'#7aa8ff', ph:'예: 물리학1'},
+    so: {label:'사탐', cls:'subj-so', bg:'rgba(61,186,126,0.06)', bd:'rgba(61,186,126,0.2)', tc:'var(--green)', ph:'예: 한국지리'},
+    etc:{label:'기타', cls:'subj-etc', bg:'rgba(201,168,76,0.06)', bd:'rgba(201,168,76,0.2)', tc:'var(--gold)', ph:'예: 제2외국어'}
+  }[type] || {label:'기타', cls:'', bg:'var(--surface2)', bd:'var(--border)', tc:'var(--tx3)', ph:'과목명'};
+  _gradeRowMeta[id] = {type:type};
+  var row = document.createElement('div');
+  row.id = 'grade-row-'+id;
+  row.setAttribute('data-row-type', type);
+  row.style.cssText = 'background:'+cfg.bg+';border:1px solid '+cfg.bd+';border-radius:10px;padding:10px;margin-bottom:8px;';
+  row.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'
+    +'<div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0">'
+    +'<span class="subject-tag '+cfg.cls+'" style="font-size:11px;flex-shrink:0">'+cfg.label+'</span>'
+    +'<input class="modal-input" data-rid="'+id+'" data-field="name" placeholder="'+cfg.ph+'" style="margin-bottom:0;font-size:13px;flex:1"/>'
+    +'</div>'
+    +'<button onclick="removeGradeRow('+id+')" style="margin-left:8px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:6px;color:var(--red);font-size:11px;padding:4px 8px;cursor:pointer;flex-shrink:0">삭제</button>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;align-items:center;margin-bottom:7px">'
+    +'<span style="font-size:11px;color:var(--tx3);width:52px;flex-shrink:0">점수/등급</span>'
+    +'<input class="modal-input" type="number" step="any" data-rid="'+id+'" data-field="score" placeholder="점수" style="flex:1;margin-bottom:0"/>'
+    +'<input class="modal-input" type="number" data-rid="'+id+'" data-field="grade" placeholder="등급" min="1" max="9" style="width:60px;margin-bottom:0"/>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;align-items:center">'
+    +'<span style="font-size:11px;color:var(--tx3);width:52px;flex-shrink:0">오답</span>'
+    +'<input class="modal-input" data-rid="'+id+'" data-field="wrong" placeholder="예: 8, 15" style="flex:1;margin-bottom:0"/>'
+    +'</div>';
+  document.getElementById('grade-extra-rows').appendChild(row);
+};
+window.removeGradeRow = function(id) {
+  var r = document.getElementById('grade-row-'+id); if(r) r.remove();
+  delete _gradeRowMeta[id];
+};
+
+// 모달 열 때 초기화
+var _origOpenModal = window.openModal;
+window.openModal = function(id) {
+  if (id === 'modal-add-account') {
+    // 현재 로그인한 마스터의 지점을 기본값으로
+    var branchSel = document.getElementById('acc-branch');
+    if (branchSel) {
+      var myBranch = getBranch();
+      // 옵션에 현재 지점이 없으면 추가
+      var exists = Array.from(branchSel.options).some(function(o){return o.value===myBranch;});
+      if (!exists) {
+        var opt = document.createElement('option');
+        opt.value = myBranch; opt.textContent = myBranch;
+        branchSel.insertBefore(opt, branchSel.firstChild);
+      }
+      branchSel.value = myBranch;
+    }
+  }
+  if (id === 'modal-add-grade') {
+    _gradeRowCount = 0; _gradeRowMeta = {};
+    var er = document.getElementById('grade-extra-rows'); if(er) er.innerHTML = '';
+    ['ko','en','ma','hi'].forEach(function(s){
+      ['score','grade'].forEach(function(f){var el=document.getElementById('grade-'+s+'-'+f);if(el)el.value='';});
+      var w=document.getElementById('grade-wrong-'+s);if(w)w.value='';
+    });
+    var koOpt=document.getElementById('grade-ko-opt');if(koOpt)koOpt.value='';
+    var maOpt=document.getElementById('grade-ma-opt');if(maOpt)maOpt.value='';
+    ['exam-name','ref-mistake','ref-weak','ref-plan'].forEach(function(f){var el=document.getElementById('grade-'+f);if(el)el.value='';});
+    // 기본 과탐1, 사탐1 추가
+    addGradeRow('sc'); addGradeRow('so');
+  }
+  // 뒤로가기로 모달 닫기
+  pushHistory(function(){ closeModal(id); });
+  if (_origOpenModal) _origOpenModal(id);
+};
+
+window.saveGrade=function(){
+  var targetUid=document.getElementById('grade-target-uid').value||currentUser.uid;
+  var type=document.getElementById('grade-type').value;
+  var examName=document.getElementById('grade-exam-name').value.trim();
+  var examDate=document.getElementById('grade-exam-date').value;
+  if(!examName||!examDate){alert('시험명과 날짜를 입력해주세요.');return;}
+  var scores={};
+  var wrongBySubj={};
+  // 국어
+  var koScore=document.getElementById('grade-ko-score').value;
+  var koGrade=document.getElementById('grade-ko-grade').value;
+  var koOpt=document.getElementById('grade-ko-opt').value;
+  if(koScore) scores['ko']={score:koScore,grade:koGrade||'',label:'국어'+(koOpt?' ('+koOpt+')':''),group:'ko',option:koOpt};
+  var koW=document.getElementById('grade-wrong-ko');if(koW&&koW.value.trim())wrongBySubj['ko']=koW.value.trim();
+  // 영어
+  var enScore=document.getElementById('grade-en-score').value;
+  var enGrade=document.getElementById('grade-en-grade').value;
+  if(enScore) scores['en']={score:enScore,grade:enGrade||'',label:'영어',group:'en'};
+  var enW=document.getElementById('grade-wrong-en');if(enW&&enW.value.trim())wrongBySubj['en']=enW.value.trim();
+  // 수학
+  var maScore=document.getElementById('grade-ma-score').value;
+  var maGrade=document.getElementById('grade-ma-grade').value;
+  var maOpt=document.getElementById('grade-ma-opt').value;
+  if(maScore) scores['ma']={score:maScore,grade:maGrade||'',label:'수학'+(maOpt?' ('+maOpt+')':''),group:'ma',option:maOpt};
+  var maW=document.getElementById('grade-wrong-ma');if(maW&&maW.value.trim())wrongBySubj['ma']=maW.value.trim();
+  // 한국사
+  var hiScore=document.getElementById('grade-hi-score').value;
+  var hiGrade=document.getElementById('grade-hi-grade').value;
+  if(hiScore) scores['hi']={score:hiScore,grade:hiGrade||'',label:'한국사',group:'hi'};
+  var hiW=document.getElementById('grade-wrong-hi');if(hiW&&hiW.value.trim())wrongBySubj['hi']=hiW.value.trim();
+  // 동적 추가 과목
+  Object.keys(_gradeRowMeta).forEach(function(rid){
+    var nameEl=document.querySelector('[data-rid="'+rid+'"][data-field="name"]');
+    var scoreEl=document.querySelector('[data-rid="'+rid+'"][data-field="score"]');
+    var gradeEl=document.querySelector('[data-rid="'+rid+'"][data-field="grade"]');
+    var wrongEl=document.querySelector('[data-rid="'+rid+'"][data-field="wrong"]');
+    var t=_gradeRowMeta[rid].type;
+    var nm=(nameEl&&nameEl.value.trim())||(t==='sc'?'과탐':'사탐');
+    var key=t+rid;
+    var s=scoreEl?scoreEl.value:'';
+    var g=gradeEl?gradeEl.value:'';
+    if(s) scores[key]={score:s,grade:g||'',label:nm,group:t};
+    if(wrongEl&&wrongEl.value.trim()) wrongBySubj[key]=wrongEl.value.trim();
+  });
+  var refMistake=document.getElementById('grade-ref-mistake').value;
+  var refWeak=document.getElementById('grade-ref-weak').value;
+  var refPlan=document.getElementById('grade-ref-plan').value;
+  var _branchForReward = getBranch();
+  addDoc(collection(db,'grades'),{uid:targetUid,type:type,examName:examName,examDate:examDate,scores:scores,wrongBySubj:wrongBySubj,refMistake:refMistake,refWeak:refWeak,refPlan:refPlan,createdAt:serverTimestamp()}).then(function(){
+    // 수동 입력한 등급에도 동일하게 등급 기반 상점 적용 (1등급 +10 / 2등급 +5)
+    Object.keys(scores).forEach(function(key){
+      var s = scores[key];
+      if (s && s.grade) {
+        _awardGradeLevelReward(targetUid, _branchForReward, s.label||key, String(s.grade), examName, examDate);
+      }
+    });
+    closeModal('modal-add-grade');alert('성적이 저장되었습니다!');invalidateTeacherTabCache(2);if(currentProfile.role==='student')loadGrades(type);
+  });
+};
+
+// ── 리워드 ──
+function buildRewardPage(){
+  var __dt_h = '<div class="dt-header dt-only"><div><div class="dt-header-title">리워드</div></div></div>';
+  return __dt_h+'<div class="dt-main-grid"><div style="grid-column:1/3;"><div id="scholar-banner"></div><div id="points-summary"></div><button class="appeal-btn" onclick="openModal(\'modal-appeal\')">👍 칭찬 어필하기</button><div class="card"><div class="card-title">상벌점 규정</div><div id="rules-area"><div style="color:var(--tx3);font-size:13px">불러오는 중...</div></div></div><div class="card"><div class="card-title">상벌점 히스토리</div><div id="points-history"><div style="color:var(--tx3);font-size:13px">불러오는 중...</div></div></div>';
+}
+function loadRewardData(){
+  if(!currentUser) return;
+  // 장학생 배너
+  var month=new Date().toISOString().slice(0,7);
+  getDoc(doc(db,'scholars',month)).then(function(d){
+    var b=document.getElementById('scholar-banner');if(!b)return;
+    if(d.exists()&&d.data().studentUid===currentUser.uid){b.innerHTML='<div style="background:linear-gradient(135deg,rgba(201,168,76,0.2),rgba(201,168,76,0.06));border:1px solid rgba(201,168,76,0.5);border-radius:12px;padding:14px 16px;margin-bottom:12px;text-align:center"><div style="font-size:20px;margin-bottom:4px">🏆</div><div style="font-size:15px;font-weight:700;color:var(--burg)">이달의 장학생</div><div style="font-size:13px;color:var(--tx2);margin-top:4px;white-space:pre-wrap;word-break:break-word;">'+d.data().reason+'</div><div style="font-size:12px;color:var(--burg);margin-top:6px">상품: '+d.data().prize+'</div></div>';}
+    else b.innerHTML='';
+  }).catch(function(){});
+  // 점수 합산
+  getDocs(query(collection(db,'points'),where('studentUid','==',currentUser.uid))).then(function(snap){
+    var plus=0,minus=0,offset=0;
+    snap.docs.forEach(function(d){var p=d.data();if(p.type==='plus')plus+=parseInt(p.points)||0;else if(p.type==='minus')minus+=parseInt(p.points)||0;else if(p.type==='offset')offset+=parseInt(p.points)||0;});
+    plus = Math.max(0, plus - offset); minus = Math.max(0, minus - offset);
+    var el=document.getElementById('points-summary');if(!el)return;
+    var canOffset = plus > 0 && minus > 0;
+    el.innerHTML='<div class="stat-grid" style="margin-bottom:12px"><div class="stat-card"><div class="stat-val" style="color:var(--burg)">'+plus+'점</div><div class="stat-lbl">누적 상점</div></div><div class="stat-card"><div class="stat-val" style="color:var(--red)">'+minus+'점</div><div class="stat-lbl">누적 벌점</div></div></div><div style="background:var(--gold-l);border:1px solid rgba(184,132,26,0.2);border-radius:10px;padding:10px 14px;margin-bottom:12px;text-align:center"><span style="font-size:14px;font-weight:700;color:var(--burg)">현재 점수: '+(plus-minus)+'점</span></div>'
+      + (canOffset ? '<button class="modal-btn primary" style="margin-bottom:12px;" onclick="openOffsetPointsModal()">🔄 상점으로 벌점 상쇄하기</button>' : '');
+  }).catch(function(){});
+  // 상벌점 규정
+  getDocs(query(collection(db,'rules'),where('branch','==',getBranch()),limit(1))).then(function(snap){
+    var el=document.getElementById('rules-area');if(!el)return;
+    var content=snap.empty?defaultRules:snap.docs[0].data().content;
+    el.innerHTML='<pre style="font-size:12px;color:var(--tx2);white-space:pre-wrap;line-height:1.9;font-family:inherit">'+content+'</pre>';
+  }).catch(function(){var el=document.getElementById('rules-area');if(el)el.innerHTML='<div style="color:var(--tx3);font-size:13px">불러오기 실패</div>';});
+  // 히스토리
+  getDocs(query(collection(db,'points'),where('studentUid','==',currentUser.uid))).then(function(snap){
+    var el=document.getElementById('points-history');if(!el)return;
+    if(snap.empty){el.innerHTML='<div style="color:var(--tx3);font-size:13px">내역이 없습니다</div>';return;}
+    var items=snap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
+    items.sort(function(a,b){var at=a.createdAt?a.createdAt.toMillis():0;var bt=b.createdAt?b.createdAt.toMillis():0;return bt-at;});
+    el.innerHTML=items.map(function(p){var date=p.createdAt?p.createdAt.toDate().toLocaleDateString('ko-KR'):'';var isOffset=p.type==='offset';var color=isOffset?'var(--gold)':(p.type==='plus'?'var(--burg)':'var(--red)');var prefix=isOffset?'상쇄 ':(p.type==='plus'?'+':'-');return '<div class="history-item"><div class="history-dot '+(isOffset?'offset':p.type)+'" style="'+(isOffset?'background:var(--gold);':'')+'"></div><div style="flex:1;font-size:13px;white-space:pre-wrap;word-break:break-word;">'+p.reason+'</div><div style="font-size:13px;font-weight:600;color:'+color+';">'+prefix+p.points+'점</div><div style="font-size:11px;color:var(--tx3);margin-left:6px">'+date+'</div></div>';}).join('');
+  }).catch(function(){var el=document.getElementById('points-history');if(el)el.innerHTML='<div style="color:var(--tx3);font-size:13px">불러오기 실패</div>';});
+}
+window.sendAppeal=function(){
+  var content=document.getElementById('appeal-content').value.trim();
+  if(!content) return;
+  addDoc(collection(db,'appeals'),{studentUid:currentUser.uid,studentName:currentProfile.name,content:content,createdAt:serverTimestamp()}).then(function(){closeModal('modal-appeal');alert('어필이 전송되었습니다!');})+'</div></div>';
+};
+
+// ── 채팅 ──
+// ── 채팅 (학생) ──
+function buildChatPage(){
+  return buildKakaoChatPage();
+}
+var chatTargetUid=null;
+function _chatRoomId(sUid,tUid){return sUid+'_'+tUid;}
+window.openChatRoom=function(teacherUid,teacherName){
+  chatTargetUid=teacherUid;
+  document.getElementById('chat-room-list').style.display='none';
+  var view=document.getElementById('chat-room-view');view.style.display='flex';
+  var title=document.getElementById('chat-room-title');if(title)title.textContent=teacherName;
+  pushHistory(function(){ closeChatRoom(); });
+  if(unsubChat)unsubChat();
+  var roomId=_chatRoomId(currentUser.uid,teacherUid);
+  unsubChat=onSnapshot(query(collection(db,'chats',roomId,'messages'),orderBy('createdAt','asc')),function(snap){
+    var list=document.getElementById('chat-msg-list');if(!list)return;
+    var wasBottom=list.scrollHeight-list.scrollTop-list.clientHeight<60;
+    var _msgs=snap.docs.map(function(d){return d.data();});
+    list.innerHTML=_renderKakaoMessages(_msgs, currentUser.uid);
+    if(wasBottom)list.scrollTop=list.scrollHeight;
+  });
+};
+window.handleFileSelect=function(input){
+  if(!input.files||!input.files[0]) return;
+  selectedFile=input.files[0];
+  var preview=document.getElementById('chat-file-preview'),nameEl=document.getElementById('chat-file-name');
+  if(preview&&nameEl){nameEl.textContent=selectedFile.name+' ('+(selectedFile.size/1024/1024).toFixed(1)+'MB)';preview.style.display='block';}
+};
+window.cancelFile=function(){
+  selectedFile=null;
+  var p=document.getElementById('chat-file-preview');if(p)p.style.display='none';
+  var fi=document.getElementById('chat-file-input');if(fi)fi.value='';
+};
+window.sendChatMsg=function(){
+  if(!chatTargetUid){alert('\ub300\ud654 \uc0c1\ub300\ub97c \uba3c\uc800 \uc120\ud0dd\ud574\uc8fc\uc138\uc694.');return;}
+  var roomId=_chatRoomId(currentUser.uid, chatTargetUid);
+  if(selectedFile){
+    _uploadChatFileAndSend(selectedFile, roomId);
+    cancelFile();
+  }
+  var input=document.getElementById('chat-text-input');
+  var text=input?input.value.trim():'';
+  if(text){
+    addDoc(collection(db,'chats',roomId,'messages'),{text:text,senderUid:currentUser.uid,senderName:currentProfile.name,createdAt:serverTimestamp()});
+    _sendChatNotif(chatTargetUid, currentProfile.name, text);
+    if(input)input.value='';
+  }
+};
+
+// ── 공지 ──
+function listenNotices(){
+  if(!currentUser) return;
+  if(unsubNotices){unsubNotices();unsubNotices=null;}
+  getDocs(query(collection(db,'notices'),where('target','in',['all',currentProfile.name]))).then(function(snap){
+    // branch 필터 JS에서 처리 (branch 없는 기존 데이터도 표시)
+    var myBranch=getBranch();
+    notifications=snap.docs
+      .filter(function(d){var b=d.data().branch;return !b||b===myBranch;})
+      .map(function(d){return Object.assign({id:d.id},d.data());})
+      .sort(function(a,b){var at=a.createdAt?a.createdAt.toMillis():0,bt=b.createdAt?b.createdAt.toMillis():0;return bt-at;});
+    var unread=notifications.filter(function(n){return !n.readBy||!n.readBy.includes(currentUser.uid);});
+    updateNotifBadge(unread.length);
+    setTimeout(function(){
+      snap.docs.forEach(function(d){
+        var n=d.data();
+        if(!n.readBy||!n.readBy.includes(currentUser.uid)){
+          var arr=(n.readBy||[]).concat([currentUser.uid]);
+          updateDoc(doc(db,'notices',d.id),{readBy:arr}).catch(function(){});
+        }
+      });
+    },3000);
+  }).catch(function(e){
+    console.error('notices error:',e);
+    var badge=document.getElementById('notif-badge');
+    if(badge) badge.style.display='none';
+    // 알림 패널에 오류 표시
+    var list=document.getElementById('notif-list');
+    if(list) list.innerHTML='<div style="color:var(--red);font-size:12px">공지 오류: '+e.message+'</div>';
+  });
+}
+window.sendNotice=function(){
+  var target=document.getElementById('notice-target').value;
+  var title=document.getElementById('notice-title-input').value.trim();
+  var content=document.getElementById('notice-body-input').value.trim();
+  if(!title||!content){alert('제목과 내용을 입력해주세요.');return;}
+  addDoc(collection(db,'notices'),{branch:getBranch(),target:target,title:title,content:content,senderUid:currentUser.uid,senderName:currentProfile.name,readBy:[],createdAt:serverTimestamp()}).then(function(){closeModal('modal-notice');document.getElementById('notice-title-input').value='';document.getElementById('notice-body-input').value='';alert('공지가 전송되었습니다!');invalidateTeacherTabCache(5);renderTeacher(5);});
+};
+window.showNoticePopup=function(title,body,from){document.getElementById('notice-title-text').textContent=title;document.getElementById('notice-body-text').textContent=body;document.getElementById('notice-from-text').textContent=from||'';document.getElementById('notice-overlay').classList.add('open');};
+function updateNotifBadge(count){var b=document.getElementById('notif-badge');if(b){if(count>0){b.style.display='flex';b.textContent=count;}else b.style.display='none';}}
+window.toggleNotifPanel=function(){
+  var p=document.getElementById('notif-panel'),b=document.getElementById('notif-backdrop');
+  var isOpen=p.classList.contains('open');
+  if(isOpen){p.classList.remove('open');b.style.display='none';}
+  else{
+    p.classList.add('open');b.style.display='block';
+    // 공지 목록 렌더 + 채팅 알림은 이미 DOM에 있으니 유지
+    var list=document.getElementById('notif-list');
+    // 공지 항목만 재렌더 (💬로 시작하지 않는 기존 공지 교체)
+    var noticeHtml = notifications.length===0
+      ? '<div style="font-size:13px;color:var(--tx3);text-align:center;margin-top:40px" data-empty="1">새 알림이 없습니다</div>'
+      : notifications.map(function(n){return '<div style="background:var(--surface2);border-radius:10px;padding:12px;margin-bottom:8px"><div style="font-size:13px;font-weight:600;margin-bottom:4px">'+n.title+'</div><div style="font-size:12px;color:var(--tx3);line-height:1.7;white-space:pre-wrap;word-break:break-word;">'+n.content+'</div></div>';}).join('');
+    // 기존 채팅 알림 항목 보존 후 공지 뒤에 붙이기
+    var chatItems = Array.from(list.querySelectorAll('[data-chat-item]'));
+    list.innerHTML = noticeHtml;
+    chatItems.forEach(function(el){ list.appendChild(el); });
+    // 배지 리셋
+    var badge=document.getElementById('notif-badge');
+    if(badge){badge.style.display='none';badge.textContent='0';}
+  }
+};
+
+// ── 자동 상벌점 ──
+// 이번달 순공시간 TOP5 uid 목록 계산 (loadStudyRankings와 동일한 집계 로직)
+function _computeMonthlyTop5(branch, month){
+  var lastDay = new Date(parseInt(month.split('-')[0]), parseInt(month.split('-')[1]), 0).getDate();
+  var startDate = month + '-01';
+  var endDate = month + '-' + String(lastDay).padStart(2,'0');
+  return Promise.all([
+    getDocs(query(collection(db,'todos'), where('date','>=',startDate), where('date','<=',endDate))),
+    getDocs(query(collection(db,'users'), where('role','==','student')))
+  ]).then(function(results){
+    var todoSnap = results[0], studentSnap = results[1];
+    var validUids = {};
+    studentSnap.docs.forEach(function(d){
+      var data = d.data();
+      if ((!data.branch || data.branch===branch) && data.suspended!==true) validUids[d.id] = true;
+    });
+    var timeMap = {};
+    todoSnap.docs.forEach(function(d){
+      var t = d.data();
+      if (!t.studyTime || !t.uid || !validUids[t.uid]) return;
+      var parts = t.studyTime.split(':');
+      var secs = (parseInt(parts[0])||0)*3600 + (parseInt(parts[1]||0))*60 + (parseInt(parts[2]||0));
+      if (secs > 0) timeMap[t.uid] = (timeMap[t.uid]||0) + secs;
+    });
+    return Object.keys(timeMap).sort(function(a,b){ return timeMap[b]-timeMap[a]; }).slice(0,5);
+  }).catch(function(){ return []; });
+}
+
+function autoTop5EntryPoints(){
+  if(!currentUser||currentProfile.role!=='student') return;
+  var now=new Date();
+  var kst=new Date(now.getTime()+(9*60+now.getTimezoneOffset())*60000);
+  var month = kst.getFullYear()+'-'+String(kst.getMonth()+1).padStart(2,'0');
+  var key = 'top5Entry_'+currentUser.uid+'_'+month;
+  if (localStorage.getItem(key)) return;
+
+  _computeMonthlyTop5(getBranch(), month).then(function(top5Uids){
+    if (top5Uids.indexOf(currentUser.uid) === -1) return;
+    localStorage.setItem(key, '1');
+    addDoc(collection(db,'points'), {
+      branch: getBranch(), studentUid: currentUser.uid, type:'plus',
+      reason: month+' 순공시간 TOP5 진입 (자동)', points: 5,
+      givenBy:'system', givenByName:'자동지급', createdAt: serverTimestamp()
+    }).then(function(){
+      alert('🎉 이번 달 순공시간 TOP5에 진입했어요! 상점 5점이 자동 지급되었습니다.');
+    }).catch(function(){});
+  });
+}
+
+function autoWeeklyPoints(){
+  if(!currentUser||currentProfile.role!=='student') return;
+  var now=new Date();if(now.getDay()!==1) return;
+  var wk=now.getFullYear()+'_'+Math.ceil(((now-new Date(now.getFullYear(),0,1))/86400000+new Date(now.getFullYear(),0,1).getDay()+1)/7);
+  var key='weeklyPoints_'+currentUser.uid+'_'+wk;
+  if(localStorage.getItem(key)) return;
+  var weekAgo=new Date();weekAgo.setDate(weekAgo.getDate()-7);
+  getDocs(query(collection(db,'points'),where('studentUid','==',currentUser.uid),where('type','==','minus'),where('createdAt','>',weekAgo))).then(function(snap){
+    var reasons=[];
+    var minusDocs = snap.docs.map(function(d){return d.data();});
+    if(snap.empty){addDoc(collection(db,'points'),{branch:getBranch(),studentUid:currentUser.uid,type:'plus',reason:'주 단위 생활관리 벌점 없음 (자동)',points:5,givenBy:'system',givenByName:'자동지급',createdAt:serverTimestamp()});reasons.push('주 단위 벌점 없음 +5점');}
+    var hasAbsence = minusDocs.some(function(p){ return (p.reason||'').indexOf('결석')>=0; });
+    if(!hasAbsence){addDoc(collection(db,'points'),{branch:getBranch(),studentUid:currentUser.uid,type:'plus',reason:'주 단위 결석 없음 (자동)',points:5,givenBy:'system',givenByName:'자동지급',createdAt:serverTimestamp()});reasons.push('주 단위 결석 없음 +5점');}
+    localStorage.setItem(key,'1');
+    if(reasons.length>0) alert('🎉 주간 상점 자동 지급!\n'+reasons.join('\n'));
+  }).catch(function(){});
+}
+function autoPlannerPenalty(){
+  if(!currentUser||currentProfile.role!=='student') return;
+
+  // KST(UTC+9) 기준 시간 계산
+  var now=new Date();
+  var kstOffset=9*60;
+  var kst=new Date(now.getTime()+(kstOffset+now.getTimezoneOffset())*60000);
+  var hour=kst.getHours();
+
+  // 오후 3시(15:00) KST 이전이면 아직 제출 기회 있으므로 실행 안 함
+  if(hour < 15) return;
+
+  // KST 기준 오늘 날짜
+  var y=kst.getFullYear();
+  var m=String(kst.getMonth()+1).padStart(2,'0');
+  var d=String(kst.getDate()).padStart(2,'0');
+  var today=y+'-'+m+'-'+d;
+
+  // 예외 날짜 처리 (소급 벌점 생성 방지)
+  var SKIP_DATES=['2026-05-10','2026-05-11'];
+  if(SKIP_DATES.indexOf(today)>=0) return;
+
+  // 신규 계정: 가입 당일에는 플래너 미제출 벌점을 부여하지 않음
+  if (currentProfile.createdAt) {
+    var createdMs = currentProfile.createdAt.toMillis ? currentProfile.createdAt.toMillis() : (currentProfile.createdAt.seconds*1000);
+    var createdKst = new Date(createdMs + (kstOffset*60000));
+    var cy=createdKst.getFullYear(), cm=String(createdKst.getMonth()+1).padStart(2,'0'), cd=String(createdKst.getDate()).padStart(2,'0');
+    var createdDateStr = cy+'-'+cm+'-'+cd;
+    if (createdDateStr === today) return;
+  }
+
+  // 오늘 플래너 미제출 체크 (어제 기준이 아닌 당일 3시 이후)
+  var pk='plannerPenalty_'+currentUser.uid+'_'+today;
+
+  // localStorage 1차 중복 체크
+  if(localStorage.getItem(pk)) return;
+
+  // Firestore 2차 중복 체크 (다른 기기 대비)
+  getDocs(query(
+    collection(db,'points'),
+    where('studentUid','==',currentUser.uid),
+    where('reason','==','플래너 미제출 ('+today+') (자동)')
+  )).then(function(snap){
+    if(!snap.empty){ localStorage.setItem(pk,'1'); return; } // 이미 있으면 스킵
+    getDoc(doc(db,'planners',currentUser.uid+'_'+today)).then(function(d){
+      if(!d.exists()){
+        addDoc(collection(db,'points'),{
+          studentUid:currentUser.uid,
+          type:'minus',
+          reason:'플래너 미제출 ('+today+') (자동)',
+          points:1,
+          givenBy:'system',
+          givenByName:'자동지급',
+          createdAt:serverTimestamp()
+        });
+        localStorage.setItem(pk,'1');
+      } else {
+        localStorage.setItem(pk,'1'); // 제출했으면 체크만
+      }
+    }).catch(function(){});
+  }).catch(function(){
+    // Firestore 조회 실패 시 localStorage로만 fallback
+    getDoc(doc(db,'planners',currentUser.uid+'_'+today)).then(function(d){
+      if(!d.exists()){
+        addDoc(collection(db,'points'),{branch:getBranch(),studentUid:currentUser.uid,type:'minus',reason:'플래너 미제출 ('+today+') (자동)',points:1,givenBy:'system',givenByName:'자동지급',createdAt:serverTimestamp()});
+        localStorage.setItem(pk,'1');
+      }
+    }).catch(function(){});
+  });
+}
+
+// ── 선생님 탭 ──
+window.buildTeacherTabs=function(isMaster){
+  var tabs=[
+    {label:'학생현황',icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>'},
+    {label:'플래너',icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'},
+    {label:'성적',icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>'},
+    {label:'상벌점',icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>'},
+    {label:'메시지',icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'},
+    {label:'공지',icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 17H2a3 3 0 0 0 3-3V9a7 7 0 0 1 14 0v5a3 3 0 0 0 3 3zm-8.27 4a2 2 0 0 1-3.46 0"/></svg>'},
+    {label:'계정',icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>'},
+  ];
+  tabs.push({label:'시험관리',icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>'});
+  tabs.push({idx:14,label:'암기 Test',icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M8 7h8M8 11h6"/></svg>'});
+  if(isMaster) tabs.push({idx:8,label:'전체채팅',icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'});
+  tabs.forEach(function(t,i){ if(t.idx==null) t.idx=i; });
+  tabs.push({idx:9,label:'일정표',icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'});
+  tabs.push({idx:10,label:'현황판',icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>'});
+  tabs.push({idx:11,label:'주의학생',icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'});
+  tabs.push({idx:12,label:'리포트',icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>'});
+  tabs.push({idx:13,label:'시간표',icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>'});
+  // 모바일/태블릿 하단 탭
+  document.getElementById('teacher-tabs').innerHTML=tabs.map(function(t,i){
+    return '<div class="teacher-nav-item '+(i===0?'active':'')+'" id="tnav-'+t.idx+'" data-idx="'+t.idx+'" onclick="teacherTab('+t.idx+')">'+t.icon+'<span>'+t.label+'</span></div>';
+  }).concat([
+    '<div class="teacher-nav-item" onclick="doLogout()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span>로그아웃</span></div>'
+  ]).join('');
+  // 데스크탑 사이드바
+  var sb = document.getElementById('teacher-sb-items');
+  if (sb) {
+    sb.innerHTML=tabs.map(function(t,i){
+      return '<div class="dt-sb-item '+(i===0?'active':'')+'" id="tsb-'+t.idx+'" data-idx="'+t.idx+'" onclick="teacherTab('+t.idx+')">'+t.icon+'<span class="dt-sb-item-label">'+t.label+'</span></div>';
+    }).concat([
+      '<div class="dt-sb-item" onclick="doLogout()"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span class="dt-sb-item-label">로그아웃</span></div>'
+    ]).join('');
+  }
+};
+window.teacherTab=function(i){
+  document.querySelectorAll('.teacher-nav-item').forEach(function(t){t.classList.toggle('active',t.dataset.idx!=null&&+t.dataset.idx===i);});
+  document.querySelectorAll('.dt-sb-item[id^="tsb-"]').forEach(function(t){t.classList.toggle('active',t.dataset.idx!=null&&+t.dataset.idx===i);});
+  renderTeacher(i);
+};
+// 탭을 빠르게 여러 번 전환하면, 먼저 누른(느린) 탭의 응답이 나중에 도착해서
+// 방금 누른 새 탭 내용을 덮어써버리는 경쟁 상태가 있었음 - "불러오는 중"이 계속
+// 반복되거나 엉뚱한 탭 내용이 잠깐 보이는 원인이 이거였음.
+// 매 호출마다 고유 번호(세대)를 매겨서, 응답이 왔을 때 "그 사이 더 최근 탭 클릭이
+// 있었는지" 확인하고 있었다면 그 응답은 버리는 방식으로 해결.
+var _teacherRenderGen = 0;
+// 탭 전환 시마다 매번 처음부터 다시 불러오고 다시 그리는 게 "느리다"는 체감의 근본 원인.
+// 최근에 봤던 탭은 캐시해뒀다가, 다시 그 탭으로 가면 "불러오는 중" 없이 즉시 예전 화면을
+// 먼저 보여주고, 그 사이 최신 데이터를 조용히 백그라운드로 받아와서 자연스럽게 갱신한다.
+// (60초 넘게 지난 캐시는 신뢰하지 않고 새로 불러올 때까지 로딩 화면을 보여줌)
+var _teacherTabCache = {};
+var TEACHER_TAB_CACHE_TTL = 60000;
+
+window.renderTeacher=function(i){
+  var myGen = ++_teacherRenderGen;
+  function isStale(){ return myGen !== _teacherRenderGen; }
+
+  if(unsubChat){unsubChat();unsubChat=null;}
+  try{ MP_stopCommentHistory(); }catch(e){}
+  teacherChatUid=null;
+  var isMaster=currentProfile&&currentProfile.role==='master';
+  var c=document.getElementById('teacher-content');
+  var tabLabels=['학생현황','플래너','성적관리','상벌점','메시지','공지','계정관리','시험관리','전체채팅','모의고사 일정표','시험 현황판','시간 체크 주의 학생','별자리 리포트 · 성적표','시간표','암기 Test · 단어 Test'];
+  function wrap(idx, h){
+    if(idx===0) return h;
+    var dtHeader='<div class="dt-header dt-only"><div><div class="dt-header-title">'+(tabLabels[idx]||'')+'</div></div></div>';
+    // 채팅 탭(4)과 전체채팅(8)은 패딩 없이 전체화면
+    if (idx===4 || idx===8) {
+      return dtHeader + '<div style="flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0;background:var(--bg);">'+h+'</div>';
+    }
+    return dtHeader+'<div class="teacher-content-inner">'+h+'</div>';
+  }
+  // 이 탭에서 데이터를 새로 받아왔을 때(또는 캐시를 그대로 보여줄 때) 실행해야 하는 후속 작업
+  function runPostHooks(idx){
+    if (idx===0) loadStudyRankings('study-rankings-teacher');
+    else if (idx===1) { teacherPlannerHistory(); filterLecturesByStudent(_lectureFilterUid); }
+    else if (idx===4) listenKChatRooms();
+    else if (idx===7) mpDecorateExamCards();
+    else if (idx===9) mpTeacherSchedInit();
+    else if (idx===10) mpBoardInit();
+    else if (idx===11) mpWatchInit();
+    else if (idx===12) mpReportInit();
+    else if (idx===13) mpTtTabInit();
+  }
+
+  if (i===14) {
+    c.innerHTML = wrap(14, '<div id="wt-teacher"></div>');
+    (function mountWT(n){ if (window.WT && WT.teacherMount) WT.teacherMount(document.getElementById('wt-teacher')); else if (n < 50) setTimeout(function(){ if(!isStale()) mountWT(n+1); }, 100); })(0);
+    return;
+  }
+  var cached = _teacherTabCache[i];
+  var freshEnough = cached && (Date.now() - cached.ts < TEACHER_TAB_CACHE_TTL);
+  if (freshEnough) {
+    // 캐시된 예전 화면을 로딩 화면 없이 즉시 표시 - 체감 속도가 확 달라짐
+    c.innerHTML = cached.html;
+    runPostHooks(i);
+  } else {
+    c.innerHTML='<div style="color:var(--tx3);font-size:13px;padding:20px">불러오는 중...</div>';
+  }
+
+  function buildAndCache(builderFn){
+    builderFn().then(function(h){
+      if (isStale()) return;
+      var wrapped = wrap(i, h);
+      _teacherTabCache[i] = {html: wrapped, ts: Date.now()};
+      c.innerHTML = wrapped;
+      runPostHooks(i);
+    });
+  }
+
+  if(i===0) buildAndCache(buildTDashboard);
+  else if(i===1) buildAndCache(buildTPlanner);
+  else if(i===2) buildAndCache(buildTGrades);
+  else if(i===3) buildAndCache(buildTRewards);
+  else if(i===4) buildAndCache(buildTChat);
+  else if(i===5) buildAndCache(buildTNotice);
+  else if(i===6) buildAndCache(buildTAccounts);
+  else if(i===7) buildAndCache(buildTExamManage);
+  else if(i===8&&isMaster) buildAndCache(buildAllChats);
+  else if(i===9) buildAndCache(buildTSchedule);
+  else if(i===10) buildAndCache(buildTBoard);
+  else if(i===11) buildAndCache(buildTWatch);
+  else if(i===12) buildAndCache(buildTReport);
+  else if(i===13) buildAndCache(buildTTimetable);
+};
+
+// 데이터가 실제로 바뀌는 조작(성적 저장, 학생 추가, 시험 생성 등)을 하고 나면
+// 그 탭의 캐시는 즉시 무효화해서, 다음에 봤을 때 오래된 화면이 보이지 않게 함
+function invalidateTeacherTabCache(idx){
+  if (idx == null) { _teacherTabCache = {}; return; }
+  delete _teacherTabCache[idx];
+}
+
+
+// ── loadStudentList 캐시 (5분) ──
+var _studentListCache = null;
+var _studentListCacheTime = 0;
+function loadStudentList(){
+  var now = Date.now();
+  if (_studentListCache && now - _studentListCacheTime < 300000) {
+    return Promise.resolve(_studentListCache);
+  }
+  return getDocs(query(collection(db,'users'),where('role','==','student'))).then(function(snap){
+    var myBranch=getBranch();
+    _studentListCache = snap.docs
+      .filter(function(d){
+        var data=d.data();
+        var b=data.branch;
+        if(!(!b||b===myBranch)) return false; // 지점 필터
+        if(data.suspended===true) return false; // 정지 계정 제외
+        return true;
+      })
+      .map(function(d){return Object.assign({uid:d.id},d.data());});
+    _studentListCacheTime = Date.now();
+    // 선생님/마스터 화면에서 학생별 커스텀 과목명이 깨져 보이는 문제 방지:
+    // 모든 학생의 subjects를 전역 subjectNames 맵에 병합해둔다
+    _studentListCache.forEach(function(s){
+      if (Array.isArray(s.subjects)) {
+        s.subjects.forEach(function(sub){
+          if (sub && sub.key) subjectNames[sub.key] = sub.name;
+        });
+      }
+    });
+    return _studentListCache;
+  });
+}
+
+function buildTDashboard(){
+  return loadStudentList().then(function(students){
+    var today=getPlannerDate();
+    var _myBP=getBranch();
+    // 오늘 플래너 조회와 코멘트 조회는 서로 의존관계가 없으므로 병렬로 동시에 요청
+    return Promise.all([
+      getDocs(query(collection(db,'planners'),where('date','==',today))),
+      getDocs(query(collection(db,'comments'), where('branch','==',_myBP)))
+    ]).then(function(dashResults){
+      var plannerSnap = dashResults[0], allCommentsSnap = dashResults[1];
+      var submittedToday=plannerSnap.docs.filter(function(d){var b=d.data().branch;return (!b||b===_myBP) && !!d.data().submittedAt;}).map(function(d){return d.data().name;});
+      // 상담 알림 데이터 수집 - 예전에는 학생 한 명당 조회를 따로따로 날려서(N+1) 학생 수만큼
+      // 네트워크 요청이 생겨 느렸음. 지점 전체 코멘트를 한 번에 불러온 뒤 학생별로 묶는 방식으로 변경.
+      var commentsByUid = {};
+      allCommentsSnap.docs.forEach(function(d){
+        var c = d.data();
+        if (!c.studentUid) return;
+        if (!commentsByUid[c.studentUid]) commentsByUid[c.studentUid] = [];
+        commentsByUid[c.studentUid].push(c);
+      });
+      var consults = students.map(function(s){
+        var list = commentsByUid[s.uid] || [];
+        if (!list.length) return {uid:s.uid,name:s.name,days:999,urgent:true};
+        var sorted = list.slice().sort(function(a,b){
+          var at=a.createdAt?a.createdAt.toMillis():0,bt=b.createdAt?b.createdAt.toMillis():0;
+          return bt-at;
+        });
+        var lastDate=sorted[0].createdAt?sorted[0].createdAt.toDate():null;
+        if(!lastDate) return {uid:s.uid,name:s.name,days:999,urgent:true};
+        var days=Math.floor((new Date()-lastDate)/(1000*60*60*24));
+        return {uid:s.uid,name:s.name,days:days,urgent:days>=14,warning:days>=7&&days<14};
+      });
+      return {consults: consults, submittedToday: submittedToday};
+    }).then(function(dashData){
+        var consults = dashData.consults, submittedToday = dashData.submittedToday;
+        // 학생별 상태 매핑
+        var consultMap={};
+        consults.forEach(function(c){consultMap[c.uid]=c;});
+        var needConsult=consults.filter(function(c){return c.urgent||c.warning;}).length;
+
+        // 학생 카드 HTML
+        function studentCardHtml(s){
+          var c=consultMap[s.uid]||{};
+          var submitted=submittedToday.includes(s.name);
+          var cardClass='s-card-normal';
+          if(c.urgent||!submitted) cardClass='s-card-urgent';
+          else if(c.warning) cardClass='s-card-warning';
+          var badges='';
+          if(c.urgent&&c.days===999) badges+='<span class="badge badge-red">상담기록 없음</span>';
+          else if(c.urgent) badges+='<span class="badge badge-red">상담 '+c.days+'일</span>';
+          else if(c.warning) badges+='<span class="badge badge-gold">상담 '+c.days+'일</span>';
+          if(submitted) badges+='<span class="badge badge-green">✓ 제출</span>';
+          else badges+='<span class="badge badge-red">미제출</span>';
+          var avatar=avatarCircleHtml(s.name, s.avatar, 40, {chars:2, cls:'s-card-av-inner'});
+          return '<div class="s-card '+cardClass+'" onclick="teacherTab(2);setTimeout(function(){var sel=document.getElementById(\'t-grade-student\');if(sel){sel.value=\''+s.uid+'\';loadStudentGrades(\''+s.uid+'\');}},200);">'
+            +'<div class="s-card-h">'
+            +avatar
+            +'<div style="flex:1;min-width:0;">'
+            +'<div class="s-card-name">'+s.name+' <button onclick="event.stopPropagation();goToStudentComment(\'' + s.uid + '\',\'' + encodeURIComponent(s.name) + '\')" title="플래너에서 코멘트 작성" style="background:var(--burg-l);color:var(--burg);border:none;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:700;cursor:pointer;">💬 코멘트</button></div>'
+            +'<div class="s-card-meta">'+(s.grade||'')+' · '+(s.school||'')+'</div>'
+            +'</div>'
+            +'</div>'
+            +'<div class="s-card-badges">'+badges+'</div>'
+            +'</div>';
+        }
+
+        // 통계 카드 (KPI)
+        var kpis = '<div class="kpi-grid">'
+          +'<div class="kpi"><div class="kpi-label">전체 학생</div><div class="kpi-value">'+students.length+'<span>명</span></div></div>'
+          +'<div class="kpi kpi-green"><div class="kpi-label">제출 완료</div><div class="kpi-value">'+submittedToday.length+'<span>명</span></div></div>'
+          +'<div class="kpi kpi-red"><div class="kpi-label">미제출</div><div class="kpi-value">'+(students.length-submittedToday.length)+'<span>명</span></div></div>'
+          +'<div class="kpi kpi-burg"><div class="kpi-label">상담 필요</div><div class="kpi-value">'+needConsult+'<span>명</span></div></div>'
+          +'</div>';
+
+        // 정렬 (기본: 가나다순)
+        var _gradeRank = {'중학교 1학년':1,'중학교 2학년':2,'중학교 3학년':3,'고등학교 1학년':4,'고등학교 2학년':5,'고등학교 3학년':6,'N수':7,'성인':8};
+        var sortMode = window._studentSortMode || 'name';
+        var sortedStudents = students.slice().sort(function(a,b){
+          if (sortMode === 'grade') {
+            var ra = _gradeRank[a.grade]||99, rb = _gradeRank[b.grade]||99;
+            if (ra !== rb) return ra - rb;
+            return (a.name||'').localeCompare(b.name||'', 'ko');
+          }
+          return (a.name||'').localeCompare(b.name||'', 'ko');
+        });
+        window._dashboardStudentsRaw = students; // 재정렬 시 재사용
+
+        // 학생 카드 그리드 (3열)
+        var studentGrid = '<div class="card"><div class="card-h">'
+          +'<div class="card-title">학생 현황</div>'
+          +'<div style="display:flex;gap:4px;">'
+          +'<button onclick="setStudentSortMode(\'name\')" class="'+(sortMode==='name'?'sort-btn-active':'sort-btn')+'" style="font-size:11px;padding:5px 10px;border-radius:6px;border:1px solid var(--border);cursor:pointer;background:'+(sortMode==='name'?'var(--burg)':'var(--surface2)')+';color:'+(sortMode==='name'?'#fff':'var(--tx2)')+';font-weight:600;">가나다순</button>'
+          +'<button onclick="setStudentSortMode(\'grade\')" class="'+(sortMode==='grade'?'sort-btn-active':'sort-btn')+'" style="font-size:11px;padding:5px 10px;border-radius:6px;border:1px solid var(--border);cursor:pointer;background:'+(sortMode==='grade'?'var(--burg)':'var(--surface2)')+';color:'+(sortMode==='grade'?'#fff':'var(--tx2)')+';font-weight:600;">학년순</button>'
+          +'</div>'
+          +'</div>'
+          +'<div id="student-status-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;">'
+          +sortedStudents.map(studentCardHtml).join('')
+          +'</div></div>';
+
+        // 데스크탑 헤더 + 그리드 wrapper
+        var html = '<div class="dt-header dt-only"><div><div class="dt-header-title">학생현황</div><div class="dt-header-sub">'+new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric',weekday:'long'})+'</div></div></div>'
+          +'<div class="dt-main-grid">'
+          +'<div style="grid-column:1/3;">'+_buildDdayBannerHtml()+'</div>'
+          +'<div style="grid-column:1/3;">'+kpis+'</div>'
+          +'<div style="grid-column:1/2;">'+studentGrid+'</div>'
+          +'<div style="grid-column:2/3;">'
+          +'<div class="card"><div class="card-h"><div class="card-title">🏅 우수학생 · TOP 5</div></div><div id="study-rankings-teacher"><div style="color:var(--tx3);font-size:12px;text-align:center;padding:8px;">불러오는 중...</div></div></div>'
+          +'<div class="card" style="margin-top:10px;"><div class="card-h"><div class="card-title">빠른 작업</div></div>'
+          +'<button class="modal-btn primary" onclick="openModal(\'modal-notice\')" style="margin-bottom:6px;">📢 공지 보내기</button>'
+          +'<button class="modal-btn cancel" onclick="teacherTab(6)" style="margin-bottom:6px;">+ 계정 추가</button>'
+          +'<button class="modal-btn cancel" onclick="teacherTab(1)">✏️ 코멘트 작성</button>'
+          +'</div>'
+          +'</div>'
+          +'</div>';
+        return html;
+      });
+    });
+}
+
+function buildTPlanner(){
+  return loadStudentList().then(function(students){
+    var today=getPlannerDate();
+    var isMasterOrTeacher = currentProfile && (currentProfile.role==='master' || currentProfile.role==='teacher');
+    var d30 = new Date(); d30.setDate(d30.getDate()-29);
+    var d30Str = d30.getFullYear()+'-'+String(d30.getMonth()+1).padStart(2,'0')+'-'+String(d30.getDate()).padStart(2,'0');
+    // 아래 세 조회(오늘 플래너/최근 30일 플래너/인강 목록)는 서로 의존관계가 없는데
+    // 예전에는 하나씩 순서대로 기다리는 구조라 느렸음. 먼저 전부 병렬로 미리 받아두고,
+    // 아래 기존 처리 흐름(순차 체인 구조)은 그대로 둔 채 이미 받아둔 결과를 즉시 넘겨줌.
+    return Promise.all([
+      getDocs(query(collection(db,'planners'),where('date','==',today))),
+      getDocs(query(collection(db,'planners'), where('date','>=',d30Str))),
+      getDocs(collection(db,'lectures'))
+    ]).then(function(prefetch){
+    var _prefetchToday = prefetch[0], _prefetchHist = prefetch[1], _prefetchLectures = prefetch[2];
+    return Promise.resolve(_prefetchToday).then(function(plannerSnap){
+      var myBranchP=getBranch();
+      var todayPlanners=plannerSnap.docs
+        .filter(function(d){var b=d.data().branch;return (!b||b===myBranchP) && !!d.data().submittedAt;})
+        .map(function(d){return d.data();});
+      var submittedUids = {};
+      todayPlanners.forEach(function(p){ submittedUids[p.uid]=true; });
+      var absentStudents = students.filter(function(s){ return !submittedUids[s.uid]; });
+
+      // 최근 30일 제출 기록 (제출률/제출지연 횟수 계산용) - 이미 병렬로 받아둔 결과 사용
+      var histPromise = Promise.resolve(_prefetchHist).then(function(snap){
+        var rows = snap.docs.filter(function(d){var b=d.data().branch;return (!b||b===myBranchP) && !!d.data().submittedAt;}).map(function(d){return d.data();});
+        var byUid = {};
+        rows.forEach(function(r){
+          if(!byUid[r.uid]) byUid[r.uid] = {total:0, late:0};
+          byUid[r.uid].total++;
+          if (r.late) byUid[r.uid].late++;
+        });
+        return byUid;
+      }).catch(function(){ return {}; });
+
+      return histPromise.then(function(histByUid){
+      return Promise.resolve(_prefetchLectures).then(function(_lSnap){
+        var myBranch=getBranch();
+        var isDefault=true; // branch 없는 기존 데이터 항상 포함
+        var lectureSnap={docs:_lSnap.docs.filter(function(d){var b=d.data().branch;return isDefault?(!b||b===myBranch):b===myBranch;})};
+        var lectures=lectureSnap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
+        // 과목 순서 정렬
+        var _tSubjOrder=['국어','영어','수학','한국사','과탐','사탐','물리','화학','생명','지구','생활','윤리','한국지리','세계지리','동아시아','세계사','경제','정치','사회'];
+        function _tSubjRank(lc){var s=lc.subject||'';var idx=_tSubjOrder.findIndex(function(k){return s.includes(k);});return idx>=0?idx:99;}
+        lectures.sort(function(a,b){return _tSubjRank(a)-_tSubjRank(b);});
+        var activeLectures=lectures.filter(function(lc){var done=parseInt(lc.completedLessons)||0,total=parseInt(lc.totalLessons)||0;return done<total;});
+        var doneLectures=lectures.filter(function(lc){var done=parseInt(lc.completedLessons)||0,total=parseInt(lc.totalLessons)||0;return done>=total;});
+        var sortedLectures=activeLectures.concat(doneLectures);
+        var filterOptions='<option value="">전체 학생</option>'+students.map(function(s){return '<option value="'+s.uid+'"'+(_lectureFilterUid===s.uid?' selected':'')+'>'+s.name+'</option>';}).join('');
+        function _lectureCardHtml(lc){
+          var total=parseInt(lc.totalLessons)||0,done=parseInt(lc.completedLessons)||0,pct=total>0?Math.round(done/total*100):0;
+          var isDone=done>=total;
+          var student=students.find(function(s){return s.uid===lc.studentUid;});
+          var eta='-';
+          if(lc.scheduleCount&&done<total){var remaining=total-done;var weeksNeeded=Math.ceil(remaining/(parseInt(lc.scheduleCount)||1));var etaDate=new Date();etaDate.setDate(etaDate.getDate()+weeksNeeded*7);eta=etaDate.toLocaleDateString('ko-KR');}
+          else if(isDone) eta='✅ 완료';
+          return '<div class="score-card lecture-card" data-uid="'+(lc.studentUid||'')+'" style="margin-bottom:10px;'+(isDone?'opacity:0.6;':'')+'"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px"><div><div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'+(isDone?'<span style="background:rgba(61,186,126,0.15);border-radius:5px;padding:2px 7px;font-size:10px;color:var(--green)">완강</span>':'')+'<span style="background:rgba(74,127,255,0.2);border-radius:5px;padding:2px 8px;font-size:11px;color:var(--blue)">'+(student?student.name:'?')+'</span><span style="font-size:14px;font-weight:600">'+lc.lectureName+'</span></div><div style="font-size:11px;color:var(--tx3)">'+lc.company+' · '+lc.subject+' · '+lc.instructor+'</div></div><button onclick="openUpdateLectureModal(\''+lc.id+'\','+done+','+total+')" style="padding:6px 12px;background:var(--burg-l2);border:1px solid var(--burg-l2);border-radius:6px;color:var(--burg);font-size:11px;cursor:pointer;white-space:nowrap;flex-shrink:0">수강 업데이트</button></div><div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="flex:1;background:var(--surface3);border-radius:6px;height:10px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:'+(isDone?'linear-gradient(90deg,var(--green),#5dd4a0)':'linear-gradient(90deg,var(--gold),var(--burg))')+';border-radius:6px;"></div></div><span style="font-size:13px;font-weight:700;color:'+(isDone?'var(--green)':'var(--burg)')+';white-space:nowrap">'+done+' / '+total+'강 ('+pct+'%)</span></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px"><div style="background:var(--surface2);border-radius:6px;padding:7px 10px"><div style="color:var(--tx3);margin-bottom:2px">수강 계획</div><div style="font-weight:600">'+(lc.schedule||'-')+' · 주 '+(lc.scheduleCount||'-')+'강</div></div><div style="background:var(--surface2);border-radius:6px;padding:7px 10px"><div style="color:var(--tx3);margin-bottom:2px">완료 예상일</div><div style="font-weight:600;color:'+(isDone?'var(--green)':'var(--burg)')+'">'+eta+'</div></div><div style="background:var(--surface2);border-radius:6px;padding:7px 10px"><div style="color:var(--tx3);margin-bottom:2px">마지막 업데이트</div><div style="font-weight:600">'+(lc.lastUpdateDate||'-')+'</div></div><div style="background:var(--surface2);border-radius:6px;padding:7px 10px"><div style="color:var(--tx3);margin-bottom:2px">남은 강의</div><div style="font-weight:600;color:var(--burg)">'+(total-done)+'강</div></div></div></div>';
+        }
+        // 학생별로 묶어서 표시 (한 줄로 쭉 이어지지 않도록 학생 이름으로 섹션 구분)
+        var lecturesByUid={};
+        sortedLectures.forEach(function(lc){
+          var key=lc.studentUid||'unknown';
+          if(!lecturesByUid[key]) lecturesByUid[key]=[];
+          lecturesByUid[key].push(lc);
+        });
+        var lectureHtml=students.filter(function(s){return lecturesByUid[s.uid]&&lecturesByUid[s.uid].length;}).map(function(s){
+          var lecs=lecturesByUid[s.uid];
+          var activeCnt=lecs.filter(function(lc){return (parseInt(lc.completedLessons)||0)<(parseInt(lc.totalLessons)||0);}).length;
+          return '<div class="lecture-student-group" data-uid="'+s.uid+'">'
+            +'<div class="lecture-student-heading"><span>'+escapeHtml(s.name)+'</span><span class="lecture-student-count">'+lecs.length+'개 · 진행중 '+activeCnt+'개</span></div>'
+            +'<div class="lecture-cards-grid">'+lecs.map(_lectureCardHtml).join('')+'</div>'
+            +'</div>';
+        }).join('');
+        if(!lectureHtml) lectureHtml='<div style="color:var(--tx3);font-size:13px;padding:10px 0">등록된 인강이 없습니다</div>';
+        var absentHtml = !absentStudents.length
+          ? '<div style="color:var(--green);font-size:13px;padding:8px 0;font-weight:600;">🎉 전원 제출 완료!</div>'
+          : '<div class="planner-thumb-grid">'+absentStudents.map(function(s){
+              return '<div class="planner-thumb" onclick="openPlannerSubmitHistoryModal(\''+s.uid+'\',\''+escapeHtml(s.name).replace(/'/g,"\\'")+'\')" style="opacity:0.85;border-color:rgba(224,82,82,0.3);cursor:pointer;"><div style="display:flex;align-items:center;justify-content:space-between"><div><div class="planner-thumb-name">'+escapeHtml(s.name)+'</div><div class="planner-thumb-status" style="color:var(--red);">❌ 미제출 · 탭하여 현황 보기</div></div></div></div>';
+            }).join('')+'</div>';
+
+        var statRows = students.slice().sort(function(a,b){return (a.name||'').localeCompare(b.name||'','ko');}).map(function(s){
+          var h = histByUid[s.uid] || {total:0, late:0};
+          var streak = s.plannerStreak || 0;
+          var pct = Math.round(h.total/30*100);
+          return '<div class="planner-stat-card">'
+            +'<div style="display:flex;justify-content:space-between;align-items:center;">'
+            +'<div class="planner-stat-name">'+escapeHtml(s.name)+'</div>'
+            +'<button onclick="openPlannerSubmitHistoryModal(\''+s.uid+'\',\''+escapeHtml(s.name).replace(/'/g,"\\'")+'\')" style="padding:3px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--tx3);font-size:10px;cursor:pointer;">📅 30일 현황</button>'
+            +'</div>'
+            +'<div class="planner-stat-row"><span class="planner-stat-icon">🔥</span><span class="planner-stat-val" style="color:var(--burg);">'+streak+'일 연속</span></div>'
+            +'<div class="planner-stat-row"><span class="planner-stat-icon">📅</span><span class="planner-stat-val">최근30일 '+h.total+'/30 ('+pct+'%)</span></div>'
+            +'<div class="planner-stat-row"><span class="planner-stat-icon">⏰</span><span class="planner-stat-val" style="color:'+(h.late>0?'var(--gold)':'var(--tx4)')+';">'+(h.late>0?('제출지연 '+h.late+'회'):'제출지연 없음')+'</span></div>'
+            +'</div>';
+        }).join('');
+
+        return '<div class="section-label">오늘 제출된 플래너 ('+todayPlanners.length+'명)</div>'
+          +(!todayPlanners.length?'<div style="color:var(--tx3);font-size:13px;padding:10px 0">아직 제출된 플래너가 없습니다</div>':'<div class="planner-thumb-grid">'+todayPlanners.map(function(p){return '<div class="planner-thumb" onclick="togglePlannerDetail(\'pd_'+p.uid+'\',\''+p.uid+'\')"><div style="display:flex;align-items:center;justify-content:space-between"><div><div class="planner-thumb-name">'+p.name+'</div><div class="planner-thumb-status">✅ 제출 완료'+(p.late?' · <span style="color:var(--gold);">제출지연</span>':'')+' · 탭하여 상세 보기</div></div><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div><div id="pd_'+p.uid+'" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)"><div style="color:var(--tx3);font-size:12px">불러오는 중...</div></div></div>';}).join('')+'</div>')
+          +'<div class="section-label" style="margin-top:22px;color:var(--red);">🚫 오늘 미제출자 ('+absentStudents.length+'명)</div>'
+          +absentHtml
+          +'<div class="section-label" style="margin-top:22px;">📊 학생별 제출 현황 (연속일수 · 최근 30일 · 제출지연)</div>'
+          +'<div class="planner-stat-grid">'+(statRows||'<div style="color:var(--tx3);font-size:12px;padding:10px 0;">학생이 없습니다</div>')+'</div>'
+          +(isMasterOrTeacher ? (
+            '<div style="margin-top:16px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.25);border-radius:12px;padding:14px;">'
+            +'<div class="section-label" style="margin:0 0 8px;">🔔 미제출자 알림 발송</div>'
+            +'<div style="font-size:12px;color:var(--tx3);margin-bottom:10px;line-height:1.6;">오늘 미제출자('+absentStudents.length+'명)에게 즉시 푸시 알림을 보냅니다. 이미 제출한 학생에게는 절대 발송되지 않습니다. (Vercel Cron으로 하루 2회 자동 실행되도록 설정할 수도 있습니다)</div>'
+            +'<div id="planner-notify-status" style="font-size:12px;color:var(--tx3);margin-bottom:8px;"></div>'
+            +'<button class="modal-btn cancel" style="margin:0;" onclick="runPlannerNotifyNow()">지금 미제출자에게 알림 보내기</button>'
+            +'</div>'
+          ) : '')
+          +'<div style="margin-top:20px;background:var(--gold-l);border:1px solid var(--border2);border-radius:12px;padding:14px">'
+          +'<div class="section-label" style="margin:0 0 10px">📅 플래너 기록 조회</div>'
+          +'<div id="teacher-planner-hist"><div style="color:var(--tx3);font-size:13px">불러오는 중...</div></div>'
+          +'</div>'
+          +'<div id="teacher-comment-section" class="section-label" style="margin-top:24px;font-size:14px;font-weight:700;color:var(--burg);">💬 코멘트 작성</div>'
+          +'<div style="position:relative;margin-bottom:10px;">'+'<input type="text" class="modal-input" id="comment-student-search" placeholder="🔍 학생 이름 검색..." style="margin:0;" autocomplete="off" oninput="filterCommentStudentList(this.value)" onfocus="showCommentStudentList()"/>'+'<div id="comment-student-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-top:4px;max-height:240px;overflow-y:auto;z-index:20;box-shadow:0 8px 20px rgba(0,0,0,0.12);"></div>'+'</div>'+'<select class="modal-select" id="comment-student-select" onchange="loadCommentHistory(this.value)" style="display:none;"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'|'+s.name+'" data-grade="'+(s.grade||'')+'" data-school="'+(s.school||'')+'">'+s.name+'</option>';}).join('')+'</select>'
+          +'<textarea class="modal-input" id="comment-input" rows="10" placeholder="학생에게 전달할 코멘트를 입력하세요...&#10;&#10;예) 오늘 수학 풀이 좋았어요! 어려운 문제도 끝까지 풀어내는 모습이 인상적이에요." style="resize:vertical;min-height:220px;font-size:14px;line-height:1.7;font-family:inherit;padding:14px;margin-bottom:10px;"></textarea>'
+          +'<button class="modal-btn primary" onclick="saveComment()">코멘트 저장</button>'
+          +'<div id="comment-history" style="margin-top:14px"></div>'
+          +'<div style="display:flex;align-items:center;justify-content:space-between;margin-top:20px;margin-bottom:8px"><div class="section-label" style="margin:0">📚 인강 관리 현황</div><button onclick="openAddLectureModal()" style="padding:7px 14px;background:var(--burg-l2);border:1px solid var(--burg-l2);border-radius:8px;color:var(--burg);font-size:13px;cursor:pointer;font-weight:600">+ 인강 추가</button></div>'
+          +'<select class="modal-select" onchange="filterLecturesByStudent(this.value)" style="margin-bottom:12px">'+filterOptions+'</select>'
+          +lectureHtml;
+      }).catch(function(){return '';});
+      });
+    });
+    });
+  });
+}
+
+window.runMonthlyTop5RewardNow = function(){
+  var statusEl = document.getElementById('top5-cron-status');
+  if (statusEl) statusEl.textContent = '⏳ 실행 중... (서버 없이 브라우저에서 직접 처리합니다)';
+
+  var now = new Date();
+  var kst = new Date(now.getTime() + (9*60 + now.getTimezoneOffset())*60000);
+  var monthStr = kst.getFullYear()+'-'+String(kst.getMonth()+1).padStart(2,'0');
+  var lastDay = new Date(kst.getFullYear(), kst.getMonth()+1, 0).getDate();
+  var startDate = monthStr+'-01', endDate = monthStr+'-'+String(lastDay).padStart(2,'0');
+  var awarded = 0, alreadyAwarded = 0;
+
+  Promise.all([
+    getDocs(query(collection(db,'todos'), where('date','>=',startDate), where('date','<=',endDate))),
+    getDocs(query(collection(db,'users'), where('role','==','student')))
+  ]).then(function(results){
+    var todoSnap = results[0], studentSnap = results[1];
+    var studentByUid = {};
+    studentSnap.docs.forEach(function(d){
+      var u = d.data();
+      if (u.suspended===true) return;
+      studentByUid[d.id] = {branch: u.branch || '(미지정)', name: u.name||''};
+    });
+
+    var timeByBranchUid = {};
+    todoSnap.docs.forEach(function(d){
+      var t = d.data();
+      if (!t.studyTime || !t.uid || !studentByUid[t.uid]) return;
+      var parts = String(t.studyTime).split(':');
+      var secs = (parseInt(parts[0])||0)*3600 + (parseInt(parts[1])||0)*60 + (parseInt(parts[2])||0);
+      if (secs<=0) return;
+      var branch = studentByUid[t.uid].branch;
+      if (!timeByBranchUid[branch]) timeByBranchUid[branch] = {};
+      timeByBranchUid[branch][t.uid] = (timeByBranchUid[branch][t.uid]||0) + secs;
+    });
+
+    var chain = Promise.resolve();
+
+    Object.keys(timeByBranchUid).forEach(function(branch){
+      var map = timeByBranchUid[branch];
+      var top5 = Object.keys(map).sort(function(a,b){return map[b]-map[a];}).slice(0,5);
+      top5.forEach(function(uid){
+        chain = chain.then(function(){
+          var reason = monthStr+' 순공시간 TOP5 월간 시상 (자동)';
+          return getDocs(query(collection(db,'points'), where('studentUid','==',uid), where('reason','==',reason))).then(function(dup){
+            if (!dup.empty) { alreadyAwarded++; return; }
+            return addDoc(collection(db,'points'), {
+              branch: branch, studentUid: uid, type:'plus', reason: reason, points: 30,
+              givenBy:'system', givenByName:'자동지급', createdAt: serverTimestamp()
+            }).then(function(){ awarded++; });
+          });
+        });
+      });
+    });
+
+    return chain;
+  }).then(function(){
+    var msg = '실행 완료! (브라우저에서 직접 처리됨)\n\n'+monthStr+' 기준\n지급 '+awarded+'명\n이미 지급됨(중복스킵) '+alreadyAwarded+'명';
+    if (statusEl) statusEl.textContent = '✓ '+awarded+'명에게 지급 완료';
+    alert(msg);
+  }).catch(function(e){
+    console.error(e);
+    if (statusEl) statusEl.textContent = '✗ 오류: ' + e.message;
+    alert('실행 실패: ' + e.message);
+  });
+};
+
+window.runPlannerNotifyNow = function(){
+  var statusEl = document.getElementById('planner-notify-status');
+  if (statusEl) statusEl.textContent = '\u23f3 \ubc1c\uc1a1 \uc911...';
+  currentUser.getIdToken().then(function(idToken){
+    return fetch('/api/notify-planner-nonsubmitters?slot=manual', {
+      method: 'GET',
+      headers: { 'Authorization': 'Bearer ' + idToken }
+    });
+  }).then(function(r){
+    if (!r.ok) return r.json().then(function(e){ throw new Error(e.error || ('HTTP ' + r.status)); });
+    return r.json();
+  }).then(function(d){
+    var msg = '\ubc1c\uc1a1 \uc644\ub8cc!\n\n\ub300\uc0c1(\ubbf8\uc81c\ucd9c) '+d.targeted+'\uba85 \uc911 '+d.sent+'\uba85\uc5d0\uac8c \ubc1c\uc1a1 \uc131\uacf5'
+      + (d.failed ? ('\n\uc2e4\ud328 '+d.failed+'\uac74') : '')
+      + (d.noToken ? ('\n(\uc54c\ub9bc \ubbf8\uc124\uc815\uc73c\ub85c \uc2a4\ud0b5\ub41c \uc778\uc6d0: '+d.noToken+'\uba85)') : '')
+      + (d.otherBranch ? ('\n(\ub2e4\ub978 \uc9c0\uc810\uc774\ub77c \uc81c\uc678\ub41c \uc778\uc6d0: '+d.otherBranch+'\uba85)') : '');
+    if (statusEl) statusEl.textContent = '\u2713 '+d.sent+'\uba85\uc5d0\uac8c \ubc1c\uc1a1 \uc644\ub8cc (\ubbf8\uc81c\ucd9c '+d.targeted+'\uba85 \uc911)';
+    alert(msg);
+  }).catch(function(e){
+    console.error(e);
+    if (statusEl) statusEl.textContent = '\u2717 \uc624\ub958: ' + e.message;
+    alert('\uc54c\ub9bc \ubc1c\uc1a1 \uc2e4\ud328: ' + e.message + '\n\n(Vercel\uc5d0 /api/notify-planner-nonsubmitters \ud568\uc218\uc640 Firebase Admin \ud658\uacbd\ubcc0\uc218\uac00 \uc124\uc815\ub418\uc5b4 \uc788\ub294\uc9c0 \ud655\uc778\ud574\uc8fc\uc138\uc694)');
+  });
+};
+
+window.saveComment=function(){
+  var val=document.getElementById('comment-student-select').value;
+  var parts=val.split('|');
+  var uid=parts[0], sName=parts[1]||'';
+  var content=document.getElementById('comment-input').value.trim();
+  if(!uid||!content){alert('학생과 코멘트 내용을 입력해주세요.');return;}
+  addDoc(collection(db,'comments'),{branch:getBranch(),studentUid:uid,studentName:sName,teacherUid:currentUser.uid,teacherName:currentProfile.name,content:content,read:false,readAt:null,createdAt:serverTimestamp()}).then(function(){
+    try{ MP_afterCommentSaved(uid,sName,content); }catch(e){}
+    alert('코멘트가 저장되었습니다! (학생에게 알림이 전송돼요)');
+    document.getElementById('comment-input').value='';
+    loadCommentHistory(val);
+  });
+};
+window.loadCommentHistory=function(val){ MP_commentHistoryLive(val); };
+window.deleteComment=function(id,val){
+  if(!confirm('이 코멘트를 삭제하시겠습니까?')) return;
+  deleteDoc(doc(db,'comments',id)).then(function(){}).catch(function(e){alert('삭제 실패: '+e.message);});
+};
+
+window.openAddLectureModal=function(){
+  loadStudentList().then(function(students){
+    var sel=document.getElementById('lec-student-uid-select');
+    if(sel) sel.innerHTML='<option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('');
+  });
+  ['lec-company','lec-subject','lec-instructor','lec-name','lec-total','lec-schedule','lec-count','lec-completed-init'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
+  openModal('modal-add-lecture');
+};
+window.saveLecture=function(){
+  var uid=document.getElementById('lec-student-uid-select').value;
+  var company=document.getElementById('lec-company').value.trim();
+  var subject=document.getElementById('lec-subject').value.trim();
+  var instructor=document.getElementById('lec-instructor').value.trim();
+  var lectureName=document.getElementById('lec-name').value.trim();
+  var totalLessons=parseInt(document.getElementById('lec-total').value)||0;
+  var schedule=document.getElementById('lec-schedule').value.trim();
+  var scheduleCount=parseInt(document.getElementById('lec-count').value)||0;
+  var completedInit=parseInt(document.getElementById('lec-completed-init').value)||0;
+  if(!uid||!company||!lectureName||!totalLessons){alert('필수 항목을 입력해주세요.');return;}
+  var today=new Date().toLocaleDateString('ko-KR');
+  addDoc(collection(db,'lectures'),{branch:getBranch(),studentUid:uid,company:company,subject:subject,instructor:instructor,lectureName:lectureName,totalLessons:totalLessons,completedLessons:completedInit,schedule:schedule,scheduleCount:scheduleCount,lastUpdateDate:completedInit>0?today:'',createdAt:serverTimestamp()}).then(function(){closeModal('modal-add-lecture');alert('인강이 등록되었습니다!');renderTeacher(1);});
+};
+window.openUpdateLectureModal=function(lectureId,currentCompleted,totalLessons){
+  document.getElementById('update-lec-id').value=lectureId;
+  document.getElementById('update-lec-completed').value=currentCompleted;
+  document.getElementById('update-lec-total-display').textContent='총 '+totalLessons+'강';
+  document.getElementById('update-lec-total-new').value='';
+  document.getElementById('update-lec-schedule-new').value='';
+  document.getElementById('update-lec-count-new').value='';
+  openModal('modal-update-lecture');
+};
+window.updateLecture=function(){
+  var lectureId=document.getElementById('update-lec-id').value;
+  var completed=parseInt(document.getElementById('update-lec-completed').value)||0;
+  var newTotal=parseInt(document.getElementById('update-lec-total-new').value)||0;
+  var newSchedule=document.getElementById('update-lec-schedule-new').value.trim();
+  var newCount=parseInt(document.getElementById('update-lec-count-new').value)||0;
+  var today=new Date().toLocaleDateString('ko-KR');
+  var updateData={completedLessons:completed,lastUpdateDate:today,updatedAt:serverTimestamp()};
+  if(newTotal>0) updateData.totalLessons=newTotal;
+  if(newSchedule) updateData.schedule=newSchedule;
+  if(newCount) updateData.scheduleCount=newCount;
+  updateDoc(doc(db,'lectures',lectureId),updateData).then(function(){closeModal('modal-update-lecture');alert('수강 현황이 업데이트되었습니다!');renderTeacher(1);});
+};
+
+function buildTGrades(){
+  return loadStudentList().then(function(students){
+    return '<div class="section-label">학생 성적 조회</div>'
+      +'<div style="display:flex;gap:6px;margin-bottom:8px;">'
+      +'<select class="modal-select" id="t-grade-student" onchange="loadStudentGrades(this.value)" style="margin-bottom:0;flex:1;"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select>'
+      +'<button onclick="_openAdmissionPlanFromSelect()" style="padding:0 12px;background:var(--burg-l);border:1px solid rgba(123,29,29,0.2);border-radius:8px;color:var(--burg);font-size:12px;cursor:pointer;white-space:nowrap;">🎯 합격 플래너</button>'
+      +'<button onclick="openStudentExamDiagnosisModal()" style="padding:0 12px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:8px;color:var(--gold);font-size:12px;cursor:pointer;white-space:nowrap;">🔍 정밀진단</button>'
+      +'</div>'
+      +'<div style="position:relative;margin-bottom:8px">'
+      +'<input class="modal-input" id="t-grade-search" placeholder="🔍 시험명 검색..." oninput="filterGradeSearch(this.value)" style="margin-bottom:0;padding-right:36px"/>'
+      +'<button onclick="filterGradeSearch(\'\');document.getElementById(\'t-grade-search\').value=\'\'" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--tx3);font-size:14px;cursor:pointer">✕</button>'
+      +'</div>'
+      +'<div style="display:flex;gap:6px;margin-bottom:8px">'
+      +'<button id="tg-tab-mock" onclick="switchGradeTab(\'mock\')" style="flex:1;padding:8px;background:var(--burg-l2);border:1px solid rgba(201,168,76,0.4);border-radius:8px;color:var(--burg);font-size:13px;font-weight:600;cursor:pointer">모의고사</button>'
+      +'<button id="tg-tab-school" onclick="switchGradeTab(\'school\')" style="flex:1;padding:8px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--tx3);font-size:13px;cursor:pointer">내신</button>'
+      +'</div>'
+      +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px" id="tg-category-tabs"><div style="color:var(--tx4);font-size:11px;">분류 불러오는 중...</div></div>'
+      +'<div id="t-grade-list"><div style="color:var(--tx3);font-size:13px">학생을 선택하세요</div></div>'
+      +'<div class="section-label" style="margin-top:16px">성적 대행 입력</div>'
+      +'<select class="modal-select" id="t-grade-input-student"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('')+'</select>'
+      +'<button class="modal-btn primary" onclick="openTeacherGradeModal()">성적 입력 시작</button>';
+  }).then(function(html){
+    setTimeout(renderGradeCategoryTabs, 0);
+    return html;
+  });
+}
+
+// 시험 생성("시험 구분")과 완전히 같은 공유 목록으로 성적 탭 분류 필터를 그림.
+// 어느 화면에서 "+ 새 분류 추가"를 하든 이 함수를 다시 불러서 즉시 반영됨.
+function renderGradeCategoryTabs(){
+  var host = document.getElementById('tg-category-tabs');
+  if (!host) return;
+  loadExamSourceOptions().then(function(opts){
+    var cats = ['전체'].concat(opts);
+    host.innerHTML = cats.map(function(c,i){
+      var active = c === _currentGradeCategory;
+      return '<button onclick="switchGradeCategory(\''+escapeHtml(c).replace(/'/g,"\\'")+'\')" id="tg-cat-'+i+'" '
+        + 'style="padding:6px 10px;background:'+(active?'var(--blue-l)':'var(--surface2)')+';border:1px solid '+(active?'rgba(29,78,216,0.2)':'var(--border)')+';border-radius:6px;color:'+(active?'#7aa8ff':'var(--tx3)')+';font-size:12px;cursor:pointer;">'+escapeHtml(c)+'</button>';
+    }).join('')
+    + '<button onclick="openAddExamSourceOption()" style="padding:6px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:12px;cursor:pointer;">+ 분류 추가</button>'
+    + '<button onclick="openManageExamSourceOptions()" style="padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--tx3);font-size:12px;cursor:pointer;">🔧 관리</button>';
+  });
+}
+var _currentGradeCategory='전체';
+window.filterGradeSearch=function(q){
+  q=(q||'').trim().toLowerCase();
+  var cards=document.querySelectorAll('#t-grade-list .score-card');
+  var chartDiv=document.querySelector('#t-grade-list > div[style*="border-radius:12px"]');
+  cards.forEach(function(card){
+    var examName=card.querySelector('.score-card-title, div[style*="font-weight:700"]');
+    var text=card.textContent.toLowerCase();
+    card.style.display=(!q||text.includes(q))?'':'none';
+  });
+  // 검색 중이면 그래프 숨기기
+  if(chartDiv) chartDiv.style.display=q?'none':'';
+};
+window.switchGradeCategory=function(cat){
+  _currentGradeCategory=cat;
+  renderGradeCategoryTabs();
+  var uid=document.getElementById('t-grade-student').value;
+  if(uid) loadStudentGrades(uid);
+};
+var _currentGradeTab='mock';
+window.switchGradeTab=function(tab){
+  _currentGradeTab=tab;
+  ['mock','school'].forEach(function(t){
+    var btn=document.getElementById('tg-tab-'+t);
+    if(!btn) return;
+    if(t===tab){btn.style.background='rgba(201,168,76,0.15)';btn.style.borderColor='rgba(201,168,76,0.4)';btn.style.color='var(--burg)';btn.style.fontWeight='600';}
+    else{btn.style.background='var(--surface2)';btn.style.borderColor='var(--border)';btn.style.color='var(--tx3)';btn.style.fontWeight='400';}
+  });
+  var uid=document.getElementById('t-grade-student').value;
+  if(uid) loadStudentGrades(uid);
+};
+window.loadExamStats=function(encodedName, targetId){
+  var examName=decodeURIComponent(encodedName);
+  var normalize=function(s){return s.replace(/\s+/g,'').toLowerCase();};
+  var normTarget=normalize(examName);
+  // 1차: 완전일치, 없으면 전체에서 정규화 비교
+  getDocs(query(collection(db,'grades'),where('examName','==',examName))).then(function(snap){
+    if(snap.docs.length>0){ runExamStats(snap.docs); }
+    else { getDocs(collection(db,'grades')).then(function(s2){ runExamStats(s2.docs.filter(function(d){return normalize(d.data().examName||'')===normTarget;})); }).catch(function(){runExamStats([]);}); }
+  }).catch(function(){runExamStats([]);});
+
+  function runExamStats(sameExam){
+    // 클릭한 그 시험의 통계 칸(targetId)만 정확히 찾아서 업데이트 - 예전엔 "exam-stats-"로
+    // 시작하는 모든 칸을 한꺼번에 찾아서 덮어써서, 다른 시험(예: 3월)의 통계 칸까지
+    // 방금 클릭한 시험(예: 4월) 내용으로 같이 바뀌어버리는 문제가 있었음
+    var target = targetId ? document.getElementById(targetId) : null;
+    if (!target) return; // 이미 화면이 다른 곳으로 넘어간 경우 등 - 조용히 무시
+
+    if(sameExam.length<2){
+      target.style.display='block';
+      target.innerHTML='<div style="font-size:12px;color:var(--tx3);padding:8px 0">아직 같은 시험을 본 다른 학생 데이터가 없습니다.</div>';
+      return;
+    }
+    var wrongCount={};
+    sameExam.forEach(function(d){var g=d.data();Object.values(g.wrongBySubj||{}).forEach(function(v){v.split(',').forEach(function(n){var k=n.trim();if(k)wrongCount[k]=(wrongCount[k]||0)+1;});});});
+    var top5=Object.keys(wrongCount).sort(function(a,b){return wrongCount[b]-wrongCount[a];}).slice(0,5);
+    var bySubj={};
+    sameExam.forEach(function(d){var g=d.data();Object.keys(g.scores||{}).forEach(function(k){if(!bySubj[k])bySubj[k]=[];bySubj[k].push({uid:g.uid,score:parseFloat(g.scores[k].score)||0,grade:g.scores[k].grade});});});
+    var rankHtml=Object.keys(bySubj).slice(0,6).map(function(k){
+      var arr=bySubj[k].sort(function(a,b){return b.score-a.score;}); // 항상 점수 높은 순 (등급 유무에 따라 기준이 뒤섞이던 버그 수정)
+      return '<div style="font-size:12px;margin-bottom:4px"><span class="subject-tag subj-'+k.replace(/\d+$/,'')+'" style="font-size:10px">'+( subjectNames[k]||k)+'</span> '
+        +arr.slice(0,3).map(function(r,i){return (i+1)+'위 '+r.score+'점';}).join(' / ')+'</div>';
+    }).join('');
+    var html='<div style="background:rgba(74,127,255,0.06);border:1px solid rgba(74,127,255,0.15);border-radius:10px;padding:12px">'
+      +'<div style="font-size:12px;font-weight:700;color:var(--blue);margin-bottom:8px">📊 '+sameExam.length+'명 응시 통계</div>'
+      +(top5.length?'<div style="font-size:11px;color:var(--tx3);margin-bottom:4px">🔴 공통 오답 TOP5</div><div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px">'+top5.map(function(n){return '<span style="background:rgba(224,82,82,0.15);border-radius:4px;padding:2px 7px;font-size:11px;color:var(--red)">'+n+'번('+wrongCount[n]+'명)</span>';}).join('')+'</div>':'')
+      +'<div style="font-size:11px;color:var(--tx3);margin-bottom:4px">🏆 과목별 점수</div>'+rankHtml
+      +'</div>';
+    target.style.display='block';
+    target.innerHTML=html;
+  }
+};
+window.loadStudentGrades=function(uid){
+  var el=document.getElementById('t-grade-list');if(!uid||!el) return;
+  // 검색어 초기화
+  var searchEl=document.getElementById('t-grade-search');
+  if(searchEl) searchEl.value='';
+  var tab=_currentGradeTab||'mock';
+  el.innerHTML='<div style="color:var(--tx3);font-size:13px">불러오는 중...</div>';
+  getDocs(query(collection(db,'grades'),where('uid','==',uid))).then(function(snap){
+    if(snap.empty){el.innerHTML='<div style="color:var(--tx3);font-size:13px">입력된 성적이 없습니다</div>';return;}
+    // 전체 grades
+    var allGrades=snap.docs.map(function(d){return Object.assign({_id:d.id},d.data());})
+      .sort(function(a,b){return (b.examDate||'').localeCompare(a.examDate||'');});
+    // 탭 + 분류 필터
+    var grades=allGrades.filter(function(g){
+      if((g.type||'mock')!==tab) return false;
+      if(_currentGradeCategory==='전체') return true;
+      return (g.examSource||g.category||'')=== _currentGradeCategory;
+    });
+
+    // 과목 순서 정렬
+    var subjOrder=['ko','en','ma','hi'];
+    var dynOrder=['sc','so','etc'];
+    function sortScoreKeys(keys){
+      return keys.slice().sort(function(a,b){
+        function rank(k){
+          var base=k.replace(/\d+$/,'');
+          var si=subjOrder.indexOf(base);
+          if(si>=0) return si;
+          var di=dynOrder.indexOf(base);
+          return di>=0?subjOrder.length+di:99;
+        }
+        return rank(a)-rank(b);
+      });
+    }
+
+    if(!grades.length){
+      el.innerHTML='<div style="color:var(--tx3);font-size:13px">'+(tab==='mock'?'모의고사':'내신')+' 성적이 없습니다</div>';
+      return;
+    }
+
+    // 과목별 추이 - label 기준 집계 (sc1/sc2 순서 달라도 같은 과목끼리 묶임)
+    var subjTrend={};  // key: 실제 과목명(label)
+    var subjTrendBase={}; // label -> base key (ko/en/ma/hi/sc/so)
+    grades.slice().reverse().forEach(function(g){
+      Object.keys(g.scores||{}).forEach(function(k){
+        var s=g.scores[k];
+        var lbl=s.label||(subjectNames[k]||k);
+        var base=k.replace(/\d+$/,'');
+        if(!subjTrend[lbl]){ subjTrend[lbl]=[]; subjTrendBase[lbl]=base; }
+        subjTrend[lbl].push({date:g.examDate,score:parseFloat(s.score)||0,grade:s.grade,exam:g.examName});
+      });
+    });
+
+    // 과목 순서 정렬 (국어/영어/수학/한국사/과탐/사탐)
+    var _baseOrder=['ko','en','ma','hi','sc','so'];
+    function _baseRank(lbl){
+      var b=subjTrendBase[lbl]||'';
+      var i=_baseOrder.indexOf(b);
+      return i>=0?i:99;
+    }
+
+    // ── 성적 변화 그래프 ──
+    var chartHtml='';
+    var fixedColors={ko:'#c9a84c',en:'#7aa8ff',ma:'#3dba7e',hi:'#f87171',sc:'#a78bfa',so:'#fb923c'};
+    var dynColorPalette=['#818cf8','#c084fc','#fb923c','#fdba74','#34d399','#22d3ee'];
+    var dynCI=0;
+    var chartSubjs=Object.keys(subjTrend).filter(function(lbl){return subjTrend[lbl].length>=1;})
+      .sort(function(a,b){return _baseRank(a)-_baseRank(b);});
+    if(chartSubjs.length && grades.length>=1){
+      // 시험 개수에 따라 너비 동적 계산 (시험당 최소 60px, 최소 320px)
+      var maxPts = Math.max.apply(null, chartSubjs.map(function(lbl){return subjTrend[lbl].length;}));
+      var W = Math.max(320, maxPts * 70);
+      var H=160,PL=36,PR=12,PT=18,PB=30;
+      var iW=W-PL-PR,iH=H-PT-PB;
+      var svgs=chartSubjs.map(function(lbl){
+        var pts=subjTrend[lbl];
+        var scores=pts.map(function(p){return p.score;});
+        var minS=Math.max(0,Math.min.apply(null,scores)-10);
+        var maxS=Math.min(100,Math.max.apply(null,scores)+10);
+        var range=maxS-minS||1;
+        var base=subjTrendBase[lbl]||'';
+        var col=fixedColors[base]||(dynColorPalette[dynCI++%dynColorPalette.length]);
+        function xp(i){return PL+Math.round(i*(iW/(pts.length-1||1)));}
+        function yp(s){return PT+iH-Math.round((s-minS)/range*iH);}
+        var polyline=pts.length>=2?pts.map(function(p,i){return xp(i)+','+yp(p.score);}).join(' '):'';
+        var polylineEl=polyline?'<polyline points="'+polyline+'" fill="none" stroke="'+col+'" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>'
+          :'';
+        var gridLines=[0,25,50,75,100].filter(function(v){return v>=minS&&v<=maxS;}).map(function(v){
+          var y=yp(v);
+          return '<line x1="'+PL+'" y1="'+y+'" x2="'+(W-PR)+'" y2="'+y+'" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>'
+            +'<text x="'+(PL-4)+'" y="'+(y+4)+'" text-anchor="end" font-size="9" fill="var(--tx4)">'+v+'</text>';
+        }).join('');
+        var xLabels=pts.map(function(p,i){
+          return '<text x="'+xp(i)+'" y="'+(H-4)+'" text-anchor="middle" font-size="9" fill="var(--tx3)">'+p.date.slice(5)+'</text>';
+        }).join('');
+        var dots=pts.map(function(p,i){
+          return '<circle cx="'+xp(i)+'" cy="'+yp(p.score)+'" r="4" fill="'+col+'" stroke="var(--surface)" stroke-width="2"/>'
+            +'<text x="'+xp(i)+'" y="'+(yp(p.score)-8)+'" text-anchor="middle" font-size="10" fill="'+col+'" font-weight="600">'+p.score+'</text>';
+        }).join('');
+        return '<div style="margin-bottom:10px">'
+          +'<div style="font-size:11px;font-weight:600;color:'+col+';margin-bottom:4px">'+lbl+'</div>'
+          +'<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
+          +'<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" style="min-width:'+W+'px;overflow:visible">'
+          +gridLines+xLabels
+          +polylineEl
+          +dots+'</svg></div></div>';
+      }).join('');
+      chartHtml='<div style="margin-bottom:14px;padding:12px;background:var(--surface2);border:1px solid var(--border2);border-radius:12px">'
+        +'<div style="font-size:12px;font-weight:700;color:var(--burg);margin-bottom:12px">📈 과목별 성적 변화 그래프</div>'
+        +svgs+'</div>';
+    }
+
+
+    // ── 성적 카드 목록 ──
+    var cardsHtml=grades.map(function(g,idx){
+      var scores=g.scores||{};
+      var hasScores=Object.keys(scores).length>0;
+      var scoreKeys=sortScoreKeys(Object.keys(scores));
+
+      // 점수 셀
+      var subjHtml=!hasScores
+        ?'<div style="color:var(--tx3);font-size:12px;padding:6px 0">입력된 점수 없음</div>'
+        :scoreKeys.map(function(k){
+          var s=scores[k];
+          var label=s.label||(subjectNames[k]||k);
+          var arr=subjTrend[s.label||(subjectNames[k]||k)]||[];
+          var curIdx=arr.findIndex(function(x){return x.date===g.examDate&&x.exam===g.examName;});
+          var diff='';
+          if(curIdx>0){
+            var pv=arr[curIdx-1].score,cv=parseFloat(s.score||0);
+            if(!isNaN(pv)&&cv!==pv) diff='<span style="font-size:10px;margin-left:3px;color:'+(cv>pv?'var(--green)':'var(--red)')+'">'+( cv>pv?'▲':'▼')+Math.abs(cv-pv)+'</span>';
+          }
+          var sv=(s.score!==null&&s.score!==undefined&&s.score!=='')?s.score:'-';
+          return '<div class="score-cell"><div class="score-cell-subj">'+label+'</div><div class="score-cell-val">'+sv+diff+'</div><div class="score-cell-grade">'+(s.grade?s.grade+'등급':'-')+'</div></div>';
+        }).join('');
+
+      // 오답 (과목 순서 정렬)
+      var wrongHtml='';
+      if(g.wrongBySubj&&Object.keys(g.wrongBySubj).length){
+        var wrongKeys=sortScoreKeys(Object.keys(g.wrongBySubj));
+        wrongHtml='<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border2)"><div style="font-size:11px;color:var(--tx3);margin-bottom:7px">오답 문항</div>'
+          +wrongKeys.map(function(k){
+            // scores에서 label 찾기: 직접 매칭 → base 매칭 → 순서 매칭
+            var scoreEntry=scores[k];
+            if(!scoreEntry){
+              var base=k.replace(/\d+$/,'');
+              // base가 완전히 같은 키들 찾기 (sc → sc1, sc3 등)
+              var baseMatches=Object.keys(scores).filter(function(sk){return sk.replace(/\d+$/,'')=== base;});
+              if(baseMatches.length>0){
+                // wrongBySubj 키의 숫자 순서로 매칭 (sc→sc1첫번째, sc2→sc3두번째 등)
+                var wKeys=wrongKeys.filter(function(wk){return wk.replace(/\d+$/,'')=== base;});
+                var wIdx=wKeys.indexOf(k);
+                var matchKey=baseMatches[wIdx]||baseMatches[0];
+                scoreEntry=scores[matchKey];
+              }
+            }
+            var label=(scoreEntry&&scoreEntry.label)||(subjectNames[k]||k);
+            var grp=(scoreEntry&&scoreEntry.group)||k.replace(/\d+/g,'');
+            return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">'
+              +'<span class="subject-tag subj-'+grp+'" style="font-size:10px;flex-shrink:0">'+label+'</span>'
+              +'<div style="display:flex;gap:4px;flex-wrap:wrap">'
+              +g.wrongBySubj[k].split(',').map(function(n){return '<span style="background:var(--red-l);border:1px solid rgba(185,28,28,0.2);border-radius:4px;padding:2px 7px;font-size:12px;color:var(--red)">'+n.trim()+'번</span>';}).join('')
+              +'</div></div>';
+          }).join('')+'</div>';
+      }
+
+      // 반성
+      var refHtml='';
+      if(g.refMistake||g.refWeak||g.refPlan){
+        refHtml='<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border2)">'
+          +(g.refMistake?'<div style="margin-bottom:7px"><div style="font-size:11px;color:var(--orange);margin-bottom:2px">⚠️ 실수한 부분</div><div style="font-size:13px;color:var(--tx2);line-height:1.7">'+g.refMistake+'</div></div>':'')
+          +(g.refWeak?'<div style="margin-bottom:7px"><div style="font-size:11px;color:var(--red);margin-bottom:2px">📉 부족했던 부분</div><div style="font-size:13px;color:var(--tx2);line-height:1.7">'+g.refWeak+'</div></div>':'')
+          +(g.refPlan?'<div><div style="font-size:11px;color:var(--green);margin-bottom:2px">✅ 개선방안</div><div style="font-size:13px;color:var(--tx2);line-height:1.7">'+g.refPlan+'</div></div>':'')
+          +'</div>';
+      }
+
+      // 이전 시험 비교
+      var prevHtml='';
+      if(idx<grades.length-1&&hasScores){
+        var prev=grades[idx+1];var diffs=[];
+        Object.keys(scores).forEach(function(k){
+          var cv=parseFloat((scores[k]||{}).score||0);
+          var pv=parseFloat(((prev.scores||{})[k]||{}).score||0);
+          var lb=(scores[k]&&scores[k].label)||(subjectNames[k]||k);
+          if(!isNaN(cv)&&!isNaN(pv)&&pv>0) diffs.push({label:lb,diff:cv-pv});
+        });
+        if(diffs.length){
+          prevHtml='<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border2)"><div style="font-size:11px;color:var(--tx3);margin-bottom:6px">📈 이전 시험('+prev.examName+') 대비</div><div style="display:flex;flex-wrap:wrap;gap:4px">'+diffs.map(function(d){var c=d.diff>0?'var(--green)':d.diff<0?'var(--red)':'var(--tx3)';var a=d.diff>0?'▲':d.diff<0?'▼':'━';return '<span style="font-size:12px;padding:3px 8px;background:var(--surface2);border-radius:6px;color:'+c+'">'+d.label+' '+a+(d.diff!==0?Math.abs(d.diff):'')+'점</span>';}).join('')+'</div></div>';
+        }
+      }
+
+      // 비교분석 버튼
+      var examKey=encodeURIComponent(g.examName)+'-'+g.examDate;
+      var statsBtn='<div style="margin-top:10px"><button onclick="loadExamStatsForTeacher(\''+encodeURIComponent(g.examName)+'\',\''+uid+'\',\''+examKey+'\')" style="padding:7px 12px;background:rgba(74,127,255,0.1);border:1px solid rgba(74,127,255,0.2);border-radius:6px;color:var(--blue);font-size:11px;cursor:pointer;width:100%">📊 같은 시험 응시 학생 비교분석</button><div id="teacher-exam-stats-'+examKey+'" style="display:none;margin-top:8px"></div></div>';
+
+      return '<div class="score-card" style="margin-bottom:12px" data-grade-id="'+g._id+'">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'
+        +'<div style="display:flex;align-items:center;gap:8px;">'
+        +'<input type="checkbox" class="grade-merge-checkbox" value="'+g._id+'" style="display:none;width:18px;height:18px;flex-shrink:0;" onchange="_syncMergeGradeBtn()"/>'
+        +'<div><div style="font-size:15px;font-weight:700">'+g.examName+'</div>'
+        +'<div style="font-size:11px;color:var(--tx3);margin-top:2px;display:flex;gap:6px;align-items:center">'+g.examDate
+        +(g.category?'<span style="padding:2px 7px;background:rgba(74,127,255,0.1);border:1px solid rgba(74,127,255,0.2);border-radius:4px;color:var(--blue);font-size:10px">'+g.category+'</span>':'')
+        +'</div></div></div>'
+        +'<div style="display:flex;gap:5px">'
+        +'<button onclick="openGradeMemoModal(\''+g._id+'\')" style="padding:5px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer">📝 메모</button>'
+        +'<button onclick="openEditGradeModal(\''+g._id+'\',\''+uid+'\')" style="padding:5px 10px;background:var(--burg-l);border:1px solid var(--burg-l2);border-radius:6px;color:var(--burg);font-size:11px;cursor:pointer">수정</button>'
+        +'<button onclick="deleteGrade(\''+g._id+'\',\''+uid+'\')" style="padding:5px 10px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:6px;color:var(--red);font-size:11px;cursor:pointer">삭제</button>'
+        +'</div></div>'
+        +'<div class="score-subjects">'+subjHtml+'</div>'
+        +wrongHtml+_unknownHtml(g)+refHtml+prevHtml+statsBtn+'</div>';
+    }).join('');
+
+    var mergeBar = (currentProfile.role==='teacher'||currentProfile.role==='master')
+      ? '<div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px;">'
+        + '<button id="grade-merge-toggle-btn" onclick="_toggleGradeMergeMode()" style="padding:6px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--tx2);font-size:11px;cursor:pointer;">🔗 성적 합치기</button>'
+        + '<button id="grade-merge-confirm-btn" onclick="openMergeGradesModal(\''+uid+'\')" style="display:none;padding:6px 12px;background:var(--burg);border:none;border-radius:6px;color:#fff;font-size:11px;cursor:pointer;font-weight:700;">선택한 성적 합치기</button>'
+        + '</div>'
+      : '';
+
+    el.innerHTML = chartHtml + mergeBar + cardsHtml;
+  }).catch(function(e){el.innerHTML='<div style="color:var(--red);font-size:13px">오류: '+e.message+'</div>';});
+};
+// ═══════════════════════════════════════
+// 성적 합치기 (선생님/마스터 전용) - 같은 학생의 서로 다른 시험(예: 국어/수학 따로
+// 올라간 성적)을 하나로 합침. 과목별 점수를 다 모으고, 이름도 새로 지을 수 있음.
+// ═══════════════════════════════════════
+window._gradeMergeMode = false;
+
+window._toggleGradeMergeMode = function(){
+  window._gradeMergeMode = !window._gradeMergeMode;
+  document.querySelectorAll('.grade-merge-checkbox').forEach(function(cb){
+    cb.style.display = window._gradeMergeMode ? 'block' : 'none';
+    if (!window._gradeMergeMode) cb.checked = false;
+  });
+  var toggleBtn = document.getElementById('grade-merge-toggle-btn');
+  if (toggleBtn) toggleBtn.textContent = window._gradeMergeMode ? '✕ 합치기 취소' : '🔗 성적 합치기';
+  _syncMergeGradeBtn();
+};
+
+window._syncMergeGradeBtn = function(){
+  var confirmBtn = document.getElementById('grade-merge-confirm-btn');
+  if (!confirmBtn) return;
+  var checkedCount = document.querySelectorAll('.grade-merge-checkbox:checked').length;
+  confirmBtn.style.display = (window._gradeMergeMode && checkedCount >= 2) ? 'inline-block' : 'none';
+};
+
+window.openMergeGradesModal = function(uid){
+  var ids = Array.from(document.querySelectorAll('.grade-merge-checkbox:checked')).map(function(cb){return cb.value;});
+  if (ids.length < 2) { alert('합칠 성적을 2개 이상 선택해주세요'); return; }
+  window._mergeGradeIds = ids;
+  window._mergeGradeUid = uid;
+
+  Promise.all(ids.map(function(id){ return getDoc(doc(db,'grades',id)); })).then(function(docs){
+    var grades = docs.map(function(d){ return Object.assign({_id:d.id}, d.data()); });
+    window._mergeGradeSources = grades;
+    var namesHtml = grades.map(function(g){ return '<div style="font-size:12px;color:var(--tx2);padding:4px 0;">· '+escapeHtml(g.examName)+' ('+escapeHtml(g.examDate||'')+')</div>'; }).join('');
+    document.getElementById('merge-grades-source-list').innerHTML = namesHtml;
+    document.getElementById('merge-grades-name-input').value = grades[0].examName;
+    openModal('modal-merge-grades');
+  });
+};
+
+window.confirmMergeGrades = function(){
+  var newName = document.getElementById('merge-grades-name-input').value.trim();
+  if (!newName) { alert('합쳐진 시험 이름을 입력해주세요'); return; }
+  var grades = window._mergeGradeSources;
+  if (!grades || grades.length < 2) return;
+
+  // 과목별 점수(scores)와 오답(wrongBySubj)을 전부 하나로 합침. 같은 과목 키가 이미
+  // 있으면(예: 둘 다 국어를 갖고 있는 이상 상황) 나중 것으로 덮어쓰지 않고 먼저 값 유지.
+  var mergedScores = {}, mergedWrong = {}, mergedUnk = {};
+  grades.forEach(function(g){
+    Object.keys(g.scores||{}).forEach(function(k){ if (mergedScores[k]===undefined) mergedScores[k] = g.scores[k]; });
+    Object.keys(g.wrongBySubj||{}).forEach(function(k){ if (mergedWrong[k]===undefined) mergedWrong[k] = g.wrongBySubj[k]; });
+    Object.keys(g.unknownBySubj||{}).forEach(function(k){ if (mergedUnk[k]===undefined) mergedUnk[k] = g.unknownBySubj[k]; });
+  });
+  var earliestDate = grades.map(function(g){return g.examDate;}).sort()[0];
+  var baseGrade = grades[0];
+
+  var mergedData = {
+    uid: window._mergeGradeUid,
+    type: baseGrade.type || 'mock',
+    examName: newName,
+    examDate: earliestDate,
+    scores: mergedScores,
+    wrongBySubj: mergedWrong,
+    unknownBySubj: mergedUnk,
+    examSource: baseGrade.examSource || null,
+    source: 'merged',
+    mergedFrom: grades.map(function(g){return g._id;}),
+    createdAt: serverTimestamp()
+  };
+
+  addDoc(collection(db,'grades'), mergedData).then(function(){
+    // 원본 성적들은 합쳐진 뒤 삭제 (하나로 통합됐으니 중복으로 남겨두지 않음)
+    return Promise.all(grades.map(function(g){ return deleteDoc(doc(db,'grades',g._id)); }));
+  }).then(function(){
+    closeModal('modal-merge-grades');
+    window._gradeMergeMode = false;
+    alert('성적을 합쳤습니다.');
+    loadStudentGrades(window._mergeGradeUid);
+  }).catch(function(e){ alert('합치기 실패: ' + e.message); });
+};
+
+window.deleteGrade=function(gradeId, studentUid){
+  if(!confirm('이 성적을 삭제하시겠습니까?')) return;
+  deleteDoc(doc(db,'grades',gradeId)).then(function(){
+    loadStudentGrades(studentUid);
+  }).catch(function(e){alert('삭제 실패: '+e.message);});
+};
+window.openEditGradeModal=function(gradeId, studentUid){
+  getDoc(doc(db,'grades',gradeId)).then(function(d){
+    if(!d.exists()) return;
+    var g=d.data();
+    document.getElementById('edit-grade-id').value=gradeId;
+    document.getElementById('edit-grade-student-uid').value=studentUid;
+    document.getElementById('edit-grade-exam-name').value=g.examName||'';
+    document.getElementById('edit-grade-exam-date').value=g.examDate||'';
+    document.getElementById('edit-grade-type').value=g.type||'mock';
+    var curCategory = g.examSource || g.category || '';
+    loadExamSourceOptions().then(function(opts){
+      var sel = document.getElementById('edit-grade-category');
+      sel.innerHTML = '<option value="">분류 없음</option>'
+        + opts.map(function(o){ return '<option value="'+escapeHtml(o)+'">'+escapeHtml(o)+'</option>'; }).join('')
+        + '<option value="__add_new__">+ 새 분류 직접 추가</option>';
+      sel.value = curCategory;
+    });
+    var scores=g.scores||{};
+    var wrongBySubj=g.wrongBySubj||{};
+    // 기본 4과목
+    ['ko','en','ma','hi'].forEach(function(k){
+      var ss=document.getElementById('edit-gs-'+k+'-score');
+      var sg=document.getElementById('edit-gs-'+k+'-grade');
+      var sw=document.getElementById('edit-wrong-'+k);
+      if(ss) ss.value=(scores[k]&&scores[k].score)||'';
+      if(sg) sg.value=(scores[k]&&scores[k].grade)||'';
+      if(sw) sw.value=wrongBySubj[k]||'';
+    });
+    var koOpt=document.getElementById('edit-gs-ko-opt');
+    var maOpt=document.getElementById('edit-gs-ma-opt');
+    // 탐구 2과목 - scores에서 sc/so 키 순서대로 불러오기
+    var tanKeys=Object.keys(scores).filter(function(k){return k.startsWith('sc')||k.startsWith('so');}).sort();
+    var wbTanKeys=Object.keys(wrongBySubj).filter(function(k){return k.startsWith('sc')||k.startsWith('so');}).sort();
+    // 탐구1
+    var tan1sk=tanKeys[0]||null;
+    var tan1wk=wbTanKeys[0]||null;
+    var tan1=tan1sk?scores[tan1sk]:{};
+    var tan1Type=tan1sk?(tan1sk.replace(/\d+$/,'')):( tan1wk?tan1wk.replace(/\d+$/,''):'');
+    document.getElementById('edit-tan1-type').value=tan1Type;
+    document.getElementById('edit-tan1-score').value=tan1.score||'';
+    document.getElementById('edit-tan1-grade').value=tan1.grade||'';
+    document.getElementById('edit-tan1-wrong').value=tan1wk?wrongBySubj[tan1wk]:'';
+    // 탐구2
+    var tan2sk=tanKeys[1]||null;
+    var tan2wk=wbTanKeys[1]||null;
+    var tan2=tan2sk?scores[tan2sk]:{};
+    var tan2Type=tan2sk?(tan2sk.replace(/\d+$/,'')):( tan2wk?tan2wk.replace(/\d+$/,''):'');
+    document.getElementById('edit-tan2-type').value=tan2Type;
+    document.getElementById('edit-tan2-score').value=tan2.score||'';
+    document.getElementById('edit-tan2-grade').value=tan2.grade||'';
+    document.getElementById('edit-tan2-wrong').value=tan2wk?wrongBySubj[tan2wk]:'';
+    // 선택과목 마스터 목록을 불러온 뒤, 국어/수학/탐구1/탐구2 select들을 채우고 기존 값 복원
+    loadElectiveOptions().then(function(all){
+      if (koOpt) { koOpt.innerHTML = '<option value="">선택과목 없음</option>' + (all.ko||[]).map(function(o){return '<option value="'+escapeHtml(o)+'">'+escapeHtml(o)+'</option>';}).join(''); koOpt.value=(scores.ko&&scores.ko.option)||''; }
+      if (maOpt) { maOpt.innerHTML = '<option value="">선택과목 없음</option>' + (all.ma||[]).map(function(o){return '<option value="'+escapeHtml(o)+'">'+escapeHtml(o)+'</option>';}).join(''); maOpt.value=(scores.ma&&scores.ma.option)||''; }
+      populateTanNameSelect(1, all); document.getElementById('edit-tan1-name').value = tan1.label||'';
+      populateTanNameSelect(2, all); document.getElementById('edit-tan2-name').value = tan2.label||'';
+    });
+    // 기존 동적 영역 숨기기
+    var dynArea=document.getElementById('edit-dynamic-subjects');
+    if(dynArea) dynArea.style.display='none';
+    document.getElementById('edit-grade-ref-mistake').value=g.refMistake||'';
+    document.getElementById('edit-grade-ref-weak').value=g.refWeak||'';
+    document.getElementById('edit-grade-ref-plan').value=g.refPlan||'';
+    openModal('modal-edit-grade');
+  });
+};
+window.saveEditGrade=function(){
+  var gradeId=document.getElementById('edit-grade-id').value;
+  var studentUid=document.getElementById('edit-grade-student-uid').value;
+  var examName=document.getElementById('edit-grade-exam-name').value.trim();
+  var examDate=document.getElementById('edit-grade-exam-date').value;
+  var type=document.getElementById('edit-grade-type').value;
+  var category=document.getElementById('edit-grade-category').value;
+  if(!examName||!examDate){alert('시험명과 날짜를 입력해주세요.');return;}
+  var scores={};
+  var wrongBySubj={};
+  var labels={ko:'국어',en:'영어',ma:'수학',hi:'한국사'};
+  // 기본 4과목
+  ['ko','en','ma','hi'].forEach(function(k){
+    var sv=document.getElementById('edit-gs-'+k+'-score').value;
+    var gv=document.getElementById('edit-gs-'+k+'-grade').value;
+    var wv=document.getElementById('edit-wrong-'+k).value.trim();
+    if(sv){
+      scores[k]={score:sv,grade:gv||'',label:labels[k],group:k};
+      if(k==='ko'){var o=document.getElementById('edit-gs-ko-opt').value;if(o){scores[k].option=o;scores[k].label='국어 ('+o+')';}}
+      if(k==='ma'){var o2=document.getElementById('edit-gs-ma-opt').value;if(o2){scores[k].option=o2;scores[k].label='수학 ('+o2+')';}}
+    }
+    if(wv) wrongBySubj[k]=wv;
+  });
+  // 탐구 2과목 저장
+  [1,2].forEach(function(n){
+    var type=document.getElementById('edit-tan'+n+'-type').value; // sc or so
+    var name=document.getElementById('edit-tan'+n+'-name').value.trim();
+    var sv=document.getElementById('edit-tan'+n+'-score').value;
+    var gv=document.getElementById('edit-tan'+n+'-grade').value;
+    var wv=document.getElementById('edit-tan'+n+'-wrong').value.trim();
+    if(!type||(!name&&!sv&&!wv)) return; // 빈 항목 스킵
+    // 기존 같은 base 키 찾거나 새 키 생성
+    var base=type;
+    var existKeys=Object.keys(scores).filter(function(k){return k.startsWith(base);}).sort();
+    var existWKeys=Object.keys(wrongBySubj).filter(function(k){return k.startsWith(base);}).sort();
+    var sk=existKeys[n-1]||( base+(n===1?'1':'3')); // sc1/sc3 or so1/so2 패턴 유지
+    var wk=existWKeys[n-1]||(base+(n===1?'':'2'));
+    if(name||sv){
+      scores[sk]={score:sv,grade:gv||'',label:name||base,group:base};
+    }
+    if(wv) wrongBySubj[wk]=wv;
+    else if(existWKeys[n-1]) delete wrongBySubj[existWKeys[n-1]];
+  });
+  updateDoc(doc(db,'grades',gradeId),{
+    examName:examName, examDate:examDate, type:type, category:category, examSource:category,
+    scores:scores, wrongBySubj:wrongBySubj,
+    refMistake:document.getElementById('edit-grade-ref-mistake').value,
+    refWeak:document.getElementById('edit-grade-ref-weak').value,
+    refPlan:document.getElementById('edit-grade-ref-plan').value
+  }).then(function(){
+    // 수정된 등급에도 동일하게 등급 기반 상점 적용 (1등급 +10 / 2등급 +5, 중복 지급 방지됨)
+    var _branchForReward = getBranch();
+    Object.keys(scores).forEach(function(key){
+      var s = scores[key];
+      if (s && s.grade) {
+        _awardGradeLevelReward(studentUid, _branchForReward, s.label||key, String(s.grade), examName, examDate);
+      }
+    });
+    closeModal('modal-edit-grade');
+    invalidateTeacherTabCache(2);
+    loadStudentGrades(studentUid);
+  }).catch(function(e){alert('수정 실패: '+e.message);});
+};
+window.loadExamStatsForTeacher=function(encodedName,targetUid,examKey){
+  var examName=decodeURIComponent(encodedName);
+  var normalize=function(s){return s.replace(/\s+/g,'').toLowerCase();};
+  var normTarget=normalize(examName);
+  var targetDiv=document.getElementById('teacher-exam-stats-'+examKey);
+  if(!targetDiv) return;
+  if(targetDiv.style.display!=='none'){targetDiv.style.display='none';return;}
+  targetDiv.style.display='block';
+  targetDiv.innerHTML='<div style="color:var(--tx3);font-size:12px">분석 중...</div>';
+
+  function processStats(sameExam){
+    if(sameExam.length<1){targetDiv.innerHTML='<div style="color:var(--tx3);font-size:12px">다른 학생 데이터 없음</div>';return;}
+    // 오답 집계 - 과목별로 (label 정보 포함)
+    var wrongBySubjCount={};
+    var wrongSubjLabel={}; // subj키 → 표시명
+    sameExam.forEach(function(d){
+      var g=d.data();
+      // scores에서 label 수집
+      Object.keys(g.scores||{}).forEach(function(k){
+        if(!wrongSubjLabel[k]) wrongSubjLabel[k]=(g.scores[k].label)||(subjectNames[k]||k);
+      });
+      if(g.wrongBySubj){
+        Object.keys(g.wrongBySubj).forEach(function(subj){
+          if(!wrongBySubjCount[subj]) wrongBySubjCount[subj]={};
+          g.wrongBySubj[subj].split(',').forEach(function(n){
+            var k=n.trim();if(k) wrongBySubjCount[subj][k]=(wrongBySubjCount[subj][k]||0)+1;
+          });
+        });
+      } else if(g.wrongNumbers){
+        if(!wrongBySubjCount['기타']) wrongBySubjCount['기타']={};
+        g.wrongNumbers.split(',').forEach(function(n){var k=n.trim();if(k) wrongBySubjCount['기타'][k]=(wrongBySubjCount['기타'][k]||0)+1;});
+      }
+    });
+    // 과목별 순위
+    var bySubj={};
+    sameExam.forEach(function(d){
+      var g=d.data();
+      Object.keys(g.scores||{}).forEach(function(k){
+        if(!bySubj[k]) bySubj[k]=[];
+        bySubj[k].push({uid:g.uid,score:parseFloat(g.scores[k].score)||0,grade:g.scores[k].grade,label:g.scores[k].label||(subjectNames[k]||k)});
+      });
+    });
+    // 과목별 오답 TOP5 HTML 생성
+    var tagColors={ko:'subj-ko',en:'subj-en',ma:'subj-ma',hi:'subj-hi',sc:'subj-sc',so:'subj-so'};
+    var wrongSection='';
+    if(Object.keys(wrongBySubjCount).length){
+      var _wo=['ko','en','ma','hi','sc','so'];
+      function _wrank(k){var b=k.replace(/\d+$/,'');var i=_wo.indexOf(b);return i>=0?i:99;}
+      var sortedWrongSubjs=Object.keys(wrongBySubjCount).sort(function(a,b){return _wrank(a)-_wrank(b);});
+      wrongSection='<div style="font-size:11px;color:var(--tx3);margin-bottom:6px">🔴 과목별 오답 TOP5</div>'
+        +sortedWrongSubjs.map(function(subj){
+          var cnt=wrongBySubjCount[subj];
+          var top5k=Object.keys(cnt).sort(function(a,b){return cnt[b]-cnt[a];}).slice(0,5);
+          // label: scores에서 가져온 실제 과목명 우선
+          var lbl=wrongSubjLabel[subj]||(subjectNames[subj]||subj);
+          // CSS 클래스: 동적 키(sc1, sc2 등)는 base만 사용
+          var base=subj.replace(/\d+$/,'');
+          var cls=tagColors[base]||'';
+          return '<div style="margin-bottom:8px"><span class="subject-tag '+cls+'" style="font-size:10px;margin-bottom:4px;display:inline-block">'+lbl+'</span>'
+            +'<div style="display:flex;gap:4px;flex-wrap:wrap">'+top5k.map(function(n){return '<span style="background:var(--red-l);border:1px solid rgba(185,28,28,0.2);border-radius:5px;padding:3px 8px;font-size:11px;color:var(--red)">'+n+'번('+cnt[n]+'명)</span>';}).join('')+'</div></div>';
+        }).join('')+'<div style="margin-bottom:8px"></div>';
+    }
+    loadStudentList().then(function(students){
+      var nameMap={};students.forEach(function(s){nameMap[s.uid]=s.name;});
+      // 현재 학생 순위 찾기
+      var _ro=['ko','en','ma','hi','sc','so'];
+      function _rrank(k){var b=k.replace(/\d+$/,'');var i=_ro.indexOf(b);return i>=0?i:99;}
+      var sortedRankSubjs=Object.keys(bySubj).sort(function(a,b){return _rrank(a)-_rrank(b);});
+      var rankHtml=sortedRankSubjs.map(function(k){
+        var arr=bySubj[k].sort(function(a,b){return b.score-a.score;}); // 항상 점수 높은 순 (등급 유무에 따라 기준이 뒤섞이던 버그 수정)
+        var myRank=arr.findIndex(function(r){return r.uid===targetUid;})+1;
+        var label=arr[0]&&arr[0].label||(subjectNames[k]||k);
+        var base=k.replace(/\d+$/,'');
+        return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">'
+          +'<span class="subject-tag subj-'+base+'" style="font-size:10px;flex-shrink:0">'+label+'</span>'
+          +'<div style="flex:1;display:flex;gap:4px;flex-wrap:wrap">'
+          +arr.slice(0,3).map(function(r,i){
+            var isMe=r.uid===targetUid;
+            return '<span style="font-size:11px;padding:3px 8px;background:'+(isMe?'var(--burg-l2)':'var(--surface2)')+';border:'+(isMe?'1px solid rgba(201,168,76,0.4)':'1px solid var(--border)')+';border-radius:5px;color:'+(isMe?'var(--burg)':'var(--tx2)')+'">'+( i+1)+'위 '+(nameMap[r.uid]||'?')+(r.grade?' '+r.grade+'등급':' '+r.score+'점')+'</span>';
+          }).join('')
+          +(myRank>3?'<span style="font-size:11px;padding:3px 8px;background:var(--burg-l2);border:1px solid var(--burg-l2);border-radius:5px;color:var(--burg)">내 순위: '+myRank+'위</span>':'')
+          +'</div></div>';
+      }).join('');
+      targetDiv.innerHTML='<div style="background:rgba(74,127,255,0.06);border:1px solid rgba(74,127,255,0.15);border-radius:10px;padding:12px">'
+        +'<div style="font-size:12px;font-weight:700;color:var(--blue);margin-bottom:10px">📊 전체 '+sameExam.length+'명 응시 비교</div>'
+        +wrongSection
+        +'<div style="font-size:11px;color:var(--tx3);margin-bottom:5px">🏆 과목별 순위</div>'
+        +rankHtml
+        +'</div>';
+    }).catch(function(){targetDiv.innerHTML='<div style="color:var(--tx3);font-size:12px">분석 실패</div>';});
+  } // processStats 끝
+
+
+  // 1차: 완전일치
+  getDocs(query(collection(db,'grades'),where('examName','==',examName))).then(function(snap){
+    if(snap.docs.length>0){
+      processStats(snap.docs);
+    } else {
+      // 2차: 정규화 비교 폴백
+      getDocs(collection(db,'grades')).then(function(snap2){
+        processStats(snap2.docs.filter(function(d){return normalize(d.data().examName||'')===normTarget;}));
+      }).catch(function(){processStats([]);});
+    }
+  }).catch(function(){processStats([]);});
+};
+window.openTeacherGradeModal=function(){var uid=document.getElementById('t-grade-input-student').value;if(!uid){alert('학생을 선택해주세요.');return;}document.getElementById('grade-target-uid').value=uid;openModal('modal-add-grade');};
+
+function buildTRewards(){
+  return loadStudentList().then(function(students){
+    return Promise.all([getDocs(query(collection(db,'rules'),where('branch','==',getBranch()),limit(1))),getDocs(query(collection(db,'points'),orderBy('createdAt','desc'),limit(200)))]).then(function(results){
+      var myBranch=getBranch();
+      results[1]={docs:results[1].docs.filter(function(d){var b=d.data().branch;return !b||b===myBranch;})};
+      var rulesSnap=results[0],pointsSnap=results[1];
+      var rules=rulesSnap.docs[0]?rulesSnap.docs[0].data().content:defaultRules;
+      var points=pointsSnap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
+
+      // 1. 상벌점 부여 카드 - 여러 학생을 한 번에 선택해서 같은 사유/점수로 동시에
+      // 부여할 수 있게 함 (기존엔 학생 1명만 고르는 드롭다운이었음). 학생이 많으면
+      // 체크박스만으로는 찾기 힘들어서 이름 검색으로 걸러볼 수 있게 함 - 검색해서
+      // 안 보이게 된 학생도 이미 체크해둔 건 그대로 유지됨(검색은 "보이기"만 바꿈).
+      var giveCard = '<div class="card">'
+        +'<div class="card-h"><div class="card-title">상벌점 부여</div><button onclick="_toggleRewardStudentAll()" style="padding:4px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--tx2);font-size:11px;cursor:pointer;">전체 선택/해제</button></div>'
+        +'<div style="position:relative;margin-bottom:6px;">'
+        +'<input class="modal-input" id="reward-student-search" placeholder="🔍 학생 이름 검색..." oninput="_filterRewardStudentList(this.value)" style="margin-bottom:0;padding-right:36px;"/>'
+        +'<button onclick="document.getElementById(\'reward-student-search\').value=\'\';_filterRewardStudentList(\'\')" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--tx3);font-size:14px;cursor:pointer;">✕</button>'
+        +'</div>'
+        +'<div id="reward-student-selected-count" style="font-size:11px;color:var(--tx3);margin-bottom:6px;">선택된 학생: 0명</div>'
+        +'<div id="reward-student-checklist" style="display:flex;flex-wrap:wrap;gap:6px;max-height:150px;overflow-y:auto;padding:8px;background:var(--surface2);border-radius:8px;margin-bottom:8px;">'
+        +students.map(function(s){return '<label class="reward-student-label" data-name="'+escapeHtml(s.name).toLowerCase()+'" style="display:flex;align-items:center;gap:4px;font-size:12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;white-space:nowrap;"><input type="checkbox" class="reward-student-cb" value="'+s.uid+'" onchange="_updateRewardSelectedCount()" style="width:14px;height:14px;"/>'+escapeHtml(s.name)+'</label>';}).join('')
+        +'</div>'
+        +'<select class="modal-select" id="reward-type-select" style="margin-bottom:8px;"><option value="plus">상점</option><option value="minus">벌점</option></select>'
+        +'<input class="modal-input" id="reward-reason-input" placeholder="사유 입력" style="margin-bottom:8px;"/>'
+        +'<input class="modal-input" id="reward-points-input" type="number" placeholder="점수 입력 (1~5)" style="margin-bottom:10px;"/>'
+        +'<button class="modal-btn primary" onclick="givePoints()" style="margin:0;">상벌점 부여하기</button>'
+        +'</div>';
+
+      // 2. 상벌점 규정 관리 카드 (크게)
+      var rulesCard = '<div class="card">'
+        +'<div class="card-h"><div class="card-title">📜 상벌점 규정 관리</div><div style="font-size:11px;color:var(--tx3);">학생이 리워드 탭에서 볼 수 있습니다</div></div>'
+        +'<textarea class="modal-input" id="rules-input" rows="16" style="resize:vertical;font-size:13px;line-height:1.7;font-family:inherit;min-height:300px;margin-bottom:10px;padding:14px;">'+rules+'</textarea>'
+        +'<button class="modal-btn primary" onclick="saveRules()" style="margin:0;">규정 저장</button>'
+        +'</div>';
+
+      // 3. 이달의 장학생 카드
+      var scholarCard = '<div class="card card-gold">'
+        +'<div class="card-h"><div class="card-title card-title-gold">🏆 이달의 장학생 설정</div></div>'
+        +'<select class="modal-select" id="scholar-student" style="margin-bottom:8px;"><option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'|'+s.name+'">'+s.name+'</option>';}).join('')+'</select>'
+        +'<input class="modal-input" id="scholar-prize" placeholder="상품 (예: 스타벅스 5만원권)" style="margin-bottom:8px;"/>'
+        +'<input class="modal-input" id="scholar-reason" placeholder="선정 사유" style="margin-bottom:10px;"/>'
+        +'<button class="modal-btn primary" onclick="saveScholar()" style="margin:0;">장학생 등록</button>'
+        +'</div>';
+
+      // 3-1. 학생별 누적 상점/벌점 요약 카드
+      var totalsByUid = {};
+      points.forEach(function(p){
+        if (!totalsByUid[p.studentUid]) totalsByUid[p.studentUid] = {plus:0, minus:0, offset:0};
+        if (p.type === 'plus') totalsByUid[p.studentUid].plus += parseInt(p.points)||0;
+        else if (p.type === 'minus') totalsByUid[p.studentUid].minus += parseInt(p.points)||0;
+        else if (p.type === 'offset') totalsByUid[p.studentUid].offset += parseInt(p.points)||0;
+      });
+      var summaryRows = students.map(function(s){
+        var t = totalsByUid[s.uid] || {plus:0, minus:0, offset:0};
+        var plus = Math.max(0, t.plus - t.offset), minus = Math.max(0, t.minus - t.offset);
+        var net = plus - minus;
+        return {uid:s.uid, name:s.name, plus:plus, minus:minus, net:net};
+      }).sort(function(a,b){ return b.net - a.net; });
+      var summaryHtml = summaryRows.map(function(r){
+        return '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:9px 12px;background:var(--surface2);border-radius:8px;margin-bottom:5px;">'
+          + '<div style="flex:1 1 100%;display:flex;align-items:center;gap:10px;min-width:0;">'
+          +   '<div style="flex:1;font-size:13px;font-weight:600;color:var(--tx1);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(r.name)+'</div>'
+          +   '<div style="font-size:12px;color:var(--burg);font-weight:700;white-space:nowrap;">상점 '+r.plus+'</div>'
+          +   '<div style="font-size:12px;color:var(--red);font-weight:700;white-space:nowrap;">벌점 '+r.minus+'</div>'
+          +   '<div style="font-size:12px;font-weight:800;color:'+(r.net>=0?'var(--green)':'var(--red)')+';white-space:nowrap;">순점수 '+r.net+'</div>'
+          + '</div>'
+          + '<button onclick="openOffsetPointsModal(\''+r.uid+'\',\''+escapeHtml(r.name)+'\')" style="flex:1 1 auto;padding:6px 9px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.3);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;font-weight:600;white-space:nowrap;">상점으로 벌점 상쇄</button>'
+          + '<button onclick="openStudentPointHistoryModal(\''+r.uid+'\',\''+escapeHtml(r.name)+'\')" style="flex:1 1 auto;padding:6px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--tx2);font-size:11px;cursor:pointer;font-weight:600;white-space:nowrap;">📋 내역 보기</button>'
+          + '</div>';
+      }).join('') || '<div style="color:var(--tx3);font-size:13px;text-align:center;padding:14px;">학생이 없습니다</div>';
+      var summaryCard = '<div class="card">'
+        + '<div class="card-h"><div class="card-title">📊 학생별 누적 상점/벌점</div></div>'
+        + summaryHtml
+        + '</div>';
+
+      // 4. 최근 내역
+      var historyItems = points.slice(0,30).map(function(p){
+        var s=students.find(function(st){return st.uid===p.studentUid;});
+        var date=p.createdAt?p.createdAt.toDate().toLocaleDateString('ko-KR'):'';
+        var isPlus = p.type==='plus';
+        return '<div style="display:flex;align-items:center;gap:10px;padding:11px 12px;background:var(--surface2);border-radius:8px;margin-bottom:6px;border-left:3px solid '+(isPlus?'var(--burg)':'var(--red)')+';">'
+          +'<div style="flex:1;min-width:0;">'
+          +'<div style="font-size:13px;font-weight:600;color:var(--tx1);margin-bottom:2px;">'+(s?s.name:'자동')+'</div>'
+          +'<div style="font-size:11px;color:var(--tx3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+p.reason+'</div>'
+          +'</div>'
+          +'<div style="font-size:16px;font-weight:700;color:'+(isPlus?'var(--burg)':'var(--red)')+';flex-shrink:0;">'+(isPlus?'+':'')+p.points+'</div>'
+          +'<div style="font-size:11px;color:var(--tx4);flex-shrink:0;">'+date+'</div>'
+          +'<div style="display:flex;gap:3px;flex-shrink:0;">'
+          +'<button onclick="openEditPointModal(\''+p.id+'\',\''+p.studentUid+'\',\''+p.type+'\',\''+encodeURIComponent(p.reason)+'\','+p.points+')" style="padding:5px 9px;background:var(--burg-l);border:1px solid var(--border);border-radius:5px;color:var(--burg);font-size:11px;cursor:pointer;font-weight:600;">수정</button>'
+          +'<button onclick="deletePoint(\''+p.id+'\')" style="padding:5px 9px;background:var(--red-l);border:1px solid rgba(185,28,28,0.2);border-radius:5px;color:var(--red);font-size:11px;cursor:pointer;font-weight:600;">삭제</button>'
+          +'</div>'
+          +'</div>';
+      }).join('');
+
+      var historyCard = '<div class="card">'
+        +'<div class="card-h"><div class="card-title">최근 상벌점 내역</div><div style="font-size:11px;color:var(--tx3);">총 '+points.length+'건</div></div>'
+        +(historyItems||'<div style="color:var(--tx3);font-size:13px;text-align:center;padding:14px;">내역 없음</div>')
+        +'</div>';
+
+      var isMasterR = currentProfile && currentProfile.role === 'master';
+      var top5CronCard = isMasterR ? (
+        '<div class="card">'
+        +'<div class="card-h"><div class="card-title">🏆 월간 순공시간 TOP5 시상</div></div>'
+        +'<div style="font-size:12px;color:var(--tx3);margin-bottom:10px;line-height:1.6;">매월 마지막날 그 달 순공시간 TOP5 학생에게 상점 30점씩 지급합니다. 이 버튼은 <b>브라우저에서 직접 처리</b>되어 별도 서버 설정 없이 바로 사용할 수 있어요.</div>'
+        +'<div id="top5-cron-status" style="font-size:12px;color:var(--tx3);margin-bottom:8px;"></div>'
+        +'<button class="modal-btn cancel" style="margin:0;" onclick="runMonthlyTop5RewardNow()">지금 바로 실행 (이번 달 마지막날이 아니어도 강제 실행)</button>'
+        +'</div>'
+      ) : '';
+
+      return giveCard + summaryCard + top5CronCard + rulesCard + scholarCard + historyCard;
+    });
+  });
+}
+// ═══════════════════════════════════════
+// 상점으로 벌점 상쇄 - 학생 본인 화면 + 선생님/마스터 화면 양쪽에서 사용
+// ═══════════════════════════════════════
+window._offsetTargetUid = null;
+window._offsetTargetName = null;
+
+// ═══════════════════════════════════════
+// 학생별 상벌점 전체 내역 조회 (점검용) - "최근 상벌점 내역"은 전체 학생 통합 최근 200건만
+// 보여주는데, 이건 특정 학생 한 명만 콕 집어 처음부터 끝까지 다 확인할 수 있게 함
+// (지점 전체 목록에서 걸러내는 게 아니라 그 학생 것만 따로 조회해서, 오래된 내역도 안 빠짐)
+// ═══════════════════════════════════════
+var _studentPointHistoryAll = [];
+var _studentPointHistoryFilter = 'all';
+
+// 선생님/마스터가 학생별 플래너 제출 현황(언제 냈고 언제 안 냈는지, 활동은 있었는지)을
+// 확인 - 플래너 탭의 학생별 통계 카드 "📅 30일 현황" 버튼, 또는 미제출자 카드를 눌러서 옴.
+
+// 제출 여부와 상관없이, 그날 실제로 한 할 일 목록을 보여줌 (todos는 제출 버튼과
+// 무관하게 학생이 직접 추가/완료한 즉시 저장되므로, 제출 안 한 날도 확인 가능함)
+window._showPlannerSubmitDayDetail = function(date, uid, name){
+  document.getElementById('planner-submit-history-title').textContent = '📅 '+name+' · '+date;
+  var body = document.getElementById('planner-submit-history-body');
+  body.innerHTML = '<button onclick="openPlannerSubmitHistoryModal(\''+uid+'\',\''+escapeHtml(name).replace(/'/g,"\\'")+'\')" style="display:flex;align-items:center;gap:6px;background:none;border:none;color:var(--burg);font-size:13px;cursor:pointer;padding:0;margin-bottom:12px;">← 날짜 목록으로</button>'
+    + '<div id="planner-submit-day-items"><div style="color:var(--tx3);font-size:12px;">불러오는 중...</div></div>';
+
+  Promise.all([
+    getDocs(query(collection(db,'todos'), where('uid','==',uid), where('date','==',date))),
+    getDoc(doc(db,'planners', uid+'_'+date))
+  ]).then(function(results){
+    var snap = results[0], plannerDoc = results[1];
+    var el = document.getElementById('planner-submit-day-items');
+    if (!el) return;
+
+    var todos, fromSnapshot = false;
+    if (!snap.empty) {
+      todos = snap.docs.map(function(d){return d.data();}).sort(function(a,b){
+        var at=a.createdAt?a.createdAt.toMillis():0, bt=b.createdAt?b.createdAt.toMillis():0; return at-bt;
+      });
+    } else if (plannerDoc.exists() && plannerDoc.data().todosSnapshot && plannerDoc.data().todosSnapshot.length) {
+      // 실시간 todos가 지금은 없지만, 제출 당시 저장해둔 스냅샷이 있으면 그걸로 보여줌
+      // (원본이 나중에 어떤 이유로 지워지거나 날짜가 바뀌어도, 제출 시점 기록은 보존됨)
+      todos = plannerDoc.data().todosSnapshot;
+      fromSnapshot = true;
+    } else {
+      el.innerHTML = '<div style="color:var(--tx3);font-size:12px;">기록 없음</div>'; return;
+    }
+
+    var statusMap = {'none':'⬜','progressing':'🔄','done':'✅'};
+    var done = todos.filter(function(t){return t.status==='done';}).length;
+    el.innerHTML = (fromSnapshot ? '<div style="font-size:11px;color:var(--gold);background:var(--gold-l);border-radius:8px;padding:8px 12px;margin-bottom:10px;">📌 지금은 원본 할 일 목록이 없어서, 제출 당시 저장해둔 기록을 보여드려요.</div>' : '')
+      + '<div style="background:var(--surface2);border-radius:10px;padding:10px 12px;margin-bottom:12px;display:flex;gap:16px;">'
+      + '<div style="text-align:center;"><div style="font-size:20px;font-weight:700;color:var(--burg);">'+todos.length+'</div><div style="font-size:10px;color:var(--tx3);">전체</div></div>'
+      + '<div style="text-align:center;"><div style="font-size:20px;font-weight:700;color:var(--green);">'+done+'</div><div style="font-size:10px;color:var(--tx3);">완료</div></div>'
+      + '<div style="text-align:center;"><div style="font-size:20px;font-weight:700;color:var(--red);">'+(todos.length-done)+'</div><div style="font-size:10px;color:var(--tx3);">미완료</div></div>'
+      + '</div>'
+      + todos.map(function(t){
+        return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border2);">'
+          + '<span style="font-size:16px;">'+(statusMap[t.status]||'⬜')+'</span>'
+          + '<span class="subject-tag subj-'+(t.subject||'ko')+'" style="font-size:10px;flex-shrink:0;">'+(subjectNames[t.subject]||t.subject||'')+'</span>'
+          + '<span style="flex:1;font-size:13px;'+(t.status==='done'?'text-decoration:line-through;color:var(--tx3);':'')+'">'+escapeHtml(t.title)+'</span>'
+          + (t.studyTime ? '<span style="font-size:11px;color:var(--burg);">⏱'+t.studyTime+'</span>' : '')
+          + '</div>';
+      }).join('');
+  }).catch(function(e){
+    var el = document.getElementById('planner-submit-day-items');
+    if (el) el.innerHTML = '<div style="color:var(--red);font-size:12px;">불러오기 실패: '+e.message+'</div>';
+  });
+};
+
+window.openPlannerSubmitHistoryModal = function(uid, name){
+  document.getElementById('planner-submit-history-title').textContent = '📅 '+name+' 학생 플래너 제출 현황';
+  document.getElementById('planner-submit-history-body').innerHTML = '<div style="color:var(--tx3);font-size:12px;padding:10px 0;">불러오는 중...</div>';
+  openModal('modal-planner-submit-history');
+
+  // 최근 30일 범위로 날짜 목록을 만들고, todos(실제 활동 흔적)와 planners(공식 제출 기록)를
+  // 둘 다 조회해서 하루하루 상태를 정확히 구분해서 보여줌:
+  // - 제출완료(정상/지연) - planners에 submittedAt 있음
+  // - 활동만 있고 미제출 - todos는 있는데 planners에 submittedAt이 없음 (제출 버튼을 깜빡했거나 실패한 경우)
+  // - 활동 없음 - 그 날 todos 자체가 없음
+  var days = [];
+  for (var i=0;i<30;i++){
+    var d = new Date(); d.setDate(d.getDate()-i);
+    days.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));
+  }
+
+  Promise.all([
+    getDocs(query(collection(db,'todos'), where('uid','==',uid), limit(400))),
+    getDocs(query(collection(db,'planners'), where('uid','==',uid)))
+  ]).then(function(results){
+    var todoDates = new Set();
+    results[0].docs.forEach(function(d){ var dt=d.data().date; if(dt) todoDates.add(dt); });
+    var plannerByDate = {};
+    results[1].docs.forEach(function(d){ plannerByDate[d.data().date] = d.data(); });
+
+    var rows = days.map(function(dt){
+      var p = plannerByDate[dt];
+      var hasActivity = todoDates.has(dt);
+      var fmtTime = function(ts){ if(!ts||!ts.toMillis) return ''; var d=new Date(ts.toMillis()); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
+
+      var statusHtml, dotColor;
+      if (p && p.submittedAt) {
+        dotColor = p.late ? 'var(--gold)' : 'var(--green)';
+        statusHtml = (p.late ? '🟡 제출 지연' : '🟢 제출 완료') + ' · ' + fmtTime(p.submittedAt);
+      } else if (hasActivity) {
+        dotColor = 'var(--red)';
+        statusHtml = '🔴 활동은 있었지만 제출 안 함' + (p && p.lastActivityAt ? ' (마지막 활동 '+fmtTime(p.lastActivityAt)+')' : '');
+      } else {
+        dotColor = 'var(--tx4)';
+        statusHtml = '— 활동 없음';
+      }
+      // 활동이 있었던 날은(제출했든 안 했든) 눌러서 그날 실제 할 일 목록을 볼 수 있게 함 -
+      // 제출을 안 했어도 그날 뭘 했는지는 todos 자체에 남아있어서 확인 가능함. 실시간
+      // todos가 지금은 없어도, 제출 당시 스냅샷이 저장되어 있으면 그것도 볼 수 있게 함.
+      var hasSnapshot = p && p.todosSnapshot && p.todosSnapshot.length;
+      var clickable = hasActivity || hasSnapshot;
+      return '<div '+(clickable ? 'onclick="_showPlannerSubmitDayDetail(\''+dt+'\',\''+uid+'\',\''+escapeHtml(name).replace(/'/g,"\\'")+'\')" style="cursor:pointer;"' : '')+' style="display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px dashed var(--border2);font-size:12px;'+(clickable?'cursor:pointer;':'')+'">'
+        + '<span style="width:8px;height:8px;border-radius:50%;background:'+dotColor+';flex-shrink:0;"></span>'
+        + '<span style="width:76px;color:var(--tx2);font-weight:600;flex-shrink:0;">'+dt+'</span>'
+        + '<span style="color:var(--tx3);flex:1;">'+statusHtml+'</span>'
+        + (clickable ? '<span style="color:var(--tx4);font-size:11px;">기록 보기 ›</span>' : '')
+        + '</div>';
+    }).join('');
+
+    document.getElementById('planner-submit-history-body').innerHTML = rows;
+  }).catch(function(e){
+    document.getElementById('planner-submit-history-body').innerHTML = '<div style="color:var(--red);font-size:12px;">불러오기 실패: '+e.message+'</div>';
+  });
+};
+
+window.openStudentPointHistoryModal = function(uid, name){
+  document.getElementById('student-point-history-title').textContent = '📋 ' + name + '님 상벌점 내역';
+  document.getElementById('student-point-history-summary').textContent = '불러오는 중...';
+  document.getElementById('student-point-history-list').innerHTML = '';
+  _studentPointHistoryFilter = 'all';
+  filterStudentPointHistory('all', true);
+  openModal('modal-student-point-history');
+
+  getDocs(query(collection(db,'points'), where('studentUid','==',uid))).then(function(snap){
+    _studentPointHistoryAll = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); })
+      .sort(function(a,b){
+        var at=a.createdAt?a.createdAt.toMillis():0, bt=b.createdAt?b.createdAt.toMillis():0;
+        return bt-at;
+      });
+    var plus=0, minus=0, offset=0;
+    _studentPointHistoryAll.forEach(function(p){
+      if (p.type==='plus') plus+=parseInt(p.points)||0;
+      else if (p.type==='minus') minus+=parseInt(p.points)||0;
+      else if (p.type==='offset') offset+=parseInt(p.points)||0;
+    });
+    document.getElementById('student-point-history-summary').innerHTML =
+      '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--tx3);">누적 상점</span><span style="font-weight:700;color:var(--burg);">'+Math.max(0,plus-offset)+'점</span></div>'
+      + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--tx3);">누적 벌점</span><span style="font-weight:700;color:var(--red);">'+Math.max(0,minus-offset)+'점</span></div>'
+      + '<div style="display:flex;justify-content:space-between;padding-top:6px;border-top:1px solid var(--border2);"><span style="color:var(--tx3);">총 기록 건수</span><span style="font-weight:700;color:var(--tx1);">'+_studentPointHistoryAll.length+'건</span></div>';
+    filterStudentPointHistory('all', true);
+  }).catch(function(){
+    document.getElementById('student-point-history-summary').innerHTML = '<span style="color:var(--red);">불러오기 실패</span>';
+  });
+};
+
+window.filterStudentPointHistory = function(type, skipButtonUpdate){
+  _studentPointHistoryFilter = type;
+  if (!skipButtonUpdate) {
+    document.querySelectorAll('#student-point-history-filter .exam-mgmt-cat-btn').forEach(function(btn){
+      btn.classList.toggle('active', btn.textContent === (type==='all'?'전체':type==='plus'?'상점만':type==='minus'?'벌점만':'상쇄만'));
+    });
+  }
+  var list = document.getElementById('student-point-history-list');
+  var filtered = type === 'all' ? _studentPointHistoryAll : _studentPointHistoryAll.filter(function(p){ return p.type === type; });
+  if (!filtered.length) {
+    list.innerHTML = '<div style="color:var(--tx3);font-size:13px;text-align:center;padding:20px 0;">내역이 없습니다</div>';
+    return;
+  }
+  list.innerHTML = filtered.map(function(p){
+    var date = p.createdAt ? p.createdAt.toDate().toLocaleString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+    var isPlus = p.type === 'plus', isOffset = p.type === 'offset';
+    var color = isOffset ? 'var(--gold)' : (isPlus ? 'var(--burg)' : 'var(--red)');
+    var prefix = isOffset ? '상쇄 ' : (isPlus ? '+' : '-');
+    return '<div style="display:flex;align-items:flex-start;gap:10px;padding:11px 12px;background:var(--surface2);border-radius:8px;margin-bottom:6px;border-left:3px solid '+color+';">'
+      + '<div style="flex:1;min-width:0;">'
+      + '<div style="font-size:13px;color:var(--tx1);margin-bottom:3px;white-space:pre-wrap;word-break:break-word;">'+escapeHtml(p.reason||'')+'</div>'
+      + '<div style="font-size:11px;color:var(--tx4);">'+date+(p.givenByName?' · '+escapeHtml(p.givenByName):'')+'</div>'
+      + '</div>'
+      + '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0;">'
+      + '<div style="font-size:15px;font-weight:700;color:'+color+';">'+prefix+p.points+'점</div>'
+      + '<button onclick="deleteStudentPointHistoryItem(\''+p.id+'\')" style="padding:3px 8px;background:var(--red-l);border:1px solid rgba(185,28,28,0.2);border-radius:5px;color:var(--red);font-size:10px;cursor:pointer;font-weight:600;">삭제</button>'
+      + '</div>'
+      + '</div>';
+  }).join('');
+};
+
+window.deleteStudentPointHistoryItem = function(id){
+  if (!confirm('이 상벌점 내역을 삭제하시겠습니까?')) return;
+  deleteDoc(doc(db,'points',id)).then(function(){
+    // 모달을 닫았다 다시 여는 것 없이, 이미 불러와둔 목록에서 바로 빼고 요약 숫자도 다시 계산
+    _studentPointHistoryAll = _studentPointHistoryAll.filter(function(p){ return p.id !== id; });
+    var plus=0, minus=0, offset=0;
+    _studentPointHistoryAll.forEach(function(p){
+      if (p.type==='plus') plus+=parseInt(p.points)||0;
+      else if (p.type==='minus') minus+=parseInt(p.points)||0;
+      else if (p.type==='offset') offset+=parseInt(p.points)||0;
+    });
+    document.getElementById('student-point-history-summary').innerHTML =
+      '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--tx3);">누적 상점</span><span style="font-weight:700;color:var(--burg);">'+Math.max(0,plus-offset)+'점</span></div>'
+      + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--tx3);">누적 벌점</span><span style="font-weight:700;color:var(--red);">'+Math.max(0,minus-offset)+'점</span></div>'
+      + '<div style="display:flex;justify-content:space-between;padding-top:6px;border-top:1px solid var(--border2);"><span style="color:var(--tx3);">총 기록 건수</span><span style="font-weight:700;color:var(--tx1);">'+_studentPointHistoryAll.length+'건</span></div>';
+    filterStudentPointHistory(_studentPointHistoryFilter, true);
+    invalidateTeacherTabCache(3); // 뒤의 상벌점 탭도 다음에 볼 때 최신 상태로 보이도록
+  }).catch(function(e){ alert('삭제 실패: ' + e.message); });
+};
+
+
+window.openOffsetPointsModal = function(uid, name){
+  // 학생 계정에서 자기 자신을 상쇄할 때는 uid/name 없이 호출됨
+  var isSelf = !uid;
+  window._offsetTargetUid = uid || currentUser.uid;
+  window._offsetTargetName = name || currentProfile.name;
+
+  var summaryEl = document.getElementById('offset-points-summary');
+  summaryEl.textContent = '불러오는 중...';
+  document.getElementById('offset-points-amount').value = '';
+  document.getElementById('offset-points-error').style.display = 'none';
+  openModal('modal-offset-points');
+
+  getDocs(query(collection(db,'points'), where('studentUid','==',window._offsetTargetUid))).then(function(snap){
+    var plus=0, minus=0, offset=0;
+    snap.docs.forEach(function(d){var p=d.data();if(p.type==='plus')plus+=parseInt(p.points)||0;else if(p.type==='minus')minus+=parseInt(p.points)||0;else if(p.type==='offset')offset+=parseInt(p.points)||0;});
+    plus = Math.max(0, plus - offset); minus = Math.max(0, minus - offset); // 이미 상쇄한 만큼은 양쪽에서 미리 빼서, 남은 "실질" 잔액만 보여줌 (0 밑으로는 안 내려가게)
+    window._offsetAvailablePlus = plus;
+    window._offsetAvailableMinus = minus;
+    var maxUsable = Math.max(0, Math.min(plus, minus));
+    summaryEl.innerHTML = '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--tx3);">'+escapeHtml(window._offsetTargetName)+'님 누적 상점</span><span style="font-weight:700;color:var(--burg);">'+plus+'점</span></div>'
+      + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--tx3);">누적 벌점</span><span style="font-weight:700;color:var(--red);">'+minus+'점</span></div>'
+      + '<div style="display:flex;justify-content:space-between;padding-top:6px;border-top:1px solid var(--border2);"><span style="color:var(--tx3);">최대 상쇄 가능</span><span style="font-weight:700;color:var(--gold);">'+maxUsable+'점</span></div>';
+  }).catch(function(){ summaryEl.textContent = '불러오기 실패'; });
+};
+
+window.submitOffsetPoints = function(){
+  var amount = parseInt(document.getElementById('offset-points-amount').value, 10);
+  var errEl = document.getElementById('offset-points-error');
+  errEl.style.display = 'none';
+
+  if (!amount || amount <= 0) { errEl.textContent = '상쇄할 점수를 입력해주세요'; errEl.style.display='block'; return; }
+  var maxUsable = Math.min(window._offsetAvailablePlus||0, window._offsetAvailableMinus||0);
+  if (amount > maxUsable) { errEl.textContent = '최대 '+maxUsable+'점까지만 상쇄할 수 있습니다 (보유 상점 또는 벌점 부족)'; errEl.style.display='block'; return; }
+
+  var uid = window._offsetTargetUid;
+  var name = window._offsetTargetName;
+  var byName = currentProfile ? currentProfile.name : '본인';
+
+  // type:'offset'이라는 세 번째 기록 유형 하나만 남긴다. 원래의 상점/벌점 개별 내역(type:'plus'/'minus')은
+  // 절대 건드리지 않고 그대로 두되, 화면에서 "누적 상점"과 "누적 벌점"을 계산할 때 이 offset 합계만큼
+  // 양쪽에서 똑같이 빼서 보여준다 (순점수=상점-벌점은 항상 그대로 유지됨 - 상쇄는 기록 정리일 뿐 특혜가 아님).
+  addDoc(collection(db,'points'), {
+    branch: getBranch(), studentUid: uid, type: 'offset',
+    reason: '상점으로 벌점 상쇄 ('+byName+')', points: amount,
+    givenBy: currentUser.uid, givenByName: byName, createdAt: serverTimestamp()
+  }).then(function(){
+    closeModal('modal-offset-points');
+    alert(escapeHtml(name)+'님의 상점 '+amount+'점으로 벌점 '+amount+'점을 상쇄했습니다.');
+    invalidateTeacherTabCache(3);
+    if (currentProfile.role === 'student') { loadRewardsPage(); }
+    if (document.getElementById('teacher-content')) { renderTeacher(3); }
+  }).catch(function(e){ alert('처리 실패: '+e.message); });
+};
+
+// "전체 선택/해제"는 검색으로 걸러서 지금 화면에 보이는 학생들만 대상으로 함 -
+// 검색 안 하고 눌렀을 땐 원래처럼 전체 학생이 대상이 됨
+window._toggleRewardStudentAll = function(){
+  var visibleBoxes = Array.from(document.querySelectorAll('.reward-student-label'))
+    .filter(function(label){ return label.style.display !== 'none'; })
+    .map(function(label){ return label.querySelector('.reward-student-cb'); });
+  var allChecked = visibleBoxes.every(function(cb){ return cb.checked; });
+  visibleBoxes.forEach(function(cb){ cb.checked = !allChecked; });
+  window._updateRewardSelectedCount();
+};
+
+// 이름 검색 - 안 보이게 된 학생의 체크 상태는 그대로 유지됨(display만 바꿈, checked는 안 건드림)
+window._filterRewardStudentList = function(keyword){
+  var kw = keyword.trim().toLowerCase();
+  document.querySelectorAll('.reward-student-label').forEach(function(label){
+    var match = !kw || label.dataset.name.indexOf(kw) !== -1;
+    label.style.display = match ? '' : 'none';
+  });
+};
+
+window._updateRewardSelectedCount = function(){
+  var count = document.querySelectorAll('.reward-student-cb:checked').length;
+  var el = document.getElementById('reward-student-selected-count');
+  if (el) el.textContent = '선택된 학생: '+count+'명';
+};
+
+window.givePoints=function(){
+  var uids = Array.from(document.querySelectorAll('.reward-student-cb:checked')).map(function(cb){return cb.value;});
+  var type=document.getElementById('reward-type-select').value;
+  var reason=document.getElementById('reward-reason-input').value.trim();
+  var points=parseInt(document.getElementById('reward-points-input').value);
+  if(!uids.length||!reason||!points){alert('학생을 1명 이상 선택하고, 사유/점수를 모두 입력해주세요.');return;}
+  Promise.all(uids.map(function(uid){
+    return addDoc(collection(db,'points'),{branch:getBranch(),studentUid:uid,type:type,reason:reason,points:points,givenBy:currentUser.uid,givenByName:currentProfile.name,createdAt:serverTimestamp()});
+  })).then(function(){
+    alert(uids.length+'명에게 상벌점이 부여되었습니다!');
+    renderTeacher(3);
+  }).catch(function(e){ alert('부여 실패: ' + e.message); });
+};
+
+window.togglePlannerDetail=function(elId,studentUid){
+  var el=document.getElementById(elId);
+  if(!el) return;
+  var card = el.closest('.planner-thumb');
+  if(el.style.display==='none'){
+    el.style.display='block';
+    if(card) card.classList.add('planner-thumb-expanded');
+    var today=getPlannerDate();
+    getDocs(query(collection(db,'todos'),where('uid','==',studentUid),where('date','==',today))).then(function(snap){
+      if(snap.empty){el.innerHTML='<div style="color:var(--tx3);font-size:12px">할 일 항목 없음</div>';return;}
+      var todos=snap.docs.map(function(d){return d.data();});
+      var statusMap={'none':'⬜','progressing':'🔄','done':'✅'};
+      el.innerHTML='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px">'+
+        ['none','progressing','done'].map(function(s){var c=todos.filter(function(t){return t.status===s;}).length;var label={none:'미시작',progressing:'진행중',done:'완료'};var color={none:'var(--tx3)',progressing:'var(--gold)',done:'var(--green)'};return '<span style="font-size:11px;padding:3px 8px;background:var(--surface3);border-radius:6px;color:'+color[s]+'">'+label[s]+' '+c+'</span>';}).join('')+
+        '</div>'+
+        todos.map(function(t){
+          var timeHtml=t.studyTime?'<span style="font-size:11px;color:var(--burg)">⏱ '+t.studyTime+'</span>':'';
+          var certHtml=t.certified?'<span style="font-size:10px;color:var(--blue)">📸인증</span>':'';
+          return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border2)">'
+            +'<span style="font-size:14px">'+(statusMap[t.status]||'⬜')+'</span>'
+            +'<span class="subject-tag subj-'+t.subject+'" style="font-size:10px">'+(subjectNames[t.subject]||t.subject)+'</span>'
+            +'<span style="flex:1;font-size:13px;'+(t.status==='done'?'text-decoration:line-through;color:var(--tx3)':'')+'">'+escapeHtml(t.title)+'</span>'
+            +timeHtml+certHtml+'</div>';
+        }).join('');
+    }).catch(function(){el.innerHTML='<div style="color:var(--red);font-size:12px">불러오기 실패</div>';});
+  } else {
+    el.style.display='none';
+    if(card) card.classList.remove('planner-thumb-expanded');
+  }
+};
+
+window.filterLecturesByStudent=function(uid){
+  _lectureFilterUid = uid;
+  var groups=document.querySelectorAll('.lecture-student-group');
+  groups.forEach(function(g){g.style.display=(uid===''||g.dataset.uid===uid)?'':'none';});
+};
+window.openEditPointModal=function(id,studentUid,type,reason,points){
+  document.getElementById('edit-point-id').value=id;
+  document.getElementById('edit-point-type').value=type;
+  document.getElementById('edit-point-reason').value=decodeURIComponent(reason);
+  document.getElementById('edit-point-points').value=points;
+  openModal('modal-edit-point');
+};
+window.saveEditPoint=function(){
+  var id=document.getElementById('edit-point-id').value;
+  var type=document.getElementById('edit-point-type').value;
+  var reason=document.getElementById('edit-point-reason').value.trim();
+  var points=parseInt(document.getElementById('edit-point-points').value);
+  if(!reason||!points){alert('사유와 점수를 입력해주세요.');return;}
+  updateDoc(doc(db,'points',id),{type:type,reason:reason,points:points}).then(function(){closeModal('modal-edit-point');alert('수정되었습니다.');invalidateTeacherTabCache(3);renderTeacher(3);}).catch(function(e){alert('수정 실패: '+e.message);});
+};
+window.deletePoint=function(id){
+  if(!confirm('이 상벌점 내역을 삭제하시겠습니까?')) return;
+  deleteDoc(doc(db,'points',id)).then(function(){alert('삭제되었습니다.');renderTeacher(3);}).catch(function(e){alert('삭제 실패: '+e.message);});
+};
+window.saveRules=function(){
+  var content=document.getElementById('rules-input').value.trim();
+  getDocs(query(collection(db,'rules'),where('branch','==',getBranch()),limit(1))).then(function(snap){
+    if(snap.empty) addDoc(collection(db,'rules'),{branch:getBranch(),content:content,updatedAt:serverTimestamp()}).then(function(){alert('규정이 저장되었습니다!');});
+    else updateDoc(doc(db,'rules',snap.docs[0].id),{content:content,updatedAt:serverTimestamp()}).then(function(){alert('규정이 저장되었습니다!');});
+  });
+};
+window.saveScholar=function(){
+  var val=document.getElementById('scholar-student').value;
+  var prize=document.getElementById('scholar-prize').value.trim();
+  var reason=document.getElementById('scholar-reason').value.trim();
+  if(!val||!prize||!reason){alert('모든 항목을 입력해주세요.');return;}
+  var parts=val.split('|');
+  var month=new Date().toISOString().slice(0,7);
+  setDoc(doc(db,'scholars',month),{studentUid:parts[0],studentName:parts[1]||'?',prize:prize,reason:reason,setBy:currentProfile.name,createdAt:serverTimestamp()}).then(function(){alert('장학생이 등록되었습니다!');});
+};
+
+function buildTChat(){
+  return Promise.resolve(buildKakaoChatPage());
+}
+
+window.filterTChatRooms=function(q){
+  q=(q||'').trim();
+  document.querySelectorAll('.tchat-room-card').forEach(function(card){
+    var name=card.dataset.name||'';
+    card.style.display=(!q||name.includes(q))?'flex':'none';
+  });
+};
+var _tchatAllMessages=[];
+window.filterTChatMessages=function(q){
+  var area=document.getElementById('teacher-chat-area');
+  if(!area) return;
+  q=(q||'').trim().toLowerCase();
+  if(!q){renderTChatMessages(_tchatAllMessages);return;}
+  var filtered=_tchatAllMessages.filter(function(m){return m.text&&m.text.toLowerCase().includes(q);});
+  renderTChatMessages(filtered,q);
+};
+// 날짜 구분선 생성 함수
+function _makeDateDivider(date){
+  var d=new Date(date);
+  var now=new Date();
+  var diff=Math.floor((now-d)/(1000*60*60*24));
+  var label;
+  var days=['일','월','화','수','목','금','토'];
+  if(diff===0) label='오늘';
+  else if(diff===1) label='어제';
+  else label=d.getFullYear()+'년 '+(d.getMonth()+1)+'월 '+d.getDate()+'일 ('+days[d.getDay()]+')';
+  return '<div style="display:flex;align-items:center;gap:10px;margin:12px 0">'
+    +'<div style="flex:1;height:1px;background:var(--surface3)"></div>'
+    +'<div style="font-size:11px;color:var(--tx3);padding:3px 10px;background:var(--surface3);border-radius:10px;white-space:nowrap">'+label+'</div>'
+    +'<div style="flex:1;height:1px;background:var(--surface3)"></div>'
+    +'</div>';
+}
+
+
+
+// ═══════════════════════════════════════════════
+// 통합 카카오톡 스타일 채팅 시스템
+// ═══════════════════════════════════════════════
+
+var _curChatRoomId = null;       // 현재 열린 채팅방 ID
+var _curChatRoomMeta = null;     // 현재 채팅방 메타데이터
+var _unsubChatRooms = null;      // 채팅방 목록 리스너
+var _unsubChatMessages = null;   // 현재 방 메시지 리스너
+var _chatRoomCache = [];          // 채팅방 목록 캐시
+var _selectedFileForChat = null;
+
+// 1:1 채팅방 ID 생성 (정렬해서 양쪽이 동일하게)
+function _make1on1RoomId(uid1, uid2) {
+  return [uid1, uid2].sort().join('_');
+}
+
+// 채팅 페이지 빌드 (학생 + 선생님 통합)
+function buildKakaoChatPage() {
+  var role = currentProfile && currentProfile.role || 'student';
+  var headerTitle = '채팅';
+  var __dt_h = '<div class="dt-header dt-only"><div><div class="dt-header-title">'+headerTitle+'</div></div></div>';
+  return __dt_h + '<div class="kchat-wrap">'
+    +'<div id="kchat-list-view" class="kchat-list-view">'
+    +'<div class="kchat-list-header">'
+    +'<div class="kchat-list-title">대화방</div>'
+    +'<div style="display:flex;gap:6px;">'
+    +'<button class="kchat-new-btn" onclick="openMyProfileFromChat()" title="내 프로필 수정" style="background:var(--surface2);color:var(--tx2);"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></button>'
+    +'<button class="kchat-new-btn" onclick="openNewChatModal()" title="새 대화"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>'
+    +'</div>'
+    +'</div>'
+    +'<div class="kchat-search-wrap"><svg class="kchat-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input class="kchat-search" id="kchat-rooms-search" placeholder="대화방 검색" oninput="filterKChatRooms(this.value)"/></div>'
+    +'<div id="kchat-rooms-list" class="kchat-rooms-list"><div style="text-align:center;color:var(--tx3);font-size:13px;padding:40px;">대화방 불러오는 중...</div></div>'
+    +'</div>'
+    +'<div id="kchat-room-view" class="kchat-view" style="display:none;">'
+    +'<div class="kchat-header">'
+    +'<button class="kchat-back" onclick="closeKChatRoom()"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"/></svg></button>'
+    +'<div class="kchat-header-info" id="kchat-header-info">'
+    +'<div class="kchat-header-name" id="kchat-header-name"></div>'
+    +'<div class="kchat-header-sub" id="kchat-header-sub"></div>'
+    +'</div>'
+    +'<button class="kchat-back" onclick="toggleKChatSearch()" title="메시지 검색"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>'
+    +'<button class="kchat-back" id="kchat-room-menu" onclick="toggleKChatRoomMenu()" title="메뉴"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>'
+    +'</div>'
+    +'<div id="kchat-msg-search-wrap" class="kchat-msg-search-wrap"><input class="kchat-search" id="kchat-msg-search" placeholder="메시지 내용 검색" oninput="filterKChatMessages(this.value)"/></div>'
+    +'<div id="kchat-area" class="kchat-area"></div>'
+    +'<div id="kchat-file-prev" class="kchat-file-prev" style="display:none;flex-direction:column;align-items:stretch;gap:6px;"><div style="display:flex;align-items:center;gap:8px;"><span id="kchat-file-name" style="font-size:13px;color:var(--burg);flex:1;"></span><span id="kchat-file-percent" style="font-size:12px;color:var(--tx3);display:none;"></span><button id="kchat-file-cancel-btn" onclick="cancelKChatFile()" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:18px;">✕</button></div><div id="kchat-file-progress-track" style="display:none;height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;"><div id="kchat-file-progress-fill" style="height:100%;width:0%;background:var(--burg);transition:width .15s;"></div></div></div>'
+    +'<div class="kchat-input-area">'
+    +'<input type="file" id="kchat-file-input" style="display:none;" onchange="handleKChatFile(this)"/>'
+    +'<button class="kchat-attach" onclick="document.getElementById(\'kchat-file-input\').click()"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>'
+    +'<textarea id="kchat-input" class="kchat-input" rows="1" placeholder="메시지 입력" onkeydown="kchatKey(event)" oninput="kchatGrow(this)"></textarea>'
+    +'<button class="kchat-send" onclick="sendKChatMsg()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>'
+    +'</div>'
+    +'</div>'
+    +'</div>';
+}
+
+// 채팅방 목록 리스닝
+// 채팅방 목록에서 상대방 아바타를 보여주기 위한 가벼운 캐시. 방(room) 문서 자체엔
+// 상대방 아바타가 저장되어 있지 않아서, 지점 내 전체 사용자의 아바타만 따로 5분 캐싱해서 사용.
+var _avatarCache = {};
+var _avatarCacheTime = 0;
+function loadAvatarCache(){
+  if (Date.now() - _avatarCacheTime < 300000 && Object.keys(_avatarCache).length) return Promise.resolve(_avatarCache);
+  return getDocs(query(collection(db,'users'), where('branch','==',getBranch()))).then(function(snap){
+    _avatarCache = {};
+    snap.docs.forEach(function(d){ _avatarCache[d.id] = d.data().avatar || null; });
+    _avatarCacheTime = Date.now();
+    return _avatarCache;
+  }).catch(function(){ return _avatarCache; });
+}
+
+function listenKChatRooms() {
+  if (!currentUser) return;
+  loadAvatarCache(); // 미리 받아둠 - 방 목록 렌더링 시점엔 대부분 이미 캐시가 채워져 있게 됨
+  // 옛 chats 데이터 자동 마이그레이션 (한 번만 실행)
+  var migrateKey = 'kchat_migrated_' + currentUser.uid;
+  if (!localStorage.getItem(migrateKey)) {
+    console.log('[채팅 복구] 옛 대화 자동 복구 시작...');
+    _autoMigrateLegacyChats().then(function(result){
+      localStorage.setItem(migrateKey, '1');
+      if (result && result.migrated > 0) {
+        console.log('[채팅 복구] 완료: 대화방 ' + result.rooms + '개, 메시지 ' + result.migrated + '개');
+      }
+    }).catch(function(e){ 
+      console.error('[채팅 복구] 오류:', e);
+      alert('옛 대화 복구 실패: ' + (e.message || e) + '\n\n마스터 도구의 "옛 대화 기록 복구" 버튼을 사용해주세요.');
+    });
+  }
+  // 데스크탑이면 초기 placeholder 표시
+  var isDesktop = window.matchMedia('(min-width:1024px)').matches;
+  if (isDesktop && !_curChatRoomId) {
+    setTimeout(function(){
+      var area = document.getElementById('kchat-area');
+      if (area && !_curChatRoomId) area.innerHTML = '<div class="kchat-placeholder"><div style="font-size:48px;opacity:.2;margin-bottom:14px;">💬</div><div style="font-size:14px;color:var(--tx3);">대화방을 선택하거나 새 대화를 시작하세요</div></div>';
+    }, 100);
+  }
+  if (_unsubChatRooms) { _unsubChatRooms(); _unsubChatRooms = null; }
+  _unsubChatRooms = onSnapshot(
+    query(collection(db, 'chatRooms'), where('participants', 'array-contains', currentUser.uid)),
+    function(snap) {
+      _chatRoomCache = snap.docs.map(function(d){return Object.assign({id:d.id}, d.data());})
+        .filter(function(r){
+          // 1:1 채팅에서 본인이 숨긴 대화방 제외 (그룹은 나가면 목록에서 아예 제거되므로 해당 없음)
+          return !(r.hiddenFor && r.hiddenFor.indexOf(currentUser.uid) !== -1);
+        });
+      // 최근 메시지 순으로 정렬
+      _chatRoomCache.sort(function(a,b){
+        var at = a.lastMessage && a.lastMessage.createdAt ? a.lastMessage.createdAt.toMillis() : (a.createdAt ? a.createdAt.toMillis() : 0);
+        var bt = b.lastMessage && b.lastMessage.createdAt ? b.lastMessage.createdAt.toMillis() : (b.createdAt ? b.createdAt.toMillis() : 0);
+        return bt - at;
+      });
+      _debouncedRenderKChatRooms(_chatRoomCache);
+    },
+    function(err) {
+      console.error('chatRooms listen error', err);
+      var el = document.getElementById('kchat-rooms-list');
+      if (el) el.innerHTML = '<div style="text-align:center;color:var(--tx3);font-size:13px;padding:40px;">대화방을 불러올 수 없습니다</div>';
+    }
+  );
+}
+
+// 실시간 리스너가 짧은 시간 안에 여러 번 발생해도 화면 재생성을 한 번으로 묶음
+// (재생성 도중 탭한 버튼이 사라지며 클릭이 씹히는 문제 방지 - 태블릿 등에서 특히 체감됨)
+var _kChatRoomsRenderPending = null;
+var _kChatRoomsRenderTimer = null;
+function _debouncedRenderKChatRooms(rooms) {
+  _kChatRoomsRenderPending = rooms;
+  if (_kChatRoomsRenderTimer) return;
+  _kChatRoomsRenderTimer = setTimeout(function(){
+    _kChatRoomsRenderTimer = null;
+    renderKChatRooms(_kChatRoomsRenderPending);
+  }, 250);
+}
+
+var _kchatRoomsLastHtml = '';
+function renderKChatRooms(rooms) {
+  var el = document.getElementById('kchat-rooms-list');
+  if (!el) return;
+  if (!rooms || !rooms.length) {
+    _kchatRoomsLastHtml = '';
+    el.innerHTML = '<div class="kchat-empty"><div style="font-size:36px;opacity:.3;margin-bottom:10px;">💬</div><div style="color:var(--tx3);font-size:13px;">아직 대화방이 없어요</div><button class="kchat-empty-btn" onclick="openNewChatModal()">새 대화 시작하기</button></div>';
+    return;
+  }
+  var _roomsHtml = rooms.map(function(r){
+    // 상대방 정보 추출 (1:1은 상대방, 단톡은 그룹명)
+    var displayName, avatarHtmlStr;
+    if (r.isGroup) {
+      displayName = r.groupName || '단톡방';
+      avatarHtmlStr = '<div class="kchat-avatar" style="background:linear-gradient(135deg,#D4A04A,#B8841A);">'+(r.participants?r.participants.length:0)+'</div>';
+    } else {
+      var otherUid = (r.participants||[]).find(function(u){return u !== currentUser.uid;});
+      displayName = (r.participantNames && r.participantNames[otherUid]) || '알 수 없음';
+      var otherRole = r.participantRoles && r.participantRoles[otherUid];
+      var bg = otherRole==='master' ? 'background:linear-gradient(135deg,#B91C1C,#7B1D1D);' 
+              : otherRole==='teacher' ? 'background:linear-gradient(135deg,var(--burg),var(--burg2));'
+              : 'background:linear-gradient(135deg,#D4A04A,#B8841A);';
+      avatarHtmlStr = avatarCircleHtml(displayName, _avatarCache[otherUid], 44, {bg:bg, cls:'kchat-avatar', fontSizePx:16});
+    }
+    var lastText = '대화를 시작해보세요';
+    var lastTime = '';
+    if (r.lastMessage) {
+      lastText = r.lastMessage.fileUrl ? '📎 ' + (r.lastMessage.fileName || '파일') : (r.lastMessage.text || '');
+      if (r.lastMessage.senderUid === currentUser.uid) lastText = '나: ' + lastText;
+      else if (r.isGroup && r.lastMessage.senderName) lastText = r.lastMessage.senderName + ': ' + lastText;
+      if (r.lastMessage.createdAt) {
+        var d = r.lastMessage.createdAt.toDate();
+        var now = new Date();
+        if (d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth() && d.getDate()===now.getDate()) {
+          lastTime = d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+        } else {
+          var diff = Math.floor((now - d) / (1000*60*60*24));
+          if (diff < 7) lastTime = ['일','월','화','수','목','금','토'][d.getDay()]+'요일';
+          else lastTime = (d.getMonth()+1)+'/'+d.getDate();
+        }
+      }
+    }
+    var unread = (r.unread && r.unread[currentUser.uid]) || 0;
+    var unreadBadge = unread > 0 ? '<div class="kchat-unread">'+(unread>99?'99+':unread)+'</div>' : '';
+    return '<div class="kchat-room-item" data-name="'+displayName+'" onclick="openKChatRoom(\''+r.id+'\')">'
+      +avatarHtmlStr
+      +'<div class="kchat-room-info">'
+      +'<div class="kchat-room-top">'
+      +'<div class="kchat-room-name">'+displayName+(r.isGroup?' <span style="font-size:11px;color:var(--tx4);font-weight:500;">'+r.participants.length+'</span>':'')+'</div>'
+      +'<div class="kchat-room-time">'+lastTime+'</div>'
+      +'</div>'
+      +'<div class="kchat-room-bot">'
+      +'<div class="kchat-room-preview">'+lastText.replace(/</g,'&lt;').slice(0,50)+'</div>'
+      +unreadBadge
+      +'</div>'
+      +'</div>'
+      +'</div>';
+  }).join('');
+  // 목록 내용이 그대로면 다시 그리지 않음(읽음 리셋·내가 보낸 메시지로 방 정보가 바뀔 때마다 38개 방을 통째로 새로 그리던 것 방지)
+  if (_roomsHtml === _kchatRoomsLastHtml && el.querySelector('.kchat-room-item')) return;
+  _kchatRoomsLastHtml = _roomsHtml;
+  el.innerHTML = _roomsHtml;
+  var _rq = document.querySelector('input[oninput^="filterKChatRooms"]');
+  if (_rq && _rq.value && window.filterKChatRooms) filterKChatRooms(_rq.value);
+}
+
+window.filterKChatRooms = function(q) {
+  q = (q||'').trim();
+  document.querySelectorAll('#kchat-rooms-list .kchat-room-item').forEach(function(item){
+    var name = item.dataset.name || '';
+    item.style.display = (!q || name.includes(q)) ? 'flex' : 'none';
+  });
+};
+
+// 채팅방 열기
+// ── 채팅 성능 ──
+// 예전: 방을 열면 ① 전체 메시지를 한꺼번에 구독하고 ② 안 읽은 메시지마다 읽음 표시를 '한 건씩' 저장했는데,
+// 저장 한 건마다 화면 전체를 다시 그려서(메시지 N개면 N번 × N개) 방이 클수록 크게 버벅였음.
+// 지금: 최근 KCHAT_PAGE개만 구독 · 읽음 표시는 한 번에 묶어 저장 · 그리기는 한 프레임에 한 번 · 내용이 같으면 다시 그리지 않음.
+var KCHAT_PAGE = 80;
+var _kchatLimit = KCHAT_PAGE, _kchatHasMore = false, _kchatReadPending = {}, _kchatRaf = null, _kchatLastMsgs = null, _kchatLastHtml = '';
+function _kchatSubscribe(roomId, lim){
+  if (_unsubChatMessages) { _unsubChatMessages(); _unsubChatMessages = null; }
+  _kchatLimit = lim;
+  _unsubChatMessages = onSnapshot(
+    query(collection(db, 'chatRooms', roomId, 'messages'), orderBy('createdAt','desc'), limit(lim)),
+    function(snap){
+      if (_curChatRoomId !== roomId) return;
+      _kchatHasMore = snap.size >= lim;
+      var msgs = snap.docs.map(function(d){return Object.assign({_id:d.id}, d.data());}).reverse();
+      _kchatScheduleRender(msgs);
+      // 안 읽은 메시지에 내 읽음 표시 - 한 번에 묶어서 저장(저장 1번 = 화면 갱신 1번)
+      var batch = null, cnt = 0;
+      snap.docs.forEach(function(d){
+        if (cnt >= 450) return;
+        var rb = d.data().readBy || [];
+        if (rb.indexOf(currentUser.uid) !== -1 || _kchatReadPending[d.id]) return;
+        if (!batch) batch = writeBatch(db);
+        _kchatReadPending[d.id] = 1;
+        batch.update(doc(db, 'chatRooms', roomId, 'messages', d.id), {readBy: arrayUnion(currentUser.uid)});
+        cnt++;
+      });
+      if (batch && cnt) batch.commit().catch(function(e){ console.warn('읽음 표시 실패', e); });
+    },
+    function(err){ console.error('chat messages listen error', err); }
+  );
+}
+function _kchatScheduleRender(msgs){
+  _kchatLastMsgs = msgs;
+  if (_kchatRaf) return;
+  _kchatRaf = requestAnimationFrame(function(){
+    _kchatRaf = null;
+    var area = document.getElementById('kchat-area');
+    if (!area || !_kchatLastMsgs) return;
+    var wasBottom = area.scrollHeight - area.scrollTop - area.clientHeight < 80;
+    var prevH = area.scrollHeight, prevTop = area.scrollTop;
+    var firstRender = !area.querySelector('.kchat-row');
+    var keepTop = area._kchatKeepTop;
+    renderKChatMessages(_kchatLastMsgs);
+    if (keepTop) { area.scrollTop = area.scrollHeight - prevH + prevTop; area._kchatKeepTop = false; }
+    else if (wasBottom || firstRender) {
+      area.scrollTop = area.scrollHeight;
+      // 사진·글꼴이 늦게 그려져 높이가 바뀌는 경우를 대비해 한 프레임 뒤 한 번 더 맨 아래로
+      requestAnimationFrame(function(){ area.scrollTop = area.scrollHeight; });
+    }
+  });
+}
+window.loadOlderKChat = function(){
+  if (!_curChatRoomId) return;
+  var area = document.getElementById('kchat-area'); if (area) area._kchatKeepTop = true;
+  _kchatSubscribe(_curChatRoomId, _kchatLimit + KCHAT_PAGE);
+};
+var _kchatDateFmt = null, _kchatTimeFmt = null;
+function _kchatFmtDate(ts){ if (!_kchatDateFmt) _kchatDateFmt = new Intl.DateTimeFormat('ko-KR', {year:'numeric', month:'long', day:'numeric', weekday:'long'}); return _kchatDateFmt.format(ts); }
+function _kchatFmtTime(ts){ if (!_kchatTimeFmt) _kchatTimeFmt = new Intl.DateTimeFormat('ko-KR', {hour:'2-digit', minute:'2-digit'}); return _kchatTimeFmt.format(ts); }
+
+window.openKChatRoom = function(roomId) {
+  if (_unsubChatMessages) { _unsubChatMessages(); _unsubChatMessages = null; }
+  _curChatRoomId = roomId;
+  _kchatLimit = KCHAT_PAGE; _kchatHasMore = false; _kchatReadPending = {}; _kchatLastMsgs = null; _kchatLastHtml = '';
+  var _kArea = document.getElementById('kchat-area'); if (_kArea) _kArea.innerHTML = '<div style="text-align:center;color:var(--tx4);font-size:13px;padding:40px;">불러오는 중…</div>';
+  _curChatRoomMeta = null;
+  // 메시지는 방 정보(getDoc)를 기다리지 않고 바로 구독 시작 - 왕복 1번만큼 빨리 뜸. 방 정보가 오면 읽음 숫자만 다시 그림
+  _kchatSubscribe(roomId, KCHAT_PAGE);
+  _selectedFileForChat = null;
+  var isDesktop = window.matchMedia('(min-width:1024px)').matches;
+  if (!isDesktop) document.getElementById('kchat-list-view').style.display = 'none';
+  var view = document.getElementById('kchat-room-view');
+  if (view) view.style.display = 'flex';
+  pushHistory(function(){ closeKChatRoom(); });
+
+  // 메타데이터 가져오기
+  getDoc(doc(db, 'chatRooms', roomId)).then(function(d){
+    if (_curChatRoomId !== roomId) return; // 빠르게 다른 방으로 옮긴 경우 늦게 온 응답은 무시
+    if (!d.exists()) { alert('대화방을 찾을 수 없습니다'); closeKChatRoom(); return; }
+    _curChatRoomMeta = d.data();
+    var hName = document.getElementById('kchat-header-name');
+    var hSub = document.getElementById('kchat-header-sub');
+    if (_curChatRoomMeta.isGroup) {
+      hName.textContent = _curChatRoomMeta.groupName || '단톡방';
+      hSub.textContent = (_curChatRoomMeta.participants||[]).length + '명 참여';
+      window._curChatOtherUid = null;
+      var infoElGroup = document.getElementById('kchat-header-info');
+      if (infoElGroup) { infoElGroup.style.cursor = ''; infoElGroup.onclick = null; }
+    } else {
+      var otherUid = (_curChatRoomMeta.participants||[]).find(function(u){return u !== currentUser.uid;});
+      hName.textContent = (_curChatRoomMeta.participantNames && _curChatRoomMeta.participantNames[otherUid]) || '';
+      var or = _curChatRoomMeta.participantRoles && _curChatRoomMeta.participantRoles[otherUid];
+      hSub.textContent = or==='master' ? '마스터' : or==='teacher' ? '선생님' : '학생';
+      window._curChatOtherUid = otherUid;
+      // 선생님/마스터만 상대방 프로필 조회 가능 (동명이인 구분용)
+      var myRoleNorm = ((currentProfile && currentProfile.role) || '').trim().toLowerCase();
+      var canViewProfile = (myRoleNorm === 'teacher' || myRoleNorm === 'master');
+      var infoEl = document.getElementById('kchat-header-info');
+      console.log('[chat-profile] otherUid=', otherUid, 'myRole=', myRoleNorm, 'canView=', canViewProfile, 'infoEl found=', !!infoEl);
+      if (infoEl) {
+        if (canViewProfile) {
+          infoEl.style.cursor = 'pointer';
+          infoEl.onclick = function(){ console.log('[chat-profile] clicked, otherUid=', otherUid); openChatPartnerProfile(otherUid); };
+        } else {
+          infoEl.style.cursor = '';
+          infoEl.onclick = null;
+        }
+      }
+    }
+
+    // 미읽음 0으로 리셋 (다른 필드를 통째로 덮어쓰지 않도록 이 필드 하나만 원자적으로 업데이트)
+    var u = _curChatRoomMeta.unread || {};
+    if (u[currentUser.uid] > 0) {
+      _curChatRoomMeta.unread = Object.assign({}, u, {[currentUser.uid]: 0});
+      var _resetUpdate = {};
+      _resetUpdate['unread.'+currentUser.uid] = 0;
+      updateDoc(doc(db, 'chatRooms', roomId), _resetUpdate).catch(function(e){console.error('미읽음 리셋 실패', e);});
+    }
+
+    // 메시지는 위에서 이미 구독 중 - 방 정보(참여자 수)가 왔으니 읽음 숫자 반영해 다시 그림
+    if (_curChatRoomId === roomId && _kchatLastMsgs) { _kchatLastHtml = ''; _kchatScheduleRender(_kchatLastMsgs); }
+  }).catch(function(e){
+    console.error(e);
+    alert('대화방 로드 실패: '+e.message);
+  });
+};
+
+window.closeKChatRoom = function() {
+  if (_unsubChatMessages) { _unsubChatMessages(); _unsubChatMessages = null; }
+  _curChatRoomId = null;
+  _curChatRoomMeta = null;
+  var isDesktop = window.matchMedia('(min-width:1024px)').matches;
+  if (isDesktop) {
+    // 데스크탑: 채팅창 placeholder로
+    var area = document.getElementById('kchat-area');
+    if (area) area.innerHTML = '<div class="kchat-placeholder"><div style="font-size:48px;opacity:.2;margin-bottom:14px;">💬</div><div style="font-size:14px;color:var(--tx3);">대화방을 선택하거나 새 대화를 시작하세요</div></div>';
+    var hName = document.getElementById('kchat-header-name'); if(hName) hName.textContent = '';
+    var hSub = document.getElementById('kchat-header-sub'); if(hSub) hSub.textContent = '';
+    document.getElementById('kchat-list-view').style.display = 'flex';
+  } else {
+    document.getElementById('kchat-list-view').style.display = 'flex';
+    document.getElementById('kchat-room-view').style.display = 'none';
+  }
+};
+
+window.toggleKChatSearch = function() {
+  var w = document.getElementById('kchat-msg-search-wrap');
+  if (w) w.classList.toggle('open');
+};
+
+window.toggleKChatRoomMenu = function() {
+  if (!_curChatRoomMeta) return;
+  document.getElementById('kchat-room-menu-name').textContent = _curChatRoomMeta.isGroup ? (_curChatRoomMeta.groupName||'단톡방') : '1:1 채팅';
+  // 참여자 목록 (전체 표시, 본인은 "(나)" 표기)
+  var memberNames = (_curChatRoomMeta.participants||[]).map(function(uid){
+    var nm = (_curChatRoomMeta.participantNames && _curChatRoomMeta.participantNames[uid]) || '?';
+    return uid === currentUser.uid ? nm + '(나)' : nm;
+  });
+  document.getElementById('kchat-room-menu-members').textContent = '참여자 ('+memberNames.length+'명): ' + memberNames.join(', ');
+  // 단톡일 때만 이름 변경 가능
+  var renameBtn = document.getElementById('kchat-room-menu-rename');
+  if (renameBtn) renameBtn.style.display = _curChatRoomMeta.isGroup ? 'block' : 'none';
+  // 내 프로필 수정 버튼 (항상 표시)
+  var profileBtn = document.getElementById('kchat-room-menu-profile');
+  if (profileBtn) profileBtn.style.display = 'block';
+  // 나가기/숨기기 버튼 (항상 표시, 텍스트는 그룹 여부에 따라)
+  var leaveBtn = document.getElementById('kchat-room-menu-leave');
+  if (leaveBtn) leaveBtn.textContent = _curChatRoomMeta.isGroup ? '🚪 대화방 나가기' : '🙈 대화 목록에서 숨기기';
+  // 마스터일 때만 삭제 가능
+  var isMaster = currentProfile && currentProfile.role === 'master';
+  var deleteBtn = document.getElementById('kchat-room-menu-delete');
+  if (deleteBtn) deleteBtn.style.display = isMaster ? 'block' : 'none';
+  openModal('modal-kchat-room-menu');
+};
+
+window.openMyProfileFromChat = function() {
+  closeModal('modal-kchat-room-menu');
+  var role = currentProfile && currentProfile.role;
+  if (role === 'student') {
+    openModal('modal-profile-student');
+  } else {
+    openModal('modal-profile-teacher');
+  }
+};
+
+window.leaveKChatRoomFromMenu = function() {
+  if (!_curChatRoomId || !_curChatRoomMeta) return;
+  var isGroup = _curChatRoomMeta.isGroup;
+  var confirmMsg = isGroup
+    ? '이 대화방을 나가시겠습니까?\n\n나간 후에는 대화 내용을 다시 볼 수 없습니다.'
+    : '이 대화를 목록에서 숨기시겠습니까?\n\n상대방이 메시지를 보내면 다시 목록에 나타납니다.';
+  if (!confirm(confirmMsg)) return;
+
+  var roomRef = doc(db, 'chatRooms', _curChatRoomId);
+
+  if (isGroup) {
+    var newParticipants = (_curChatRoomMeta.participants||[]).filter(function(u){return u !== currentUser.uid;});
+    if (newParticipants.length === 0) {
+      // 마지막 인원이면 방 자체 삭제
+      getDocs(collection(db, 'chatRooms', _curChatRoomId, 'messages')).then(function(snap){
+        var ps = snap.docs.map(function(d){return deleteDoc(doc(db, 'chatRooms', _curChatRoomId, 'messages', d.id));});
+        return Promise.all(ps);
+      }).then(function(){
+        return deleteDoc(roomRef);
+      }).then(function(){
+        closeModal('modal-kchat-room-menu');
+        closeKChatRoom();
+        alert('대화방에서 나갔습니다');
+      }).catch(function(e){alert('나가기 실패: '+e.message);});
+    } else {
+      var newNames = Object.assign({}, _curChatRoomMeta.participantNames);
+      delete newNames[currentUser.uid];
+      var newRoles = Object.assign({}, _curChatRoomMeta.participantRoles);
+      delete newRoles[currentUser.uid];
+      var newUnread = Object.assign({}, _curChatRoomMeta.unread);
+      delete newUnread[currentUser.uid];
+      updateDoc(roomRef, {
+        participants: newParticipants,
+        participantNames: newNames,
+        participantRoles: newRoles,
+        unread: newUnread
+      }).then(function(){
+        closeModal('modal-kchat-room-menu');
+        closeKChatRoom();
+        alert('대화방에서 나갔습니다');
+      }).catch(function(e){alert('나가기 실패: '+e.message);});
+    }
+  } else {
+    // 1:1은 본인 화면에서만 숨김
+    updateDoc(roomRef, {
+      hiddenFor: arrayUnion(currentUser.uid)
+    }).then(function(){
+      closeModal('modal-kchat-room-menu');
+      closeKChatRoom();
+    }).catch(function(e){alert('숨기기 실패: '+e.message);});
+  }
+};
+
+window.openRenameGroupModal = function() {
+  if (!_curChatRoomMeta || !_curChatRoomMeta.isGroup) return;
+  closeModal('modal-kchat-room-menu');
+  document.getElementById('rename-group-input').value = _curChatRoomMeta.groupName || '';
+  openModal('modal-rename-group');
+};
+
+window.saveGroupName = function() {
+  var v = document.getElementById('rename-group-input').value.trim();
+  if (!v) { alert('대화방 이름을 입력해주세요'); return; }
+  if (!_curChatRoomId) return;
+  updateDoc(doc(db, 'chatRooms', _curChatRoomId), {groupName: v}).then(function(){
+    _curChatRoomMeta.groupName = v;
+    var hName = document.getElementById('kchat-header-name');
+    if (hName) hName.textContent = v;
+    closeModal('modal-rename-group');
+    alert('대화방 이름이 변경되었습니다');
+  }).catch(function(e){alert('변경 실패: '+e.message);});
+};
+
+window.deleteKChatRoomFromMenu = function() {
+  if (!_curChatRoomId) return;
+  if (!confirm('정말 이 대화방을 삭제하시겠습니까?\n\n모든 메시지가 영구 삭제됩니다.')) return;
+  closeModal('modal-kchat-room-menu');
+  deleteKChatRoom(_curChatRoomId);
+};
+
+function deleteKChatRoom(roomId) {
+  // 메시지 먼저 삭제 후 방 삭제 (간단 구현 - 작은 방 가정)
+  getDocs(collection(db, 'chatRooms', roomId, 'messages')).then(function(snap){
+    var ps = snap.docs.map(function(d){return deleteDoc(doc(db, 'chatRooms', roomId, 'messages', d.id));});
+    return Promise.all(ps);
+  }).then(function(){
+    return deleteDoc(doc(db, 'chatRooms', roomId));
+  }).then(function(){
+    closeKChatRoom();
+    alert('대화방이 삭제되었습니다');
+  }).catch(function(e){
+    alert('삭제 실패: '+e.message);
+  });
+}
+
+window.handleKChatFile = function(input) {
+  if (!input.files || !input.files[0]) return;
+  _selectedFileForChat = input.files[0];
+  var p = document.getElementById('kchat-file-prev'), n = document.getElementById('kchat-file-name');
+  if (p && n) { n.textContent = _selectedFileForChat.name + ' (' + (_selectedFileForChat.size/1024/1024).toFixed(1) + 'MB)'; p.style.display = 'flex'; }
+};
+window.cancelKChatFile = function() {
+  _selectedFileForChat = null;
+  var p = document.getElementById('kchat-file-prev'); if (p) p.style.display = 'none';
+  var fi = document.getElementById('kchat-file-input'); if (fi) fi.value = '';
+  var percentEl = document.getElementById('kchat-file-percent'); if (percentEl) percentEl.style.display = 'none';
+  var trackEl = document.getElementById('kchat-file-progress-track'); if (trackEl) trackEl.style.display = 'none';
+  var fillEl = document.getElementById('kchat-file-progress-fill'); if (fillEl) fillEl.style.width = '0%';
+  var cancelBtn = document.getElementById('kchat-file-cancel-btn');
+  if (cancelBtn) { cancelBtn.disabled = false; cancelBtn.style.opacity = ''; cancelBtn.style.cursor = 'pointer'; }
+};
+
+// 업로드 실패 시 파일은 유지한 채 진행률 UI만 원상복구 (재전송 가능하도록)
+function resetKChatFileUploadUI() {
+  var nameEl = document.getElementById('kchat-file-name');
+  if (nameEl && _selectedFileForChat) nameEl.textContent = _selectedFileForChat.name + ' (' + (_selectedFileForChat.size/1024/1024).toFixed(1) + 'MB)';
+  var percentEl = document.getElementById('kchat-file-percent'); if (percentEl) percentEl.style.display = 'none';
+  var trackEl = document.getElementById('kchat-file-progress-track'); if (trackEl) trackEl.style.display = 'none';
+  var fillEl = document.getElementById('kchat-file-progress-fill'); if (fillEl) fillEl.style.width = '0%';
+  var cancelBtn = document.getElementById('kchat-file-cancel-btn');
+  if (cancelBtn) { cancelBtn.disabled = false; cancelBtn.style.opacity = ''; cancelBtn.style.cursor = 'pointer'; }
+}
+
+// 메시지 전송
+window.sendKChatMsg = function() {
+  if (!_curChatRoomId || !_curChatRoomMeta) { alert('대화방을 먼저 선택해주세요'); return; }
+  var participants = _curChatRoomMeta.participants || [];
+  var others = participants.filter(function(u){return u !== currentUser.uid;});
+
+  function _afterSend(messageData) {
+    // 채팅방 메타데이터 업데이트 (마지막 메시지 + 다른 사람들 미읽음 증가)
+    // 전체 unread 맵을 읽어서-고쳐서-통째로 다시 쓰면, 그 사이에 상대방이 자기 읽음 처리를
+    // 한 게 덮어써지는 경쟁 상태(race condition)가 생길 수 있음 - 그래서 Firestore의
+    // increment()로 필드 하나씩만 원자적으로 올리도록 바꿈 (동시에 여러 메시지가 오가도 안전)
+    var updates = {};
+    others.forEach(function(uid){
+      updates['unread.'+uid] = increment(1);
+    });
+    updates['unread.'+currentUser.uid] = 0;
+    var lastMsg = {
+      text: messageData.text || '',
+      fileName: messageData.fileName || null,
+      fileUrl: messageData.fileUrl || null,
+      senderName: currentProfile.name,
+      senderUid: currentUser.uid,
+      createdAt: serverTimestamp()
+    };
+    updates.lastMessage = lastMsg;
+    // 상대방이 이 대화를 숨겨뒀었다면, 메시지가 오면 다시 목록에 보이도록 해제
+    var clearedHiddenFor = (_curChatRoomMeta.hiddenFor || []).filter(function(uid){ return others.indexOf(uid) === -1; });
+    updates.hiddenFor = clearedHiddenFor;
+    // 로컬 표시용 미리보기 값도 갱신 (증가분을 반영해서 화면에 즉시 보이도록)
+    var localUnread = Object.assign({}, _curChatRoomMeta.unread || {});
+    others.forEach(function(uid){ localUnread[uid] = (localUnread[uid]||0) + 1; });
+    localUnread[currentUser.uid] = 0;
+    _curChatRoomMeta.unread = localUnread;
+    updateDoc(doc(db, 'chatRooms', _curChatRoomId), updates)
+      .catch(function(e){console.error('update lastMessage failed', e);});
+    // 알림 전송 (인앱 기록 + 실제 푸시 - 백그라운드/종료 상태에서도 수신)
+    var notifPreview = messageData.text || ('📎 '+(messageData.fileName||'파일'));
+    others.forEach(function(uid){
+      _sendChatNotif(uid, currentProfile.name, notifPreview);
+    });
+    _sendPushNotification(others, currentProfile.name, notifPreview, {roomId: _curChatRoomId});
+  }
+
+  if (_selectedFileForChat) {
+    if (_chatFileTooBig(_selectedFileForChat)) return;
+    if (_selectedFileForChat.size > CHAT_CLOUDINARY_MAX) {
+      // 10MB 초과: Firebase Storage로 업로드(진행률 표시는 기존 UI 재사용)
+      var bigFile = _selectedFileForChat, bigName = bigFile.name;
+      var bPct = document.getElementById('kchat-file-percent'), bTrack = document.getElementById('kchat-file-progress-track');
+      var bFill = document.getElementById('kchat-file-progress-fill'), bCancel = document.getElementById('kchat-file-cancel-btn');
+      var bName = document.getElementById('kchat-file-name'), bPrev = document.getElementById('kchat-file-prev');
+      if (bPrev) bPrev.style.display = 'flex';
+      if (bName) bName.textContent = '⬆ 업로드 중... ' + bigName;
+      if (bPct) { bPct.style.display = 'inline'; bPct.textContent = '0%'; }
+      if (bTrack) { bTrack.style.display = 'block'; bTrack.classList.remove('kchat-progress-indeterminate'); }
+      if (bFill) bFill.style.width = '0%';
+      if (bCancel) { bCancel.disabled = true; bCancel.style.opacity = '0.4'; bCancel.style.cursor = 'not-allowed'; }
+      var bRoom = _curChatRoomId;
+      _uploadBigChatFile(bigFile, bRoom, function(pct){
+        if (bFill) bFill.style.width = pct + '%';
+        if (bPct) bPct.textContent = pct + '%';
+      }).then(function(r){
+        var msg = {fileUrl:r.url, filePath:r.path, fileName:bigName, senderUid:currentUser.uid, senderName:currentProfile.name, senderAvatar:currentProfile.avatar||null, readBy:[currentUser.uid], createdAt:serverTimestamp()};
+        addDoc(collection(db, 'chatRooms', bRoom, 'messages'), msg).then(function(){ if (bRoom === _curChatRoomId) _afterSend(msg); });
+        cancelKChatFile();
+      }).catch(function(e){
+        alert('파일 업로드 실패: ' + e.message);
+        resetKChatFileUploadUI();
+      });
+    } else {
+    var fd = new FormData(); fd.append('file', _selectedFileForChat); fd.append('upload_preset', CLOUDINARY_PRESET); fd.append('resource_type','auto');
+    var fname = _selectedFileForChat.name;
+
+    // 업로드 진행 상태 UI 표시 (진행률 바 + 퍼센트 + 취소버튼 비활성) - 클릭 즉시, 네트워크 응답과 무관하게 먼저 표시
+    var percentEl = document.getElementById('kchat-file-percent');
+    var trackEl = document.getElementById('kchat-file-progress-track');
+    var fillEl = document.getElementById('kchat-file-progress-fill');
+    var cancelBtn = document.getElementById('kchat-file-cancel-btn');
+    var nameEl = document.getElementById('kchat-file-name');
+    var prevEl = document.getElementById('kchat-file-prev');
+    if (prevEl) prevEl.style.display = 'flex'; // 만일을 대비해 강제로 보이게
+    if (nameEl) nameEl.textContent = '⬆ 업로드 준비 중... ' + fname;
+    if (percentEl) { percentEl.style.display = 'inline'; percentEl.textContent = ''; }
+    if (trackEl) { trackEl.style.display = 'block'; trackEl.classList.add('kchat-progress-indeterminate'); }
+    if (fillEl) fillEl.style.width = '15%'; // 진행률 계산 전에도 뭔가 채워진 느낌을 즉시 부여
+    if (cancelBtn) { cancelBtn.disabled = true; cancelBtn.style.opacity = '0.4'; cancelBtn.style.cursor = 'not-allowed'; }
+    console.log('[파일업로드] 시작:', fname, (_selectedFileForChat.size/1024).toFixed(0)+'KB');
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', 'https://api.cloudinary.com/v1_1/'+CLOUDINARY_CLOUD+'/auto/upload');
+
+    // 실제 전송이 시작되는 시점 (네트워크 요청이 브라우저 큐를 떠나는 순간) - 여기서 확실히 "업로드 중" 텍스트로 전환
+    xhr.upload.onloadstart = function() {
+      console.log('[파일업로드] 전송 시작됨');
+      if (nameEl) nameEl.textContent = '⬆ 업로드 중... ' + fname;
+      if (trackEl) trackEl.classList.remove('kchat-progress-indeterminate');
+      if (percentEl) percentEl.textContent = '0%';
+      if (fillEl) fillEl.style.width = '0%';
+    };
+
+    xhr.upload.onprogress = function(e) {
+      if (!e.lengthComputable) return;
+      var pct = Math.round((e.loaded / e.total) * 100);
+      if (fillEl) fillEl.style.width = pct + '%';
+      if (percentEl) percentEl.textContent = pct + '%';
+    };
+
+    xhr.onload = function() {
+      console.log('[파일업로드] 응답 수신, status=', xhr.status);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        var data = JSON.parse(xhr.responseText);
+        if (!data.secure_url) {
+          // HTTP 상태는 200이어도, 업로드 프리셋이 그 파일 형식을 막아둔 경우 등에는
+          // secure_url 없이 에러 정보만 오는 경우가 있어서, 이것도 실패로 처리해야 함
+          // (예전엔 이 경우를 체크 안 해서, fileUrl이 undefined인 깨진 채팅 메시지가
+          // 그냥 만들어져서 "파일이 안 열림" 문제가 생겼음)
+          var reason = (data.error && data.error.message) ? data.error.message : '지원되지 않는 파일 형식일 수 있습니다';
+          console.error('[파일업로드] secure_url 없음:', data);
+          alert('⚠️ 파일 업로드에 실패했습니다: ' + reason);
+          resetKChatFileUploadUI();
+          return;
+        }
+        var msg = {fileUrl:data.secure_url, fileName:fname, senderUid:currentUser.uid, senderName:currentProfile.name, senderAvatar:currentProfile.avatar||null, readBy:[currentUser.uid], createdAt:serverTimestamp()};
+        addDoc(collection(db, 'chatRooms', _curChatRoomId, 'messages'), msg).then(function(){ _afterSend(msg); });
+        cancelKChatFile();
+      } else {
+        console.error('[파일업로드] 서버 오류 응답:', xhr.status, xhr.responseText);
+        alert('파일 업로드 실패: 서버 오류 (' + xhr.status + ')');
+        resetKChatFileUploadUI();
+      }
+    };
+
+    xhr.onerror = function() {
+      console.error('[파일업로드] 네트워크 오류 (xhr.onerror)');
+      alert('파일 업로드 실패: 네트워크 오류');
+      resetKChatFileUploadUI();
+    };
+
+    xhr.ontimeout = function() {
+      console.error('[파일업로드] 타임아웃');
+      alert('파일 업로드 실패: 시간 초과');
+      resetKChatFileUploadUI();
+    };
+
+    xhr.timeout = 120000; // 2분 제한
+    xhr.send(fd);
+    }
+  }
+
+  var input = document.getElementById('kchat-input');
+  var text = input ? input.value.replace(/^\s*\n+|\s+$/g,'') : '';
+  if (text && !text.trim()) text = '';
+  if (text) {
+    var msg = {text:text, senderUid:currentUser.uid, senderName:currentProfile.name, senderAvatar:currentProfile.avatar||null, readBy:[currentUser.uid], createdAt:serverTimestamp()};
+    addDoc(collection(db, 'chatRooms', _curChatRoomId, 'messages'), msg).then(function(){ _afterSend(msg); });
+    if (input) { input.value = ''; kchatGrow(input); }
+  }
+};
+// 채팅 입력: 줄바꿈 지원 - PC는 Enter 전송·Shift+Enter 줄바꿈, 휴대폰은 Enter가 줄바꿈이고 전송 버튼으로 보냄.
+// 한글 조합 중(isComposing) Enter는 무시해야 마지막 글자가 두 번 보내지지 않음
+var _kchatTouchMq = null;
+window.kchatKey = function(e){
+  if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
+  if (!_kchatTouchMq && window.matchMedia) _kchatTouchMq = window.matchMedia('(hover: none) and (pointer: coarse)');
+  var touch = !!(_kchatTouchMq && _kchatTouchMq.matches);
+  if (e.shiftKey || touch) return;
+  e.preventDefault(); sendKChatMsg();
+};
+// 입력할 때마다 높이를 'auto'로 풀었다가 다시 재면 채팅 화면 전체를 두 번씩 다시 계산함(휴대폰에서 글자마다 버벅임).
+// → 한 프레임에 한 번만, 그리고 줄 수가 바뀔 수 있을 때(넘침·글자 줄어듦·비움)만 다시 잼
+window.kchatGrow = function(el){
+  if(!el) return;
+  var len = el.value.length, prev = el._kgLen == null ? -1 : el._kgLen;
+  el._kgLen = len;
+  if (el._kgRaf) return;
+  el._kgRaf = requestAnimationFrame(function(){
+    el._kgRaf = null;
+    var shrink = el.value.length < prev || !el.value;
+    if (!shrink && el.scrollHeight <= el.clientHeight + 1) return; // 줄이 안 늘었으면 아무것도 안 함
+    if (shrink) el.style.height = 'auto';
+    var h = Math.min(120, el.scrollHeight) + 'px';
+    if (el.style.height !== h) el.style.height = h;
+  });
+};
+
+// 메시지 렌더 (그룹핑 + 읽음 표시)
+function renderKChatMessages(msgs) {
+  var area = document.getElementById('kchat-area');
+  if (!area) return;
+  if (!msgs.length) {
+    area.innerHTML = '<div style="text-align:center;color:var(--tx4);font-size:13px;padding:40px;">대화를 시작해보세요</div>';
+    return;
+  }
+  var totalParticipants = (_curChatRoomMeta && _curChatRoomMeta.participants || []).length;
+  var out = _kchatHasMore ? '<div style="text-align:center;padding:10px 0 4px;"><button type="button" onclick="loadOlderKChat()" style="padding:6px 14px;border-radius:14px;border:1px solid var(--border);background:var(--surface);color:var(--tx2);font-size:12px;cursor:pointer;">이전 대화 더 보기</button></div>' : '';
+  var lastDate = '', lastSender = '', lastMinute = '';
+  for (var i=0; i<msgs.length; i++) {
+    var m = msgs[i];
+    var ts = m.createdAt ? m.createdAt.toDate() : new Date();
+    var dateStr = _kchatFmtDate(ts);
+    var timeStr = _kchatFmtTime(ts);
+    var minuteKey = ts.getFullYear()+'-'+ts.getMonth()+'-'+ts.getDate()+'-'+ts.getHours()+'-'+ts.getMinutes();
+    if (dateStr !== lastDate) {
+      out += '<div class="kchat-date"><span>'+dateStr+'</span></div>';
+      lastDate = dateStr; lastSender = '';
+    }
+    var isMe = m.senderUid === currentUser.uid;
+    var continued = (lastSender === m.senderUid);
+    // 다음 메시지가 같은 사람/분이면 시간 숨김
+    var showTime = true;
+    if (i < msgs.length-1) {
+      var next = msgs[i+1];
+      var nTs = next.createdAt ? next.createdAt.toDate() : new Date();
+      var nMin = nTs.getFullYear()+'-'+nTs.getMonth()+'-'+nTs.getDate()+'-'+nTs.getHours()+'-'+nTs.getMinutes();
+      if (next.senderUid === m.senderUid && nMin === minuteKey) showTime = false;
+    }
+    var avatarText = (m.senderName||'?').slice(0,1);
+    var avatarStyle = '';
+    if (m.senderAvatar && !isMe) {
+      if (m.senderAvatar.type === 'image') {
+        avatarStyle = 'background-image:url(\''+_thumbUrl(m.senderAvatar.value, 36)+'\');background-size:cover;background-position:center;background-color:transparent;';
+        avatarText = '';
+      } else if (m.senderAvatar.type === 'emoji') {
+        avatarText = m.senderAvatar.value;
+        avatarStyle = 'font-size:18px;background:transparent;';
+      }
+    }
+    var nameLine = (isMe || continued) ? '' : '<div class="kchat-name">'+escapeHtml(m.senderName||'')+'</div>';
+    var bubble;
+    if (m.fileUrl) {
+      bubble = '<a href="'+_cloudinaryDownloadUrl(m.fileUrl)+'" target="_blank" rel="noopener" download="'+escapeHtml(m.fileName||'file')+'" class="kchat-file">'+_chatFileIcon(m.fileName)+' '+escapeHtml(m.fileName||'파일')+'</a>';
+    } else {
+      var safeText = escapeHtml(m.text||'');
+      bubble = '<div class="kchat-bubble">'+safeText+'</div>';
+    }
+    // 읽음 처리: readBy 길이가 전체 인원수보다 적으면 안읽은 사람 수 표시
+    var readByCount = (m.readBy||[]).length;
+    var unreadCount = totalParticipants - readByCount;
+    var readMark = '';
+    if (isMe && unreadCount > 0) readMark = '<div class="kchat-read">'+unreadCount+'</div>';
+    out += '<div class="kchat-row '+(isMe?'mine':'theirs')+(continued?' continued':'')+'">'
+      + '<div class="kchat-msg-avatar" style="'+avatarStyle+(isMe?'':'cursor:pointer;')+'"'+(isMe?'':' onclick="openChatPartnerProfile(\''+m.senderUid+'\')"')+'>'+avatarText+'</div>'
+      + '<div class="kchat-bubble-wrap">'
+      + nameLine
+      + '<div class="kchat-bubble-row">'
+      + bubble
+      + '<div class="kchat-meta">'
+      + readMark
+      + (showTime ? '<div class="kchat-time">'+timeStr+'</div>' : '')
+      + '</div>'
+      + '</div>'
+      + '</div>'
+      + '</div>';
+    lastSender = m.senderUid;
+    lastMinute = minuteKey;
+  }
+  // 내용이 그대로면(읽음 표시만 내 쪽에서 반영된 경우 등) DOM을 새로 만들지 않음 - 스크롤·입력 끊김 방지
+  if (out === _kchatLastHtml && area.querySelector('.kchat-row')) return;
+  _kchatLastHtml = out;
+  var srch = document.getElementById('kchat-msg-search');
+  area.innerHTML = out;
+  if (srch && srch.value && window.filterKChatMessages) filterKChatMessages(srch.value);
+}
+
+window.filterKChatMessages = function(q) {
+  // 단순 하이라이트 (검색 결과로 좁히지 않고 단순 강조)
+  q = (q||'').trim();
+  var rows = document.querySelectorAll('#kchat-area .kchat-row');
+  rows.forEach(function(r){
+    var bubble = r.querySelector('.kchat-bubble');
+    if (!bubble) return;
+    var text = bubble.textContent;
+    if (!q) {
+      bubble.innerHTML = text.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      r.style.opacity = '1';
+      return;
+    }
+    if (text.toLowerCase().includes(q.toLowerCase())) {
+      var re = new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi');
+      bubble.innerHTML = text.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(re, '<mark style="background:#FAE100;border-radius:3px;padding:0 2px;color:#1A1010;">$1</mark>');
+      r.style.opacity = '1';
+    } else {
+      r.style.opacity = '0.3';
+    }
+  });
+};
+
+// ═══════════════════════════════════════════════
+// 새 채팅 모달
+// ═══════════════════════════════════════════════
+var _newChatSelected = []; // 선택된 사용자 [{uid, name, role}]
+
+window.openNewChatModal = function() {
+  _newChatSelected = [];
+  openModal('modal-new-chat');
+  loadNewChatTargets();
+};
+
+function loadNewChatTargets() {
+  var myRole = (currentProfile && currentProfile.role) || 'student';
+  var myBranch = getBranch();
+  // 학생: 선생님/마스터만 / 선생님/마스터: 학생+선생님 모두
+  var roleFilter;
+  if (myRole === 'student') roleFilter = ['teacher','master'];
+  else roleFilter = ['student','teacher','master'];
+  
+  getDocs(query(collection(db, 'users'), where('role','in',roleFilter))).then(function(snap){
+    var users = snap.docs
+      .filter(function(d){
+        var data = d.data();
+        if (data.suspended === true) return false;
+        var b = data.branch;
+        if (b && b !== myBranch) return false;
+        return d.id !== currentUser.uid;
+      })
+      .map(function(d){return Object.assign({uid:d.id}, d.data());});
+    
+    // 정렬: 선생님/마스터 먼저, 그 다음 학생
+    users.sort(function(a,b){
+      var ra = a.role==='master'?0 : a.role==='teacher'?1 : 2;
+      var rb = b.role==='master'?0 : b.role==='teacher'?1 : 2;
+      if (ra !== rb) return ra - rb;
+      return (a.name||'').localeCompare(b.name||'');
+    });
+    renderNewChatTargets(users);
+  });
+}
+
+function renderNewChatTargets(users) {
+  var list = document.getElementById('new-chat-targets');
+  if (!list) return;
+  if (!users.length) { list.innerHTML = '<div style="color:var(--tx3);font-size:13px;text-align:center;padding:20px;">대화 가능한 사용자가 없습니다</div>'; return; }
+  list.innerHTML = users.map(function(u){
+    var roleLabel = u.role==='master'?'마스터' : u.role==='teacher'?'선생님' : '학생';
+    var bg = u.role==='master' ? 'background:linear-gradient(135deg,#B91C1C,#7B1D1D);' 
+          : u.role==='teacher' ? 'background:linear-gradient(135deg,var(--burg),var(--burg2));'
+          : 'background:linear-gradient(135deg,#D4A04A,#B8841A);';
+    var avatarHtml = avatarCircleHtml(u.name, u.avatar, 36, {bg:bg, fontSizePx:14});
+    return '<div class="newchat-row" data-uid="'+u.uid+'" data-name="'+u.name+'" data-role="'+u.role+'" onclick="toggleNewChatTarget(this)">'
+      +'<div class="newchat-checkbox"></div>'
+      +'<div class="kchat-avatar" style="width:38px;height:38px;">'+avatarHtml+'</div>'
+      +'<div style="flex:1;min-width:0;">'
+      +'<div style="font-size:14px;font-weight:600;color:var(--tx1);">'+u.name+'</div>'
+      +'<div style="font-size:11px;color:var(--tx3);">'+roleLabel+(u.school?' · '+u.school:'')+(u.grade?' · '+u.grade:'')+'</div>'
+      +'</div>'
+      +'</div>';
+  }).join('');
+}
+
+window.toggleNewChatTarget = function(el) {
+  var uid = el.dataset.uid, name = el.dataset.name, role = el.dataset.role;
+  var idx = _newChatSelected.findIndex(function(u){return u.uid === uid;});
+  if (idx >= 0) {
+    _newChatSelected.splice(idx, 1);
+    el.classList.remove('selected');
+  } else {
+    _newChatSelected.push({uid:uid, name:name, role:role});
+    el.classList.add('selected');
+  }
+  // 선택 개수 표시
+  var sc = document.getElementById('new-chat-selected-count');
+  if (sc) sc.textContent = _newChatSelected.length;
+  // 단톡 이름 입력 표시/숨김
+  var gn = document.getElementById('new-chat-group-name-wrap');
+  if (gn) gn.style.display = _newChatSelected.length >= 2 ? 'block' : 'none';
+};
+
+window.startNewChat = function() {
+  if (!_newChatSelected.length) { alert('대화 상대를 선택해주세요'); return; }
+  var myRole = currentProfile.role;
+  var isGroup = _newChatSelected.length >= 2;
+  var groupName = '';
+  if (isGroup) {
+    groupName = (document.getElementById('new-chat-group-name')||{}).value || '';
+    if (!groupName.trim()) {
+      groupName = _newChatSelected.map(function(u){return u.name;}).join(', ');
+      if (groupName.length > 20) groupName = groupName.slice(0,20)+'...';
+    }
+  }
+
+  var participants = [currentUser.uid].concat(_newChatSelected.map(function(u){return u.uid;}));
+  var participantNames = {};
+  var participantRoles = {};
+  participantNames[currentUser.uid] = currentProfile.name;
+  participantRoles[currentUser.uid] = myRole;
+  _newChatSelected.forEach(function(u){
+    participantNames[u.uid] = u.name;
+    participantRoles[u.uid] = u.role;
+  });
+
+  var unread = {};
+  participants.forEach(function(uid){unread[uid] = 0;});
+
+  if (!isGroup) {
+    // 1:1: 중복 체크
+    var roomId = _make1on1RoomId(currentUser.uid, _newChatSelected[0].uid);
+    getDoc(doc(db,'chatRooms', roomId)).then(function(d){
+      if (d.exists()) {
+        // 기존 방으로 입장
+        closeModal('modal-new-chat');
+        openKChatRoom(roomId);
+      } else {
+        // 새로 생성
+        setDoc(doc(db,'chatRooms', roomId), {
+          participants: participants,
+          participantNames: participantNames,
+          participantRoles: participantRoles,
+          isGroup: false,
+          branch: getBranch(),
+          unread: unread,
+          createdBy: currentUser.uid,
+          createdAt: serverTimestamp()
+        }).then(function(){
+          closeModal('modal-new-chat');
+          openKChatRoom(roomId);
+        }).catch(function(e){alert('대화방 생성 실패: '+e.message);});
+      }
+    });
+  } else {
+    // 단톡: 새로 생성
+    addDoc(collection(db,'chatRooms'), {
+      participants: participants,
+      participantNames: participantNames,
+      participantRoles: participantRoles,
+      isGroup: true,
+      groupName: groupName.trim(),
+      branch: getBranch(),
+      unread: unread,
+      createdBy: currentUser.uid,
+      createdAt: serverTimestamp()
+    }).then(function(ref){
+      closeModal('modal-new-chat');
+      openKChatRoom(ref.id);
+    }).catch(function(e){alert('단톡방 생성 실패: '+e.message);});
+  }
+};
+
+window.filterNewChatTargets = function(q) {
+  q = (q||'').trim();
+  document.querySelectorAll('#new-chat-targets .newchat-row').forEach(function(row){
+    var n = row.dataset.name || '';
+    row.style.display = (!q || n.includes(q)) ? 'flex' : 'none';
+  });
+};
+
+function _renderKakaoMessages(msgs, myUid) {
+  if (!msgs.length) return '<div style="text-align:center;color:rgba(0,0,0,0.5);font-size:13px;padding:30px;">대화를 시작해보세요</div>';
+  var out = '';
+  var lastDate = '';
+  var lastSender = '';
+  var lastMinute = '';
+  for (var i=0; i<msgs.length; i++) {
+    var m = msgs[i];
+    var ts = m.createdAt ? m.createdAt.toDate() : new Date();
+    var dateStr = ts.toLocaleDateString('ko-KR', {year:'numeric', month:'long', day:'numeric', weekday:'long'});
+    var timeStr = ts.toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'});
+    var minuteKey = ts.getFullYear()+'-'+ts.getMonth()+'-'+ts.getDate()+'-'+ts.getHours()+'-'+ts.getMinutes();
+    // 날짜 구분선
+    if (dateStr !== lastDate) {
+      out += '<div class="kchat-date"><span>'+dateStr+'</span></div>';
+      lastDate = dateStr;
+      lastSender = '';
+    }
+    var isMe = m.senderUid === myUid;
+    var sameSender = (lastSender === m.senderUid);
+    var sameMinute = (lastMinute === minuteKey);
+    var continued = sameSender;
+    var showTime = !sameMinute || (i === msgs.length-1) || (i < msgs.length-1 && msgs[i+1].senderUid !== m.senderUid);
+    // 다음 메시지가 같은 사람/같은 분이면 시간 숨김
+    if (i < msgs.length-1) {
+      var next = msgs[i+1];
+      var nextTs = next.createdAt ? next.createdAt.toDate() : new Date();
+      var nextMin = nextTs.getFullYear()+'-'+nextTs.getMonth()+'-'+nextTs.getDate()+'-'+nextTs.getHours()+'-'+nextTs.getMinutes();
+      if (next.senderUid === m.senderUid && nextMin === minuteKey) showTime = false;
+    }
+    var avatar = avatarCircleHtml(m.senderName, m.senderAvatar, 34, {fontSizePx:12, onclick: (!isMe && m.senderUid) ? "openChatPartnerProfile('"+m.senderUid+"')" : null});
+    var nameLine = isMe || continued ? '' : '<div class="kchat-name">'+(m.senderName||'')+'</div>';
+    var bubbleContent;
+    if (m.fileUrl) {
+      bubbleContent = '<a href="'+_cloudinaryDownloadUrl(m.fileUrl)+'" target="_blank" rel="noopener" download="'+escapeHtml(m.fileName||'file')+'" class="kchat-file">'+_chatFileIcon(m.fileName)+' '+(m.fileName||'파일')+'</a>';
+    } else {
+      bubbleContent = '<div class="kchat-bubble">'+(m.text||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</div>';
+    }
+    out += '<div class="kchat-row '+(isMe?'mine':'theirs')+(continued?' continued':'')+'">'
+      + avatar
+      + '<div class="kchat-bubble-wrap">'
+      + nameLine
+      + '<div class="kchat-bubble-row">'
+      + bubbleContent
+      + (showTime ? '<div class="kchat-time">'+timeStr+'</div>' : '')
+      + '</div>'
+      + '</div>'
+      + '</div>';
+    lastSender = m.senderUid;
+    lastMinute = minuteKey;
+  }
+  return out;
+}
+
+function _insertDateDividers(msgs, renderFn){
+  var result=[];
+  var lastDate='';
+  msgs.forEach(function(m){
+    var d=m.createdAt?m.createdAt.toDate():null;
+    if(d){
+      var dateStr=d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
+      if(dateStr!==lastDate){
+        result.push({_isDivider:true,date:d});
+        lastDate=dateStr;
+      }
+    }
+    result.push(m);
+  });
+  return result.map(function(item){
+    if(item._isDivider) return _makeDateDivider(item.date);
+    return renderFn(item);
+  }).join('');
+}
+
+function renderTChatMessages(msgs,highlight){
+  var area=document.getElementById('teacher-chat-area');
+  if(!area) return;
+  if(!msgs.length){area.innerHTML='<div style="text-align:center;color:rgba(0,0,0,0.5);font-size:13px;padding:30px;">'+(highlight?'검색 결과 없음':'대화 내역이 없습니다')+'</div>';return;}
+  var wasBottom=area.scrollHeight-area.scrollTop-area.clientHeight<60;
+  if (highlight) {
+    // 검색 모드는 단순히 매칭된 메시지만 나열
+    area.innerHTML = msgs.map(function(m){
+      var isMe=m.senderUid===currentUser.uid;
+      var time=m.createdAt?m.createdAt.toDate().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}):'';
+      var date=m.createdAt?m.createdAt.toDate().toLocaleDateString('ko-KR'):'';
+      var text=(m.text||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      var re=new RegExp('('+highlight.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi');
+      text=text.replace(re,'<mark style="background:#FAE100;border-radius:3px;padding:0 2px;color:#1A1010;">$1</mark>');
+      return '<div class="kchat-row '+(isMe?'mine':'theirs')+'">'
+        +avatarCircleHtml(m.senderName, m.senderAvatar, 34, {fontSizePx:12, onclick: (!isMe && m.senderUid) ? "openChatPartnerProfile('"+m.senderUid+"')" : null})
+        +'<div class="kchat-bubble-wrap">'
+        +(isMe?'':'<div class="kchat-name">'+(m.senderName||'')+'</div>')
+        +'<div class="kchat-bubble-row">'
+        +'<div class="kchat-bubble">'+text+'</div>'
+        +'<div class="kchat-time">'+date+' '+time+'</div>'
+        +'</div></div></div>';
+    }).join('');
+  } else {
+    area.innerHTML=_renderKakaoMessages(msgs, currentUser.uid);
+  }
+  if(wasBottom) area.scrollTop=area.scrollHeight;
+}
+window.openTeacherChatRoom=function(uid,name){
+  document.getElementById('tchat-room-list').style.display='none';
+  var view=document.getElementById('tchat-room-view');
+  view.style.display='block';
+  var title=document.getElementById('tchat-room-title');
+  if(title) title.textContent=name;
+  var msgSearch=document.getElementById('tchat-msg-search');
+  if(msgSearch) msgSearch.value='';
+  teacherChatUid=uid;
+  _tchatAllMessages=[];
+  pushHistory(function(){ closeTeacherChatRoom(); });
+  if(unsubChat) unsubChat();
+  var roomId=_chatRoomId(uid, currentUser.uid);
+  unsubChat=onSnapshot(query(collection(db,'chats',roomId,'messages'),orderBy('createdAt','asc')),function(snap){
+    _tchatAllMessages=snap.docs.map(function(d){return d.data();});
+    var q=(document.getElementById('tchat-msg-search')||{}).value||'';
+    filterTChatMessages(q);
+  });
+};
+window.closeTeacherChatRoom=function(){
+  if(unsubChat){unsubChat();unsubChat=null;}
+  teacherChatUid=null;
+  document.getElementById('tchat-room-list').style.display='';
+  document.getElementById('tchat-room-view').style.display='none';
+};
+window.sendTeacherMsg=function(){
+  if(!teacherChatUid){alert('학생을 먼저 선택해주세요.');return;}
+  var roomId=_chatRoomId(teacherChatUid, currentUser.uid);
+  if(teacherSelectedFile){
+    _uploadChatFileAndSend(teacherSelectedFile, roomId);
+    teacherSelectedFile=null;var fi=document.getElementById('teacher-file-input');if(fi)fi.value='';
+  }
+  var input=document.getElementById('teacher-chat-input');
+  var text=input?input.value.trim():'';
+  if(text){
+    addDoc(collection(db,'chats',roomId,'messages'),{text:text,senderUid:currentUser.uid,senderName:currentProfile.name,createdAt:serverTimestamp()});
+    _sendChatNotif(teacherChatUid, currentProfile.name, text);
+    if(input)input.value='';
+  }
+};
+
+function buildTNotice(){
+  return loadStudentList().then(function(students){
+    var sel=document.getElementById('notice-target');
+    if(sel) sel.innerHTML='<option value="all">전체 학생</option>'+students.map(function(s){return '<option value="'+s.name+'">'+s.name+'</option>';}).join('');
+    return getDocs(query(collection(db,'notices'),orderBy('createdAt','desc'))).then(function(snap){
+      var myBranch=getBranch();
+      var notices=snap.docs.filter(function(d){var b=d.data().branch;return !b||b===myBranch;}).map(function(d){return Object.assign({id:d.id},d.data());});
+
+      // 새 공지 발송 카드
+      var sendCard = '<div class="card card-burg">'
+        +'<div class="card-h"><div class="card-title">📢 새 공지 발송</div></div>'
+        +'<div style="font-size:13px;color:var(--tx2);line-height:1.6;margin-bottom:12px;">학생들에게 일괄/개별 공지를 보낼 수 있어요. 발송 즉시 학생 화면에 표시됩니다.</div>'
+        +'<button class="modal-btn primary" onclick="openModal(\'modal-notice\')" style="margin:0;">새 공지 작성</button>'
+        +'</div>';
+
+      // 발송 내역 - 카드형
+      var historyTitle = '<div style="display:flex;align-items:center;justify-content:space-between;margin:8px 0;"><div class="section-label" style="margin:0;">발송 내역</div><div style="font-size:12px;color:var(--tx3);">총 '+notices.length+'건</div></div>';
+      
+      var historyItems;
+      if (!notices.length) {
+        historyItems = '<div class="card" style="text-align:center;color:var(--tx3);font-size:13px;padding:30px;">발송된 공지가 없습니다</div>';
+      } else {
+        historyItems = notices.map(function(n){
+          var date=n.createdAt?n.createdAt.toDate().toLocaleDateString('ko-KR'):'';
+          var time=n.createdAt?n.createdAt.toDate().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}):'';
+          var readCount=(n.readBy||[]).length;
+          var totalCount = n.target==='all' ? students.length : 1;
+          var readPct = totalCount > 0 ? Math.round(readCount/totalCount*100) : 0;
+          var content = (n.content||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+          var target = n.target==='all'?'전체 학생':n.target;
+          return '<div class="card" style="padding:14px;border-left:3px solid var(--burg);">'
+            +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px;">'
+            +'<div style="flex:1;min-width:0;">'
+            +'<div style="font-size:15px;font-weight:700;color:var(--tx1);margin-bottom:3px;">'+n.title+'</div>'
+            +'<div style="font-size:11px;color:var(--tx3);">'+date+' '+time+' · 수신: <b style="color:var(--burg);font-weight:600;">'+target+'</b></div>'
+            +'</div>'
+            +'<button data-nid="'+n.id+'" class="del-notice-btn" style="padding:6px 10px;background:var(--red-l);border:1px solid rgba(185,28,28,0.2);border-radius:6px;color:var(--red);font-size:11px;cursor:pointer;font-weight:600;flex-shrink:0;">삭제</button>'
+            +'</div>'
+            +'<div style="background:var(--surface2);border-radius:8px;padding:11px 13px;font-size:13px;color:var(--tx2);line-height:1.6;margin-bottom:10px;white-space:pre-wrap;">'+content+'</div>'
+            +'<div style="display:flex;align-items:center;gap:8px;">'
+            +'<div style="flex:1;display:flex;align-items:center;gap:8px;">'
+            +'<div style="font-size:11px;color:var(--tx3);">읽음</div>'
+            +'<div style="flex:1;max-width:160px;height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;"><div style="width:'+readPct+'%;height:100%;background:var(--green);"></div></div>'
+            +'<div style="font-size:11px;font-weight:600;color:var(--green);">'+readCount+'/'+totalCount+' ('+readPct+'%)</div>'
+            +'</div>'
+            +'</div>'
+            +'</div>';
+        }).join('');
+      }
+      return sendCard + historyTitle + historyItems;
+    });
+  });
+}
+// 공지 삭제 - 이벤트 위임 방식 (id를 data-nid 속성에서 읽음)
+document.addEventListener('click', function(e){
+  var btn=e.target.closest('.del-notice-btn');
+  if(!btn) return;
+  var nid=btn.getAttribute('data-nid');
+  if(!nid) return;
+  if(!confirm('이 공지를 삭제하시겠습니까?')) return;
+  deleteDoc(doc(db,'notices',nid)).then(function(){invalidateTeacherTabCache(5);renderTeacher(5);}).catch(function(err){alert('삭제 실패: '+err.message);});
+});
+
+window.openStudyTimeEditor=function(){
+  var el=document.getElementById('study-time-editor');
+  if(!el) return;
+  if(el.style.display!=='none'){el.style.display='none';return;}
+  el.style.display='block';
+  el.innerHTML='<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:4px">'
+    +'<div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:10px">✏️ 학습시간 수정</div>'
+    +'<select class="modal-select" id="ste-student" onchange="steLoadDates(this.value)" style="margin-bottom:8px"><option value="">학생 선택</option></select>'
+    +'<div id="ste-dates" style="display:none"><select class="modal-select" id="ste-date" onchange="steLoadTodos(this.value)" style="margin-bottom:8px"><option value="">날짜 선택</option></select></div>'
+    +'<div id="ste-todos"></div>'
+    +'</div>';
+  // 학생 목록 로드
+  loadStudentList().then(function(students){
+    var sel=document.getElementById('ste-student');
+    if(!sel) return;
+    sel.innerHTML='<option value="">학생 선택</option>'+students.map(function(s){return '<option value="'+s.uid+'">'+s.name+'</option>';}).join('');
+  });
+};
+window.steLoadDates=function(uid){
+  if(!uid) return;
+  var datesEl=document.getElementById('ste-dates');
+  var todosEl=document.getElementById('ste-todos');
+  if(datesEl) datesEl.style.display='none';
+  if(todosEl) todosEl.innerHTML='';
+  getDocs(query(collection(db,'todos'),where('uid','==',uid))).then(function(snap){
+    var dateSet={};
+    snap.docs.forEach(function(d){var dt=d.data().date;if(dt)dateSet[dt]=true;});
+    var dates=Object.keys(dateSet).sort().reverse();
+    var sel=document.getElementById('ste-date');
+    if(!sel) return;
+    sel.innerHTML='<option value="">날짜 선택</option>'+dates.map(function(dt){return '<option value="'+dt+'|'+uid+'">'+dt+'</option>';}).join('');
+    if(datesEl) datesEl.style.display='block';
+  });
+};
+window.steLoadTodos=function(val){
+  if(!val) return;
+  var parts=val.split('|');
+  var date=parts[0], uid=parts[1];
+  var el=document.getElementById('ste-todos');
+  if(!el) return;
+  el.innerHTML='<div style="color:var(--tx3);font-size:12px">불러오는 중...</div>';
+  getDocs(query(collection(db,'todos'),where('uid','==',uid),where('date','==',date))).then(function(snap){
+    if(snap.empty){el.innerHTML='<div style="color:var(--tx3);font-size:12px">할일 없음</div>';return;}
+    var todos=snap.docs.map(function(d){return Object.assign({_id:d.id},d.data());}).sort(function(a,b){var at=a.createdAt?a.createdAt.toMillis():0,bt=b.createdAt?b.createdAt.toMillis():0;return at-bt;});
+    el.innerHTML=todos.map(function(t){
+      var currentTime=t.studyTime||'';
+      var subj=subjectNames[t.subject]||t.subject||'';
+      return '<div style="background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:8px">'
+        +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+        +'<span class="subject-tag subj-'+(t.subject||'ko')+'" style="font-size:10px">'+subj+'</span>'
+        +'<span style="font-size:13px;flex:1">'+t.title+'</span>'
+        +'<span style="font-size:11px;color:'+(t.studyTime?'var(--burg)':'var(--tx3)')+'">현재: '+(t.studyTime||'없음')+'</span>'
+        +'</div>'
+        +'<div style="display:flex;gap:6px;align-items:center">'
+        +'<span style="font-size:11px;color:var(--tx3);flex-shrink:0">수정:</span>'
+        +'<input id="ste-h-'+t._id+'" type="number" min="0" max="23" placeholder="시" value="'+(currentTime?currentTime.split(':')[0]:'')+'" style="width:50px;padding:6px;background:var(--surface3);border:1px solid var(--border);border-radius:6px;color:#fff;font-size:13px;text-align:center"/>'
+        +'<span style="color:var(--tx3)">:</span>'
+        +'<input id="ste-m-'+t._id+'" type="number" min="0" max="59" placeholder="분" value="'+(currentTime?currentTime.split(':')[1]:'')+'" style="width:50px;padding:6px;background:var(--surface3);border:1px solid var(--border);border-radius:6px;color:#fff;font-size:13px;text-align:center"/>'
+        +'<span style="color:var(--tx3)">:</span>'
+        +'<input id="ste-s-'+t._id+'" type="number" min="0" max="59" placeholder="초" value="'+(currentTime?currentTime.split(':')[2]||'00':'')+'" style="width:50px;padding:6px;background:var(--surface3);border:1px solid var(--border);border-radius:6px;color:#fff;font-size:13px;text-align:center"/>'
+        +'<button onclick="steUpdate(\''+t._id+'\')" style="padding:6px 12px;background:rgba(61,186,126,0.12);border:1px solid rgba(61,186,126,0.25);border-radius:6px;color:var(--green);font-size:12px;cursor:pointer;flex-shrink:0">저장</button>'
+        +'<button onclick="steClear(\''+t._id+'\')" style="padding:6px 10px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:6px;color:var(--red);font-size:12px;cursor:pointer;flex-shrink:0">삭제</button>'
+        +'</div>'
+        +'</div>';
+    }).join('');
+  });
+};
+window.steUpdate=function(todoId){
+  var h=parseInt(document.getElementById('ste-h-'+todoId).value)||0;
+  var m=parseInt(document.getElementById('ste-m-'+todoId).value)||0;
+  var s=parseInt(document.getElementById('ste-s-'+todoId).value)||0;
+  if(h>23||m>59||s>59){alert('올바른 시간을 입력해주세요.');return;}
+  var timeStr=h+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+  updateDoc(doc(db,'todos',todoId),{studyTime:timeStr,timerStartAt:null,timerAccum:0,timerRunning:false,timerStartedAtMs:null,timerAccumMs:0}).then(function(){
+    alert('수정 완료: '+timeStr);
+    // 현재 표시 업데이트
+    var cur=document.querySelector('[id="ste-h-'+todoId+'"]');
+    if(cur && cur.closest('div')) {
+      var badge=cur.closest('div').parentElement.querySelector('span[style*="gold"]');
+      if(badge) badge.textContent='현재: '+timeStr;
+    }
+  }).catch(function(e){alert('실패: '+e.message);});
+};
+window.steClear=function(todoId){
+  if(!confirm('이 할일의 학습시간을 삭제하시겠습니까?')) return;
+  updateDoc(doc(db,'todos',todoId),{studyTime:null,certified:false,timerStartAt:null,timerAccum:0,timerRunning:false,timerStartedAtMs:null,timerAccumMs:0}).then(function(){
+    alert('삭제 완료');
+    var sel=document.getElementById('ste-date');
+    if(sel&&sel.value) steLoadTodos(sel.value);
+  }).catch(function(e){alert('실패: '+e.message);});
+};
+// 지점 직접입력은 onchange에서 처리
+
+// 기존 데이터 branch 마이그레이션
+window.deleteBranch=function(){
+  // 현재 존재하는 지점 목록 먼저 조회
+  getDocs(query(collection(db,'users'),where('role','in',['student','teacher','master']))).then(function(snap){
+    var branchSet={};
+    snap.docs.forEach(function(d){var b=d.data().branch;if(b)branchSet[b]=true;});
+    var branches=Object.keys(branchSet).sort();
+    if(!branches.length){alert('등록된 지점이 없습니다.');return;}
+
+    // 선택 모달 생성
+    var overlay=document.createElement('div');
+    overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    overlay.innerHTML='<div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;width:300px;max-width:90vw">'
+      +'<div style="font-size:16px;font-weight:700;color:var(--red);margin-bottom:16px">🗑 지점 삭제</div>'
+      +'<div style="font-size:13px;color:var(--tx3);margin-bottom:12px">삭제할 지점을 선택하세요<br><span style="color:var(--red);font-size:11px">⚠️ 해당 지점의 모든 데이터가 영구 삭제됩니다</span></div>'
+      +'<select id="delete-branch-select" class="modal-select" style="margin-bottom:16px"><option value="">지점 선택</option>'
+      +branches.map(function(b){return '<option value="'+b+'">'+b+'</option>';}).join('')
+      +'</select>'
+      +'<div style="display:flex;gap:8px">'
+      +'<button onclick="confirmDeleteBranch()" style="flex:1;padding:11px;background:rgba(224,82,82,0.15);border:1px solid rgba(224,82,82,0.3);border-radius:8px;color:var(--red);font-size:13px;font-weight:700;cursor:pointer">삭제</button>'
+      +'<button onclick="this.closest(\'div[style*=fixed]\').remove()" style="flex:1;padding:11px;background:var(--surface3);border:1px solid var(--border);border-radius:8px;color:var(--tx3);font-size:13px;cursor:pointer">취소</button>'
+      +'</div></div>';
+    document.body.appendChild(overlay);
+  }).catch(function(e){alert('지점 목록 조회 실패: '+e.message);});
+};
+
+window.confirmDeleteBranch=function(){
+  var branch=document.getElementById('delete-branch-select').value;
+  if(!branch){alert('지점을 선택해주세요.');return;}
+  if(!confirm('【 경고 】\n\n"'+branch+'" 지점의 모든 데이터를 삭제합니다.\n\n- 학생/선생님/마스터 계정\n- 할일, 플래너, 성적, 상벌점\n- 공지, 채팅, 코멘트, 인강\n\n이 작업은 되돌릴 수 없습니다.\n정말 삭제하시겠습니까?')) return;
+
+  // 오버레이 닫기
+  var overlay=document.querySelector('div[style*="fixed"][style*="9999"]');
+  if(overlay) overlay.remove();
+
+  var colls=['todos','planners','points','notices','comments','lectures','grades','appeals'];
+  var tasks=[];
+  var done=0;
+  var total=colls.length+1;
+
+  function updateProgress(){
+    done++;
+    if(done>=total){
+      Promise.all(tasks).then(function(){
+        alert('"'+branch+'" 지점 데이터 삭제 완료!');
+        invalidateTeacherTabCache(6);renderTeacher(6);
+      }).catch(function(e){alert('일부 삭제 실패: '+e.message);});
+    }
+  }
+
+  getDocs(query(collection(db,'users'),where('branch','==',branch))).then(function(snap){
+    snap.docs.forEach(function(d){tasks.push(deleteDoc(doc(db,'users',d.id)));});
+    updateProgress();
+  }).catch(updateProgress);
+
+  colls.forEach(function(coll){
+    getDocs(query(collection(db,coll),where('branch','==',branch))).then(function(snap){
+      snap.docs.forEach(function(d){tasks.push(deleteDoc(doc(db,coll,d.id)));});
+      updateProgress();
+    }).catch(updateProgress);
+  });
+};
+window.migrateBranch=function(){
+  var branch=prompt('기존 데이터에 적용할 지점명을 입력하세요\n(예: 송정점)', '송정점');
+  if(!branch) return;
+  if(!confirm('모든 기존 데이터(todos, planners, points, notices, comments, lectures, users, grades)에\n지점명 "'+branch+'"을 추가합니다.\n계속할까요?')) return;
+  var collections=['todos','planners','points','notices','comments','lectures','grades'];
+  var total=0, done=0;
+  function migrateCollection(name, cb){
+    getDocs(collection(db,name)).then(function(snap){
+      total+=snap.docs.length;
+      var batch=snap.docs.filter(function(d){return !d.data().branch;});
+      Promise.all(batch.map(function(d){return updateDoc(doc(db,name,d.id),{branch:branch});}))
+        .then(function(){done+=batch.length;cb();});
+    }).catch(cb);
+  }
+  // users 마이그레이션 (branch 없는 계정)
+  getDocs(collection(db,'users')).then(function(snap){
+    return Promise.all(snap.docs.filter(function(d){return !d.data().branch;}).map(function(d){return updateDoc(doc(db,'users',d.id),{branch:branch});}));
+  }).then(function(){
+    var idx=0;
+    function next(){
+      if(idx>=collections.length){alert('마이그레이션 완료!\n지점명 "'+branch+'"이 적용되었습니다.');return;}
+      migrateCollection(collections[idx++],next);
+    }
+    next();
+  }).catch(function(e){alert('오류: '+e.message);});
+};
+window.fixBrokenTimers=function(){
+  if(!confirm('timerRunning 상태가 비정상으로 남아있는 항목을 정리합니다.\n(저장된 학습시간은 삭제되지 않습니다)\n계속할까요?')) return;
+  getDocs(collection(db,'todos')).then(function(snap){
+    var tasks=[];
+    snap.docs.forEach(function(d){
+      var t=d.data();
+      // timerRunning이 true인 채로 남아있는 것만 정리 (studyTime은 건드리지 않음)
+      if(t.timerRunning){
+        tasks.push(updateDoc(doc(db,'todos',d.id),{timerStartAt:null,timerAccum:0,timerRunning:false,timerStartedAtMs:null,timerAccumMs:0}));
+      }
+    });
+    return Promise.all(tasks);
+  }).then(function(){
+    alert('정리 완료! (저장된 학습시간은 유지됩니다. 잘못된 시간은 학습시간 직접 수정 기능을 이용하세요)');
+  }).catch(function(e){alert('오류: '+e.message);});
+};
+window.resetTodayPlanner=function(){
+  if(!confirm('오늘('+getPlannerDate()+') 모든 학생의 플래너 할일과 제출 기록을 초기화합니다.\n이 작업은 되돌릴 수 없습니다. 계속할까요?')) return;
+  var today=getPlannerDate();
+  var tasks=[];
+  // todos 삭제
+  getDocs(query(collection(db,'todos'),where('date','==',today))).then(function(snap){
+    snap.docs.forEach(function(d){tasks.push(deleteDoc(doc(db,'todos',d.id)));});
+    // planners 삭제
+    return getDocs(query(collection(db,'planners'),where('date','==',today)));
+  }).then(function(snap){
+    var _myBR=getBranch();
+    snap.docs.filter(function(d){var b=d.data().branch;return !b||b===_myBR;}).forEach(function(d){
+      tasks.push(deleteDoc(doc(db,'planners',d.id)));
+    });
+    return Promise.all(tasks);
+  }).then(function(){
+    // localStorage plannerPenalty 키도 정리
+    Object.keys(localStorage).forEach(function(k){
+      if(k.includes('plannerPenalty')&&k.includes(today)) localStorage.removeItem(k);
+    });
+    alert('초기화 완료! 오늘('+today+') 플래너와 제출 기록이 모두 삭제되었습니다.');
+    invalidateTeacherTabCache(6);renderTeacher(6);
+  }).catch(function(e){alert('초기화 실패: '+e.message);});
+};
+
+function buildTAccounts(){
+  var myBranchAcc=getBranch();
+  // 계정관리 화면은 정지된 계정도 반드시 보여야(그래야 정지 해제도 가능) 하므로,
+  // "활성 학생만" 거르는 loadStudentList() 캐시를 쓰지 않고 이 화면 전용으로 전체를 따로 불러온다.
+  return getDocs(query(collection(db,'users'),where('role','==','student'))).then(function(studentSnap){
+    var students = studentSnap.docs
+      .filter(function(d){var b=d.data().branch;return !b||b===myBranchAcc;})
+      .map(function(d){return Object.assign({uid:d.id},d.data());});
+    return getDocs(query(collection(db,'users'),where('role','in',['teacher','master']))).then(function(teacherSnap){
+      var myBranch=getBranch();
+      var teachers=teacherSnap.docs
+        .filter(function(d){var b=d.data().branch;return !b||b===myBranch;})
+        .map(function(d){return Object.assign({uid:d.id},d.data());});
+      var myRole=(currentProfile&&currentProfile.role||'').trim().toLowerCase();
+      var isMaster=(myRole==='master');
+
+      // KPI 카드 - 계정 수
+      var kpis = '<div class="kpi-grid" style="grid-template-columns:1fr 1fr;">'
+        +'<div class="kpi"><div class="kpi-label">학생 계정</div><div class="kpi-value">'+students.length+'<span>명</span></div></div>'
+        +'<div class="kpi kpi-burg"><div class="kpi-label">선생님 계정</div><div class="kpi-value">'+teachers.length+'<span>명</span></div></div>'
+        +'</div>';
+
+      // 새 계정 추가 버튼 카드
+      var addCard = '<div class="card card-burg">'
+        +'<div class="card-h"><div class="card-title">계정 관리</div></div>'
+        +'<div style="font-size:13px;color:var(--tx2);line-height:1.6;margin-bottom:12px;">학생/선생님 계정을 새로 만들거나 기존 계정을 관리할 수 있습니다.</div>'
+        +'<button class="modal-btn primary" onclick="openModal(\'modal-add-account\')" style="margin:0;">+ 새 계정 추가</button>'
+        +(isMaster?'<div style="margin-top:10px;padding:10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.25);border-radius:8px;font-size:12px;color:var(--gold);">⚠️ 마스터 권한 — 계정 수정/삭제/이용정지 가능</div>':'')
+        +'</div>';
+
+      // 마스터 도구
+      var masterTools = isMaster ? '<div class="card" style="border:2px solid #f0a855;">'
+        +'<div class="card-h"><div class="card-title" style="color:#c2410c;">⚙️ 마스터 도구</div></div>'
+        +'<div style="display:flex;flex-direction:column;gap:8px;">'
+        +'<button onclick="migrateLegacyChats()" class="modal-btn primary" style="margin:0;text-align:left;background:var(--burg);">💬 옛 대화 기록 복구 (chats → chatRooms)</button>'
+        +'<div id="migrate-status" style="font-size:11px;color:var(--tx3);padding:4px 0;"></div>'
+        +'<button onclick="runChatFileCleanupNow()" class="modal-btn cancel" style="margin:0;text-align:left;">🗑 채팅 첨부파일 지금 바로 정리 (30일 경과분)</button>'
+        +'<div id="cleanup-status" style="font-size:11px;color:var(--tx3);padding:4px 0;"></div>'
+        +'<div style="font-size:10px;color:var(--tx4);padding:2px 0 6px;">※ 매일 새벽 3시 자동 정리도 함께 실행됩니다</div>'
+        +'<button onclick="resetTodayPlanner()" class="modal-btn danger" style="margin:0;text-align:left;">🗑 오늘 플래너 즉시 초기화 (제출 포함)</button>'
+        +'<button onclick="fixBrokenTimers()" class="modal-btn cancel" style="margin:0;text-align:left;">🔧 비정상 타이머 기록 정리</button>'
+        +'<button onclick="migrateBranch()" class="modal-btn cancel" style="margin:0;text-align:left;">🏢 기존 데이터 지점 설정 (최초 1회)</button>'
+        +'<button onclick="deleteBranch()" class="modal-btn danger" style="margin:0;text-align:left;">🗑 지점 삭제 (전체 데이터)</button>'
+        +'<button onclick="openStudyTimeEditor()" class="modal-btn cancel" style="margin:0;text-align:left;">✏️ 학생 학습시간 직접 수정</button>'
+        +'<button onclick="openBulkSubjectEditModal()" class="modal-btn cancel" style="margin:0;text-align:left;">📚 학생 과목 이름 일괄 수정</button>'
+        +'</div>'
+        +'<div id="study-time-editor" style="display:none;margin-top:12px;"></div>'
+        +'</div>' : '';
+
+      // 계정 행 렌더 헬퍼
+      function accountRow(u, isTeacher) {
+        var isSuspended = u.suspended === true;
+        var roleLabel = u.role==='master' ? '마스터' : isTeacher ? '선생님' : (u.grade||'학생');
+        var meta = isTeacher 
+          ? roleLabel + ' · ' + (u.branch||'지점미설정')
+          : roleLabel + (u.school?' · '+u.school:'');
+        var initial = (u.name||'?').slice(0,1);
+        var avatarBg = isTeacher ? 'background:linear-gradient(135deg,var(--burg),var(--burg2));' : 'background:linear-gradient(135deg,#D4A04A,#B8841A);';
+        var subjBtn = !isTeacher ? '<button onclick="openTeacherSubjectManageModal(\''+u.uid+'\',\''+escapeHtml(u.name)+'\')" style="padding:6px 10px;background:var(--gold-l);border:1px solid rgba(184,132,26,0.25);border-radius:6px;color:var(--gold);font-size:11px;cursor:pointer;font-weight:600;">📚 과목</button>' : '';
+        var btns = isMaster ? '<div style="display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">'
+          +subjBtn
+          +'<button onclick="openEditAccountModal(\''+u.uid+'\',\''+u.name+'\',\''+u.username+'\')" style="padding:6px 10px;background:var(--burg-l);border:1px solid var(--burg-l2);border-radius:6px;color:var(--burg);font-size:11px;cursor:pointer;font-weight:600;">수정</button>'
+          +'<button onclick="openResetPasswordModal(\''+u.uid+'\',\''+escapeHtml(u.name)+'\')" style="padding:6px 10px;background:#eef2ff;border:1px solid rgba(79,70,229,0.2);border-radius:6px;color:#4338ca;font-size:11px;cursor:pointer;font-weight:600;">🔑 비밀번호</button>'
+          +'<button onclick="toggleSuspendAccount(\''+u.uid+'\',\''+u.name+'\','+isSuspended+')" style="padding:6px 10px;background:'+(isSuspended?'var(--green-l)':'#fef3c7')+';border:1px solid '+(isSuspended?'rgba(27,107,58,0.25)':'rgba(217,119,6,0.25)')+';border-radius:6px;color:'+(isSuspended?'var(--green)':'#92400e')+';font-size:11px;cursor:pointer;font-weight:600;">'+(isSuspended?'해제':'정지')+'</button>'
+          +'<button onclick="deleteAccount(\''+u.uid+'\',\''+u.name+'\')" style="padding:6px 10px;background:var(--red-l);border:1px solid rgba(185,28,28,0.2);border-radius:6px;color:var(--red);font-size:11px;cursor:pointer;font-weight:600;">삭제</button>'
+          +'</div>' : (subjBtn ? '<div style="display:flex;gap:4px;flex-shrink:0;">'+subjBtn+'</div>' : '');
+        return '<div class="account-row" data-search="'+escapeHtml((u.name||'')+' '+(u.username||'')).toLowerCase()+'" style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--surface);border-radius:10px;margin-bottom:6px;'+(isSuspended?'opacity:0.55;':'')+'">'
+          +'<div style="width:42px;height:42px;border-radius:50%;'+avatarBg+'display:flex;align-items:center;justify-content:center;color:#fff;font-size:15px;font-weight:700;flex-shrink:0;">'+initial+'</div>'
+          +'<div style="flex:1;min-width:0;">'
+          +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">'
+          +'<div style="font-size:14px;font-weight:600;color:var(--tx1);">'+u.name+'</div>'
+          +(isSuspended?'<span style="font-size:10px;padding:2px 6px;background:var(--red-l);color:var(--red);border-radius:4px;font-weight:600;">정지</span>':'')
+          +'</div>'
+          +'<div style="font-size:12px;color:var(--tx3);">'+meta+'</div>'
+          +'<div style="font-size:11px;color:var(--tx4);margin-top:1px;">ID: '+(u.username||'-')+'</div>'
+          +'</div>'
+          +btns
+          +'</div>';
+      }
+
+      var teacherRows = teachers.length 
+        ? teachers.map(function(t){return accountRow(t, true);}).join('')
+        : '<div style="color:var(--tx3);font-size:13px;text-align:center;padding:20px;">등록된 선생님이 없습니다</div>';
+      window._accountStudentsRaw = students; // 검색/정렬 재사용
+      var acctSortMode = window._accountSortMode || 'name';
+      var _acctGradeRank = {'중학교 1학년':1,'중학교 2학년':2,'중학교 3학년':3,'고등학교 1학년':4,'고등학교 2학년':5,'고등학교 3학년':6,'N수':7,'성인':8};
+      var sortedForAccount = students.slice().sort(function(a,b){
+        if (acctSortMode === 'grade') {
+          var ra=_acctGradeRank[a.grade]||99, rb=_acctGradeRank[b.grade]||99;
+          if (ra!==rb) return ra-rb;
+        }
+        return (a.name||'').localeCompare(b.name||'', 'ko');
+      });
+      var studentRows = sortedForAccount.length 
+        ? sortedForAccount.map(function(s){return accountRow(s, false);}).join('')
+        : '<div style="color:var(--tx3);font-size:13px;text-align:center;padding:20px;">등록된 학생이 없습니다</div>';
+
+      // 선생님 카드
+      var teacherCard = '<div class="card">'
+        +'<div class="card-h"><div class="card-title">선생님 계정</div><div style="font-size:12px;color:var(--tx3);">총 '+teachers.length+'명</div></div>'
+        +teacherRows
+        +'</div>';
+
+      // 학생 카드
+      var studentCard = '<div class="card">'
+        +'<div class="card-h"><div class="card-title">학생 계정</div><div style="font-size:12px;color:var(--tx3);">총 '+students.length+'명</div></div>'
+        +'<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">'
+        +'<input type="text" id="account-student-search" placeholder="🔍 이름/아이디 검색..." oninput="filterAccountStudentList(this.value)" style="flex:1;min-width:150px;height:36px;padding:0 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--tx1);outline:none;"/>'
+        +'<button onclick="setAccountSortMode(\'name\')" style="font-size:11px;padding:0 12px;height:36px;border-radius:8px;border:1px solid var(--border);cursor:pointer;background:'+(acctSortMode==='name'?'var(--burg)':'var(--surface2)')+';color:'+(acctSortMode==='name'?'#fff':'var(--tx2)')+';font-weight:600;">가나다순</button>'
+        +'<button onclick="setAccountSortMode(\'grade\')" style="font-size:11px;padding:0 12px;height:36px;border-radius:8px;border:1px solid var(--border);cursor:pointer;background:'+(acctSortMode==='grade'?'var(--burg)':'var(--surface2)')+';color:'+(acctSortMode==='grade'?'#fff':'var(--tx2)')+';font-weight:600;">학년순</button>'
+        +'</div>'
+        +'<div id="account-student-list">'+studentRows+'</div>'
+        +'</div>';
+
+      return kpis + masterTools + addCard + teacherCard + studentCard;
+    });
+  });
+}
+
+
+window.openResetPasswordModal=function(uid,name){
+  document.getElementById('reset-pw-uid').value=uid;
+  document.getElementById('reset-pw-name').textContent=name;
+  document.getElementById('reset-pw-input').value='';
+  document.getElementById('reset-pw-status').textContent='';
+  openModal('modal-reset-password');
+};
+window.saveResetPassword=function(){
+  var uid=document.getElementById('reset-pw-uid').value;
+  var newPw=document.getElementById('reset-pw-input').value;
+  var statusEl=document.getElementById('reset-pw-status');
+  if(!newPw||newPw.length<6){ alert('새 비밀번호는 6자 이상이어야 합니다.'); return; }
+  if(!confirm('비밀번호를 변경하시겠습니까?\\n\\n변경 후에는 되돌릴 수 없으며, 해당 학생/선생님에게 새 비밀번호를 직접 전달해야 합니다.')) return;
+
+  statusEl.textContent='⏳ 변경 중...';
+  currentUser.getIdToken().then(function(idToken){
+    return fetch('/api/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+      body: JSON.stringify({ targetUid: uid, newPassword: newPw })
+    });
+  }).then(function(r){
+    if(!r.ok) return r.json().then(function(e){ throw new Error(e.error || ('HTTP '+r.status)); });
+    return r.json();
+  }).then(function(){
+    statusEl.textContent='✓ 변경 완료';
+    alert('비밀번호가 변경되었습니다.\\n\\n새 비밀번호를 해당 계정 사용자에게 직접 전달해주세요.');
+    closeModal('modal-reset-password');
+  }).catch(function(e){
+    console.error(e);
+    statusEl.textContent='✗ 오류: '+e.message;
+    alert('비밀번호 변경 실패: '+e.message+'\\n\\n(/api/reset-password 배포 및 환경변수 설정을 확인해주세요)');
+  });
+};
+
+window.openEditAccountModal=function(uid,name,username){
+  document.getElementById('edit-acc-uid').value=uid;
+  document.getElementById('edit-acc-name').value=name;
+  document.getElementById('edit-acc-id').value=username;
+  openModal('modal-edit-account');
+};
+window.saveEditAccount=function(){
+  var uid=document.getElementById('edit-acc-uid').value;
+  var name=document.getElementById('edit-acc-name').value.trim();
+  var username=document.getElementById('edit-acc-id').value.trim();
+  if(!name||!username){alert('이름과 아이디를 입력해주세요.');return;}
+  getDocs(query(collection(db,'users'),where('username','==',username))).then(function(snap){
+    var conflict=snap.docs.filter(function(d){return d.id!==uid;}).length>0;
+    if(conflict){alert('이미 사용 중인 아이디입니다.');return;}
+    updateDoc(doc(db,'users',uid),{name:name,username:username}).then(function(){alert('계정 정보가 수정되었습니다.');closeModal('modal-edit-account');invalidateTeacherTabCache(6);renderTeacher(6);});
+  });
+};
+window.toggleSuspendAccount=function(uid, name, isSuspended){
+  var msg = isSuspended
+    ? name+' 계정의 이용정지를 해제하시겠습니까?'
+    : name+' 계정을 이용정지하시겠습니까?\n(즉시 로그아웃되며 재로그인이 불가합니다)';
+  if(!confirm(msg)) return;
+  updateDoc(doc(db,'users',uid), {suspended: !isSuspended}).then(function(){
+    // 캐시 초기화 - 모든 탭에 즉시 반영
+    _studentListCache = null; _studentListCacheTime = 0;
+    _rankingsCache = null; _rankingsCacheTime = 0;
+    alert(isSuspended ? '이용정지가 해제되었습니다.' : '이용정지 처리되었습니다.');
+    invalidateTeacherTabCache(6);renderTeacher(6);
+  }).catch(function(e){alert('처리 실패: '+e.message);});
+};
+window.deleteAccount=function(uid,name){
+  if(!confirm(name+' 계정을 정말 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) return;
+  deleteDoc(doc(db,'users',uid)).then(function(){alert(name+' 계정이 삭제되었습니다.');invalidateTeacherTabCache(6);renderTeacher(6);}).catch(function(e){alert('삭제 실패: '+e.message);});
+};
+
+window.addAccount=function(){
+  var branchSel=document.getElementById('acc-branch').value;
+  var branch=branchSel==='직접입력'?(document.getElementById('acc-branch-custom').value.trim()||getBranch()):branchSel;
+  var type=document.getElementById('acc-type').value;
+  var name=document.getElementById('acc-name').value.trim();
+  var username=document.getElementById('acc-id').value.trim();
+  var pw=document.getElementById('acc-pw').value.trim();
+  if(!name||!username||!pw){alert('모든 항목을 입력해주세요.');return;}
+  if(pw.length<6){alert('비밀번호는 6자 이상이어야 합니다.');return;}
+  var email=username+'_'+Date.now()+'@mono-planner.app';
+  import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js").then(function(m){
+    var secondApp=initializeApp(firebaseConfig,'second-'+Date.now());
+    var secondAuth=m.getAuth(secondApp);
+    m.createUserWithEmailAndPassword(secondAuth,email,pw).then(function(cred){
+      setDoc(doc(db,'users',cred.user.uid),{name:name,username:username,email:email,role:type,branch:branch,school:'',grade:'',univ:'',dept:'',createdAt:serverTimestamp()}).then(function(){
+        m.signOut(secondAuth);closeModal('modal-add-account');alert(name+' 계정이 생성되었습니다!\n아이디: '+username+'\n비밀번호: '+pw+'\n지점: '+branch);invalidateTeacherTabCache(6);renderTeacher(6);
+      });
+    }).catch(function(e){alert('계정 생성 실패: '+e.message);});
+  });
+};
+
+function buildAllChats(){
+  return getDocs(collection(db, 'chatRooms')).then(function(snap){
+    var myBranch = getBranch();
+    var rooms = snap.docs
+      .filter(function(d){var b=d.data().branch; return !b||b===myBranch;})
+      .map(function(d){return Object.assign({id:d.id}, d.data());});
+    rooms.sort(function(a,b){
+      var at = a.lastMessage && a.lastMessage.createdAt ? a.lastMessage.createdAt.toMillis() : (a.createdAt?a.createdAt.toMillis():0);
+      var bt = b.lastMessage && b.lastMessage.createdAt ? b.lastMessage.createdAt.toMillis() : (b.createdAt?b.createdAt.toMillis():0);
+      return bt - at;
+    });
+
+    var warn = '<div style="background:rgba(232,148,58,0.1);border:1px solid rgba(232,148,58,0.25);border-radius:10px;padding:11px 14px;margin-bottom:14px;font-size:13px;color:#c2410c;font-weight:600;">⚠️ 마스터 전용 — 모든 대화방 열람 및 삭제 가능</div>';
+
+    var filterBar = '<div class="card" style="padding:12px 14px;margin-bottom:10px;">'
+      +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
+      +'<input id="master-room-search" class="modal-input" placeholder="🔍 이름/대화방명 검색" style="flex:1;min-width:180px;margin:0;" oninput="filterMasterRoomsNew(this.value)"/>'
+      +'<select id="master-room-type" class="modal-select" style="width:auto;min-width:120px;margin:0;" onchange="filterMasterRoomsNew()">'
+      +'<option value="all">전체</option><option value="1on1">1:1 채팅</option><option value="group">단톡방</option>'
+      +'</select>'
+      +'</div>'
+      +'</div>';
+
+    var roomsHtml;
+    if (!rooms.length) {
+      roomsHtml = '<div class="card" style="text-align:center;color:var(--tx3);font-size:13px;padding:30px;">생성된 대화방이 없습니다</div>';
+    } else {
+      roomsHtml = rooms.map(function(r){
+        var displayName, members, badgeColor;
+        if (r.isGroup) {
+          displayName = r.groupName || '단톡방';
+          members = (r.participants||[]).map(function(uid){return r.participantNames && r.participantNames[uid] || '?';}).join(', ');
+          badgeColor = '#D4A04A';
+        } else {
+          var names = (r.participants||[]).map(function(uid){return r.participantNames && r.participantNames[uid] || '?';});
+          displayName = names.join(' ↔ ');
+          members = '';
+          badgeColor = 'var(--burg)';
+        }
+        var lastText = '대화 없음';
+        var lastTime = '';
+        if (r.lastMessage) {
+          lastText = r.lastMessage.fileUrl ? '📎 '+(r.lastMessage.fileName||'파일') : (r.lastMessage.text||'').slice(0,60);
+          if (r.lastMessage.senderName) lastText = r.lastMessage.senderName + ': ' + lastText;
+          if (r.lastMessage.createdAt) {
+            lastTime = r.lastMessage.createdAt.toDate().toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+          }
+        }
+        var typeLabel = r.isGroup ? '<span style="font-size:10px;padding:2px 6px;background:var(--gold-l);color:var(--gold);border-radius:4px;font-weight:600;">단톡 '+(r.participants||[]).length+'명</span>' : '<span style="font-size:10px;padding:2px 6px;background:var(--burg-l);color:var(--burg);border-radius:4px;font-weight:600;">1:1</span>';
+        return '<div class="card master-room-card" data-search="'+(displayName+' '+members).toLowerCase()+'" data-type="'+(r.isGroup?'group':'1on1')+'" style="padding:13px;margin-bottom:6px;cursor:pointer;border-left:3px solid '+badgeColor+';" onclick="openMasterRoomView(\''+r.id+'\')">'
+          +'<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:5px;">'
+          +'<div style="display:flex;align-items:center;gap:7px;flex:1;min-width:0;">'
+          +typeLabel
+          +'<div style="font-size:14px;font-weight:600;color:var(--tx1);">'+displayName+'</div>'
+          +'</div>'
+          +'<button onclick="event.stopPropagation();deleteMasterRoom(\''+r.id+'\',\''+displayName.replace(/\x27/g,"\\\x27")+'\')" style="padding:5px 9px;background:var(--red-l);border:1px solid rgba(185,28,28,0.2);border-radius:5px;color:var(--red);font-size:11px;cursor:pointer;font-weight:600;flex-shrink:0;">삭제</button>'
+          +'</div>'
+          +(members?'<div style="font-size:11px;color:var(--tx3);margin-bottom:5px;">참여: '+members+'</div>':'')
+          +'<div style="font-size:12px;color:var(--tx2);background:var(--surface2);padding:6px 9px;border-radius:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+lastText.replace(/</g,'&lt;')+'</div>'
+          +'<div style="font-size:10px;color:var(--tx4);margin-top:4px;text-align:right;">'+lastTime+'</div>'
+          +'</div>';
+      }).join('');
+    }
+
+    return warn + '<div id="master-rooms-section" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;">' + filterBar + '<div id="master-rooms-list" style="flex:1;overflow-y:auto;min-height:0;">' + roomsHtml + '</div></div>'
+      +'<div id="master-chat-view" style="display:none;">'
+      +'<button class="modal-btn cancel" onclick="closeMasterRoomView()" style="margin-bottom:10px;width:auto;padding:7px 14px;">← 목록으로</button>'
+      +'<div class="card" style="padding:0;overflow:hidden;">'
+      +'<div style="padding:13px 16px;background:var(--surface2);border-bottom:1px solid var(--border);">'
+      +'<div id="master-chat-title" style="font-size:15px;font-weight:700;color:var(--burg);"></div>'
+      +'<div id="master-chat-sub" style="font-size:11px;color:var(--tx3);margin-top:2px;"></div>'
+      +'</div>'
+      +'<div style="padding:10px 12px;background:var(--surface);border-bottom:1px solid var(--border);"><input id="master-msg-search" class="modal-input" placeholder="🔍 메시지 내용 검색" style="margin:0;" oninput="filterMasterMessagesNew(this.value)"/></div>'
+      +'<div id="master-chat-area" class="kchat-area" style="min-height:300px;max-height:520px;"></div>'
+      +'</div>'
+      +'</div>';
+  });
+}
+
+window.filterMasterRoomsNew = function(){
+  var q = (document.getElementById('master-room-search')||{}).value || '';
+  var t = (document.getElementById('master-room-type')||{}).value || 'all';
+  q = q.trim().toLowerCase();
+  document.querySelectorAll('#master-rooms-list .master-room-card').forEach(function(card){
+    var s = card.dataset.search || '';
+    var ct = card.dataset.type || '';
+    var matchQ = !q || s.includes(q);
+    var matchT = t==='all' || ct===t;
+    card.style.display = (matchQ && matchT) ? 'block' : 'none';
+  });
+};
+
+var _masterAllMsgs = [];
+var _unsubMasterMsgs = null;
+
+window.openMasterRoomView = function(roomId) {
+  document.getElementById('master-rooms-section').style.display = 'none';
+  document.getElementById('master-chat-view').style.display = 'block';
+  if (_unsubMasterMsgs) { _unsubMasterMsgs(); _unsubMasterMsgs = null; }
+  getDoc(doc(db, 'chatRooms', roomId)).then(function(d){
+    if (!d.exists()) { alert('대화방을 찾을 수 없습니다'); closeMasterRoomView(); return; }
+    var meta = d.data();
+    var title, sub;
+    if (meta.isGroup) {
+      title = meta.groupName || '단톡방';
+      sub = (meta.participants||[]).map(function(uid){return meta.participantNames && meta.participantNames[uid] || '?';}).join(', ');
+    } else {
+      var names = (meta.participants||[]).map(function(uid){return meta.participantNames && meta.participantNames[uid] || '?';});
+      title = names.join(' ↔ ');
+      sub = '1:1 채팅';
+    }
+    document.getElementById('master-chat-title').textContent = title;
+    document.getElementById('master-chat-sub').textContent = sub;
+    
+    _unsubMasterMsgs = onSnapshot(
+      query(collection(db, 'chatRooms', roomId, 'messages'), orderBy('createdAt','asc')),
+      function(snap){
+        _masterAllMsgs = snap.docs.map(function(d){return d.data();});
+        renderMasterMessages(_masterAllMsgs);
+      }
+    );
+  });
+};
+
+window.closeMasterRoomView = function() {
+  if (_unsubMasterMsgs) { _unsubMasterMsgs(); _unsubMasterMsgs = null; }
+  document.getElementById('master-rooms-section').style.display = 'block';
+  document.getElementById('master-chat-view').style.display = 'none';
+};
+
+function renderMasterMessages(msgs, highlight) {
+  var area = document.getElementById('master-chat-area');
+  if (!area) return;
+  if (!msgs.length) { area.innerHTML = '<div style="text-align:center;color:var(--tx4);font-size:13px;padding:40px;">메시지가 없습니다</div>'; return; }
+  // 마스터 시점에서는 모두 "theirs"로 통일 (자신의 채팅이 아니라 열람 모드)
+  // 발신자별로 좌/우 정렬 (보낸 사람이 다르면 좌측, 같은 사람 연속이면 같은 쪽)
+  var out = '';
+  var lastDate='', lastSender='';
+  for (var i=0; i<msgs.length; i++) {
+    var m = msgs[i];
+    var ts = m.createdAt ? m.createdAt.toDate() : new Date();
+    var dateStr = ts.toLocaleDateString('ko-KR', {year:'numeric',month:'long',day:'numeric',weekday:'long'});
+    var timeStr = ts.toLocaleTimeString('ko-KR', {hour:'2-digit',minute:'2-digit'});
+    if (dateStr !== lastDate) { out += '<div class="kchat-date"><span>'+dateStr+'</span></div>'; lastDate = dateStr; lastSender = ''; }
+    var continued = (lastSender === m.senderUid);
+    var avatar = (m.senderName||'?').slice(0,1);
+    var nameLine = continued ? '' : '<div class="kchat-name">'+(m.senderName||'')+'</div>';
+    var text = m.text || '';
+    if (highlight) {
+      text = text.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      var re = new RegExp('('+highlight.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi');
+      text = text.replace(re, '<mark style="background:#FAE100;border-radius:3px;padding:0 2px;color:#1A1010;">$1</mark>');
+    } else {
+      text = text.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+    var bubble = m.fileUrl ? '<a href="'+_cloudinaryDownloadUrl(m.fileUrl)+'" target="_blank" rel="noopener" download="'+escapeHtml(m.fileName||'file')+'" class="kchat-file">'+_chatFileIcon(m.fileName)+' '+(m.fileName||'파일')+'</a>' : '<div class="kchat-bubble">'+text+'</div>';
+    var readCount = (m.readBy||[]).length;
+    out += '<div class="kchat-row theirs'+(continued?' continued':'')+'">'
+      + avatar
+      + '<div class="kchat-bubble-wrap">'
+      + nameLine
+      + '<div class="kchat-bubble-row">'
+      + bubble
+      + '<div class="kchat-meta"><div class="kchat-time">'+timeStr+' · 읽음 '+readCount+'</div></div>'
+      + '</div>'
+      + '</div>'
+      + '</div>';
+    lastSender = m.senderUid;
+  }
+  area.innerHTML = out;
+  area.scrollTop = area.scrollHeight;
+}
+
+window.filterMasterMessagesNew = function(q) {
+  q = (q||'').trim();
+  if (!q) { renderMasterMessages(_masterAllMsgs); return; }
+  var filtered = _masterAllMsgs.filter(function(m){return m.text && m.text.toLowerCase().includes(q.toLowerCase());});
+  renderMasterMessages(filtered, q);
+};
+
+window.deleteMasterRoom = function(roomId, name) {
+  if (!confirm('"'+name+'" 대화방을 완전히 삭제하시겠습니까?\n\n모든 메시지와 첨부파일이 삭제되며 복구할 수 없습니다.')) return;
+  getDocs(collection(db, 'chatRooms', roomId, 'messages')).then(function(snap){
+    var ps = snap.docs.map(function(d){return deleteDoc(doc(db, 'chatRooms', roomId, 'messages', d.id));});
+    return Promise.all(ps);
+  }).then(function(){
+    return deleteDoc(doc(db, 'chatRooms', roomId));
+  }).then(function(){
+    alert('대화방이 삭제되었습니다');
+    renderTeacher(7);
+  }).catch(function(e){alert('삭제 실패: '+e.message);});
+};
+
+
+
+
+
+var _masterAllMessages=[];
+
+
+// ─── 스플래시 필기 애니메이션 v3 ───
+(function() {
+  function runSplash() {
+    var svg = document.getElementById('splash-svg');
+    if (!svg) return;
+
+    // 9개 그룹 path 수집
+    var paths = Array.from(svg.querySelectorAll('path.sp'));
+    if (!paths.length) return;
+    var n = paths.length;
+
+    // 실제 길이 측정 + dasharray 설정
+    var lengths = paths.map(function(p) {
+      try { return Math.ceil(p.getTotalLength()) + 10; } catch(e) { return 3000; }
+    });
+    paths.forEach(function(p, i) {
+      p.style.strokeDasharray  = lengths[i];
+      p.style.strokeDashoffset = lengths[i];
+    });
+
+    // 타이밍 설정
+    // 그룹별 그리기 시간 (길이 비례)
+    var totalLen = lengths.reduce(function(a,b){return a+b;}, 0);
+    var TOTAL_DRAW = 3000; // 전체 ms
+
+    // 각 그룹 시작 시점: 이전 그룹이 60% 완료되면 다음 시작
+    var groupDur = lengths.map(function(L) {
+      return Math.max(120, Math.round(L / totalLen * TOTAL_DRAW * 1.4));
+    });
+
+    // 시작 시점 계산 (이전 그룹 80% 완료 시점)
+    var startTimes = [150];
+    for (var i = 1; i < n; i++) {
+      startTimes.push(startTimes[i-1] + groupDur[i-1] * 0.78);
+    }
+
+    var globalStart = null;
+
+    function easeInOut(t) {
+      // ease-in-out: 천천히 시작, 빠르게 중간, 천천히 마무리
+      return t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2)/2;
+    }
+
+    function tick(ts) {
+      if (!globalStart) globalStart = ts;
+      var elapsed = ts - globalStart;
+
+      for (var i = 0; i < n; i++) {
+        var t = Math.max(0, elapsed - startTimes[i]);
+        var progress = Math.min(t / groupDur[i], 1);
+        var eased = easeInOut(progress);
+        paths[i].style.strokeDashoffset = lengths[i] * (1 - eased);
+      }
+
+      var lastEnd = startTimes[n-1] + groupDur[n-1];
+      if (elapsed < lastEnd + 100) {
+        requestAnimationFrame(tick);
+      } else {
+        showAfterDraw();
+      }
+    }
+
+    requestAnimationFrame(tick);
+  }
+
+  function showAfterDraw() {
+    var tag  = document.querySelector('.splash-tag');
+    var bar  = document.querySelector('.splash-bar');
+    var fill = document.getElementById('splash-bar-fill');
+    if (tag) {
+      tag.style.transition = 'opacity 0.7s ease, transform 0.7s ease';
+      tag.style.transform  = 'translateY(10px)';
+      requestAnimationFrame(function(){ requestAnimationFrame(function(){
+        tag.style.opacity   = '1';
+        tag.style.transform = 'translateY(0)';
+      }); });
+    }
+    if (bar) {
+      setTimeout(function(){
+        bar.style.transition = 'opacity 0.5s ease';
+        bar.style.opacity    = '1';
+        if (fill) {
+          setTimeout(function(){
+            fill.style.transition = 'width 1.0s ease';
+            fill.style.width      = '100%';
+          }, 80);
+        }
+      }, 400);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', runSplash);
+  } else {
+    setTimeout(runSplash, 30);
+  }
+})();
+
+
+
+/* ===== MONO PLANNER 추가 기능 UI ===== */
+/* ======================================================================
+   MONO PLANNER 추가 기능 A — 모의고사 일정표 (선생님 등록 / 학생 조회·시간선택) + 투두 자동 연동
+   ====================================================================== */
+var MPC = window.MPCore;
+function mpNow(){
+  var now=new Date(); var kst=new Date(now.getTime()+(9*60+now.getTimezoneOffset())*60000);
+  var min=kst.getHours()*60+kst.getMinutes(); if(kst.getHours()<4) min+=1440;
+  return {today:getPlannerDate(), nowMin:min};
+}
+function mpE(s){ return escapeHtml(s==null?'':String(s)); }
+function mpSheet(html){
+  var ov=document.createElement('div'); ov.className='modal-overlay open'; ov.style.zIndex=700;
+  ov.innerHTML='<div class="mp-sheet">'+html+'</div>';
+  ov.addEventListener('click',function(e){ if(e.target===ov) ov.remove(); });
+  document.body.appendChild(ov); ov.close=function(){ ov.remove(); }; return ov;
+}
+window.mpCloseSheets=function(){ document.querySelectorAll('.modal-overlay.open[style*="700"]').forEach(function(e){e.remove();}); };
+function mpToast(msg, onclick){
+  var t=document.createElement('div'); t.className='mp-toast'; t.textContent=msg;
+  t.onclick=function(){ t.remove(); if(onclick) onclick(); };
+  document.body.appendChild(t); setTimeout(function(){ if(t.parentNode) t.remove(); },7000);
+}
+function mpSessKey(examId,uid){ return examId+'|'+uid; }
+async function mpFetchSchedules(uid){
+  var q = uid ? query(collection(db,'examSchedules'),where('studentUid','==',uid)) : query(collection(db,'examSchedules'),where('branch','==',getBranch()));
+  var snap=await getDocs(q); return snap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
+}
+async function mpFetchSessions(uid){
+  var q = uid ? query(collection(db,'examSessions'),where('studentUid','==',uid)) : query(collection(db,'examSessions'),where('branch','==',getBranch()));
+  var snap=await getDocs(q); return snap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
+}
+function mpSessMap(list){ var m={}; list.forEach(function(s){ m[mpSessKey(s.examId,s.studentUid)]=s; }); return m; }
+function mpItems(sch,sessMap){
+  var n=mpNow();
+  return sch.map(function(s){ var se=sessMap[mpSessKey(s.examId,s.studentUid)]||null; return {s:s, session:se, status:MPC.scheduleStatus(s,se,n.today,n.nowMin)}; });
+}
+function mpTimeStr(s){ var m=MPC.effStart(s); return m==null?'시간 미정':MPC.minToHHMM(m); }
+function mpDateLabel(d){ return MPC.mdKo(d)+'('+MPC.dowKo(d)+')'; }
+function mpChip(st){ return '<span class="mp-chip mp-c-'+st.color+'">'+mpE(st.label)+'</span>'; }
+
+/* ───────────── 학생: 일정표 ───────────── */
+var _mpStu = {sch:[],sess:{},view:'list',cursor:null};
+window.MP_renderStudentSchedule = async function(){
+  var host=document.getElementById('mp-sched-host'); if(!host||!currentUser) return;
+  host.innerHTML='<div class="mp-card"><div class="mp-sub">모의고사 일정 불러오는 중...</div></div>';
+  try{
+    var r=await Promise.all([mpFetchSchedules(currentUser.uid),mpFetchSessions(currentUser.uid)]);
+    _mpStu.sch=r[0]; _mpStu.sess=mpSessMap(r[1]); if(!_mpStu.cursor) _mpStu.cursor=getPlannerDate();
+    mpDrawStudent();
+  }catch(e){ host.innerHTML='<div class="mp-card"><div class="mp-sub" style="color:var(--red)">일정을 불러오지 못했어요</div></div>'; }
+};
+window.mpStuView=function(v){ _mpStu.view=v; mpDrawStudent(); };
+window.mpStuNav=function(n){
+  if(_mpStu.view==='month'){ var d=MPC.parseDate(_mpStu.cursor); d.setUTCMonth(d.getUTCMonth()+n,1); _mpStu.cursor=MPC.fmtDate(d); }
+  else _mpStu.cursor=MPC.addDays(_mpStu.cursor,7*n);
+  mpDrawStudent();
+};
+function mpDrawStudent(){
+  var host=document.getElementById('mp-sched-host'); if(!host) return;
+  var n=mpNow(), items=mpItems(_mpStu.sch,_mpStu.sess);
+  var h='';
+  if(!items.length){
+    host.innerHTML='<div class="mp-card"><div class="mp-title">📅 모의고사 일정</div><div class="mp-sub" style="padding:14px 0;text-align:center">아직 등록된 모의고사 일정이 없어요</div></div>'; return;
+  }
+  var nx=MPC.nextExam(items,n.today);
+  if(nx){
+    var ed=MPC.canStudentEdit(nx.s,nx.session,n.today,n.nowMin);
+    h+='<div class="mp-dday"><div class="n">'+MPC.dDayLabel(nx.s.date,n.today)+'</div><div style="flex:1;min-width:0"><div class="t">'+mpE(nx.s.examTitle)+'</div>'
+      +'<div class="s">'+mpDateLabel(nx.s.date)+' · '+mpTimeStr(nx.s)+(nx.s.studentStartMin!=null?' (내가 정한 시간)':'')+'</div></div>'
+      +(ed.ok?'<button class="mp-btn sm" onclick="mpStuDetail(\''+nx.s.id+'\')">시간 정하기</button>':'')+'</div>';
+  } else {
+    h+='<div class="mp-card" style="text-align:center"><div class="mp-title">예정된 모의고사가 없어요</div><div class="mp-sub" style="margin-top:4px">다음 일정이 등록되면 여기에 표시돼요</div></div>';
+  }
+  h+='<div class="mp-card"><div class="mp-h"><div class="mp-title">📅 모의고사 일정</div>'
+    +'<div class="mp-seg">'+[['list','목록'],['month','월간'],['week','주간']].map(function(x){return '<button class="'+(_mpStu.view===x[0]?'on':'')+'" onclick="mpStuView(\''+x[0]+'\')">'+x[1]+'</button>';}).join('')+'</div></div>';
+  if(_mpStu.view==='list') h+=mpStuList(items,n);
+  else if(_mpStu.view==='month') h+=mpMonthHtml(items,_mpStu.cursor,true,'mpStuNav','mpStuDetail');
+  else h+=mpStuWeek(items,n);
+  h+='</div>';
+  host.innerHTML=h;
+  if(_mpStu.view==='week') mpBindDrag();
+}
+function mpStuList(items,n){
+  var up=items.filter(function(x){return x.s.date>=n.today||x.status.key!=='done';}).sort(function(a,b){return a.s.date<b.s.date?-1:a.s.date>b.s.date?1:0;});
+  var past=items.filter(function(x){return up.indexOf(x)<0;}).sort(function(a,b){return a.s.date<b.s.date?1:-1;});
+  function row(x){
+    var s=x.s; var ed=MPC.canStudentEdit(s,x.session,n.today,n.nowMin);
+    return '<div class="mp-row" onclick="mpStuDetail(\''+s.id+'\')" style="cursor:pointer"><div class="d"><b>'+(+s.date.slice(8,10))+'</b>'+(+s.date.slice(5,7))+'월 '+MPC.dowKo(s.date)+'</div>'
+      +'<div class="m"><div class="a">'+mpE(s.examTitle)+'</div><div class="b">'+mpTimeStr(s)+(s.studentStartMin!=null?' · 내가 정함':'')+(s.timeLocked?' · 🔒 고정':'')+' · '+(s.durationMin||'-')+'분</div></div>'
+      +'<div style="text-align:right">'+mpChip(x.status)+(x.status.key!=='done'&&s.date>=n.today?'<div class="mp-sub" style="margin-top:3px">'+MPC.dDayLabel(s.date,n.today)+'</div>':'')+'</div></div>';
+  }
+  return (up.length?up.map(row).join(''):'<div class="mp-sub" style="padding:10px 0">예정된 일정이 없어요</div>')
+    +(past.length?'<div class="mp-lbl" style="margin-top:14px">지난 일정</div>'+past.map(row).join(''):'');
+}
+/* 월간 (공용: 학생/선생님) */
+function mpMonthHtml(items,cursor,studentMode,navFn,clickFn){
+  var n=mpNow(), ms=MPC.monthStart(cursor), me=MPC.monthEnd(cursor);
+  var gs=MPC.weekStart(ms), ge=MPC.addDays(MPC.weekStart(me),6), days=MPC.rangeDates(gs,ge,50);
+  var byDate={}; items.forEach(function(x){ (byDate[x.s.date]=byDate[x.s.date]||[]).push(x); });
+  var h='<div class="mp-h" style="margin-bottom:6px"><button class="mp-btn sm" onclick="'+navFn+'(-1)"><i class="mpi mpi-chev-l"></i></button><b>'+cursor.slice(0,4)+'년 '+(+cursor.slice(5,7))+'월</b><button class="mp-btn sm" onclick="'+navFn+'(1)"><i class="mpi mpi-chev-r"></i></button></div>'
+    +'<div class="mp-mgrid">'+['월','화','수','목','금','토','일'].map(function(d){return '<div class="mp-mh">'+d+'</div>';}).join('');
+  days.forEach(function(d){
+    var evs=(byDate[d]||[]).sort(function(a,b){return (MPC.effStart(a.s)||0)-(MPC.effStart(b.s)||0);});
+    h+='<div class="mp-mc'+(d<ms||d>me?' out':'')+(d===n.today?' today':'')+'"><div class="dn">'+(+d.slice(8,10))+'</div>'
+      +evs.map(function(x){ return '<span class="mp-ev '+x.status.color+'" onclick="'+clickFn+'(\''+x.s.id+'\')" title="'+mpE((x.s.studentName||'')+' '+x.s.examTitle)+'">'+(studentMode?'':mpE((x.s.studentName||'').slice(0,3))+' ')+mpE(x.s.examTitle)+' '+mpTimeStr(x.s)+'</span>'; }).join('')+'</div>';
+  });
+  return h+'</div>';
+}
+/* 학생 주간: 시간 그리드 + 드래그 */
+var MP_HOUR_PX=36, MP_H0=6, MP_H1=24;
+function mpStuWeek(items,n){
+  var ws=MPC.weekStart(_mpStu.cursor), days=MPC.rangeDates(ws,MPC.addDays(ws,6));
+  var h='<div class="mp-h" style="margin-bottom:6px"><button class="mp-btn sm" onclick="mpStuNav(-1)"><i class="mpi mpi-chev-l"></i></button><b>'+mpDateLabel(ws)+' ~ '+mpDateLabel(days[6])+'</b><button class="mp-btn sm" onclick="mpStuNav(1)"><i class="mpi mpi-chev-r"></i></button></div>'
+    +'<div class="mp-sub" style="margin-bottom:6px">시험 칸을 위아래로 끌어서 시작 시간을 정해요 (날짜는 선생님이 정한 날로 고정)</div>';
+  var totalH=(MP_H1-MP_H0)*MP_HOUR_PX;
+  h+='<div class="mp-wk"><div class="hd"></div>'+days.map(function(d){return '<div class="hd'+(d===n.today?' today':'')+'">'+MPC.dowKo(d)+'<br>'+(+d.slice(8,10))+'</div>';}).join('');
+  var tm='<div class="tm" style="height:'+totalH+'px">';
+  for(var hh=MP_H0;hh<MP_H1;hh++) tm+='<i style="top:'+((hh-MP_H0)*MP_HOUR_PX)+'px">'+hh+'</i>';
+  tm+='</div>'; h+=tm;
+  days.forEach(function(d){
+    var col='<div class="col" data-date="'+d+'" style="height:'+totalH+'px">';
+    items.filter(function(x){return x.s.date===d;}).forEach(function(x){
+      var st=MPC.effStart(x.s); if(st==null) st=MP_H0*60;
+      var top=(st-MP_H0*60)/60*MP_HOUR_PX, ht=Math.max(26,(x.s.durationMin||60)/60*MP_HOUR_PX);
+      var ed=MPC.canStudentEdit(x.s,x.session,n.today,n.nowMin).ok;
+      col+='<div class="mp-blk '+x.status.color+(ed?' drag':'')+'" data-id="'+x.s.id+'" data-ed="'+(ed?1:0)+'" style="top:'+top+'px;height:'+ht+'px"><b>'+mpE(x.s.examTitle)+'</b><br>'+MPC.minToHHMM(st)+(x.s.timeLocked?'<span class="lk">🔒</span>':'')+'</div>';
+    });
+    h+=col+'</div>';
+  });
+  return h+'</div>';
+}
+function mpBindDrag(){
+  document.querySelectorAll('.mp-blk[data-ed="1"]').forEach(function(el){
+    el.addEventListener('pointerdown',function(ev){
+      ev.preventDefault(); el.setPointerCapture(ev.pointerId);
+      var id=el.dataset.id, s=_mpStu.sch.find(function(x){return x.id===id;}); if(!s) return;
+      var startY=ev.clientY, baseTop=parseFloat(el.style.top), baseMin=MPC.effStart(s)||MP_H0*60, curMin=baseMin;
+      var tip=document.createElement('div'); tip.className='mp-tip'; document.body.appendChild(tip);
+      function mv(e){
+        var dy=e.clientY-startY; curMin=MPC.clampStart(baseMin+dy/MP_HOUR_PX*60);
+        el.style.top=((curMin-MP_H0*60)/60*MP_HOUR_PX)+'px';
+        tip.textContent=MPC.minToHHMM(curMin)+' 시작'; tip.style.left=(e.clientX+12)+'px'; tip.style.top=(e.clientY-30)+'px';
+      }
+      function up(){
+        el.removeEventListener('pointermove',mv); el.removeEventListener('pointerup',up); el.removeEventListener('pointercancel',up); tip.remove();
+        if(curMin!==baseMin) mpStuSaveStart(id,curMin); else mpDrawStudent();
+      }
+      el.addEventListener('pointermove',mv); el.addEventListener('pointerup',up); el.addEventListener('pointercancel',up);
+    });
+  });
+}
+window.mpStuDetail=function(id){
+  var s=_mpStu.sch.find(function(x){return x.id===id;}); if(!s) return;
+  var n=mpNow(), se=_mpStu.sess[mpSessKey(s.examId,s.studentUid)]||null, st=MPC.scheduleStatus(s,se,n.today,n.nowMin), ed=MPC.canStudentEdit(s,se,n.today,n.nowMin);
+  var cur=MPC.effStart(s);
+  var h='<h3>'+mpE(s.examTitle)+'</h3><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">'+mpChip(st)+'<span class="mp-sub">'+mpDateLabel(s.date)+' · '+MPC.dDayLabel(s.date,n.today)+'</span></div>'
+    +'<div class="mp-card" style="background:var(--surface2)"><div class="mp-sub">선생님이 정한 시간</div><b>'+(s.startMin!=null?MPC.minToHHMM(s.startMin):'미정')+'</b> <span class="mp-sub">· 시험 시간 '+(s.durationMin||'-')+'분</span></div>';
+  if(ed.ok){
+    h+='<div class="mp-lbl">내 시작 시간 (06:00 ~ 23:00)</div><input id="mp-stu-time" type="time" step="600" class="mp-in" value="'+(cur!=null?MPC.minToHHMM(cur):'')+'">'
+      +'<div class="mp-sub" style="margin-top:4px">날짜는 바꿀 수 없고, 같은 날 안에서 시작 시간만 정할 수 있어요.</div>'
+      +'<button class="modal-btn primary" style="margin-top:12px" onclick="mpStuSaveFromInput(\''+id+'\')">저장</button>'
+      +(s.studentStartMin!=null?'<button class="modal-btn cancel" onclick="mpStuSaveStart(\''+id+'\',null)">선생님이 정한 시간으로 되돌리기</button>':'');
+  } else {
+    h+='<div class="mp-warn">'+mpE(ed.reason)+'</div><div class="mp-sub">현재 시작 시간: <b>'+mpTimeStr(s)+'</b></div>';
+  }
+  h+='<button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>';
+  mpSheet(h);
+};
+window.mpStuSaveFromInput=function(id){
+  var v=document.getElementById('mp-stu-time').value; var m=MPC.hhmmToMin(v);
+  mpStuSaveStart(id,m==null?NaN:MPC.clampStart(m));
+};
+window.mpStuSaveStart=async function(id,min){
+  var s=_mpStu.sch.find(function(x){return x.id===id;}); if(!s) return;
+  var n=mpNow(), se=_mpStu.sess[mpSessKey(s.examId,s.studentUid)]||null;
+  var ed=MPC.canStudentEdit(s,se,n.today,n.nowMin); if(!ed.ok){ alert(ed.reason); mpDrawStudent(); return; }
+  if(min!=null){
+    var v=MPC.validateStudentStart(s,min,n.today,n.nowMin); if(!v.ok){ alert(v.reason); mpDrawStudent(); return; }
+    var cand=Object.assign({},s,{studentStartMin:min});
+    var col=MPC.findCollisions(_mpStu.sch,cand,s.id);
+    if(col.length && !confirm('같은 날 다른 시험('+col.map(function(c){return c.examTitle+' '+mpTimeStr(c);}).join(', ')+')과 시간이 겹쳐요.\n그래도 '+MPC.minToHHMM(min)+'에 시작할까요?')){ mpDrawStudent(); return; }
+  }
+  try{
+    await updateDoc(doc(db,'examSchedules',id),{studentStartMin:(min==null?null:min), studentStartSetAt:serverTimestamp()});
+    s.studentStartMin=(min==null?null:min); mpCloseSheets(); mpDrawStudent();
+  }catch(e){ alert('저장에 실패했어요. 잠시 후 다시 시도해 주세요.\n('+e.message+')'); mpDrawStudent(); }
+};
+
+/* ───────────── 일정 → 오늘 투두 자동 추가 / 시험 완료 시 자동 완료 ───────────── */
+function mpDismissKey(id){ return 'mp_sch_dismiss_'+id; }
+async function mpExamSecFor(session, examId){
+  var dur=null;
+  try{ var ed=await getDoc(doc(db,'exams',examId)); if(ed.exists()&&ed.data().subjects) dur=ed.data().subjects.map(function(x){return x.durationMin;}); }catch(e){}
+  return MPC.examSecFromResults(session.subjectResults||[],dur);
+}
+window.MP_ensureScheduleTodos=async function(){
+  try{
+    if(!currentUser||!currentProfile||currentProfile.role!=='student') return;
+    var T=getPlannerDate(), uid=currentUser.uid;
+    var snap=await getDocs(query(collection(db,'examSchedules'),where('studentUid','==',uid),where('date','==',T)));
+    if(snap.empty) return;
+    var sessMap=mpSessMap(await mpFetchSessions(uid));
+    for(var i=0;i<snap.docs.length;i++){
+      var s=Object.assign({id:snap.docs[i].id},snap.docs[i].data());
+      var tid=MPC.todoIdForSchedule(s.id), tref=doc(db,'todos',tid), ts=await getDoc(tref);
+      var se=sessMap[mpSessKey(s.examId,uid)]||null;
+      var done=se&&(se.status==='submitted'||se.status==='graded');
+      if(!ts.exists()){
+        var dismissed=s.todoDismissed; try{ dismissed=dismissed||localStorage.getItem(mpDismissKey(s.id)); }catch(e){}
+        if(dismissed) continue;
+        var data=MPC.buildScheduleTodo(s,uid,getBranch(),s.subjectKey||'ko');
+        if(done){ Object.assign(data,MPC.examDoneFields(data,await mpExamSecFor(se,s.examId)),{completedAt:serverTimestamp()}); }
+        data.createdAt=serverTimestamp();
+        await setDoc(tref,data);
+      } else if(done){
+        var td=ts.data();
+        if(td.status!=='done' && !(td.examSec>0)){
+          await updateDoc(tref,Object.assign(MPC.examDoneFields(td,await mpExamSecFor(se,s.examId)),{completedAt:serverTimestamp()}));
+        }
+      }
+    }
+  }catch(e){ console.warn('[일정→투두 연동 실패]',e); }
+};
+/* 시험 제출이 끝났을 때 호출 (학생 본인 제출 / 강제제출 공통) */
+window.MP_onExamCompleted=async function(studentUid, examId, results, exam){
+  try{
+    if(!studentUid||!examId) return;
+    var snap=await getDocs(query(collection(db,'examSchedules'),where('studentUid','==',studentUid),where('examId','==',examId)));
+    if(snap.empty) return;
+    var dur=exam&&exam.subjects?exam.subjects.map(function(x){return x.durationMin;}):null;
+    var sec=MPC.examSecFromResults(results||[],dur);
+    for(var i=0;i<snap.docs.length;i++){
+      var s=Object.assign({id:snap.docs[i].id},snap.docs[i].data());
+      updateDoc(doc(db,'examSchedules',s.id),{status:'done',doneAt:serverTimestamp()}).catch(function(){});
+      if(currentUser&&currentUser.uid===studentUid&&s.date===getPlannerDate()){
+        var tref=doc(db,'todos',MPC.todoIdForSchedule(s.id)), ts=await getDoc(tref);
+        if(ts.exists()){
+          var td=ts.data();
+          if(!(td.examSec>0)) await updateDoc(tref,Object.assign(MPC.examDoneFields(td,sec),{completedAt:serverTimestamp()}));
+        } else {
+          var data=MPC.buildScheduleTodo(s,studentUid,getBranch(),s.subjectKey||'ko');
+          Object.assign(data,MPC.examDoneFields(data,sec),{completedAt:serverTimestamp(),createdAt:serverTimestamp()});
+          await setDoc(tref,data);
+        }
+        try{ loadTodos(); }catch(e){}
+      }
+    }
+  }catch(e){ console.warn('[시험 완료 연동 실패]',e); }
+};
+
+/* ───────────── 선생님/마스터: 일정표 탭 ───────────── */
+var _mpT={sch:[],sess:{},students:[],exams:[],examsById:{},view:'month',cursor:null,filterUid:'',showPast:false};
+window.buildTSchedule=function(){
+  return Promise.resolve('<div id="mp-tsched"><div class="mp-card"><div class="mp-sub">불러오는 중...</div></div></div>');
+};
+window.mpTeacherSchedInit=async function(){
+  var host=document.getElementById('mp-tsched'); if(!host) return;
+  try{
+    var r=await Promise.all([mpFetchSchedules(null),mpFetchSessions(null),loadStudentList(),getDocs(query(collection(db,'exams'),where('branch','==',getBranch())))]);
+    _mpT.sch=r[0]; _mpT.sess=mpSessMap(r[1]); _mpT.students=r[2];
+    _mpT.exams=r[3].docs.map(function(d){return Object.assign({id:d.id},d.data());}).sort(function(a,b){return (b.createdAt?b.createdAt.toMillis():0)-(a.createdAt?a.createdAt.toMillis():0);});
+    _mpT.examsById={}; _mpT.exams.forEach(function(e){_mpT.examsById[e.id]=e;});
+    if(!_mpT.cursor) _mpT.cursor=getPlannerDate();
+    mpDrawTeacher();
+  }catch(e){ host.innerHTML='<div class="mp-card"><div class="mp-sub" style="color:var(--red)">불러오기 실패: '+mpE(e.message)+'</div></div>'; }
+};
+window.mpTView=function(v){ _mpT.view=v; mpDrawTeacher(); };
+window.mpTNav=function(n){
+  if(_mpT.view==='month'){ var d=MPC.parseDate(_mpT.cursor); d.setUTCMonth(d.getUTCMonth()+n,1); _mpT.cursor=MPC.fmtDate(d); }
+  else _mpT.cursor=MPC.addDays(_mpT.cursor,7*n);
+  mpDrawTeacher();
+};
+window.mpTFilter=function(v){ _mpT.filterUid=v; mpDrawTeacher(); };
+window.mpTPast=function(v){ _mpT.showPast=!!v; mpDrawTeacher(); };
+function mpDrawTeacher(){
+  var host=document.getElementById('mp-tsched'); if(!host) return;
+  var n=mpNow(); var sch=_mpT.sch.filter(function(s){return !_mpT.filterUid||s.studentUid===_mpT.filterUid;});
+  var items=mpItems(sch,_mpT.sess);
+  var h='<div class="mp-card"><div class="mp-h"><div class="mp-title">📅 모의고사 일정표</div><div style="display:flex;gap:6px;flex-wrap:wrap">'
+    +'<button class="mp-btn pri" onclick="mpOpenAuto()"><i class="mpi mpi-spark"></i>자동 배정</button><button class="mp-btn" onclick="mpOpenBulk()">+ 일정 일괄 등록</button><button class="mp-btn" onclick="mpOpenCancel()"><i class="mpi mpi-trash"></i>일정 일괄 취소</button></div></div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'
+    +'<div class="mp-seg">'+[['month','월간'],['week','주간'],['list','목록']].map(function(x){return '<button class="'+(_mpT.view===x[0]?'on':'')+'" onclick="mpTView(\''+x[0]+'\')">'+x[1]+'</button>';}).join('')+'</div>'
+    +'<select class="mp-in sm" style="width:auto" onchange="mpTFilter(this.value)"><option value="">전체 학생</option>'+_mpT.students.map(function(s){return '<option value="'+s.uid+'"'+(_mpT.filterUid===s.uid?' selected':'')+'>'+mpE(s.name)+'</option>';}).join('')+'</select>'
+    +(_mpT.view==='list'?'<label class="mp-chk"><input type="checkbox" '+(_mpT.showPast?'checked':'')+' onchange="mpTPast(this.checked)">지난 일정도 보기</label>':'')+'</div>';
+  if(_mpT.view==='month') h+=mpMonthHtml(items,_mpT.cursor,false,'mpTNav','mpEditSchedule');
+  else if(_mpT.view==='week') h+=mpTeacherWeek(items,n);
+  else h+=mpTeacherList(items,n);
+  h+='<div class="mp-legend" style="margin-top:10px">'+[['green','응시 완료'],['yellow','오늘/응시 중'],['orange','시간 지남'],['red','기한 지남'],['grey','예정']].map(function(x){return '<span class="mp-chip mp-c-'+x[0]+'">'+x[1]+'</span>';}).join('')+'</div></div>';
+  host.innerHTML=h;
+}
+function mpTeacherWeek(items,n){
+  var ws=MPC.weekStart(_mpT.cursor), days=MPC.rangeDates(ws,MPC.addDays(ws,6));
+  var h='<div class="mp-h"><button class="mp-btn sm" onclick="mpTNav(-1)"><i class="mpi mpi-chev-l"></i></button><b>'+mpDateLabel(ws)+' ~ '+mpDateLabel(days[6])+'</b><button class="mp-btn sm" onclick="mpTNav(1)"><i class="mpi mpi-chev-r"></i></button></div><div class="mp-scroll"><div style="display:grid;grid-template-columns:repeat(7,minmax(110px,1fr));gap:4px">';
+  days.forEach(function(d){
+    var evs=items.filter(function(x){return x.s.date===d;}).sort(function(a,b){return (MPC.effStart(a.s)||0)-(MPC.effStart(b.s)||0);});
+    h+='<div class="mp-mc'+(d===n.today?' today':'')+'" style="min-height:120px"><div class="dn">'+MPC.dowKo(d)+' '+(+d.slice(8,10))+'</div>'
+      +evs.map(function(x){return '<span class="mp-ev '+x.status.color+'" style="white-space:normal" onclick="mpEditSchedule(\''+x.s.id+'\')"><b>'+mpTimeStr(x.s)+'</b> '+mpE(x.s.studentName||'')+'<br>'+mpE(x.s.examTitle)+(x.s.studentStartMin!=null?' ✎':'')+'</span>';}).join('')+'</div>';
+  });
+  return h+'</div></div>';
+}
+function mpTeacherList(items,n){
+  var list=items.filter(function(x){return _mpT.showPast||x.s.date>=n.today||x.status.key==='overdue'||x.status.key==='late';}).sort(function(a,b){return a.s.date<b.s.date?-1:a.s.date>b.s.date?1:((MPC.effStart(a.s)||0)-(MPC.effStart(b.s)||0));});
+  if(!list.length) return '<div class="mp-sub" style="padding:14px 0;text-align:center">표시할 일정이 없어요</div>';
+  return list.map(function(x){ var s=x.s;
+    return '<div class="mp-row" onclick="mpEditSchedule(\''+s.id+'\')" style="cursor:pointer"><div class="d"><b>'+(+s.date.slice(8,10))+'</b>'+(+s.date.slice(5,7))+'월 '+MPC.dowKo(s.date)+'</div>'
+      +'<div class="m"><div class="a">'+mpE(s.studentName||'')+' · '+mpE(s.examTitle)+'</div><div class="b">'+mpTimeStr(s)+(s.studentStartMin!=null?' (학생 지정)':'')+(s.timeLocked?' · 🔒':'')+' · '+(s.durationMin||'-')+'분</div></div>'+mpChip(x.status)+'</div>';
+  }).join('');
+}
+window.mpEditSchedule=function(id){
+  var s=_mpT.sch.find(function(x){return x.id===id;}); if(!s) return;
+  var h='<h3>일정 수정</h3><div style="font-weight:700">'+mpE(s.studentName||'')+' · '+mpE(s.examTitle)+'</div>'
+    +'<div class="mp-lbl">날짜</div><input id="mp-e-date" type="date" class="mp-in" value="'+s.date+'">'
+    +'<div class="mp-lbl">시작 시간</div><input id="mp-e-time" type="time" step="600" class="mp-in" value="'+(s.startMin!=null?MPC.minToHHMM(s.startMin):'')+'">'
+    +(s.studentStartMin!=null?'<div class="mp-sub" style="margin-top:4px">학생이 정한 시간: <b>'+MPC.minToHHMM(s.studentStartMin)+'</b> <button type="button" class="mp-pill" onclick="mpClearStudentStart(\''+id+'\')">초기화</button></div>':'')
+    +'<label class="mp-chk" style="margin-top:8px"><input id="mp-e-lock" type="checkbox" '+(s.timeLocked?'checked':'')+'>학생이 시간을 바꾸지 못하게 고정</label>'
+    +'<button class="modal-btn primary" onclick="mpSaveEdit(\''+id+'\')">저장</button>'
+    +'<button class="modal-btn danger" onclick="mpDeleteSchedule(\''+id+'\')">🗑 이 일정 삭제</button><button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>';
+  mpSheet(h);
+};
+window.mpClearStudentStart=async function(id){
+  try{ await updateDoc(doc(db,'examSchedules',id),{studentStartMin:null}); var s=_mpT.sch.find(function(x){return x.id===id;}); if(s) s.studentStartMin=null; mpCloseSheets(); mpDrawTeacher(); }catch(e){ alert('실패: '+e.message); }
+};
+window.mpSaveEdit=async function(id){
+  var s=_mpT.sch.find(function(x){return x.id===id;}); if(!s) return;
+  var date=document.getElementById('mp-e-date').value, tm=MPC.hhmmToMin(document.getElementById('mp-e-time').value), lock=document.getElementById('mp-e-lock').checked;
+  if(!date||tm==null){ alert('날짜와 시간을 모두 입력해 주세요.'); return; }
+  var cand=Object.assign({},s,{date:date,startMin:tm,studentStartMin:(date===s.date?s.studentStartMin:null)});
+  var col=MPC.findCollisions(_mpT.sch,cand,s.id);
+  if(col.length && !confirm('같은 학생의 같은 날 다른 시험과 시간이 겹쳐요:\n'+col.map(function(c){return '· '+c.examTitle+' '+mpTimeStr(c);}).join('\n')+'\n\n그래도 저장할까요?')) return;
+  var upd={date:date,startMin:tm,timeLocked:lock,updatedAt:serverTimestamp()};
+  if(date!==s.date){ upd.studentStartMin=null; upd.status='planned'; }
+  try{ await updateDoc(doc(db,'examSchedules',id),upd); Object.assign(s,upd,{updatedAt:null}); if(upd.studentStartMin===null) s.studentStartMin=null; mpCloseSheets(); mpDrawTeacher(); }catch(e){ alert('저장 실패: '+e.message); }
+};
+window.mpDeleteSchedule=async function(id){
+  if(!confirm('이 일정을 삭제할까요?\n(이미 만들어진 오늘의 투두는 그대로 남아요)')) return;
+  try{ await deleteDoc(doc(db,'examSchedules',id)); _mpT.sch=_mpT.sch.filter(function(x){return x.id!==id;}); mpCloseSheets(); mpDrawTeacher(); }catch(e){ alert('삭제 실패: '+e.message); }
+};
+
+/* ── 일괄 등록 (학생 × 회차 표) ── */
+var _mpBulk={exams:[],students:[],sel:{},ssel:{}};
+/* 탐구 과목은 내부 코드가 ex1/ex2라서, 계열(과학탐구/사회탐구)로 바꿔서 보여주고 필터함 */
+function mpSubKey(x){ if(!x||!x.subject) return ''; return (x.subject==='ex1'||x.subject==='ex2')?(x.exCategory||'sc'):x.subject; }
+function mpSubLabel(k){ var fb={ko:'국어',ma:'수학',en:'영어',hi:'한국사',sc:'과학탐구',so:'사회탐구'}; var n=(typeof subjectNames!=='undefined')?subjectNames[k]:null; return n||fb[k]||k; }
+window.mpOpenBulk=function(){
+  _mpBulk={exams:[],students:[],sel:{},ssel:{}};
+  var srcs={}, subs={}; _mpT.exams.forEach(function(e){ if(e.examSource) srcs[e.examSource]=1; (e.subjects||[]).forEach(function(x){ var k=mpSubKey(x); if(k) subs[k]=1; }); });
+  var SL={practice:'연습용',daesung:'대성',megastudy:'메가스터디',etoos:'이투스',pyeongga:'평가원',office:'교육청',etc:'기타'};
+  var h='<h3>모의고사 일정 일괄 등록</h3>'
+    +'<div class="mp-lblrow"><div class="mp-lbl">1. 시험(회차) 선택 <span class="mp-sub" id="mp-bulk-cnt"></span></div><div class="acts"><button type="button" class="mp-pill" onclick="mpBulkAllExams(true)"><i class="mpi mpi-check"></i>보이는 시험 전체</button><button type="button" class="mp-pill" onclick="mpBulkAllExams(false)">전체 해제</button></div></div>'
+    +'<div class="mp-filter-grid" style="margin-bottom:6px">'
+    +'<input class="mp-in sm mp-search" id="mp-bf-q" placeholder="시험 이름 검색" oninput="mpBulkFilterExams()">'
+    +'<select class="mp-in sm" id="mp-bf-src" onchange="mpBulkFilterExams()"><option value="">출처 전체</option>'+Object.keys(srcs).map(function(k){return '<option value="'+mpE(k)+'">'+mpE(SL[k]||k)+'</option>';}).join('')+'</select>'
+    +'<select class="mp-in sm" id="mp-bf-sub" onchange="mpBulkFilterExams()"><option value="">과목 전체</option>'+Object.keys(subs).map(function(k){return '<option value="'+mpE(k)+'">'+mpE(mpSubLabel(k))+'</option>';}).join('')+'</select>'
+    +'<select class="mp-in sm" id="mp-bf-sch" onchange="mpBulkFilterExams()"><option value="">일정 전체</option><option value="none">일정 아직 없는 시험</option><option value="has">일정 있는 시험</option></select>'
+    +'</div>'
+    +'<div id="mp-bulk-exams" style="max-height:170px;overflow:auto;border:1px solid var(--border2);border-radius:8px;padding:6px"></div>'
+    +'<div class="mp-lblrow"><div class="mp-lbl">2. 학생 선택 <span class="mp-sub" id="mp-bulk-scnt"></span></div><div class="acts"><button type="button" class="mp-pill" onclick="mpBulkAllStudents(true)"><i class="mpi mpi-check"></i>보이는 학생 전체</button><button type="button" class="mp-pill" onclick="mpBulkAllStudents(false)">전체 해제</button></div></div>'
+    +'<input class="mp-in sm mp-search" id="mp-bf-sq" placeholder="학생 이름 검색" oninput="mpBulkDrawStudents()" style="margin-bottom:6px">'
+    +'<div id="mp-bulk-students" style="display:flex;flex-wrap:wrap;gap:6px"></div>'
+    +'<button class="modal-btn primary" style="margin-top:12px" onclick="mpBulkBuildTable()">3. 표 만들기</button>'
+    +'<div id="mp-bulk-table" style="margin-top:12px"></div>';
+  mpSheet(h); mpBulkFilterExams(); mpBulkDrawStudents();
+};
+function mpBulkCounts(){
+  var a=document.getElementById('mp-bulk-cnt'), b=document.getElementById('mp-bulk-scnt');
+  if(a) a.textContent='(선택 '+Object.keys(_mpBulk.sel).length+'개)';
+  if(b) b.textContent='(선택 '+Object.keys(_mpBulk.ssel).length+'명)';
+}
+window.mpBulkToggleExam=function(id,on){ if(on) _mpBulk.sel[id]=1; else delete _mpBulk.sel[id]; mpBulkCounts(); };
+window.mpBulkToggleStu=function(id,on){ if(on) _mpBulk.ssel[id]=1; else delete _mpBulk.ssel[id]; mpBulkCounts(); };
+window.mpBulkFilterExams=function(){
+  var el=document.getElementById('mp-bulk-exams'); if(!el) return;
+  var g=function(i){var e=document.getElementById(i); return e?e.value:'';};
+  var q=g('mp-bf-q').trim().toLowerCase(), src=g('mp-bf-src'), sub=g('mp-bf-sub'), sch=g('mp-bf-sch');
+  var hasSch={}; _mpT.sch.forEach(function(x){ hasSch[x.examId]=1; });
+  var list=_mpT.exams.filter(function(e){
+    if(q&&(e.title||'').toLowerCase().indexOf(q)<0) return false;
+    if(src&&(e.examSource||'')!==src) return false;
+    if(sub&&!(e.subjects||[]).some(function(x){return mpSubKey(x)===sub;})) return false;
+    if(sch==='none'&&hasSch[e.id]) return false;
+    if(sch==='has'&&!hasSch[e.id]) return false;
+    return true;
+  }).slice(0,120);
+  el.innerHTML=list.map(function(e){return '<label class="mp-chk"><input type="checkbox" class="mp-be" value="'+e.id+'"'+(_mpBulk.sel[e.id]?' checked':'')+' onchange="mpBulkToggleExam(this.value,this.checked)">'+mpE(e.title)+' <span class="mp-sub">'+mpE(e.examSource||'')+(hasSch[e.id]?' · 일정 있음':'')+'</span></label>';}).join('')||'<div class="mp-sub">조건에 맞는 시험이 없어요</div>';
+  mpBulkCounts();
+};
+window.mpBulkAllExams=function(on){ if(on){ document.querySelectorAll('.mp-be').forEach(function(c){c.checked=true; _mpBulk.sel[c.value]=1;}); } else { _mpBulk.sel={}; document.querySelectorAll('.mp-be').forEach(function(c){c.checked=false;}); } mpBulkCounts(); };
+window.mpBulkDrawStudents=function(){
+  var el=document.getElementById('mp-bulk-students'); if(!el) return;
+  var q=((document.getElementById('mp-bf-sq')||{}).value||'').trim().toLowerCase();
+  el.innerHTML=_mpT.students.filter(function(s){return !q||(s.name||'').toLowerCase().indexOf(q)>=0;}).map(function(s){return '<label class="mp-chk mp-cs-chip"><input type="checkbox" class="mp-bs" value="'+s.uid+'"'+(_mpBulk.ssel[s.uid]?' checked':'')+' onchange="mpBulkToggleStu(this.value,this.checked)">'+mpE(s.name)+'</label>';}).join('')||'<div class="mp-sub">학생이 없어요</div>';
+  mpBulkCounts();
+};
+window.mpBulkAllStudents=function(on){ document.querySelectorAll('.mp-bs').forEach(function(c){c.checked=on; mpBulkToggleStu(c.value,on);}); if(!on) {_mpBulk.ssel={}; mpBulkCounts();} };
+function mpExamDuration(e){ var t=0; (e.subjects||[]).forEach(function(s,i,a){ t+=(s.durationMin||0)+(i<a.length-1?(s.breakAfterMin||0):0); }); return t||60; }
+window.mpBulkBuildTable=function(){
+  var exIds=_mpT.exams.filter(function(e){return _mpBulk.sel[e.id];}).map(function(e){return e.id;});
+  var stIds=_mpT.students.filter(function(x){return _mpBulk.ssel[x.uid];}).map(function(x){return x.uid;});
+  if(!exIds.length||!stIds.length){ alert('시험과 학생을 각각 1개 이상 선택해 주세요.'); return; }
+  _mpBulk.exams=exIds; _mpBulk.students=stIds;
+  var exByS={}; _mpT.sch.forEach(function(s){ exByS[s.examId+'|'+s.studentUid]=s; });
+  var h='<div class="mp-sub" style="margin-bottom:6px">칸을 비워 두면 일정이 만들어지지 않아요. 맨 윗줄에서 열 전체에 같은 날짜·시간을 한 번에 채울 수 있어요.</div><div class="mp-scroll"><table class="mp-tbl"><tr><th>학생</th>';
+  exIds.forEach(function(id,ci){ var e=_mpT.examsById[id]; h+='<th style="min-width:150px">'+mpE(e.title)+'<br><span class="mp-sub">'+mpExamDuration(e)+'분</span></th>'; });
+  h+='</tr><tr><td class="l">열 일괄 입력</td>';
+  exIds.forEach(function(id,ci){ h+='<td><input type="date" class="mp-in sm" id="mp-fd-'+ci+'"> <input type="time" step="600" class="mp-in sm" id="mp-ft-'+ci+'" style="margin-top:3px"><br><button class="mp-btn sm" style="margin-top:3px" onclick="mpBulkFillCol('+ci+')">모두 적용</button></td>'; });
+  h+='</tr>';
+  stIds.forEach(function(uid,ri){
+    var st=_mpT.students.find(function(s){return s.uid===uid;});
+    h+='<tr><td class="l">'+mpE(st?st.name:uid)+'</td>';
+    exIds.forEach(function(id,ci){
+      var ex=exByS[id+'|'+uid];
+      h+='<td><input type="date" class="mp-in sm mp-cd" data-r="'+ri+'" data-c="'+ci+'" value="'+(ex?ex.date:'')+'"> <input type="time" step="600" class="mp-in sm mp-ct" data-r="'+ri+'" data-c="'+ci+'" value="'+(ex&&ex.startMin!=null?MPC.minToHHMM(ex.startMin):'')+'" style="margin-top:3px">'+(ex?'<div class="mp-sub">등록됨</div>':'')+'</td>';
+    });
+    h+='</tr>';
+  });
+  h+='</table></div><label class="mp-chk" style="margin-top:8px"><input id="mp-bulk-lock" type="checkbox">학생이 시간을 바꾸지 못하게 고정</label>'
+    +'<div class="mp-sub" style="margin-top:4px">※ 일정을 등록하면 아직 배정되지 않은 학생에게 시험이 자동으로 배정돼요.</div>'
+    +'<div id="mp-bulk-warn"></div><button class="modal-btn primary" onclick="mpBulkSave()">일정 저장</button>';
+  document.getElementById('mp-bulk-table').innerHTML=h;
+};
+window.mpBulkFillCol=function(ci){
+  var d=document.getElementById('mp-fd-'+ci).value, t=document.getElementById('mp-ft-'+ci).value;
+  document.querySelectorAll('.mp-cd[data-c="'+ci+'"]').forEach(function(i){ if(d) i.value=d; });
+  document.querySelectorAll('.mp-ct[data-c="'+ci+'"]').forEach(function(i){ if(t) i.value=t; });
+};
+window.mpBulkSave=async function(){
+  var cells=[], errs=[];
+  _mpBulk.students.forEach(function(uid,ri){ _mpBulk.exams.forEach(function(exId,ci){
+    var d=document.querySelector('.mp-cd[data-r="'+ri+'"][data-c="'+ci+'"]').value, t=document.querySelector('.mp-ct[data-r="'+ri+'"][data-c="'+ci+'"]').value;
+    var st=_mpT.students.find(function(s){return s.uid===uid;});
+    if(!d&&!t) return;
+    if(!d||!t){ errs.push((st?st.name:uid)+' · '+_mpT.examsById[exId].title+': 날짜와 시간을 모두 입력'); return; }
+    cells.push({uid:uid,name:st?st.name:'',examId:exId,date:d,startMin:MPC.hhmmToMin(t)});
+  }); });
+  if(errs.length){ alert('입력을 확인해 주세요:\n\n'+errs.slice(0,8).join('\n')); return; }
+  if(!cells.length){ alert('저장할 일정이 없어요.'); return; }
+  // 충돌 검사: 이번에 덮어쓰는 문서는 제외하고 기존 일정 + 새 일정끼리 비교
+  var ids={}; cells.forEach(function(c){ ids[c.examId+'_'+c.uid]=1; });
+  var base=_mpT.sch.filter(function(s){return !ids[s.id];});
+  var pool=base.slice(), warns=[];
+  cells.forEach(function(c){
+    var ex=_mpT.examsById[c.examId]; var cand={id:c.examId+'_'+c.uid,studentUid:c.uid,date:c.date,startMin:c.startMin,durationMin:mpExamDuration(ex)};
+    var col=MPC.findCollisions(pool,cand);
+    if(col.length) warns.push(c.name+' '+MPC.mdKo(c.date)+' '+ex.title+' ↔ '+col.map(function(x){return x.examTitle;}).join(', '));
+    else { var others=MPC.sameDayOthers(pool,cand); if(others.length) warns.push(c.name+' '+MPC.mdKo(c.date)+' 같은 날 시험 '+(others.length+1)+'개'); }
+    pool.push(cand);
+  });
+  if(warns.length && !confirm('⚠️ 같은 날 일정이 겹치거나 몰려 있어요 ('+warns.length+'건)\n\n'+warns.slice(0,8).join('\n')+(warns.length>8?'\n...':'')+'\n\n그래도 저장할까요?')) return;
+  var lock=document.getElementById('mp-bulk-lock').checked, existing={}; _mpT.sch.forEach(function(s){existing[s.id]=s;});
+  try{
+    for(var i=0;i<cells.length;i++){
+      var c=cells[i], ex=_mpT.examsById[c.examId], id=c.examId+'_'+c.uid, old=existing[id];
+      var f={studentUid:c.uid,studentName:c.name,branch:getBranch(),examId:c.examId,examTitle:ex.title,durationMin:mpExamDuration(ex),
+        subjectKey:mpSubjectKey(ex),date:c.date,startMin:c.startMin,timeLocked:lock,updatedAt:serverTimestamp(),createdBy:currentUser.uid};
+      if(!old) { f.status='planned'; f.studentStartMin=null; f.createdAt=serverTimestamp(); }
+      else if(old.date!==c.date) { f.studentStartMin=null; f.status='planned'; }
+      await setDoc(doc(db,'examSchedules',id),f,{merge:true});
+      await mpEnsureAssigned(ex,c.uid);
+    }
+    alert('일정 '+cells.length+'건을 저장했어요.');
+    mpCloseSheets(); invalidateTeacherTabCache(9); mpTeacherSchedInit();
+  }catch(e){ alert('저장 중 오류: '+e.message+'\n\n(Firestore 규칙에 examSchedules 컬렉션 허용이 되어 있는지 확인해 주세요)'); }
+};
+function mpSubjectKey(ex){ var s=ex.subjects&&ex.subjects[0]; if(!s) return 'ko'; return (s.subject==='ex1'||s.subject==='ex2')?(s.exCategory||'sc'):s.subject; }
+async function mpEnsureAssigned(ex,uid){
+  var assigned=ex.assignedTo||[];
+  if(assigned.indexOf(uid)<0){ await updateDoc(doc(db,'exams',ex.id),{assignedTo:arrayUnion(uid)}); ex.assignedTo=assigned.concat([uid]); }
+  var snap=await getDocs(query(collection(db,'examSessions'),where('examId','==',ex.id),where('studentUid','==',uid)));
+  if(snap.empty) await addDoc(collection(db,'examSessions'),{examId:ex.id,studentUid:uid,branch:ex.branch||getBranch(),status:'not_started',currentSubjectIndex:0,subjectResults:[],createdAt:serverTimestamp()});
+}
+
+/* ======================================================================
+   MONO PLANNER 추가 기능 B — 시험 현황판 / 시험관리 카드 요약 / 주의 학생 / 코멘트 읽음
+   ====================================================================== */
+/* ───────────── 시험 현황판 ───────────── */
+var _mpB={filter:'all',limit:12,data:null,q:'',sq:'',src:'',st:''};
+var MP_SRC_LABELS={practice:'연습용',daesung:'대성',megastudy:'메가스터디',etoos:'이투스',pyeongga:'평가원',office:'교육청',etc:'기타'};
+function mpSrcLabel(v){ return MP_SRC_LABELS[v]||v||''; }
+window.buildTBoard=function(){ return Promise.resolve('<div id="mp-board"><div class="mp-card"><div class="mp-sub">불러오는 중...</div></div></div>'); };
+window.mpBoardInit=async function(){
+  var host=document.getElementById('mp-board'); if(!host) return;
+  try{
+    var r=await Promise.all([
+      getDocs(query(collection(db,'exams'),where('branch','==',getBranch()))),
+      mpFetchSessions(null), mpFetchSchedules(null), loadStudentList(),
+      getDocs(query(collection(db,'examReflections'),where('branch','==',getBranch()))).catch(function(){return {docs:[]};})
+    ]);
+    var exams=r[0].docs.map(function(d){return Object.assign({id:d.id},d.data());});
+    var refl={}; r[4].docs.forEach(function(d){ var x=d.data(); if(x.q1){ refl[x.uid+'|'+x.examId]=(refl[x.uid+'|'+x.examId]||0)+1; } });
+    _mpB.data={exams:exams,sess:mpSessMap(r[1]),sch:r[2],students:r[3],refl:refl};
+    mpBoardDraw();
+  }catch(e){ host.innerHTML='<div class="mp-card"><div class="mp-sub" style="color:var(--red)">불러오기 실패: '+mpE(e.message)+'</div></div>'; }
+};
+window.mpBoardFilter=function(f){ _mpB.filter=f; mpBoardDraw(); };
+window.mpBoardLimit=function(n){ _mpB.limit=+n; mpBoardDraw(); };
+window.mpBoardSet=function(k,v){ _mpB[k]=v; mpBoardDraw(); };
+window.mpBoardReset=function(){ _mpB.q='';_mpB.sq='';_mpB.src='';_mpB.st='';_mpB.filter='all'; var f=document.getElementById('mp-bf'); if(f) f.remove(); mpBoardDraw(); };
+/* 한 칸(학생×시험) 계산 — 순수에 가깝게 분리 */
+function mpCell(D,st,ex,n){
+  var sch=D.schByKey[ex.id+'|'+st.uid], se=D.sess[mpSessKey(ex.id,st.uid)]||null;
+  if(!sch&&!se) return null;
+  var status=sch?MPC.scheduleStatus(sch,se,n.today,n.nowMin):MPC.noScheduleStatus(se);
+  var score=null; if(se&&se.subjectResults&&(se.status==='graded'||se.status==='submitted')){ score=_r2(se.subjectResults.reduce(function(s,r){return s+(r?(r.score||0):0);},0)); }
+  var rc=D.refl[st.uid+'|'+ex.id]||0;
+  return {sch:sch,se:se,status:status,score:score,refl:rc};
+}
+function mpBoardPrepare(){
+  var D=_mpB.data, n=mpNow();
+  D.schByKey={}; D.schByExam={}; D.sch.forEach(function(s){ D.schByKey[s.examId+'|'+s.studentUid]=s; (D.schByExam[s.examId]=D.schByExam[s.examId]||[]).push(s); });
+  var ws=MPC.weekStart(n.today), we=MPC.addDays(ws,6);
+  // 시험 후보: 배정(세션) 또는 일정이 있는 시험만
+  var hasSess={}; Object.keys(D.sess).forEach(function(k){ hasSess[D.sess[k].examId]=1; });
+  var list=D.exams.filter(function(e){ return D.schByExam[e.id]||hasSess[e.id]; }).map(function(e){
+    var sc=D.schByExam[e.id]||[]; var minDate=sc.length?sc.map(function(x){return x.date;}).sort()[0]:null;
+    return {ex:e,isSch:sc.length>0,minDate:minDate,sortKey:minDate||(e.createdAt?MPC.fmtDate(new Date(e.createdAt.toMillis())):'0000-00-00')};
+  });
+  list.sort(function(a,b){return a.sortKey<b.sortKey?1:-1;});
+  var f=_mpB.filter;
+  if(f==='schedule') list=list.filter(function(x){return x.isSch;});
+  else if(f==='nonschedule') list=list.filter(function(x){return !x.isSch;});
+  else if(f==='week') list=list.filter(function(x){ return (D.schByExam[x.ex.id]||[]).some(function(s){return s.date>=ws&&s.date<=we;}); });
+  else if(f==='nottaken') list=list.filter(function(x){ return D.students.some(function(st){ var c=mpCell(D,st,x.ex,n); return c&&c.status.key!=='done'; }); });
+  var q=(_mpB.q||'').trim().toLowerCase(), src=_mpB.src||'', stf=_mpB.st||'', sq=(_mpB.sq||'').trim().toLowerCase();
+  if(q) list=list.filter(function(x){return (x.ex.title||'').toLowerCase().indexOf(q)>=0;});
+  if(src) list=list.filter(function(x){return (x.ex.examSource||'')===src;});
+  var studs=D.students.filter(function(st){return !sq||(st.name||'').toLowerCase().indexOf(sq)>=0;});
+  if(stf){
+    var hit=function(st,x){ var c=mpCell(D,st,x.ex,n); return c&&c.status.color===stf; };
+    list=list.filter(function(x){return studs.some(function(st){return hit(st,x);});});
+    studs=studs.filter(function(st){return list.some(function(x){return hit(st,x);});});
+  }
+  return {n:n,list:list,studs:studs};
+}
+function mpBoardDraw(){
+  var host=document.getElementById('mp-board'); if(!host||!_mpB.data) return;
+  var D=_mpB.data, P=mpBoardPrepare(), n=P.n, total=P.list.length, cols=P.list.slice(0,_mpB.limit||9999), studs=P.studs;
+  mpBoardEnsureFilterBar(host);
+  var body=document.getElementById('mp-bb');
+  var fl=[['all','전체'],['schedule','📌 일정 시험'],['nonschedule','📎 일정 외'],['nottaken','미응시 있음'],['week','이번 주']];
+  document.getElementById('mp-bsum').textContent=total+'개 시험 · 학생 '+studs.length+'명';
+  document.getElementById('mp-bfl').innerHTML=fl.map(function(x){return '<button class="mp-btn sm'+(_mpB.filter===x[0]?' pri':'')+'" onclick="mpBoardFilter(\''+x[0]+'\')">'+x[1]+'</button>';}).join('');
+  var h='<div class="mp-legend">'+[['green','응시 완료'],['yellow','응시 중/대기/오늘'],['orange','시간 지남'],['red','기한 지남'],['blue','일정 없이 배정'],['grey','예정']].map(function(x){return '<span class="mp-chip mp-c-'+x[0]+'">'+x[1]+'</span>';}).join('')+'</div>';
+  if(!cols.length){ body.innerHTML=h+'<div class="mp-sub" style="padding:18px;text-align:center">조건에 맞는 시험이 없어요. <br><button type="button" class="mp-pill" style="margin-top:10px" onclick="mpBoardReset()"><i class="mpi mpi-refresh"></i>필터 초기화</button></div>'; return; }
+  // 데스크탑 표
+  h+='<div class="mp-board-desk mp-scroll"><table class="mp-bt"><tr><th style="position:sticky;left:0;z-index:2">학생</th>'
+    +cols.map(function(c){
+      var done=0,all=0; studs.forEach(function(st){var ce=mpCell(D,st,c.ex,n); if(ce){all++; if(ce.status.key==='done')done++;}});
+      return '<th onclick="mpBoardExam(\''+c.ex.id+'\')" title="클릭: 시험 상세">'+(c.isSch?'📌':'📎')+' '+mpE(MPC.clip(c.ex.title,16))+'<br><span style="font-weight:400">'+(c.minDate?MPC.mdLabel(c.minDate):'')+' · '+done+'/'+all+'</span></th>';
+    }).join('')+'</tr>'
+    +studs.map(function(st){
+      return '<tr><td class="nm" onclick="mpBoardStudent(\''+st.uid+'\')">'+mpE(st.name)+'</td>'
+        +cols.map(function(c){ return mpCellTd(D,st,c.ex,n,_mpB.filter==='nottaken'); }).join('')+'</tr>';
+    }).join('')+'</table></div>';
+  // 모바일 카드
+  h+='<div class="mp-board-mob">'+studs.map(function(st){
+    var rows=cols.map(function(c){ var ce=mpCell(D,st,c.ex,n); return ce?{c:c,ce:ce}:null; }).filter(Boolean);
+    if(!rows.length) return '';
+    var late=rows.filter(function(x){return x.ce.status.key==='late'||x.ce.status.key==='overdue';}).length;
+    return '<div class="mp-scard"><div class="hh" onclick="mpBoardStudent(\''+st.uid+'\')"><span>'+mpE(st.name)+'</span>'+(late?'<span class="mp-chip mp-c-red">확인 필요 '+late+'</span>':'')+'</div>'
+      +rows.map(function(x){ return '<div class="it" onclick="mpBoardExam(\''+x.c.ex.id+'\')"><span>'+(x.c.isSch?'📌':'📎')+' '+mpE(MPC.clip(x.c.ex.title,18))+'</span><span>'+mpChip(x.ce.status)+(x.ce.score!=null?' <b>'+x.ce.score+'점</b>':'')+'</span></div>'; }).join('')+'</div>';
+  }).join('')+'</div>';
+  body.innerHTML=h;
+}
+function mpBoardEnsureFilterBar(host){
+  if(document.getElementById('mp-bf')) return;
+  var D=_mpB.data, srcs={}; D.exams.forEach(function(e){ if(e.examSource) srcs[e.examSource]=1; });
+  var stOpts=[['','상태 전체'],['green','응시 완료'],['yellow','응시 중/대기/오늘'],['orange','시간 지남'],['red','기한 지남'],['blue','일정 없이 배정'],['grey','예정']];
+  host.innerHTML='<div class="mp-card" id="mp-bf"><div class="mp-h"><div class="mp-title">📊 시험 현황판</div><div class="mp-sub" id="mp-bsum"></div></div>'
+    +'<div class="mp-filter-grid">'
+    +'<input class="mp-in sm mp-search" id="mp-bq" placeholder="시험 이름 검색" value="'+mpE(_mpB.q)+'" oninput="mpBoardSet(\'q\',this.value)">'
+    +'<input class="mp-in sm mp-search" id="mp-bsq" placeholder="학생 이름 검색" value="'+mpE(_mpB.sq)+'" oninput="mpBoardSet(\'sq\',this.value)">'
+    +'<select class="mp-in sm" onchange="mpBoardSet(\'src\',this.value)"><option value="">출처 전체</option>'+Object.keys(srcs).map(function(k){return '<option value="'+mpE(k)+'"'+(_mpB.src===k?' selected':'')+'>'+mpE(mpSrcLabel(k))+'</option>';}).join('')+'</select>'
+    +'<select class="mp-in sm" onchange="mpBoardSet(\'st\',this.value)">'+stOpts.map(function(o){return '<option value="'+o[0]+'"'+(_mpB.st===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select>'
+    +'</div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0"><span id="mp-bfl" style="display:contents"></span>'
+    +'<select class="mp-in sm" style="width:auto" onchange="mpBoardLimit(this.value)">'+[[8,'8개'],[12,'12개'],[24,'24개'],[0,'전체']].map(function(x){return '<option value="'+x[0]+'"'+(_mpB.limit===x[0]?' selected':'')+'>시험 '+x[1]+'</option>';}).join('')+'</select>'
+    +'<button class="mp-btn sm" onclick="mpBoardReset()">↺ 초기화</button></div><div id="mp-bb"></div></div>';
+}
+function mpCellTd(D,st,ex,n,dim){
+  var ce=mpCell(D,st,ex,n); if(!ce) return '<td class="c none">–</td>';
+  var sub='';
+  if(ce.status.key==='done'){ sub=(ce.score!=null?ce.score+'점':'')+' '+(ce.refl?'✍':'<span style="color:#c2410c">✍미</span>'); }
+  else if(ce.sch){ sub=MPC.mdLabel(ce.sch.date)+' '+mpTimeStr(ce.sch)+(ce.sch.studentStartMin!=null?'✎':''); }
+  var dimStyle=(dim&&ce.status.key==='done')?' style="opacity:.3"':'';
+  return '<td class="c '+ce.status.color+'"'+dimStyle+' onclick="mpBoardCell(\''+st.uid+'\',\''+ex.id+'\')">'+mpE(ce.status.label)+(sub?'<small>'+sub+'</small>':'')+'</td>';
+}
+window.mpBoardCell=function(uid,exId){ mpBoardStudent(uid); };
+window.mpBoardStudent=function(uid){
+  var D=_mpB.data, n=mpNow(), st=D.students.find(function(s){return s.uid===uid;}); if(!st) return;
+  var rows=D.exams.map(function(e){ var c=mpCell(D,st,e,n); return c?{e:e,c:c}:null; }).filter(Boolean)
+    .sort(function(a,b){ var da=a.c.sch?a.c.sch.date:'0'; var db2=b.c.sch?b.c.sch.date:'0'; return da<db2?1:-1; });
+  var h='<h3>'+mpE(st.name)+' 시험 현황</h3>'+(rows.length?rows.map(function(x){
+    return '<div class="mp-row"><div class="m"><div class="a">'+(x.c.sch?'📌':'📎')+' '+mpE(x.e.title)+'</div><div class="b">'+(x.c.sch?mpDateLabel(x.c.sch.date)+' '+mpTimeStr(x.c.sch)+(x.c.sch.studentStartMin!=null?' (학생 지정)':''):'일정 없음')+(x.c.score!=null?' · '+x.c.score+'점':'')+(x.c.status.key==='done'?(x.c.refl?' · ✍ 다음 걸음 작성':' · ✍ 미작성'):'')+'</div></div>'+mpChip(x.c.status)+'</div>';
+  }).join(''):'<div class="mp-sub">배정된 시험이 없어요</div>')+'<button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>';
+  mpSheet(h);
+};
+window.mpBoardExam=function(examId){
+  var D=_mpB.data, n=mpNow(), ex=D.exams.find(function(e){return e.id===examId;}); if(!ex) return;
+  var rows=D.students.map(function(st){ var c=mpCell(D,st,ex,n); return c?{st:st,c:c}:null; }).filter(Boolean);
+  var cnt={done:0,notdone:0,refl:0}; rows.forEach(function(x){ if(x.c.status.key==='done'){cnt.done++; if(x.c.refl)cnt.refl++;} else cnt.notdone++; });
+  var h='<h3>'+mpE(ex.title)+'</h3><div class="mp-sub" style="margin-bottom:8px">응시 완료 '+cnt.done+' / 미완료 '+cnt.notdone+' · 다음 걸음 작성 '+cnt.refl+'/'+cnt.done+'</div>'
+    +(cnt.notdone?'<button class="mp-btn gold" style="margin-bottom:8px" onclick="mpBoardRemind(\''+examId+'\')">🔔 미응시 학생에게 알림 보내기</button>':'')
+    +rows.map(function(x){
+      var live=x.c.se&&(x.c.se.status==='in_progress'||x.c.se.status==='waiting'||x.c.se.status==='break');
+      return '<div class="mp-row"><div class="m"><div class="a">'+mpE(x.st.name)+'</div><div class="b">'+(x.c.sch?mpDateLabel(x.c.sch.date)+' '+mpTimeStr(x.c.sch)+(x.c.sch.studentStartMin!=null?' (학생 지정)':''):'일정 없음')+(x.c.score!=null?' · '+x.c.score+'점':'')+(x.c.status.key==='done'?(x.c.refl?' · ✍ 작성':' · ✍ 미작성'):'')+'</div></div>'
+        +mpChip(x.c.status)+(live?'<button class="mp-btn sm" onclick="_runExamForceSubmitForStudent(\''+examId+'\',\''+x.st.uid+'\',\''+mpE(x.st.name)+'\')">강제제출</button>':'')+'</div>';
+    }).join('')+'<button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>';
+  mpSheet(h);
+};
+window.mpBoardRemind=function(examId){
+  var D=_mpB.data, n=mpNow(), ex=D.exams.find(function(e){return e.id===examId;});
+  var uids=D.students.filter(function(st){var c=mpCell(D,st,ex,n); return c&&c.status.key!=='done';}).map(function(s){return s.uid;});
+  if(!uids.length){ alert('알림 보낼 학생이 없어요.'); return; }
+  if(!confirm(uids.length+'명에게 "'+ex.title+'" 응시 알림을 보낼까요?')) return;
+  _sendPushNotification(uids,'📝 모의고사 응시 안내','"'+ex.title+'" 아직 응시 전이에요. 일정을 확인하고 응시해 주세요.',{type:'exam'});
+  alert('알림을 보냈어요.');
+};
+
+/* ───────────── 시험관리 카드: 한눈에 보는 요약 ───────────── */
+window.mpDecorateExamCards=async function(){
+  var cards=document.querySelectorAll('#exam-list-area .exam-card'); if(!cards.length) return;
+  try{
+    var r=await Promise.all([mpFetchSessions(null),mpFetchSchedules(null),getDocs(query(collection(db,'examReflections'),where('branch','==',getBranch()))).catch(function(){return {docs:[]};})]);
+    var by={}; r[0].forEach(function(s){ var o=by[s.examId]=by[s.examId]||{tot:0,done:0,live:0}; o.tot++; if(s.status==='graded'||s.status==='submitted')o.done++; else if(s.status==='in_progress'||s.status==='waiting'||s.status==='break')o.live++; });
+    var sc={}; r[1].forEach(function(s){ sc[s.examId]=(sc[s.examId]||0)+1; });
+    var rf={}; r[2].docs.forEach(function(d){ var x=d.data(); if(x.q1){ (rf[x.examId]=rf[x.examId]||{})[x.uid]=1; } });
+    cards.forEach(function(card){
+      var id=card.dataset.examId, o=by[id]||{tot:0,done:0,live:0}, rn=rf[id]?Object.keys(rf[id]).length:0;
+      var el=card.querySelector('.mp-card-stat'); if(!el) return;
+      el.innerHTML='<span class="mp-chip mp-c-'+(o.tot&&o.done===o.tot?'green':'grey')+'">응시 '+o.done+'/'+o.tot+'</span> '
+        +(o.live?'<span class="mp-chip mp-c-yellow">진행 '+o.live+'</span> ':'')
+        +'<span class="mp-chip mp-c-'+(o.done&&rn>=o.done?'green':(o.done?'orange':'grey'))+'">🌱 다음 걸음 '+rn+'/'+o.done+'</span> '
+        +(sc[id]?'<span class="mp-chip mp-c-blue">📌 일정 '+sc[id]+'</span>':'');
+    });
+  }catch(e){ console.warn('[시험 카드 요약 실패]',e); }
+};
+window.mpToggleExMore=function(btn){ var p=btn.closest('.exam-card-actions,.ex-hdr-actions'); if(p) p.classList.toggle('open'); btn.textContent=p&&p.classList.contains('open')?'접기 ▲':'⋯ 더보기'; };
+
+/* ───────────── 주의 학생 (시간 체크 관리) ───────────── */
+var _mpW={days:7,data:null};
+window.buildTWatch=function(){ return Promise.resolve('<div id="mp-watch"><div class="mp-card"><div class="mp-sub">불러오는 중...</div></div></div>'); };
+window.mpWatchInit=async function(){
+  var host=document.getElementById('mp-watch'); if(!host) return;
+  try{
+    var n=mpNow(), start=MPC.addDays(n.today,-(_mpW.days-1));
+    var r=await Promise.all([loadStudentList(),
+      getDocs(query(collection(db,'todos'),where('date','>=',start))),
+      getDocs(query(collection(db,'planners'),where('date','>=',start))),
+      getDocs(query(collection(db,'studentWatch'),where('branch','==',getBranch()))).catch(function(){return {docs:[]};})]);
+    var uids={}; r[0].forEach(function(s){uids[s.uid]=1;});
+    var todos={}, planners={}, watch={};
+    r[1].docs.forEach(function(d){ var t=d.data(); if(uids[t.uid]) (todos[t.uid]=todos[t.uid]||[]).push(t); });
+    r[2].docs.forEach(function(d){ var p=d.data(); if(uids[p.uid]) (planners[p.uid]=planners[p.uid]||[]).push({date:p.date,submitted:!!p.submittedAt}); });
+    r[3].docs.forEach(function(d){ watch[d.id]=d.data(); });
+    _mpW.data={students:r[0].map(function(s){ var res=MPC.checkStudentTimeUse(todos[s.uid]||[],planners[s.uid]||[],_mpW.days,n.today); return {s:s,res:res,w:watch[s.uid]||null}; }),start:start};
+    mpWatchDraw();
+  }catch(e){ host.innerHTML='<div class="mp-card"><div class="mp-sub" style="color:var(--red)">불러오기 실패: '+mpE(e.message)+'</div></div>'; }
+};
+window.mpWatchDays=function(d){ _mpW.days=+d; mpWatchInit(); };
+function mpWatchDraw(){
+  var host=document.getElementById('mp-watch'); if(!host||!_mpW.data) return;
+  var rank={red:0,yellow:1,ok:2};
+  var list=_mpW.data.students.slice().sort(function(a,b){ return (rank[a.res.level]-rank[b.res.level])||((a.res.compliance==null?101:a.res.compliance)-(b.res.compliance==null?101:b.res.compliance)); });
+  var red=list.filter(function(x){return x.res.level==='red';}).length, yel=list.filter(function(x){return x.res.level==='yellow';}).length;
+  var h='<div class="mp-card"><div class="mp-h"><div class="mp-title">⚠️ 시간 체크 주의 학생</div><div class="mp-seg">'+[7,14,30].map(function(d){return '<button class="'+(_mpW.days===d?'on':'')+'" onclick="mpWatchDays('+d+')">최근 '+d+'일</button>';}).join('')+'</div></div>'
+    +'<div class="mp-sub" style="margin-bottom:8px">공부를 마쳤다고 체크했는데 시간 기록이 없거나, 3분 미만의 짧은 체크만 반복하는 학생을 찾아줘요. 🔴 '+red+'명 · 🟡 '+yel+'명</div>';
+  h+=list.map(function(x){
+    var r=x.res, w=x.w;
+    return '<div class="mp-row" style="align-items:flex-start"><div style="padding-top:5px"><span class="mp-lv '+r.level+'"></span></div><div class="m"><div class="a" style="white-space:normal">'+mpE(x.s.name)
+      +(w&&w.status==='watching'?' <span class="mp-chip mp-c-orange">지도 중</span>':'')+(w&&w.status==='resolved'?' <span class="mp-chip mp-c-green">지도 완료</span>':'')+'</div>'
+      +'<div class="b">완료 '+r.doneCount+'개 · 시간 체크 '+(r.compliance==null?'-':r.compliance+'%')+' · 기록 '+MPC.fmtHM(r.totalSec)+' · 플래너 제출 '+r.submitDays+'일</div>'
+      +r.flags.map(function(f){return '<div class="mp-flag">• '+mpE(f.text)+'</div>';}).join('')
+      +(w&&w.note?'<div class="mp-flag" style="color:var(--burg)">📝 '+mpE(w.note)+'</div>':'')+'</div>'
+      +'<div style="display:flex;flex-direction:column;gap:4px"><button class="mp-btn sm" onclick="mpWatchNote(\''+x.s.uid+'\')">메모/상태</button>'
+      +(r.level!=='ok'?'<button class="mp-btn sm gold" onclick="mpWatchPush(\''+x.s.uid+'\')">🔔 알림</button>':'')+'</div></div>';
+  }).join('')||'<div class="mp-sub">학생이 없어요</div>';
+  host.innerHTML=h+'</div>';
+}
+window.mpWatchNote=function(uid){
+  var x=_mpW.data.students.find(function(y){return y.s.uid===uid;}); if(!x) return; var w=x.w||{};
+  mpSheet('<h3>'+mpE(x.s.name)+' · 지도 기록</h3><div class="mp-lbl">상태</div><select id="mp-w-st" class="mp-in"><option value="">선택 안 함</option><option value="watching"'+(w.status==='watching'?' selected':'')+'>지도 중</option><option value="resolved"'+(w.status==='resolved'?' selected':'')+'>지도 완료</option></select>'
+    +'<div class="mp-lbl">메모</div><textarea id="mp-w-note" class="mp-in" rows="4" placeholder="예) 10/14 면담 — 타이머 사용법 안내함">'+mpE(w.note||'')+'</textarea>'
+    +'<button class="modal-btn primary" onclick="mpWatchSave(\''+uid+'\')">저장</button><button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>');
+};
+window.mpWatchSave=async function(uid){
+  var st=document.getElementById('mp-w-st').value, note=document.getElementById('mp-w-note').value.trim();
+  var x=_mpW.data.students.find(function(y){return y.s.uid===uid;});
+  try{
+    await setDoc(doc(db,'studentWatch',uid),{uid:uid,name:x.s.name,branch:getBranch(),status:st||null,note:note,updatedAt:serverTimestamp(),updatedBy:currentProfile.name},{merge:true});
+    x.w={status:st,note:note}; mpCloseSheets(); mpWatchDraw();
+  }catch(e){ alert('저장 실패: '+e.message); }
+};
+window.mpWatchPush=function(uid){
+  var x=_mpW.data.students.find(function(y){return y.s.uid===uid;});
+  if(!confirm(x.s.name+' 학생에게 시간 체크 알림을 보낼까요?')) return;
+  _sendPushNotification([uid],'⏱ 시간 체크 안내','공부를 시작할 때 타이머를 켜고, 끝나면 꼭 완료 처리해 주세요. 시간 기록이 학습 리포트에 반영돼요.',{type:'timecheck'});
+  alert('알림을 보냈어요.');
+};
+
+/* ───────────── 멘토 코멘트: 실시간 + 읽음 확인 + 푸시 ───────────── */
+var _mpCmtUnsub=null, _mpCmtSeen=null, _mpHistUnsub=null;
+/* 학생: 실시간 수신 (앱을 켜 둔 동안) */
+window.MP_listenComments=function(){
+  if(!currentUser||!currentProfile||currentProfile.role!=='student'||_mpCmtUnsub) return;
+  _mpCmtUnsub=onSnapshot(query(collection(db,'comments'),where('studentUid','==',currentUser.uid)),function(snap){
+    var first=_mpCmtSeen===null; if(first) _mpCmtSeen={};
+    var fresh=[];
+    snap.docs.forEach(function(d){ var c=d.data(); if(!_mpCmtSeen[d.id]){ _mpCmtSeen[d.id]=1; if(!c.read) fresh.push(c); } });
+    if(fresh.length){
+      var c=fresh[0];
+      mpToast('💬 '+(c.teacherName||'선생님')+' 코멘트가 도착했어요'+(fresh.length>1?' (외 '+(fresh.length-1)+'개)':'')+'\n'+MPC.clip(c.content,50),function(){ studentTab(0); });
+    }
+    if(document.getElementById('mentor-comment-area')) loadMentorComment();
+  },function(e){ console.warn('[코멘트 실시간 수신 실패]',e); });
+};
+window.MP_stopComments=function(){ if(_mpCmtUnsub){_mpCmtUnsub();_mpCmtUnsub=null;} _mpCmtSeen=null; };
+/* 학생 화면: 읽음 처리 + 최근 3개 */
+window.MP_renderMentorComments=function(area,docs){
+  var unread=docs.filter(function(x){return !x.read;});
+  function card(x){
+    var date=x.createdAt?x.createdAt.toDate().toLocaleDateString('ko-KR'):'';
+    return '<div class="mentor-card" style="'+(x.read?'':'border:1.5px solid var(--burg);')+'"><div class="mentor-av">'+escapeHtml((x.teacherName||'T').slice(0,2))+'</div><div class="mentor-body"><div class="mentor-meta">멘토 코멘트 '+(x.read?'':'<span class="mp-read n">NEW</span> ')+'<span class="mentor-meta-date">· '+escapeHtml(x.teacherName||'')+' · '+date+'</span></div><div class="mentor-text">'+escapeHtml(x.content)+'</div></div></div>';
+  }
+  area.innerHTML=docs.slice(0,3).map(card).join('')+(docs.length>3?'<div class="mp-sub" style="text-align:center;padding:4px">이전 코멘트 '+(docs.length-3)+'개</div>':'');
+  unread.slice(0,10).forEach(function(x){ updateDoc(doc(db,'comments',x.id),{read:true,readAt:serverTimestamp()}).catch(function(){}); x.read=true; });
+};
+/* 선생님: 학생별 코멘트 히스토리 실시간 + 읽음 표시 */
+window.MP_commentHistoryLive=function(val){
+  if(_mpHistUnsub){_mpHistUnsub();_mpHistUnsub=null;}
+  if(!val) return;
+  var parts=val.split('|'), uid=parts[0], sName=parts[1]||'학생', el=document.getElementById('comment-history'); if(!el) return;
+  el.innerHTML='<div style="color:var(--tx3);font-size:12px">불러오는 중...</div>';
+  _mpHistUnsub=onSnapshot(query(collection(db,'comments'),where('studentUid','==',uid)),function(snap){
+    var host=document.getElementById('comment-history'); if(!host) return;
+    if(snap.empty){ host.innerHTML='<div style="color:var(--tx3);font-size:12px;padding:8px 0">'+escapeHtml(sName)+'님의 코멘트가 없습니다</div>'; return; }
+    var items=snap.docs.map(function(d){return Object.assign({_id:d.id},d.data());}).sort(function(a,b){return (b.createdAt?b.createdAt.toMillis():0)-(a.createdAt?a.createdAt.toMillis():0);});
+    host.innerHTML='<div class="section-label" style="margin-bottom:8px">'+escapeHtml(sName)+' 코멘트 히스토리</div>'+items.map(function(c){
+      var date=c.createdAt?c.createdAt.toDate().toLocaleDateString('ko-KR'):'';
+      var rd=c.read?'<span class="mp-read y">읽음 ✓ '+(c.readAt?c.readAt.toDate().toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'')+'</span>':'<span class="mp-read n">아직 안 읽음</span>';
+      return '<div style="background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:12px;margin-bottom:8px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:6px;flex-wrap:wrap"><div style="display:flex;align-items:center;gap:7px"><div class="teacher-av" style="width:28px;height:28px;font-size:10px">'+escapeHtml((c.teacherName||'T').slice(0,2))+'</div><span style="font-size:12px;font-weight:600;color:var(--burg)">'+escapeHtml(c.teacherName||'')+'</span><span style="font-size:11px;color:var(--tx3)">'+date+'</span> '+rd+'</div><button onclick="deleteComment(\''+c._id+'\',\''+val+'\')" style="padding:3px 8px;background:rgba(224,82,82,0.1);border:1px solid rgba(224,82,82,0.2);border-radius:5px;color:var(--red);font-size:10px;cursor:pointer">삭제</button></div><div style="font-size:13px;color:var(--tx2);line-height:1.8;white-space:pre-wrap">'+escapeHtml(c.content)+'</div></div>';
+    }).join('');
+  },function(e){ var host=document.getElementById('comment-history'); if(host) host.innerHTML='<div style="color:var(--red);font-size:12px">불러오기 실패: '+escapeHtml(e.message)+'</div>'; });
+};
+window.MP_stopCommentHistory=function(){ if(_mpHistUnsub){_mpHistUnsub();_mpHistUnsub=null;} };
+window.MP_afterCommentSaved=function(uid,sName,content){
+  _sendPushNotification([uid],'💬 '+(currentProfile.name||'선생님')+' 코멘트',MPC.clip(content,60),{type:'comment'});
+};
+
+/* ======================================================================
+   MONO PLANNER 추가 기능 C — 별자리 리포트 / 성적표 만들기 / 학생용 열람
+   ====================================================================== */
+var MPR = window.MPRender;
+var MP_LIBS={h2c:'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',pdf:'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',zip:'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'};
+var _mpLibP={};
+function mpLoadLib(key,test){
+  if(test()) return Promise.resolve();
+  if(_mpLibP[key]) return _mpLibP[key];
+  _mpLibP[key]=new Promise(function(res,rej){ var s=document.createElement('script'); s.src=MP_LIBS[key]; s.onload=res; s.onerror=function(){ _mpLibP[key]=null; rej(new Error('라이브러리를 불러오지 못했어요 (인터넷 연결 확인)')); }; document.head.appendChild(s); });
+  return _mpLibP[key];
+}
+var _mpFontsOk=false;
+function mpEnsureFonts(){
+  if(!_mpFontsOk){ _mpFontsOk=true; var l=document.createElement('link'); l.rel='stylesheet'; l.href='https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&family=Noto+Serif+KR:wght@500;600;700&display=swap'; document.head.appendChild(l); }
+  return (document.fonts&&document.fonts.ready)?Promise.race([document.fonts.ready,new Promise(function(r){setTimeout(r,2500);})]):Promise.resolve();
+}
+function mpClean(o){ return JSON.parse(JSON.stringify(o)); }
+function mpDownload(blob,name){ var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },1500); }
+function mpWaitImages(root){
+  var imgs=[].slice.call(root.querySelectorAll('img'));
+  var bgs=[].slice.call(root.querySelectorAll('.mpr-bgi')).map(function(el){ var m=/url\(["']?([^"')]+)["']?\)/.exec(el.style.backgroundImage||''); return m?m[1]:null; }).filter(Boolean);
+  return Promise.all(imgs.map(function(i){return i.complete?1:new Promise(function(r){i.onload=i.onerror=r;});}).concat(bgs.map(function(u){return new Promise(function(r){ var im=new Image(); im.onload=im.onerror=r; im.src=u; });})));
+}
+/* 페이지 HTML → 캔버스 (A4, 2배 해상도) */
+async function mpPageCanvas(html){
+  var wrap=document.createElement('div'); wrap.style.cssText='position:fixed;left:-10000px;top:0;width:794px;height:1123px;background:#fff'; wrap.innerHTML=html; document.body.appendChild(wrap);
+  try{ await mpWaitImages(wrap); await mpEnsureFonts(); await mpLoadLib('h2c',function(){return window.html2canvas;});
+    try{ MPR.fit(wrap); }catch(e){}
+    return await window.html2canvas(wrap.firstElementChild,{scale:2,useCORS:true,backgroundColor:'#ffffff',width:794,height:1123,windowWidth:794,windowHeight:1123,logging:false});
+  } finally { wrap.remove(); }
+}
+function mpCanvasBlob(cv,type,q){ return new Promise(function(r){ cv.toBlob(r,type,q); }); }
+/* sets: [{name:'황시영', pages:[html...]}]. kind:'png'|'pdf' → 1명이면 바로 파일, 여러 명이면 ZIP */
+window.mpExportSets=async function(sets,kind,baseName,onProgress){
+  await Promise.all([mpEnsureFonts(),mpLoadLib('h2c',function(){return window.html2canvas;})]);
+  var needZip=sets.length>1||(kind==='png'&&sets[0].pages.length>1);
+  if(needZip) await mpLoadLib('zip',function(){return window.JSZip;});
+  if(kind==='pdf') await mpLoadLib('pdf',function(){return window.jspdf;});
+  var zip=needZip?new window.JSZip():null, total=sets.reduce(function(s,x){return s+x.pages.length;},0), done=0, single=null;
+  for(var si=0;si<sets.length;si++){
+    var set=sets[si], pdf=null;
+    if(kind==='pdf') pdf=new window.jspdf.jsPDF({orientation:'p',unit:'mm',format:'a4',compress:true});
+    for(var pi=0;pi<set.pages.length;pi++){
+      var cv=await mpPageCanvas(set.pages[pi]);
+      if(kind==='png'){
+        var blob=await mpCanvasBlob(cv,'image/png');
+        var fname=(sets.length>1?set.name+'/':'')+set.name+'_'+baseName+'_'+(pi+1)+'.png';
+        if(zip) zip.file(fname,blob); else single={blob:blob,name:set.name+'_'+baseName+'.png'};
+      } else {
+        if(pi>0) pdf.addPage();
+        pdf.addImage(cv.toDataURL('image/jpeg',0.93),'JPEG',0,0,210,297,undefined,'FAST');
+      }
+      done++; if(onProgress) onProgress(done,total);
+    }
+    if(kind==='pdf'){
+      var pb=pdf.output('blob'), pn=set.name+'_'+baseName+'.pdf';
+      if(zip) zip.file(pn,pb); else single={blob:pb,name:pn};
+    }
+  }
+  if(zip){ var zb=await zip.generateAsync({type:'blob'}); mpDownload(zb,(sets.length>1?baseName:sets[0].name+'_'+baseName)+'.zip'); }
+  else mpDownload(single.blob,single.name);
+};
+/* 미리보기 마운트 */
+function mpMountPreview(host,pages,width){
+  var k=width/794;
+  host.innerHTML='<div class="mp-prev">'+pages.map(function(p,i){ return '<div class="pgw" style="width:'+width+'px;height:'+(1123*k)+'px;cursor:zoom-in" onclick="mpBigPreview('+i+')"><div class="pgx" style="width:794px;height:1123px;transform:scale('+k+')">'+p+'</div></div>'; }).join('')+'</div>';
+  host._pages=pages;
+  try{ MPR.fit(host); }catch(e){}
+}
+window.mpBigPreview=function(i){
+  var host=document.querySelector('#mp-r-prev, #mp-c-prev, #mp-sv-prev, #mp-av-prev'); if(!host||!host._pages) return;
+  var k=Math.min(1,(window.innerWidth-40)/794);
+  var ov=mpSheet('<div style="overflow:auto"><div style="width:'+(794*k)+'px;height:'+(1123*k)+'px;margin:0 auto"><div style="width:794px;height:1123px;transform:scale('+k+');transform-origin:0 0">'+host._pages[i]+'</div></div></div><button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>');
+  ov.firstChild.style.maxWidth='860px';
+  try{ MPR.fit(ov); }catch(e){}
+};
+function mpDateRangeBtns(){
+  var T=getPlannerDate();
+  return {week:[MPC.weekStart(T),T], month:[MPC.monthStart(T),T], d30:[MPC.addDays(T,-29),T]};
+}
+
+/* ───────────── 선생님: 리포트 탭 ───────────── */
+var _mpR={tab:'report',students:[],loaded:false,payload:null,cardCtx:null};
+window.buildTReport=function(){ return Promise.resolve('<div id="mp-rep"><div class="mp-card"><div class="mp-sub">불러오는 중...</div></div></div>'); };
+window.mpReportInit=async function(){
+  var host=document.getElementById('mp-rep'); if(!host) return;
+  try{ _mpR.students=await loadStudentList(); mpEnsureFonts(); mpRepShell(); }catch(e){ host.innerHTML='<div class="mp-card"><div class="mp-sub" style="color:var(--red)">불러오기 실패: '+mpE(e.message)+'</div></div>'; }
+};
+window.mpRepTab=function(t){ _mpR.tab=t; mpRepShell(); };
+function mpRepShell(){
+  var host=document.getElementById('mp-rep'); if(!host) return;
+  var h='<div class="mp-card"><div class="mp-h"><div class="mp-title">📄 리포트 · 성적표</div><div class="mp-seg"><button class="'+(_mpR.tab==='report'?'on':'')+'" onclick="mpRepTab(\'report\')">✨ 별자리 리포트</button><button class="'+(_mpR.tab==='card'?'on':'')+'" onclick="mpRepTab(\'card\')">🎓 성적표 만들기</button><button class="'+(_mpR.tab==='archive'?'on':'')+'" onclick="mpRepTab(\'archive\')">🗂 생성된 성적표</button></div></div><div id="mp-rep-body"></div></div>';
+  host.innerHTML=h;
+  if(_mpR.tab==='report') mpReportPanel(); else if(_mpR.tab==='archive') mpArchivePanel(); else mpCardPanel();
+}
+/* ── 별자리 리포트 ── */
+function mpReportPanel(){
+  var b=document.getElementById('mp-rep-body'), T=getPlannerDate(), r=mpDateRangeBtns();
+  b.innerHTML='<div class="mp-sub" style="margin-bottom:8px">학습 시간·플래너·성적 기록을 합쳐서 학생 한 명의 학습 리포트를 만들어요. 기간은 직접 고를 수 있어요.</div>'
+   +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">'
+   +'<div><div class="mp-lbl">학생</div><select id="mp-r-stu" class="mp-in"><option value="">선택</option>'+_mpR.students.map(function(s){return '<option value="'+s.uid+'">'+mpE(s.name)+'</option>';}).join('')+'</select></div>'
+   +'<div><div class="mp-lbl">시작일</div><input id="mp-r-s" type="date" class="mp-in" value="'+r.d30[0]+'"></div><div><div class="mp-lbl">종료일</div><input id="mp-r-e" type="date" class="mp-in" value="'+r.d30[1]+'"></div></div>'
+   +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0"><button class="mp-btn sm" onclick="mpRQuick(\'week\')">이번 주</button><button class="mp-btn sm" onclick="mpRQuick(\'month\')">이번 달</button><button class="mp-btn sm" onclick="mpRQuick(\'d30\')">최근 30일</button></div>'
+   +'<button class="mp-btn pri" onclick="mpReportAnalyze()">리포트 만들기</button><div id="mp-r-out" style="margin-top:14px"></div>';
+}
+window.mpRQuick=function(k){ var r=mpDateRangeBtns()[k]; document.getElementById('mp-r-s').value=r[0]; document.getElementById('mp-r-e').value=r[1]; };
+window.mpReportAnalyze=async function(){
+  var uid=document.getElementById('mp-r-stu').value, s=document.getElementById('mp-r-s').value, e=document.getElementById('mp-r-e').value, out=document.getElementById('mp-r-out');
+  if(!uid){ alert('학생을 선택해 주세요.'); return; }
+  if(!s||!e||s>e){ alert('기간을 확인해 주세요.'); return; }
+  if(MPC.diffDays(s,e)>99){ alert('기간은 최대 100일까지 선택할 수 있어요.'); return; }
+  out.innerHTML='<div class="mp-sub">기록을 모아 분석하는 중...</div>';
+  try{
+    var r=await Promise.all([getDocs(query(collection(db,'todos'),where('uid','==',uid))),getDocs(query(collection(db,'planners'),where('uid','==',uid))),getDocs(query(collection(db,'grades'),where('uid','==',uid)))]);
+    var todos=r[0].docs.map(function(d){var t=d.data(); return {date:t.date,subject:t.subject,status:t.status,studyTime:t.studyTime};});
+    var planners=r[1].docs.map(function(d){var p=d.data(); return {date:p.date,submitted:!!p.submittedAt};});
+    var grades=r[2].docs.map(function(d){return d.data();});
+    var st=_mpR.students.find(function(x){return x.uid===uid;});
+    var A=MPC.analyzeReport({startDate:s,endDate:e,today:getPlannerDate(),todos:todos,prevTodos:todos,planners:planners,grades:grades,subjectNames:subjectNames});
+    _mpR.payload={uid:uid,name:st?st.name:'',analysis:A,comment:A.autoComment,goals:A.goals.slice()};
+    mpReportEditor(out);
+  }catch(err){ out.innerHTML='<div class="mp-warn">분석 실패: '+mpE(err.message)+'</div>'; }
+};
+function mpReportEditor(out){
+  var P=_mpR.payload, A=P.analysis, g=P.goals.concat(['','','']).slice(0,3);
+  var info=[];
+  if(!A.hasStudy) info.push('이 기간에는 학습 시간 기록이 없어요 — 학습 영역은 빈 상태로 표시돼요.');
+  if(!A.hasGrades) info.push('이 기간에는 성적 기록이 없어요 — 성적 영역은 안내 문구로 표시돼요.');
+  out.innerHTML=(info.length?'<div class="mp-warn">'+info.map(mpE).join('<br>')+'</div>':'')
+   +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px"><div><div class="mp-lbl">선생님의 한마디 (자동 제안 · 직접 고칠 수 있어요)</div><textarea id="mp-r-cm" class="mp-in" rows="4" oninput="mpReportRefresh()">'+mpE(P.comment)+'</textarea></div>'
+   +'<div><div class="mp-lbl">다음 목표 (최대 3개)</div>'+g.map(function(x,i){return '<input class="mp-in" style="margin-bottom:5px" id="mp-r-g'+i+'" value="'+mpE(x)+'" oninput="mpReportRefresh()">';}).join('')+'</div></div>'
+   +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0"><button class="mp-btn pri" onclick="mpReportExport(\'png\')">🖼 PNG 저장</button><button class="mp-btn pri" onclick="mpReportExport(\'pdf\')">📄 PDF 저장</button><button class="mp-btn gold" onclick="mpReportPublish()">👀 학생에게 공개</button><span id="mp-r-stat" class="mp-sub" style="align-self:center"></span></div>'
+   +'<div id="mp-r-prev"></div>';
+  mpReportRefresh();
+}
+window.mpReportRefresh=function(){
+  var P=_mpR.payload; if(!P) return;
+  var cm=document.getElementById('mp-r-cm'); if(cm) P.comment=cm.value;
+  P.goals=[0,1,2].map(function(i){var el=document.getElementById('mp-r-g'+i); return el?el.value:'';}).filter(function(x){return x.trim();});
+  var host=document.getElementById('mp-r-prev'); if(!host) return;
+  mpEnsureFonts().then(function(){ mpMountPreview(host,MPR.reportPages(P),300); });
+};
+window.mpReportExport=async function(kind){
+  var P=_mpR.payload, st=document.getElementById('mp-r-stat'); if(!P) return;
+  try{ await mpExportSets([{name:P.name,pages:MPR.reportPages(P)}],kind,'별자리리포트_'+P.analysis.period.start+'_'+P.analysis.period.end,function(d,t){ if(st) st.textContent='만드는 중 '+d+'/'+t; }); if(st) st.textContent='✓ 저장했어요'; }
+  catch(e){ if(st) st.textContent=''; alert('저장 실패: '+e.message); }
+};
+window.mpReportPublish=async function(){
+  var P=_mpR.payload; if(!P) return;
+  if(!confirm(P.name+' 학생에게 이 리포트를 공개할까요?\n(학생의 "나의 시험" 화면에서 볼 수 있어요)')) return;
+  try{
+    await addDoc(collection(db,'studentReports'),{uid:P.uid,kind:'report',title:'별자리 리포트 '+P.analysis.period.start+' ~ '+P.analysis.period.end,branch:getBranch(),createdAt:serverTimestamp(),createdBy:currentProfile.name,payload:mpClean({name:P.name,analysis:P.analysis,comment:P.comment,goals:P.goals})});
+    alert('학생에게 공개했어요.');
+  }catch(e){ alert('저장 실패: '+e.message+'\n(Firestore 규칙에 studentReports 컬렉션 허용이 필요해요)'); }
+};
+
+/* ── 성적표 만들기 ── */
+function mpCardPanel(){
+  var b=document.getElementById('mp-rep-body');
+  b.innerHTML='<div class="mp-sub" style="margin-bottom:8px">시험을 여러 개 골라 학생별 성적표를 만들어요. 여러 학생을 한 번에 선택해 일괄 생성할 수 있어요.</div>'
+   +'<div class="mp-lblrow"><div class="mp-lbl">1. 학생 선택</div><div class="acts"><button type="button" class="mp-pill" onclick="mpCardAllStu(true)"><i class="mpi mpi-check"></i>전체</button><button type="button" class="mp-pill" onclick="mpCardAllStu(false)">해제</button></div></div>'
+   +'<div style="display:flex;flex-wrap:wrap;gap:6px">'+_mpR.students.map(function(s){return '<label class="mp-chk mp-cs-chip"><input type="checkbox" class="mp-cs" value="'+s.uid+'">'+mpE(s.name)+'</label>';}).join('')+'</div>'
+   +'<button class="mp-btn pri" style="margin-top:10px" onclick="mpCardLoadExams()">2. 성적 불러오기</button><div id="mp-c-body" style="margin-top:12px"></div>';
+}
+window.mpCardAllStu=function(on){ document.querySelectorAll('.mp-cs').forEach(function(c){c.checked=on;}); };
+window.mpCardLoadExams=async function(){
+  var uids=[].map.call(document.querySelectorAll('.mp-cs:checked'),function(c){return c.value;}), body=document.getElementById('mp-c-body');
+  if(!uids.length){ alert('학생을 1명 이상 선택해 주세요.'); return; }
+  body.innerHTML='<div class="mp-sub">성적을 불러오는 중...</div>';
+  try{
+    var gs=await Promise.all(uids.map(function(u){return getDocs(query(collection(db,'grades'),where('uid','==',u)));}));
+    var byUid={}, keys={};
+    uids.forEach(function(u,i){ byUid[u]=gs[i].docs.map(function(d){return Object.assign({_id:d.id},d.data());}).filter(function(g){return g.examName&&g.examDate&&g.scores;});
+      byUid[u].forEach(function(g){ var k=g.examName+'|'+g.examDate; var e=(keys[k]=keys[k]||{name:g.examName,date:g.examDate,n:0,cat:''}); e.n++; if(!e.cat) e.cat=(g.type==='school'?'내신':(examSourceLabel(g.examSource)||'')); }); });
+    var list=Object.keys(keys).map(function(k){return Object.assign({key:k},keys[k]);}).sort(function(a,b){return a.date<b.date?1:-1;});
+    var pref=null; if(uids.length===1){ try{ var pd=await getDoc(doc(db,'studentCardPrefs',uids[0])); if(pd.exists()) pref=pd.data(); }catch(e){} }
+    var plansByUid={}; await Promise.all(uids.map(async function(u){ try{ var pd2=await getDoc(doc(db,'admissionPlans',u)); if(pd2.exists()) plansByUid[u]=pd2.data(); }catch(e){} }));
+    _mpR.cardCtx={uids:uids,byUid:byUid,list:list,plans:plansByUid,themeId:pref&&pref.themeId?pref.themeId:7,include:Object.assign({cover:true,inner:true,back:true,comment:true,chart:true,memo:true,minreq:true},pref?pref.include:{})};
+    mpCardStep2(body); try{ mpCardFilter(); }catch(e){}
+  }catch(e){ body.innerHTML='<div class="mp-warn">불러오기 실패: '+mpE(e.message)+'</div>'; }
+};
+function mpCardStep2(body){
+  var X=_mpR.cardCtx, inc=X.include;
+  if(!X.list.length){ body.innerHTML='<div class="mp-warn">선택한 학생들에게 저장된 성적이 없어요.</div>'; return; }
+  var cats=[]; X.list.forEach(function(e){ var c=e.cat||'기타'; if(cats.indexOf(c)<0) cats.push(c); });
+  body.innerHTML='<div class="mp-lbl">시험 선택 — 여러 개 선택 가능 (칸에 학생 수가 표시돼요)</div>'
+   +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"><input id="mp-cx-q" class="mp-in" style="flex:1;min-width:140px;margin:0" placeholder="🔍 시험 이름 검색 (예: 10월, 학평, 수학)" oninput="mpCardFilter()">'
+   +'<select id="mp-cx-cat" class="mp-in" style="width:auto;margin:0" onchange="mpCardFilter()"><option value="">전체 분류</option>'+cats.map(function(c){return '<option>'+mpE(c)+'</option>';}).join('')+'</select>'
+   +'<select id="mp-cx-per" class="mp-in" style="width:auto;margin:0" onchange="mpCardFilter()"><option value="">전체 기간</option><option value="30">최근 1개월</option><option value="90">최근 3개월</option><option value="180">최근 6개월</option></select></div>'
+   +'<div style="display:flex;gap:10px;align-items:center;margin-bottom:4px;font-size:11px"><span id="mp-cx-cnt" class="mp-sub"></span><a href="javascript:void 0" onclick="mpCardCheckVisible(true)" style="color:var(--burg)">보이는 시험 모두 선택</a><a href="javascript:void 0" onclick="mpCardCheckVisible(false)" style="color:var(--tx3)">선택 해제</a></div>'
+   +'<div id="mp-cx-list" style="max-height:220px;overflow:auto;border:1px solid var(--border2);border-radius:8px;padding:6px">'
+   +X.list.map(function(e,i){return '<label class="mp-chk" data-q="'+mpE((e.name+' '+e.date+' '+(e.cat||'')).toLowerCase())+'" data-cat="'+mpE(e.cat||'기타')+'" data-date="'+e.date+'"><input type="checkbox" class="mp-cx" value="'+mpE(e.key)+'" onchange="mpCardRefresh()">'+mpE(e.name)+' <span class="mp-sub">'+e.date+(e.cat?' · '+mpE(e.cat):'')+' · '+e.n+'명</span></label>';}).join('')+'<div id="mp-cx-none" class="mp-sub" style="display:none;padding:8px">조건에 맞는 시험이 없어요</div></div>'
+   +'<div class="mp-lbl">3. 디자인 선택</div><div class="mp-sub" style="margin:0 0 6px">새 디자인</div><div class="mp-theme">'+MPR.THEMES.map(mpThemeTile).join('')+'</div><div class="mp-sub" style="margin:12px 0 6px">기존 디자인</div><div class="mp-theme">'+(MPR.OLD_THEMES||[]).map(mpThemeTile).join('')+'</div>'
+   +'<div class="mp-lbl">포함 항목</div><div style="display:flex;flex-wrap:wrap;gap:4px 14px">'+[['cover','표지'],['inner','내지(쪽수 자동)'],['back','뒷표지'],['comment','선생님 한마디'],['chart','성적 흐름 그래프'],['minreq','수시 수능최저 충족']].map(function(x){return '<label class="mp-chk"><input type="checkbox" class="mp-ci" data-k="'+x[0]+'" '+(inc[x[0]]!==false?'checked':'')+' onchange="mpCardRefresh()">'+x[1]+'</label>';}).join('')+'</div>'
+   +'<div class="mp-lbl">선생님 한마디 (선택 · 선택한 모든 학생에게 같이 들어가요)</div><textarea id="mp-c-cm" class="mp-in" rows="3" style="resize:vertical;min-height:72px;overflow:hidden" placeholder="비워 두면 선생님 한마디 칸은 만들어지지 않아요" oninput="mpAutoGrow(this);mpCardRefresh()"></textarea>'
+   +'<label class="mp-chk" style="margin-top:8px"><input type="checkbox" id="mp-c-save" checked>이 디자인을 선택한 학생들의 기본 디자인으로 저장</label>'
+   +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0"><button class="mp-btn pri" onclick="mpCardExport(\'png\')">🖼 PNG 저장</button><button class="mp-btn pri" onclick="mpCardExport(\'pdf\')">📄 PDF 저장</button><button class="mp-btn" onclick="mpCardArchive()" style="background:#1d2a4a;border:1px solid #1d2a4a;color:#fff;font-weight:700">💾 성적표 생성(보관함 저장)</button><button class="mp-btn gold" onclick="mpCardPublish()">👀 학생에게 공개</button><span id="mp-c-stat" class="mp-sub" style="align-self:center"></span></div><div id="mp-c-prevname" class="mp-sub"></div><div id="mp-c-prev"></div>';
+}
+function mpThemeTile(t){ var X=_mpR.cardCtx||{}; return '<div class="th'+(X.themeId===t.n?' on':'')+'" data-n="'+t.n+'" onclick="mpCardTheme('+t.n+')"><img loading="lazy" src="'+MPR.img(t.cov)+'" alt=""><b>'+mpE(t.nm)+'</b>'+(t.dark?'<small>인쇄 잉크 많이 듦</small>':'')+'</div>'; }
+// 내용이 많아지면 입력칸이 따라 커지게(최대 화면 높이의 60%, 그 이상은 칸 안에서 스크롤)
+window.mpAutoGrow=function(el){ if(!el) return; el.style.height='auto'; var mx=Math.round(window.innerHeight*0.6); el.style.height=Math.min(el.scrollHeight+2,mx)+'px'; el.style.overflowY=el.scrollHeight+2>mx?'auto':'hidden'; };
+window.mpCardFilter=function(){
+  var q=((document.getElementById('mp-cx-q')||{}).value||'').trim().toLowerCase().split(/\s+/).filter(Boolean), cat=(document.getElementById('mp-cx-cat')||{}).value||'', per=+((document.getElementById('mp-cx-per')||{}).value||0);
+  var lim=per?MPC.addDays(getPlannerDate(),-per):'', shown=0, rows=document.querySelectorAll('#mp-cx-list .mp-chk');
+  rows.forEach(function(el){ var ok=q.every(function(w){return el.getAttribute('data-q').indexOf(w)>=0;})&&(!cat||el.getAttribute('data-cat')===cat)&&(!lim||el.getAttribute('data-date')>=lim); el.style.display=ok?'':'none'; if(ok) shown++; });
+  var none=document.getElementById('mp-cx-none'); if(none) none.style.display=shown?'none':'block';
+  var cnt=document.getElementById('mp-cx-cnt'); if(cnt) cnt.textContent=shown+' / '+rows.length+'개 표시 · 선택 '+document.querySelectorAll('.mp-cx:checked').length+'개';
+};
+window.mpCardCheckVisible=function(on){ document.querySelectorAll('#mp-cx-list .mp-chk').forEach(function(el){ if(el.style.display!=='none'){ var c=el.querySelector('.mp-cx'); if(c) c.checked=on; } }); if(!on) document.querySelectorAll('.mp-cx').forEach(function(c){ c.checked=false; }); mpCardFilter(); mpCardRefresh(); };
+window.mpCardTheme=function(n){ _mpR.cardCtx.themeId=n; document.querySelectorAll('.mp-theme .th').forEach(function(el){ el.classList.toggle('on',+el.getAttribute('data-n')===n); }); mpCardRefresh(); };
+function mpReadCardCfg(){
+  var X=_mpR.cardCtx; if(!X) return null;
+  var sel=[].map.call(document.querySelectorAll('.mp-cx:checked'),function(c){return c.value;});
+  document.querySelectorAll('.mp-ci').forEach(function(c){ X.include[c.dataset.k]=c.checked; });
+  X.include.memo=true; X.sel=sel; X.comment=(document.getElementById('mp-c-cm')||{value:''}).value.trim();
+  return X;
+}
+var _mpGradeOrder=['ko','ma','en','hi','sc','so'];
+/* 성적표 분석용: 시험 문서(등급컷·문항)와 등불 데이터(난이도·영역)를 시험별로 한 번만 불러 둔다 */
+var _mpExamMeta={};
+function mpExamIdsOf(g){ return g.examId?[g.examId]:(g.sourceExamIds||[]); }
+async function mpCardEnsureMeta(X){
+  var ids={};
+  X.uids.forEach(function(u){ (X.byUid[u]||[]).forEach(function(g){ if(X.sel.indexOf(g.examName+'|'+g.examDate)>=0) mpExamIdsOf(g).forEach(function(id){ if(id&&!_mpExamMeta[id]) ids[id]=1; }); }); });
+  await Promise.all(Object.keys(ids).map(async function(id){
+    var m={exam:null,packs:[]};
+    try{ var d=await getDoc(doc(db,'exams',id)); if(d.exists()) m.exam=d.data(); }catch(e){}
+    try{ var ps=await getDocs(query(collection(db,'deungbulPacks'),where('examId','==',id)));
+      m.packs=await Promise.all(ps.docs.map(async function(pd){ var us=[]; try{ var u=await getDocs(collection(db,'deungbulPacks',pd.id,'units')); us=u.docs.map(function(x){return x.data();}); }catch(e){} return {meta:pd.data(),units:us}; }));
+    }catch(e){}
+    _mpExamMeta[id]=m;
+  }));
+  /* 모름(?) 기록이 성적 문서에 아직 없으면(예전 채점·묶은 시험) 응시 기록에서 바로 계산해 채운다 */
+  var need=[];
+  X.uids.forEach(function(u){ (X.byUid[u]||[]).forEach(function(g){ if(X.sel.indexOf(g.examName+'|'+g.examDate)>=0&&!g.unknownBySubj&&!g._unkTried) need.push(g); }); });
+  await Promise.all(need.map(async function(g){
+    g._unkTried=1;
+    var sids=g.examSessionId?[g.examSessionId]:(g.sourceExamSessionIds||[]), unk={}, any=false;
+    for(var i=0;i<sids.length;i++){
+      try{
+        var sd=await getDoc(doc(db,'examSessions',sids[i])); if(!sd.exists()) continue; var se=sd.data();
+        if(!se.unknownBySubj||!Object.keys(se.unknownBySubj).length||!se.subjectResults) continue;
+        var M=_mpExamMeta[se.examId]; if(!M){ var ed=await getDoc(doc(db,'exams',se.examId)); M=_mpExamMeta[se.examId]={exam:ed.exists()?ed.data():null,packs:[]}; }
+        if(!M.exam) continue;
+        var b=_buildGradesScoresFromResults(Object.assign({id:se.examId},M.exam), se.subjectResults, se.electiveChoices||{}, se.unknownBySubj);
+        Object.keys(b.unknownBySubj).forEach(function(k){ if(unk[k]===undefined){ unk[k]=b.unknownBySubj[k]; any=true; } });
+      }catch(e){}
+    }
+    if(any){ g.unknownBySubj=unk; try{ if(g._id) await updateDoc(doc(db,'grades',g._id),{unknownBySubj:unk}); }catch(e){} }
+  }));
+}
+function mpNormEl(s){ return String(s||'').replace(/\s/g,'').replace(/II$/,'Ⅱ').replace(/I$/,'Ⅰ').replace(/2$/,'Ⅱ').replace(/1$/,'Ⅰ'); }
+function mpDiff(d){ d=String(d||''); return /최상|상/.test(d)?'상':/중/.test(d)?'중':/하/.test(d)?'하':''; }
+/* 한 과목(행)의 분석 데이터: 다음 등급 컷, 문항 수·만점, 등불 난이도·영역 */
+function mpRowAnalysis(g,k,v,grp,label){
+  var ids=mpExamIdsOf(g), an={}, explore=(grp==='sc'||grp==='so'), el=v.option||(explore?label:'');
+  for(var i=0;i<ids.length;i++){
+    var M=_mpExamMeta[ids[i]]; if(!M) continue;
+    var subs=(M.exam&&M.exam.subjects)||[], sd=null;
+    if(explore){
+      var cands=subs.filter(function(x){ return (x.subject==='ex1'||x.subject==='ex2')&&(x.exCategory||'sc')===grp; });
+      sd=cands.filter(function(x){ var els=(x.electiveOptions||[]).concat(Object.keys(x.questionsByElective||{})); return els.some(function(e){return mpNormEl(e)===mpNormEl(el);}); })[0]||cands[/3$/.test(k)?1:0]||null;
+    } else sd=subs.filter(function(x){return x.subject===k;})[0]||null;
+    if(sd&&!an.next){
+      var elKey=el&&Object.keys(sd.gradeCutoffsByElective||{}).filter(function(e){return mpNormEl(e)===mpNormEl(el);})[0];
+      var cuts=sd.gradeCutoffsEnabled?((elKey&&sd.gradeCutoffsByElective[elKey])||sd.gradeCutoffs):null;
+      var gr=v.grade?parseInt(v.grade,10):null;
+      if(cuts&&gr>1){ var c=cuts.filter(function(x){return +x.grade===gr-1;})[0]; if(c) an.next={g:gr-1,min:+c.min}; }
+      var qk=el&&Object.keys(sd.questionsByElective||{}).filter(function(e){return mpNormEl(e)===mpNormEl(el);})[0];
+      var qs=(qk&&sd.questionsByElective[qk])||sd.questions||[];
+      if(qs.length){ an.N=qs.length; var tot=qs.reduce(function(a,q){return a+(+q.point||0);},0); if(tot) an.max=tot; }
+    }
+    if(!an.pack){
+      var pk=(M.packs||[]).filter(function(P){ var m=P.meta||{}; if(m.subject!==grp&&!(m.subject===k)) return false; if(explore) return mpNormEl((m.electives||[])[0]||m.singleElective)===mpNormEl(el); return true; })[0];
+      if(pk&&pk.units.length){
+        var secs={}; pk.units.forEach(function(u){ secs[u.section]=1; });
+        var use=pk.units.filter(function(u){ if(secs['공통']) return u.section==='공통'||(el&&mpNormEl(u.section)===mpNormEl(el)); return true; });
+        var w={}, hard=0, maxNo=0, head=[];
+        use.forEach(function(u){
+          var h=u.section!=='공통'?(explore?'':u.section):(grp==='ko'?(/시|소설|수필|가사|극|문학/.test(u.area||'')?'문학':'독서'):(/ · /.test(u.area||'')?String(u.area).split(' · ')[0].trim():'공통'));
+          (u.items||[]).forEach(function(it){ var no=+it.no, d=mpDiff(it.difficulty); w[no]=[d,h,+it.points||2]; if(d==='상') hard++; if(no>maxNo) maxNo=no; head[no]=h; });
+        });
+        var segs=[]; for(var n=1;n<=maxNo;n++){ if(head[n]==null) continue; var L=segs[segs.length-1]; if(L&&L[2]===head[n]) L[1]=n; else segs.push([n,n,head[n]]); }
+        an.pack=1; an.w=w; an.hard=hard; an.segs=segs.length>1?segs:[]; if(!an.N) an.N=maxNo;
+      }
+    }
+  }
+  return an;
+}
+function mpCardPayloadFor(uid,X){
+  var st=_mpR.students.find(function(s){return s.uid===uid;})||{name:'학생'}, docs=X.byUid[uid]||[];
+  var exams=docs.filter(function(g){return X.sel.indexOf(g.examName+'|'+g.examDate)>=0;}).sort(function(a,b){return a.examDate<b.examDate?-1:1;}).map(function(g){
+    var rows=Object.keys(g.scores).map(function(k){ var v=g.scores[k]||{}; var grp=v.group||k; var w=g.wrongBySubj&&g.wrongBySubj[k]; var label=v.label||subjectNames[grp]||k;
+      var nums=w?String(w).split(',').map(function(x){return parseInt(x,10);}).filter(function(x){return x>0;}).sort(function(a,b){return a-b;}):[];
+      var uk=g.unknownBySubj&&g.unknownBySubj[k], unums=uk?String(uk).split(',').map(function(x){return parseInt(x,10);}).filter(function(x){return x>0;}).sort(function(a,b){return a-b;}):[];
+      return {key:grp,label:label,score:(v.score==null||v.score===''?null:Number(v.score)),grade:(v.grade?parseInt(v.grade,10):null),wrong:w?nums.length:null,wrongNums:nums,unkNums:unums,an:mpRowAnalysis(g,k,v,grp,label)}; });
+    rows.sort(function(a,b){var ia=_mpGradeOrder.indexOf(a.key),ib=_mpGradeOrder.indexOf(b.key); return (ia<0?99:ia)-(ib<0?99:ib);});
+    return {name:g.examName,date:g.examDate,rows:rows,_g:g};
+  });
+  if(!exams.length) return null;
+  var minreq=mpMinReqFor(exams[exams.length-1]._g,(X.plans||{})[uid]);
+  exams.forEach(function(e){ delete e._g; });
+  var T=getPlannerDate().replace(/-/g,'.');
+  return {uid:uid,themeId:X.themeId,include:mpClean(X.include),student:{name:st.name,grade:st.grade||''},teacher:currentProfile.name,school:'울산송정점',issueLabel:T+' 발급',periodLabel:exams[0].date.replace(/-/g,'.')+(exams.length>1?' ~ '+exams[exams.length-1].date.replace(/-/g,'.'):''),
+    exams:exams,showWrong:exams.every(function(e){return e.rows.every(function(r){return r.wrong!=null;});}),comment:X.comment,minreq:minreq};
+}
+/* 수시 수능최저: 합격 플래너(admissionPlans)의 수시 계획 중 최저가 있는 것만, 이번 시험(국·수·영·탐2 등급 모두 있을 때)으로 판정 */
+function mpMinReqFor(g,planDoc){
+  var plans=((planDoc&&planDoc.susi)||[]).filter(function(p){ return p&&p.minReq; });
+  if(!plans.length) return null;
+  var full=g?_extractFullMockScores(g):null, L=MIN_REQ_SUBJECT_LABELS;
+  return {full:!!full,items:plans.slice(0,8).map(function(p){
+    var q=p.minReq, must=(q.mustInclude||[]).map(function(k){return L[k];}).join('·');
+    var caps=[]; Object.keys(q.subjectCaps||{}).forEach(function(k){ if(q.subjectCaps[k]) caps.push(L[k]+' '+q.subjectCaps[k]); }); if(q.hanguksaCap) caps.push('한국사 '+q.hanguksaCap);
+    var req=(must?must+' 포함 ':'')+q.targetCount+'합 '+q.thresholdSum+(q.tamguMode==='avg2'?' · 탐구 2과목 평균':' · 탐구 상위 1과목')+(caps.length?' · '+caps.join(', ')+'등급 이내':'');
+    var it={school:p.school||'',dept:p.department||'',type:p.admissionType||'',req:req,target:q.targetCount,limit:q.thresholdSum};
+    if(full){ var r=_evaluateMinReq(full,q); if(r){ it.sum=r.sum; it.ok=!!r.satisfied; it.picked=r.chosenKeys.map(function(k){return L[k];}).join('·');
+      var why=[]; if(!r.sumOk) why.push(q.targetCount+'합 '+r.sum+' (기준 '+q.thresholdSum+')'); r.capFails.forEach(function(c){ why.push(L[c.key]+' '+c.grade+'등급 (기준 '+c.cap+')'); }); if(!r.hanguksaOk) why.push(r.hanguksaInfo==='no_data'?'한국사 등급 없음':'한국사 '+r.hanguksaInfo.grade+'등급 (기준 '+r.hanguksaInfo.cap+')'); it.why=why.join(', '); } }
+    return it;
+  })};
+}
+var _mpCardSeq=0;
+window.mpCardRefresh=async function(){
+  var X=mpReadCardCfg(); if(!X) return; try{ var _c=document.getElementById('mp-cx-cnt'); if(_c) mpCardFilter(); }catch(e){} var host=document.getElementById('mp-c-prev'); if(!host) return;
+  if(!X.sel.length){ host.innerHTML='<div class="mp-sub">시험을 선택하면 미리보기가 나타나요</div>'; return; }
+  var seq=++_mpCardSeq; try{ await mpCardEnsureMeta(X); }catch(e){} if(seq!==_mpCardSeq) return;
+  var P=null; for(var i=0;i<X.uids.length&&!P;i++){ P=mpCardPayloadFor(X.uids[i],X); }
+  if(!P){ host.innerHTML='<div class="mp-warn">선택한 학생들에게 해당 시험 성적이 없어요.</div>'; return; }
+  document.getElementById('mp-c-prevname').textContent='미리보기: '+P.student.name+' 학생'+(X.uids.length>1?' (일괄 생성 시 학생마다 각자의 성적으로 만들어져요)':'');
+  await mpEnsureFonts(); if(seq!==_mpCardSeq) return; mpMountPreview(host,MPR.cardPages(P),240);
+};
+async function mpCardSets(){
+  var X=mpReadCardCfg(); if(!X||!X.sel.length){ alert('시험을 1개 이상 선택해 주세요.'); return null; }
+  try{ await mpCardEnsureMeta(X); }catch(e){}
+  var sets=[], skipped=[];
+  X.uids.forEach(function(u){ var P=mpCardPayloadFor(u,X); if(P) sets.push({name:P.student.name,pages:MPR.cardPages(P),payload:P,uid:u}); else skipped.push((_mpR.students.find(function(s){return s.uid===u;})||{}).name); });
+  if(!sets.length){ alert('선택한 학생들에게 해당 시험 성적이 없어요.'); return null; }
+  if(skipped.length) alert('성적이 없어 제외된 학생: '+skipped.join(', '));
+  return sets;
+}
+async function mpSaveCardPrefs(sets){
+  if(!document.getElementById('mp-c-save')||!document.getElementById('mp-c-save').checked) return;
+  var X=_mpR.cardCtx; for(var i=0;i<sets.length;i++){ try{ await setDoc(doc(db,'studentCardPrefs',sets[i].uid),{themeId:X.themeId,include:mpClean(X.include),updatedAt:serverTimestamp()},{merge:true}); }catch(e){} }
+}
+window.mpCardExport=async function(kind){
+  var sets=await mpCardSets(); if(!sets) return; var st=document.getElementById('mp-c-stat');
+  try{ await mpExportSets(sets,kind,'성적표',function(d,t){ if(st) st.textContent='만드는 중 '+d+'/'+t; }); if(st) st.textContent='✓ '+sets.length+'명 저장했어요'; await mpSaveCardPrefs(sets); }
+  catch(e){ if(st) st.textContent=''; alert('저장 실패: '+e.message); }
+};
+window.mpCardPublish=async function(){
+  var sets=await mpCardSets(); if(!sets) return;
+  if(!confirm(sets.length+'명의 학생에게 성적표를 공개할까요?\n(학생의 "나의 시험" 화면에서 볼 수 있어요)')) return;
+  try{
+    for(var i=0;i<sets.length;i++) await addDoc(collection(db,'studentReports'),{uid:sets[i].uid,kind:'card',title:'성적표 '+sets[i].payload.periodLabel,branch:getBranch(),createdAt:serverTimestamp(),createdBy:currentProfile.name,payload:mpClean(sets[i].payload)});
+    await mpSaveCardPrefs(sets); alert('공개했어요.');
+  }catch(e){ alert('저장 실패: '+e.message+'\n(Firestore 규칙에 studentReports 컬렉션 허용이 필요해요)'); }
+};
+
+/* ───────────── 학생: 내 리포트/성적표 열람 ───────────── */
+window.MP_renderStudentReports=async function(){
+  var host=document.getElementById('mp-rep-host'); if(!host||!currentUser) return;
+  try{
+    var snap=await getDocs(query(collection(db,'studentReports'),where('uid','==',currentUser.uid)));
+    var list=snap.docs.map(function(d){return Object.assign({id:d.id},d.data());}).sort(function(a,b){return (b.createdAt?b.createdAt.toMillis():0)-(a.createdAt?a.createdAt.toMillis():0);});
+    window._mpSv={}; list.forEach(function(x){window._mpSv[x.id]=x;});
+    if(!list.length){ host.innerHTML=''; return; }
+    host.innerHTML='<div class="mp-card"><div class="mp-title" style="margin-bottom:6px">📄 나의 리포트 · 성적표</div>'+list.map(function(x){
+      return '<div class="mp-row" style="cursor:pointer" onclick="mpOpenSaved(\''+x.id+'\')"><div style="font-size:22px">'+(x.kind==='card'?'🎓':'✨')+'</div><div class="m"><div class="a">'+mpE(x.title)+'</div><div class="b">'+(x.createdAt?x.createdAt.toDate().toLocaleDateString('ko-KR'):'')+' · '+mpE(x.createdBy||'')+'</div></div><span class="mp-chip mp-c-blue">보기</span></div>';
+    }).join('')+'</div>';
+  }catch(e){ host.innerHTML=''; }
+};
+/* ───────── 생성된 성적표 보관함 (선생님·마스터 전용, /api/card-archive) ───────── */
+async function mpArchiveApi(body){
+  var tok=await currentUser.getIdToken();
+  var r=await fetch('/api/card-archive',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify(Object.assign({branch:getBranch()},body))});
+  var j=await r.json().catch(function(){return {};}); if(!r.ok||!j.ok) throw new Error(j.error||('서버 오류 '+r.status)); return j;
+}
+window.mpCardArchive=async function(){
+  var sets=await mpCardSets(); if(!sets) return; var st=document.getElementById('mp-c-stat');
+  if(!confirm(sets.length+'명의 성적표를 생성해 보관함에 저장할까요?\n(선생님·마스터 계정에서만 보여요. 학생에게는 보이지 않아요)')) return;
+  try{
+    if(st) st.textContent='저장하는 중...';
+    var items=sets.map(function(x){ var P=x.payload; return {studentUid:x.uid,studentName:P.student.name,title:'성적표 · '+(P.exams.length===1?P.exams[0].name:P.periodLabel),themeId:P.themeId,examCount:P.exams.length,payload:mpClean(P)}; });
+    for(var i=0;i<items.length;i+=20) await mpArchiveApi({action:'create',items:items.slice(i,i+20)});
+    await mpSaveCardPrefs(sets);
+    if(st) st.textContent='✓ '+sets.length+'명 성적표를 보관함에 저장했어요';
+    if(confirm('저장했어요. "생성된 성적표" 탭으로 이동할까요?')) mpRepTab('archive');
+  }catch(e){ if(st) st.textContent=''; alert('저장 실패: '+e.message); }
+};
+var _mpArc={list:null,q:''};
+function mpArchivePanel(){
+  var b=document.getElementById('mp-rep-body');
+  b.innerHTML='<div class="mp-sub" style="margin-bottom:8px">"성적표 만들기"에서 생성한 성적표가 모두 모여요. 선생님·마스터 계정에서만 보이고 학생에게는 보이지 않아요.</div>'
+   +'<div style="display:flex;gap:6px;margin-bottom:8px"><input id="mp-arc-q" class="mp-in" style="margin:0;flex:1" placeholder="🔍 학생 이름·시험·만든 사람 검색" oninput="_mpArc.q=this.value;mpArchiveDraw()" value="'+mpE(_mpArc.q)+'"><button class="mp-btn sm" onclick="mpArchiveLoad()">새로고침</button></div><div id="mp-arc-list"><div class="mp-sub">불러오는 중...</div></div>';
+  mpArchiveLoad();
+}
+window.mpArchiveLoad=async function(){
+  try{ var j=await mpArchiveApi({action:'list'}); _mpArc.list=j.list||[]; mpArchiveDraw(); }
+  catch(e){ var el=document.getElementById('mp-arc-list'); if(el) el.innerHTML='<div class="mp-warn">불러오기 실패: '+mpE(e.message)+'</div>'; }
+};
+window.mpArchiveDraw=function(){
+  var el=document.getElementById('mp-arc-list'); if(!el||!_mpArc.list) return;
+  var q=String(_mpArc.q||'').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  var L=_mpArc.list.filter(function(x){ var t=(x.studentName+' '+x.title+' '+x.createdByName).toLowerCase(); return q.every(function(w){return t.indexOf(w)>=0;}); });
+  if(!L.length){ el.innerHTML='<div class="mp-sub" style="padding:10px 0">'+(_mpArc.list.length?'검색 결과가 없어요':'아직 생성한 성적표가 없어요')+'</div>'; return; }
+  el.innerHTML='<div class="mp-sub" style="margin-bottom:6px">'+L.length+'건</div>'+L.map(function(x){
+    var d=x.createdAt?new Date(x.createdAt):null, ds=d?(d.getFullYear()+'.'+(d.getMonth()+1)+'.'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')):'';
+    return '<div class="mp-row" style="cursor:pointer" onclick="mpArchiveOpen(\''+x.id+'\')"><div style="font-size:22px">🎓</div><div class="m"><div class="a">'+mpE(x.studentName)+' · '+mpE(x.title)+'</div><div class="b">'+ds+' · 만든 사람 '+mpE(x.createdByName||'-')+(x.examCount>1?' · 시험 '+x.examCount+'개':'')+(x.updatedByName?' · 수정 '+mpE(x.updatedByName):'')+'</div></div><span class="mp-chip mp-c-blue">보기</span></div>';
+  }).join('');
+};
+window.mpArchiveOpen=async function(id){
+  var ov=mpSheet('<div class="mp-sub">불러오는 중...</div>');
+  try{
+    var j=await mpArchiveApi({action:'get',id:id}), x=j.item; await mpEnsureFonts();
+    var canEdit=(currentProfile&&currentProfile.role==='master')||(currentUser&&x.createdBy===currentUser.uid);
+    var P=JSON.parse(JSON.stringify(x.payload)), pages=MPR.cardPages(P);
+    var d=x.createdAt?new Date(x.createdAt).toLocaleString('ko-KR'):'', ud=x.updatedAt?new Date(x.updatedAt).toLocaleString('ko-KR'):'';
+    var THS=MPR.THEMES.map(function(t){return [t.n,'새 · '+t.nm];}).concat((MPR.OLD_THEMES||[]).map(function(t){return [t.n,'기존 · '+t.nm];}));
+    var INC=[['cover','표지'],['inner','내지'],['back','뒷표지'],['comment','선생님 한마디'],['chart','성적 흐름 그래프'],['minreq','수시 수능최저']];
+    ov.querySelector('.mp-sheet').innerHTML='<h3>'+mpE(x.studentName)+' · '+mpE(x.title)+'</h3><div class="mp-sub" style="margin-bottom:8px">'+mpE(d)+' · 만든 사람 '+mpE(x.createdByName||'-')+(x.updatedByName?' · 마지막 수정 '+mpE(x.updatedByName)+' ('+mpE(ud)+')':'')+'</div>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"><button class="mp-btn pri sm" id="mp-av-png">🖼 PNG 저장</button><button class="mp-btn pri sm" id="mp-av-pdf">📄 PDF 저장</button><button class="mp-btn gold sm" id="mp-av-pub">👀 학생에게 공개</button>'
+      +(canEdit?'<button class="mp-btn sm" id="mp-av-edit">✏️ 수정</button><button class="mp-btn sm" id="mp-av-del" style="color:var(--red)">삭제</button>':'<span class="mp-sub" style="align-self:center">수정·삭제는 작성자와 마스터만 할 수 있어요</span>')
+      +'<span id="mp-av-stat" class="mp-sub" style="align-self:center"></span></div>'
+      +(canEdit?'<div id="mp-av-form" style="display:none;border:1px solid var(--border2);border-radius:10px;padding:10px;margin-bottom:10px">'
+        +'<div class="mp-lbl">디자인</div><select id="mp-av-theme" class="mp-in">'+THS.map(function(t){return '<option value="'+t[0]+'"'+(+P.themeId===t[0]?' selected':'')+'>'+mpE(t[1])+'</option>';}).join('')+'</select>'
+        +'<div class="mp-lbl">포함 항목</div><div style="display:flex;flex-wrap:wrap;gap:4px 14px">'+INC.map(function(k){return '<label class="mp-chk"><input type="checkbox" class="mp-av-inc" data-k="'+k[0]+'" '+((P.include||{})[k[0]]!==false?'checked':'')+'>'+k[1]+'</label>';}).join('')+'</div>'
+        +'<div class="mp-lbl">선생님 한마디</div><textarea id="mp-av-cm" class="mp-in" rows="4" style="resize:vertical;min-height:90px;overflow:hidden" oninput="mpAutoGrow(this)">'+mpE(P.comment||'')+'</textarea>'
+        +'<div style="display:flex;gap:6px;margin-top:8px"><button class="mp-btn sm" id="mp-av-apply">미리보기 반영</button><button class="mp-btn pri sm" id="mp-av-save">수정 저장</button><button class="mp-btn sm" id="mp-av-cancel">취소</button></div></div>':'')
+      +'<div id="mp-av-prev"></div><button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>';
+    var prev=ov.querySelector('#mp-av-prev'), st=ov.querySelector('#mp-av-stat');
+    function mount(){ pages=MPR.cardPages(P); mpMountPreview(prev,pages,Math.min(330,window.innerWidth-60)); }
+    mount();
+    function run(kind){ mpExportSets([{name:x.studentName,pages:pages}],kind,'성적표',function(a,t){st.textContent='만드는 중 '+a+'/'+t;}).then(function(){st.textContent='✓ 저장했어요';}).catch(function(e){st.textContent='';alert('저장 실패: '+e.message);}); }
+    ov.querySelector('#mp-av-png').onclick=function(){run('png');}; ov.querySelector('#mp-av-pdf').onclick=function(){run('pdf');};
+    ov.querySelector('#mp-av-pub').onclick=async function(){ if(!confirm(x.studentName+' 학생에게 이 성적표를 공개할까요?')) return; try{ await addDoc(collection(db,'studentReports'),{uid:x.studentUid,kind:'card',title:x.title,branch:getBranch(),createdAt:serverTimestamp(),createdBy:currentProfile.name,payload:P}); st.textContent='✓ 공개했어요'; }catch(e){ alert('공개 실패: '+e.message); } };
+    if(canEdit){
+      var form=ov.querySelector('#mp-av-form');
+      function readForm(){ var inc={}; form.querySelectorAll('.mp-av-inc').forEach(function(c){ inc[c.getAttribute('data-k')]=c.checked; }); return {themeId:+form.querySelector('#mp-av-theme').value,include:inc,comment:form.querySelector('#mp-av-cm').value.trim()}; }
+      function apply(){ var f=readForm(); P.themeId=f.themeId; P.include=Object.assign({},P.include||{},f.include); P.comment=f.comment; mount(); }
+      ov.querySelector('#mp-av-edit').onclick=function(){ form.style.display=form.style.display==='none'?'block':'none'; mpAutoGrow(form.querySelector('#mp-av-cm')); };
+      ov.querySelector('#mp-av-apply').onclick=apply;
+      form.querySelector('#mp-av-theme').onchange=apply; form.querySelectorAll('.mp-av-inc').forEach(function(c){ c.onchange=apply; });
+      ov.querySelector('#mp-av-cancel').onclick=function(){ P=JSON.parse(JSON.stringify(x.payload)); form.style.display='none'; mount(); };
+      ov.querySelector('#mp-av-save').onclick=async function(){ apply(); try{ st.textContent='저장하는 중...'; await mpArchiveApi({action:'update',id:id,patch:{themeId:P.themeId,include:P.include,comment:P.comment}}); x.payload=JSON.parse(JSON.stringify(P)); st.textContent='✓ 수정했어요'; form.style.display='none'; mpArchiveLoad(); }catch(e){ st.textContent=''; alert('수정 실패: '+e.message); } };
+      ov.querySelector('#mp-av-del').onclick=async function(){ if(!confirm('이 성적표를 보관함에서 삭제할까요?')) return; try{ await mpArchiveApi({action:'delete',id:id}); mpCloseSheets(); _mpArc.list=(_mpArc.list||[]).filter(function(y){return y.id!==id;}); mpArchiveDraw(); }catch(e){ alert('삭제 실패: '+e.message); } };
+    }
+  }catch(e){ ov.querySelector('.mp-sheet').innerHTML='<div class="mp-warn">불러오기 실패: '+mpE(e.message)+'</div><button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>'; }
+};
+window.mpOpenSaved=async function(id){
+  var x=window._mpSv&&window._mpSv[id]; if(!x) return;
+  await mpEnsureFonts();
+  var pages=x.kind==='card'?MPR.cardPages(x.payload):MPR.reportPages(x.payload);
+  var ov=mpSheet('<h3>'+mpE(x.title)+'</h3><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"><button class="mp-btn pri sm" id="mp-sv-png">🖼 PNG 저장</button><button class="mp-btn pri sm" id="mp-sv-pdf">📄 PDF 저장</button><span id="mp-sv-stat" class="mp-sub" style="align-self:center"></span></div><div id="mp-sv-prev"></div><button class="modal-btn cancel" onclick="mpCloseSheets()">닫기</button>');
+  mpMountPreview(ov.querySelector('#mp-sv-prev'),pages,Math.min(330,window.innerWidth-60));
+  function run(kind){ var st=ov.querySelector('#mp-sv-stat'); mpExportSets([{name:x.payload.name||x.payload.student.name,pages:pages}],kind,x.kind==='card'?'성적표':'별자리리포트',function(d,t){st.textContent='만드는 중 '+d+'/'+t;}).then(function(){st.textContent='✓ 저장했어요';}).catch(function(e){st.textContent='';alert('저장 실패: '+e.message);}); }
+  ov.querySelector('#mp-sv-png').onclick=function(){run('png');}; ov.querySelector('#mp-sv-pdf').onclick=function(){run('pdf');};
+};
+
+/* ======================================================================
+   MONO PLANNER 추가 기능 D — 시간표(종소리 알림) / 등급표 선택과목별 수정
+   ====================================================================== */
+/* ───────────── 시간표 ───────────── */
+var MP_TT={blocks:MPC.TT_DEFAULT.map(function(b){return Object.assign({},b);}),loaded:false,loadedAt:0,ctx:null,rung:null,first:true,draft:null,editing:false,lastIdx:null};
+function ttMode(){ try{ var m=localStorage.getItem('mp_tt_mode'); return (m==='silent'||m==='vibrate')?m:'sound'; }catch(e){ return 'sound'; } }
+function ttSaveMode(m){ try{ localStorage.setItem('mp_tt_mode',m); }catch(e){} }
+function ttKst(){ var n=new Date(), k=new Date(n.getTime()+(9*60+n.getTimezoneOffset())*60000); return k; }
+function ttNowSec(){ var k=ttKst(); return k.getHours()*3600+k.getMinutes()*60+k.getSeconds(); }
+function ttDateKey(){ var k=ttKst(); return k.getFullYear()+'-'+(k.getMonth()+1)+'-'+k.getDate(); }
+function ttClock(){ var k=ttKst(); function p(x){return (x<10?'0':'')+x;} return p(k.getHours())+':'+p(k.getMinutes())+':'+p(k.getSeconds()); }
+function ttFmtRemain(sec){ var m=Math.floor(sec/60), s=sec%60; if(m>=60) return Math.floor(m/60)+'시간 '+(m%60)+'분'; return m+'분 '+(s<10?'0':'')+s+'초'; }
+function ttShort(sec){ var m=Math.ceil(sec/60); if(m>=60) return Math.floor(m/60)+'시간 '+(m%60?(m%60)+'분':''); return m+'분'; }
+async function MP_ttLoad(force){
+  if(!force&&MP_TT.loaded&&Date.now()-MP_TT.loadedAt<300000) return;
+  MP_TT.loaded=true; MP_TT.loadedAt=Date.now();
+  try{
+    var d=await getDoc(doc(db,'timetables',getBranch()));
+    if(d.exists()&&Array.isArray(d.data().blocks)&&d.data().blocks.length&&!MPC.ttValidate(d.data().blocks).length) MP_TT.blocks=d.data().blocks.map(function(b){return {s:b.s,e:b.e,label:b.label,type:b.type||'class'};});
+  }catch(e){ console.warn('[시간표 불러오기 실패 - 기본 시간표 사용]',e); }
+}
+/* 소리: 학교 종소리(솔-미-라-도) — 외부 음원 없이 Web Audio로 합성 */
+function ttAudio(){
+  var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return null;
+  if(!MP_TT.ctx){ try{ MP_TT.ctx=new AC(); }catch(e){ return null; } }
+  if(MP_TT.ctx.state==='suspended'){ try{ MP_TT.ctx.resume(); }catch(e){} }
+  return MP_TT.ctx;
+}
+document.addEventListener('pointerdown',function(){ try{ ttAudio(); }catch(e){} },{passive:true});
+function ttChime(){
+  var c=ttAudio(); if(!c) return;
+  var notes=[783.99,659.25,880.0,523.25], t0=c.currentTime+0.05;
+  notes.forEach(function(f,i){
+    var t=t0+i*0.7, dur=i===3?2.0:1.0;
+    [[1,0.32],[2.01,0.10],[3.97,0.04]].forEach(function(p){
+      var o=c.createOscillator(), g=c.createGain(); o.type='sine'; o.frequency.value=f*p[0];
+      g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(p[1],t+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+      o.connect(g); g.connect(c.destination); o.start(t); o.stop(t+dur+0.05);
+    });
+  });
+}
+function ttVibrate(){ try{ if('vibrate' in navigator) navigator.vibrate([400,150,400,150,800]); }catch(e){} }
+function ttBanner(title,body,icon){
+  var old=document.getElementById('mp-bell'); if(old) old.remove();
+  var b=document.createElement('div'); b.id='mp-bell'; b.className='mp-bell';
+  b.innerHTML='<div class="ic"><i class="mpi mpi-'+(icon||'bell')+'"></i></div><div class="tx"><div class="t">'+mpE(title)+'</div><div class="s">'+mpE(body)+'</div></div>';
+  b.onclick=function(){ b.remove(); };
+  document.body.appendChild(b); setTimeout(function(){ if(b.parentNode) b.remove(); },9000);
+}
+function ttInExam(){ return !!document.querySelector('#screen-exam.active,#screen-exam-display.active'); }
+function ttRing(block,next,opt){
+  opt=opt||{}; var mode=ttMode();
+  if(ttInExam()&&!opt.test) return;
+  var tx=MPC.ttBellText(block,next);
+  ttBanner(tx.title,tx.body,tx.icon);
+  if(mode==='sound') ttChime(); else if(mode==='vibrate') ttVibrate();
+  try{
+    if(document.hidden&&'Notification' in window&&Notification.permission==='granted'&&navigator.serviceWorker){
+      navigator.serviceWorker.getRegistration().then(function(reg){ if(reg) reg.showNotification(tx.title,{body:tx.body,tag:'mp-tt',silent:mode!=='sound',vibrate:mode==='vibrate'?[400,150,400,150,800]:undefined,icon:'/mono-logo.png'}); }).catch(function(){});
+    }
+  }catch(e){}
+}
+function ttChipText(st){
+  if(st.phase==='during'){ var c=st.cur; var ic=''; var nm=c.label.length>9?c.label.slice(0,9)+'…':c.label; return ic+nm+' · '+ttShort(st.remainSec)+' 남음'; }
+  if(st.phase==='gap'||st.phase==='before') return '다음 '+st.next.s+' '+(st.next.label.length>7?st.next.label.slice(0,7)+'…':st.next.label);
+  if(st.phase==='after') return '오늘 일과 종료';
+  return '시간표';
+}
+function MP_ttTick(){
+  var chip=document.getElementById('mp-tt-chip');
+  if(!currentUser||!currentProfile){ if(chip) chip.style.display='none'; return; }
+  if(chip) chip.style.display='';
+  MP_ttLoad();
+  var sec=ttNowSec(), st=MPC.ttState(MP_TT.blocks,sec);
+  // 매초 같은 글자를 다시 써 넣으면 화면 전체가 다시 계산돼서(특히 휴대폰) 채팅 입력 등이 1초마다 끊김 → 바뀐 경우에만 씀
+  var ct=document.getElementById('mp-tt-chip-txt'); if(ct){ var _ctx=ttChipText(st); if(ct.textContent!==_ctx) ct.textContent=_ctx; }
+  var _pc=document.getElementById('mp-tt-clk'); if(_pc && _pc.offsetParent) ttUpdatePanel(st,sec);
+  var due=MPC.ttDue(MP_TT.blocks,sec,document.hidden?120:15);
+  if(due){
+    var key=ttDateKey()+'|'+due.s;
+    try{ MP_TT.rung=MP_TT.rung||sessionStorage.getItem('mp_tt_rung'); }catch(e){}
+    if(MP_TT.rung!==key){
+      MP_TT.rung=key; try{ sessionStorage.setItem('mp_tt_rung',key); }catch(e){}
+      if(!MP_TT.first){ var L=st.blocks, i=L.indexOf(due); ttRing(due,L[i+1]||null); }
+    }
+  }
+  MP_TT.first=false;
+}
+setInterval(function(){ try{ MP_ttTick(); }catch(e){ console.warn('[시간표 tick]',e); } },1000);
+
+/* 시계: 시험 화면의 시계와 같은 디자인(아이디만 다름) */
+function ttClockSvg(){
+  var nums='',bat='',tk='',i,a,x,y;
+  for(i=1;i<=12;i++){ a=i*30*Math.PI/180; x=120+83*Math.sin(a); y=120-83*Math.cos(a); nums+='<text x="'+x+'" y="'+y+'" text-anchor="middle" dominant-baseline="central" class="exam-clock-numeral">'+i+'</text>'; }
+  for(i=0;i<12;i++){ a=i*30*Math.PI/180; bat+='<line x1="'+(120+96*Math.sin(a))+'" y1="'+(120-96*Math.cos(a))+'" x2="'+(120+107*Math.sin(a))+'" y2="'+(120-107*Math.cos(a))+'" stroke="var(--burg)" stroke-width="2" stroke-linecap="round"/>'; }
+  for(i=0;i<60;i++){ if(i%5===0) continue; a=i*6*Math.PI/180; tk+='<line x1="'+(120+101*Math.sin(a))+'" y1="'+(120-101*Math.cos(a))+'" x2="'+(120+107*Math.sin(a))+'" y2="'+(120-107*Math.cos(a))+'" stroke="var(--tx4)" stroke-width="0.6"/>'; }
+  return '<svg viewBox="0 0 240 240"><defs><radialGradient id="ttFaceGrad" cx="50%" cy="42%" r="65%"><stop offset="0%" stop-color="#FFFEFA"/><stop offset="100%" stop-color="#F6EFDC"/></radialGradient><clipPath id="ttFaceClip"><circle cx="120" cy="120" r="118"/></clipPath></defs>'
+   +'<circle cx="120" cy="120" r="118" fill="url(#ttFaceGrad)" stroke="var(--burg)" stroke-width="2.5"/><circle cx="120" cy="120" r="113" fill="none" stroke="var(--gold2)" stroke-width="0.75"/>'
+   +'<g clip-path="url(#ttFaceClip)"><g transform="rotate(-14 120 120)"><image href="'+MONO_WATERMARK_DATAURI+'" x="12" y="92" width="216" height="82"/></g></g>'
+   +tk+bat+nums
+   +'<g id="tt-clock-hour-g" transform="rotate(0 120 120)"><path d="M120,132 L117,64 L120,50 L123,64 Z" fill="var(--tx1)"/></g>'
+   +'<g id="tt-clock-min-g" transform="rotate(0 120 120)"><path d="M120,138 L118,40 L120,26 L122,40 Z" fill="var(--tx1)"/></g>'
+   +'<g id="tt-clock-sec-g" transform="rotate(0 120 120)"><line x1="120" y1="145" x2="120" y2="30" stroke="var(--burg)" stroke-width="1.4" stroke-linecap="round"/><circle cx="120" cy="145" r="3.5" fill="var(--burg)"/></g>'
+   +'<circle cx="120" cy="120" r="5" fill="var(--burg)" stroke="var(--gold2)" stroke-width="1.2"/></svg>';
+}
+function ttSetHands(){
+  var k=ttKst(), h=k.getHours()%12, m=k.getMinutes(), s=k.getSeconds();
+  function set(id,d){ var e=document.getElementById(id); if(e) e.setAttribute('transform','rotate('+d+' 120 120)'); }
+  set('tt-clock-hour-g',(h+m/60)*30); set('tt-clock-min-g',(m+s/60)*6); set('tt-clock-sec-g',s*6);
+}
+/* 화면 */
+function ttImg(n){ return '<img class="mpi-img" src="/assets/ui/'+n+'.png" alt="" draggable="false">'; }
+function ttIconHtml(b){ var l=b.label||''; if(/입실/.test(l)&&b.type==='check') return ttImg('sunrise'); if(/퇴실/.test(l)&&!/휴식/.test(l)) return ttImg('exit'); return ttImg({class:'book',break:'mug',meal:'meal',check:'clipboard',task:'pencil'}[b.type]||'book'); }
+var TT_ICON_OLD={class:'<i class="mpi mpi-book"></i>',break:'<i class="mpi mpi-coffee"></i>',meal:'<i class="mpi mpi-utensils"></i>',check:'<i class="mpi mpi-clipcheck"></i>',task:'<i class="mpi mpi-edit"></i>'};
+function ttRowsHtml(){
+  var L=MPC.ttState(MP_TT.blocks,0).blocks;
+  return L.map(function(b,i){
+    return '<div class="r t-'+b.type+'" data-i="'+i+'"><span class="tm">'+b.s+' – '+b.e+'</span><span class="lb"><span class="ic">'+ttIconHtml(b)+'</span>'+mpE(b.label)+'</span><span class="du">'+MPC.ttDur(b)+'분</span><span class="nw">지금</span></div>';
+  }).join('');
+}
+function ttPanelHtml(canEdit){
+  var m=ttMode(), vib=('vibrate' in navigator);
+  return '<div class="mp-tt">'
+    +'<div class="mp-tt-hero"><div class="mp-tt-clock">'+ttClockSvg()+'</div><div class="mp-tt-info"><div class="eyebrow">지금 <b id="mp-tt-clk">--:--:--</b></div><div class="cur" id="mp-tt-cur">&nbsp;</div><div class="rng" id="mp-tt-rng">&nbsp;</div><div class="rem" id="mp-tt-rem">&nbsp;</div><div class="bar"><i id="mp-tt-bar"></i></div><div class="nx" id="mp-tt-nx">&nbsp;</div></div></div>'
+    +'<div class="mp-lbl">종소리 알림</div>'
+    +'<div class="mp-seg mp-tt-mode"><button data-m="silent" class="'+(m==='silent'?'on':'')+'" onclick="mpTtMode(\'silent\')"><i class="mpi mpi-bell-off"></i>무음</button><button data-m="sound" class="'+(m==='sound'?'on':'')+'" onclick="mpTtMode(\'sound\')"><i class="mpi mpi-bell"></i>유음</button><button data-m="vibrate" class="'+(m==='vibrate'?'on':'')+'" onclick="mpTtMode(\'vibrate\')"><i class="mpi mpi-vibrate"></i>진동</button></div>'
+    +'<div class="mp-sub" id="mp-tt-hint" style="margin:6px 0 10px">'+mpTtHint(m,vib)+'</div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"><button class="mp-btn sm" onclick="mpTtTest()"><i class="mpi mpi-play"></i>알림 테스트</button>'+(canEdit?'<button class="mp-btn sm" onclick="mpTtEdit()"><i class="mpi mpi-edit"></i>시간표 수정</button>':'')+'</div>'
+    +'<div class="mp-tt-list" id="mp-tt-list">'+ttRowsHtml()+'</div>'
+    +'<div class="mp-sub" style="margin-top:8px">앱(웹)이 열려 있을 때 정해진 시각에 울려요. 화면이 꺼져 있거나 앱이 닫혀 있으면 울리지 않을 수 있어요.</div></div>';
+}
+function mpTtHint(m,vib){
+  if(m==='silent') return '소리와 진동 없이 화면에 알림 문구만 보여줘요.';
+  if(m==='vibrate') return vib?'화면 알림과 함께 진동이 울려요.':'이 기기(아이폰 등)는 진동을 지원하지 않아요. 화면 알림만 표시돼요.';
+  return '화면 알림과 함께 학교 종소리가 울려요. (처음 한 번은 화면을 눌러야 소리가 켜져요)';
+}
+window.mpTtMode=function(m){
+  ttSaveMode(m);
+  document.querySelectorAll('.mp-tt-mode button').forEach(function(b){ b.classList.toggle('on',b.dataset.m===m); });
+  var h=document.getElementById('mp-tt-hint'); if(h) h.textContent=mpTtHint(m,'vibrate' in navigator);
+  if(m==='sound') ttAudio(); if(m==='vibrate') ttVibrate();
+};
+window.mpTtTest=function(){
+  var sec=ttNowSec(), st=MPC.ttState(MP_TT.blocks,sec), b=st.cur||st.next||MP_TT.blocks[0], L=st.blocks;
+  ttRing(b,L[L.indexOf(b)+1]||null,{test:true});
+};
+function ttUpdatePanel(st,sec){
+  var clk=document.getElementById('mp-tt-clk'); if(!clk) return;
+  clk.textContent=ttClock(); ttSetHands();
+  var cur=document.getElementById('mp-tt-cur'), rng=document.getElementById('mp-tt-rng'), rem=document.getElementById('mp-tt-rem'), bar=document.getElementById('mp-tt-bar'), nx=document.getElementById('mp-tt-nx');
+  if(st.phase==='during'){
+    cur.textContent=st.cur.label; rng.textContent=st.cur.s+' ~ '+st.cur.e; rem.textContent=ttFmtRemain(st.remainSec)+' 남음';
+    bar.style.width=Math.round(st.progress*100)+'%';
+    nx.textContent=st.next?('다음: '+st.next.s+' '+st.next.label):'오늘 마지막 일정이에요';
+  } else if(st.phase==='gap'||st.phase==='before'){
+    cur.textContent=(st.phase==='before'?'일과 시작 전':'잠시 쉬는 시간'); rng.textContent=''; rem.textContent=ttFmtRemain(st.untilSec)+' 뒤 시작';
+    bar.style.width='0%'; nx.textContent='다음: '+st.next.s+' '+st.next.label;
+  } else { cur.textContent='오늘 일과가 끝났어요'; rng.textContent=''; rem.textContent=''; bar.style.width='100%'; nx.textContent='내일도 화이팅!'; }
+  var list=document.getElementById('mp-tt-list'); if(!list||MP_TT.editing) return;
+  var idx=st.phase==='during'?st.idx:-1, changed=(MP_TT.lastIdx!==idx);
+  list.querySelectorAll('.r').forEach(function(r){
+    var i=+r.dataset.i; r.classList.toggle('now',i===idx); r.classList.toggle('past',st.phase==='after'||(st.phase!=='before'&&i<(st.phase==='gap'?st.nextIdx:idx)));
+  });
+  if(changed||!list._scrolled){
+    MP_TT.lastIdx=idx; list._scrolled=true;
+    var row=idx>=0?list.querySelector('.r[data-i="'+idx+'"]'):(st.nextIdx!=null?list.querySelector('.r[data-i="'+st.nextIdx+'"]'):null);
+    if(row) list.scrollTop=Math.max(0,row.offsetTop-list.clientHeight/2+row.clientHeight/2);
+  }
+}
+window.mpOpenTimetable=function(){
+  MP_ttLoad(true).then(function(){
+    var canEdit=currentProfile&&(currentProfile.role==='teacher'||currentProfile.role==='master');
+    MP_TT.editing=false; MP_TT.lastIdx=null;
+    var ov=mpSheet('<h3><i class="mpi mpi-clock"></i>시간표</h3>'+ttPanelHtml(canEdit)+'<button class="modal-btn cancel" style="margin-top:10px" onclick="mpCloseSheets()">닫기</button>');
+    MP_ttTick();
+  });
+};
+/* 시간표 수정 (선생님/마스터) */
+window.mpTtEdit=function(){
+  MP_TT.editing=true; MP_TT.draft=MPC.ttState(MP_TT.blocks,0).blocks.map(function(b){return Object.assign({},b);});
+  mpTtDrawEdit();
+};
+function mpTtDrawEdit(){
+  var list=document.getElementById('mp-tt-list'); if(!list) return;
+  var TY=[['class','교시'],['break','휴식'],['meal','식사'],['check','체크/입퇴실'],['task','과제']];
+  list.classList.add('edit');
+  list.innerHTML=MP_TT.draft.map(function(b,i){
+    return '<div class="er"><input type="time" class="mp-in sm" value="'+b.s+'" onchange="mpTtSet('+i+',\'s\',this.value)"><span>~</span><input type="time" class="mp-in sm" value="'+b.e+'" onchange="mpTtSet('+i+',\'e\',this.value)">'
+      +'<input class="mp-in sm lbl" value="'+mpE(b.label)+'" onchange="mpTtSet('+i+',\'label\',this.value)">'
+      +'<select class="mp-in sm" onchange="mpTtSet('+i+',\'type\',this.value)">'+TY.map(function(t){return '<option value="'+t[0]+'"'+(b.type===t[0]?' selected':'')+'>'+t[1]+'</option>';}).join('')+'</select>'
+      +'<button class="mp-btn sm" onclick="mpTtDel('+i+')"><i class="mpi mpi-x"></i></button></div>';
+  }).join('')
+  +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><button class="mp-btn sm" onclick="mpTtAdd()">+ 줄 추가</button><button class="mp-btn sm" onclick="mpTtDefault()">기본 시간표로</button><button class="mp-btn pri sm" onclick="mpTtSave()">저장</button><button class="mp-btn sm" onclick="mpTtCancel()">취소</button></div><div id="mp-tt-err" class="mp-warn" style="display:none;margin-top:8px"></div>';
+}
+window.mpTtSet=function(i,k,v){ if(MP_TT.draft[i]) MP_TT.draft[i][k]=v; };
+window.mpTtDel=function(i){ MP_TT.draft.splice(i,1); mpTtDrawEdit(); };
+window.mpTtAdd=function(){ var l=MP_TT.draft[MP_TT.draft.length-1]; MP_TT.draft.push({s:l?l.e:'09:00',e:l?l.e:'10:00',label:'새 일정',type:'class'}); mpTtDrawEdit(); };
+window.mpTtDefault=function(){ MP_TT.draft=MPC.TT_DEFAULT.map(function(b){return Object.assign({},b);}); mpTtDrawEdit(); };
+window.mpTtCancel=function(){ MP_TT.editing=false; var l=document.getElementById('mp-tt-list'); if(l){ l.classList.remove('edit'); l.innerHTML=ttRowsHtml(); l._scrolled=false; } };
+window.mpTtSave=async function(){
+  var er=document.getElementById('mp-tt-err'), errs=MPC.ttValidate(MP_TT.draft);
+  if(errs.length){ er.style.display='block'; er.innerHTML=errs.slice(0,5).map(mpE).join('<br>'); return; }
+  var blocks=MP_TT.draft.slice().sort(function(a,b){return MPC.ttMin(a.s)-MPC.ttMin(b.s);}).map(function(b){return {s:b.s,e:b.e,label:b.label.trim(),type:b.type||'class'};});
+  try{
+    await setDoc(doc(db,'timetables',getBranch()),{blocks:blocks,updatedAt:serverTimestamp(),updatedBy:currentUser.uid});
+    MP_TT.blocks=blocks; MP_TT.loadedAt=Date.now(); mpToast('시간표를 저장했어요. 학생 앱에는 다음 새로고침부터 반영돼요.'); mpTtCancel();
+  }catch(e){ er.style.display='block'; er.textContent='저장 실패: '+e.message+' (Firestore 규칙에서 timetables 컬렉션을 허용해 주세요)'; }
+};
+/* 선생님 탭 (idx 13) */
+window.buildTTimetable=function(){ return Promise.resolve('<div class="mp-card" id="mp-ttab"></div>'); };
+window.mpTtTabInit=function(){ var h=document.getElementById('mp-ttab'); if(!h) return; MP_ttLoad(true).then(function(){ MP_TT.editing=false; MP_TT.lastIdx=null; h.innerHTML='<div class="mp-h"><div class="mp-title"><i class="mpi mpi-clock"></i>시간표</div></div>'+ttPanelHtml(true); MP_ttTick(); }); };
+
+/* ───────────── 등급표 수정: 선택과목별 ───────────── */
+function egcArr(si,ei){ var s=_egcSubjects[si]; return ei<0?s.gradeCutoffs:s.gradeCutoffsByElective[s.electiveOptions[ei]]; }
+window.openEditGradeCutoffModal=function(examId){
+  _egcExamId=examId; openModal('modal-edit-grade-cutoff');
+  document.getElementById('egc-body').innerHTML='<div style="color:var(--tx3);font-size:13px;">불러오는 중...</div>';
+  getDoc(doc(db,'exams',examId)).then(function(d){
+    if(!d.exists()){ document.getElementById('egc-body').innerHTML='<div style="color:var(--red);font-size:13px;">시험을 찾을 수 없습니다</div>'; return; }
+    var cp=function(a){ return (a||_defaultGradeCutoffs()).map(function(c){return Object.assign({},c);}); };
+    _egcSubjects=(d.data().subjects||[]).map(function(s){
+      var o=Object.assign({},s,{gradeCutoffs:cp(s.gradeCutoffs)});
+      if(s.electiveOptions&&s.electiveOptions.length){
+        o.gradeCutoffsByElective={};
+        s.electiveOptions.forEach(function(n){ o.gradeCutoffsByElective[n]=cp((s.gradeCutoffsByElective&&s.gradeCutoffsByElective[n])||s.gradeCutoffs); });
+      }
+      return o;
+    });
+    renderEditGradeCutoffBody();
+  }).catch(function(e){ document.getElementById('egc-body').innerHTML='<div style="color:var(--red);font-size:13px;">불러오기 실패: '+e.message+'</div>'; });
+};
+function egcRows(si,ei){
+  var arr=egcArr(si,ei), sorted=arr.slice().sort(function(a,b){return a.grade-b.grade;});
+  return sorted.map(function(c){
+    var ci=arr.indexOf(c);
+    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><span style="width:52px;font-size:12px;font-weight:700;color:var(--burg);">'+c.grade+'등급</span><span style="font-size:11px;color:var(--tx3);">원점수</span>'
+      +'<input type="number" min="0" max="100" value="'+c.min+'" class="exam-bulk-input" style="width:56px;" onchange="_egcUpdateCutoff('+si+','+ei+','+ci+',this.value)"/><span style="font-size:11px;color:var(--tx3);">점 이상</span>'
+      +'<button type="button" onclick="_egcRemoveCutoff('+si+','+ei+','+ci+')" class="exam-q-remove-btn" style="margin-left:auto;">✕</button></div>';
+  }).join('');
+}
+window.renderEditGradeCutoffBody=function(){
+  var el=document.getElementById('egc-body'); if(!el||!_egcSubjects) return;
+  el.innerHTML=_egcSubjects.map(function(subj,si){
+    var nm=_resolveSubjDisplayName(subj), off=' <label style="font-size:11px;font-weight:600;color:'+(subj.gradeCutoffsEnabled?'var(--burg)':'var(--tx4)')+';margin-left:8px;cursor:pointer;white-space:nowrap"><input type="checkbox" '+(subj.gradeCutoffsEnabled?'checked':'')+' onchange="_egcToggle('+si+',this.checked)" style="vertical-align:-2px"> 등급 사용'+(subj.gradeCutoffsEnabled?'':' (꺼져 있으면 성적에 등급이 안 붙어요)')+'</label>';
+    var els=(subj.electiveOptions||[]);
+    if(!els.length){
+      return '<div class="exam-section" style="margin-bottom:10px;"><div class="exam-section-title" style="margin-bottom:8px;">'+escapeHtml(nm)+off+'</div><div>'+egcRows(si,-1)+'</div><button type="button" onclick="_egcAddCutoff('+si+',-1)" class="exam-add-chip-btn" style="margin-top:4px;">+ 등급 추가</button></div>';
+    }
+    return '<div class="exam-section" style="margin-bottom:10px;"><div class="exam-section-title" style="margin-bottom:4px;">'+escapeHtml(nm)+off+'</div>'
+      +'<div style="font-size:11px;color:var(--tx3);margin-bottom:8px;">선택과목마다 등급표를 따로 입력해요.</div>'
+      +els.map(function(n,ei){
+        return '<div style="border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;"><b style="font-size:13px;color:var(--gold);">📌 '+escapeHtml(n)+'</b>'
+          +'<button type="button" class="exam-add-chip-btn" style="margin-left:auto;font-size:11px;" onclick="_egcCopyToAll('+si+','+ei+')">이 등급표를 다른 선택과목에도 복사</button></div>'
+          +'<div>'+egcRows(si,ei)+'</div><button type="button" onclick="_egcAddCutoff('+si+','+ei+')" class="exam-add-chip-btn" style="margin-top:4px;">+ 등급 추가</button></div>';
+      }).join('')+'</div>';
+  }).join('');
+};
+window._egcUpdateCutoff=function(si,ei,ci,v){ var a=egcArr(si,ei); if(a&&a[ci]) a[ci].min=parseInt(v,10)||0; var sb=_egcSubjects[si]; if(sb&&!sb.gradeCutoffsEnabled){ sb.gradeCutoffsEnabled=true; renderEditGradeCutoffBody(); } };
+window._egcToggle=function(si,on){ if(_egcSubjects[si]){ _egcSubjects[si].gradeCutoffsEnabled=!!on; renderEditGradeCutoffBody(); } };
+/* 성적 문서의 과목 키 → 시험 과목 정의 찾기 (탐구 sc1/sc3·so1/so3 → ex1/ex2 블록, 선택과목 이름으로 매칭) */
+function egcNorm(x){ return String(x||'').replace(/\s/g,''); }
+function egcSubjFor(subjects,key,entry){
+  entry=entry||{};
+  var grp=entry.group||String(key).replace(/\d+$/,'');
+  if(grp==='sc'||grp==='so'){
+    var cands=subjects.filter(function(x){ return (x.subject==='ex1'||x.subject==='ex2')&&(x.exCategory||'sc')===grp; });
+    var byEl=cands.filter(function(x){ var els=(x.electiveOptions||[]).concat(Object.keys(x.questionsByElective||{})); return els.some(function(e){ return egcNorm(e)===egcNorm(entry.label); }); })[0];
+    return {def:cands[/3$/.test(key)?1:0]||byEl||cands[0]||null, elective:entry.label};
+  }
+  return {def:subjects.filter(function(x){ return x.subject===key; })[0]||null, elective:entry.option||null};
+}
+function egcCutoffsFor(def,elective){
+  if(!def) return null;
+  if(elective&&def.gradeCutoffsByElective){ var k=Object.keys(def.gradeCutoffsByElective).filter(function(e){ return egcNorm(e)===egcNorm(elective); })[0]; if(k&&def.gradeCutoffsByElective[k]&&def.gradeCutoffsByElective[k].length) return def.gradeCutoffsByElective[k]; }
+  return def.gradeCutoffs;
+}
+window.saveEditedGradeCutoff=async function(){
+  if(!_egcExamId||!_egcSubjects) return;
+  var newSubjects=_egcSubjects.map(function(x){ return Object.assign({},x); });
+  try{
+    await updateDoc(doc(db,'exams',_egcExamId),{subjects:newSubjects});
+    var a=await getDocs(query(collection(db,'grades'),where('examId','==',_egcExamId)));
+    var b=await getDocs(query(collection(db,'grades'),where('sourceExamIds','array-contains',_egcExamId))).catch(function(){ return {docs:[]}; });
+    var seen={}, docs=a.docs.concat(b.docs).filter(function(d){ if(seen[d.id]) return false; seen[d.id]=1; return true; });
+    var changed=0;
+    await Promise.all(docs.map(function(gDoc){
+      var g=gDoc.data(), scores=Object.assign({},g.scores), touched=false;
+      Object.keys(scores).forEach(function(key){
+        var e=scores[key]||{}, m=egcSubjFor(newSubjects,key,e); if(!m.def) return;
+        var sc=e.score==null||e.score===''?null:Number(e.score);
+        var grade=(m.def.gradeCutoffsEnabled&&sc!=null)?computeGradeFromCutoffs(egcCutoffsFor(m.def,m.elective),sc):'';
+        if(String(e.grade||'')!==String(grade)){ scores[key]=Object.assign({},e,{grade:grade}); touched=true; }
+      });
+      if(!touched) return null; changed++;
+      return updateDoc(doc(db,'grades',gDoc.id),{scores:scores});
+    }));
+    closeModal('modal-edit-grade-cutoff');
+    alert('등급표가 저장되었습니다'+(docs.length?' (기존 성적 '+docs.length+'건 중 '+changed+'건의 등급이 바뀌었어요)':''));
+  }catch(e){ alert('저장 실패: '+e.message); }
+};
+window._egcRemoveCutoff=function(si,ei,ci){ egcArr(si,ei).splice(ci,1); renderEditGradeCutoffBody(); };
+window._egcAddCutoff=function(si,ei){ var a=egcArr(si,ei); a.push({grade:a.length?Math.max.apply(null,a.map(function(c){return c.grade;}))+1:1,min:0}); renderEditGradeCutoffBody(); };
+window._egcCopyToAll=function(si,ei){
+  var s=_egcSubjects[si], src=egcArr(si,ei);
+  if(!confirm('"'+s.electiveOptions[ei]+'" 등급표를 다른 선택과목에도 똑같이 복사할까요?\n(다른 선택과목에 입력해 둔 값은 덮어써져요)')) return;
+  s.electiveOptions.forEach(function(n,k){ if(k!==ei) s.gradeCutoffsByElective[n]=src.map(function(c){return Object.assign({},c);}); });
+  renderEditGradeCutoffBody();
+};
+
+/* ======================================================================
+   MONO PLANNER 추가 기능 E — 이모지 → 선 아이콘 자동 변환(디자인 통일)
+   ====================================================================== */
+(function(){
+  var MAP={'⏰':'clock','⏱':'clock','🕐':'clock','🔔':'bell','🔇':'bell-off','📳':'vibrate','📅':'calendar','📌':'pin','📎':'clip','📄':'doc','📝':'edit','✎':'edit','✍':'edit','✅':'check-c','✓':'check','✔':'check','✕':'x','✖':'x','❌':'x-c','⚠':'warn','🔒':'lock','▶':'play','◀':'chev-l','🔍':'search','↺':'refresh','✨':'spark','✦':'spark','🎉':'spark','🎓':'cap','👀':'eye','💬':'msg','🗣':'msg','🗑':'trash','📖':'book','📊':'chart','🌱':'sprout','☕':'coffee','🍚':'utensils','🔊':'speaker','🎧':'headphones','🙋':'user','🎯':'target','🖼':'image','🔴':'dot-r','🟡':'dot-y','🟢':'dot-g'};
+  var IMG={'☕':'cup','🙋':'hand','🎉':'done','⏰':'bell','🔔':'bell','🎧':'headphones','🔊':'speaker','📅':'calendar','🕐':'clock','✕':'close','✖':'close','❌':'close','🎯':'target','⚠':'warn','✅':'seal'};
+  var EXROOT='#screen-exam,#screen-exam-display,#exam-warn-banner,.exam-taking-wrap';
+  var keys=Object.keys(MAP).map(function(k){return k.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');});
+  var RE=new RegExp('('+keys.join('|')+')[\\uFE0E\\uFE0F]?','g'), TEST=new RegExp(keys.join('|'));
+  var ROOTS='#modal-edit-grade-cutoff,.modal-overlay,.mp-card,.mp-sheet,.mp-bell,.mp-toast,.mp-tt-chip,#mp-sched-host,#mp-rep-host,#mp-board,#mp-tsched,#mp-ttab,#mp-rep,#mp-watch,.ex-hdr-actions,.exam-card-actions,#screen-exam,#screen-exam-display,#exam-warn-banner,.exam-taking-wrap,.exam-break-icon,.exam-wait-icon';
+  var SKIP={SCRIPT:1,STYLE:1,TEXTAREA:1,OPTION:1,INPUT:1,SELECT:1,SVG:1,svg:1};
+  function inRoot(n){ var e=n.nodeType===1?n:n.parentElement; return !!(e&&e.closest&&e.closest(ROOTS)); }
+  function conv(root){
+    if(!root||root.nodeType!==1&&root.nodeType!==3) return;
+    // 빠른 거르기: 이모지가 하나도 없으면 하위 노드를 훑지 않음 (큰 화면을 그릴 때마다 전체를 훑던 부담 제거)
+    if(!TEST.test(root.nodeType===3?root.nodeValue:root.textContent)) return;
+    var list=[];
+    if(root.nodeType===3){ list.push(root); }
+    else { var w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:function(n){ if(!TEST.test(n.nodeValue)) return NodeFilter.FILTER_REJECT; var p=n.parentElement; if(!p||SKIP[p.tagName]||p.closest('svg,script,style,textarea,option,select,.mpi-no')) return NodeFilter.FILTER_REJECT; return NodeFilter.FILTER_ACCEPT; }}); var n; while((n=w.nextNode())) list.push(n); }
+    list.forEach(function(t){
+      if(!t.parentNode||!TEST.test(t.nodeValue)||!inRoot(t)) return;
+      var p=t.parentElement; if(p&&(SKIP[p.tagName]||p.closest('svg,textarea,option,select,.mpi-no'))) return;
+      var s=t.nodeValue, frag=document.createDocumentFragment(), last=0, m; RE.lastIndex=0;
+      while((m=RE.exec(s))){
+        if(m.index>last) frag.appendChild(document.createTextNode(s.slice(last,m.index).replace(/\s+$/,function(x){return m.index>last?x:'';})));
+        var i, ex=t.parentElement&&t.parentElement.closest(EXROOT);
+        if(ex&&IMG[m[1]]){ i=document.createElement('img'); i.className='mpi-img'; i.src='/assets/ui/'+IMG[m[1]]+'.png'; i.alt=''; i.draggable=false; }
+        else { i=document.createElement('i'); i.className='mpi mpi-'+MAP[m[1]]; }
+        frag.appendChild(i);
+        last=m.index+m[0].length;
+        if(s.charAt(last)===' ') last++;
+      }
+      if(last<s.length) frag.appendChild(document.createTextNode(s.slice(last)));
+      t.parentNode.replaceChild(frag,t);
+    });
+  }
+  var busy=false, q=[], sched=false;
+  function flush(){ sched=false; busy=true; try{ var arr=q; q=[]; arr.forEach(function(n){ if(n.isConnected!==false) conv(n); }); }catch(e){} busy=false; }
+  var mo=new MutationObserver(function(ms){
+    if(busy) return;
+    ms.forEach(function(m){
+      if(m.type==='characterData'){ if(TEST.test(m.target.nodeValue)) q.push(m.target); }
+      else m.addedNodes.forEach(function(n){ if(n.nodeType===1||n.nodeType===3) q.push(n); });
+    });
+    if(q.length&&!sched){ sched=true; (window.requestAnimationFrame||setTimeout)(flush); }
+  });
+  function start(){ mo.observe(document.body,{childList:true,subtree:true,characterData:true}); conv(document.body); }
+  if(document.body) start(); else document.addEventListener('DOMContentLoaded',start);
+})();
+
+/* ======================================================================
+   MONO PLANNER 추가 기능 F — 모의고사 자동 배정 마법사
+   시험 선택 → 기간 → 기본 배정안 확인 → 학생 선택 → 학생별 조정안 확인 → 배정
+   ====================================================================== */
+var _mpA=null; Object.defineProperty(window,'_mpA',{get:function(){return _mpA;},set:function(v){_mpA=v;},configurable:true});
+function mpaInfo(e){ return {id:e.id,title:e.title||'',subj:mpSubjectKey(e)||'ko',dur:mpExamDuration(e),src:e.examSource||''}; }
+function mpaStu(uid){ return _mpT.students.find(function(s){return s.uid===uid;})||{uid:uid,name:uid}; }
+function mpaGradeTag(s){ var g=MPC.gradeShort(s.grade); return '<span class="mp-gtag '+(MPC.isSchoolGrade(s.grade)?'sch':'free')+'">'+mpE(g)+'</span>'; }
+function mpaStarted(uid,examId){ var se=_mpT.sess[mpSessKey(examId,uid)]; return !!(se&&['in_progress','break','waiting','submitted','graded'].indexOf(se.status)>=0); }
+window.mpOpenAuto=function(){
+  if(!_mpT.exams||!_mpT.exams.length){ alert('먼저 시험을 만들어 주세요.'); return; }
+  var n=mpNow();
+  _mpA={step:1,sel:{},q:'',start:n.today,end:MPC.addDays(n.today,28),excluded:[],schoolStart:'19:00',late:'22:30',maxPer:2,maxSchool:1,vacation:false,pace:'even',order:'chrono',base:null,unplaced:[],ssel:{},sq:'',fsrc:'',fsub:'',fsch:'',fgr:'',fsc:'',view:'cal',incUn:false,pick:null,plans:null,lock:false,ov:null};
+  var ov=mpSheet('<div id="mpa-root"></div>'); ov.firstChild.classList.add('mp-wide'); _mpA.ov=ov; mpaDraw();
+};
+var MPA_STEPS=['시험 선택','기간 설정','배정안 확인','학생 선택','조정·배정'];
+function mpaFrame(body,foot){
+  var st=MPA_STEPS.map(function(t,i){ var n=i+1; return '<div class="mp-stp '+(n===_mpA.step?'on':(n<_mpA.step?'done':''))+'"><b>'+(n<_mpA.step?'<i class="mpi mpi-check"></i>':n)+'</b><span>'+t+'</span></div>'; }).join('<i class="mp-stp-l"></i>');
+  return '<h3><i class="mpi mpi-spark"></i>모의고사 자동 배정</h3><div class="mp-steps">'+st+'</div>'+body+'<div class="mp-foot">'+foot+'</div>';
+}
+function mpaDraw(){
+  var r=document.getElementById('mpa-root'); if(!r) return;
+  var A=_mpA, f={1:mpaS1,2:mpaS2,3:mpaS3,4:mpaS4,5:mpaS5}[A.step]; r.innerHTML=f();
+  var sh=r.closest('.mp-sheet'); if(sh) sh.scrollTop=0;
+}
+window.mpaClose=function(){ mpCloseSheets(); };
+/* 1. 시험 선택 */
+function mpaVisibleExams(){
+  var A=_mpA, q=(A.q||'').trim().toLowerCase(), has={}; _mpT.sch.forEach(function(x){ has[x.examId]=1; });
+  return _mpT.exams.filter(function(e){
+    if(q&&(e.title||'').toLowerCase().indexOf(q)<0) return false;
+    if(A.fsrc&&(e.examSource||'')!==A.fsrc) return false;
+    if(A.fsub&&!(e.subjects||[]).some(function(x){return mpSubKey(x)===A.fsub;})) return false;
+    if(A.fsch==='none'&&has[e.id]) return false;
+    if(A.fsch==='has'&&!has[e.id]) return false;
+    return true; });
+}
+function mpaExFilterHtml(){
+  var A=_mpA, srcs={}, subs={}; _mpT.exams.forEach(function(e){ if(e.examSource) srcs[e.examSource]=1; (e.subjects||[]).forEach(function(x){ var k=mpSubKey(x); if(k) subs[k]=1; }); });
+  var op=function(v,l,cur){ return '<option value="'+mpE(v)+'"'+(cur===v?' selected':'')+'>'+mpE(l)+'</option>'; };
+  return '<div class="mp-filter-grid" style="margin-bottom:8px">'
+   +'<input class="mp-in sm mp-search" id="mpa-q" placeholder="시험 이름 검색" value="'+mpE(A.q)+'" oninput="mpaSearch(this.value)">'
+   +'<select class="mp-in sm" onchange="mpaFx(\'fsrc\',this.value)">'+op('','출처 전체',A.fsrc)+Object.keys(srcs).map(function(k){return op(k,mpSrcLabel(k),A.fsrc);}).join('')+'</select>'
+   +'<select class="mp-in sm" onchange="mpaFx(\'fsub\',this.value)">'+op('','과목 전체',A.fsub)+Object.keys(subs).map(function(k){return op(k,mpSubLabel(k),A.fsub);}).join('')+'</select>'
+   +'<select class="mp-in sm" onchange="mpaFx(\'fsch\',this.value)">'+op('','일정 전체',A.fsch)+op('none','일정 아직 없는 시험',A.fsch)+op('has','일정 있는 시험',A.fsch)+'</select></div>';
+}
+window.mpaFx=function(k,v){ _mpA[k]=v; var e=document.getElementById('mpa-exl'); if(e) e.innerHTML=mpaExRows(mpaVisibleExams()); var s=document.getElementById('mpa-stul'); if(s) s.innerHTML=mpaStuRows(mpaVisibleStu()); };
+function mpaS1(){
+  var A=_mpA, list=mpaVisibleExams(), n=Object.keys(A.sel).filter(function(k){return A.sel[k];}).length;
+  var h='<div class="mp-lblrow"><div class="mp-lbl">배정할 시험 <span class="mp-sub">(선택 '+n+'개)</span></div><div class="acts"><button type="button" class="mp-pill" onclick="mpaAllEx(true)"><i class="mpi mpi-check"></i>보이는 시험 전체</button><button type="button" class="mp-pill" onclick="mpaAllEx(false)">전체 해제</button></div></div>'
+   +mpaExFilterHtml()
+   +'<div class="mp-exlist" id="mpa-exl">'+mpaExRows(list)+'</div>'
+   +'<div class="mp-sub" style="margin-top:8px">시험 이름에서 시행 시점(예: 2025학년도 6월 모의평가 → 2024년 6월 시행)과 회차(예: 서바이벌 9회)를 읽어, 같은 과목은 그 순서대로 배정해요. 순서 기준은 다음 단계에서 고를 수 있어요.</div>';
+  return mpaFrame(h,'<button class="mp-btn" onclick="mpaClose()">닫기</button><button class="mp-btn pri" onclick="mpaNext()">다음 · 기간 설정</button>');
+}
+function mpaExRows(list){ return list.map(function(e){ var k=mpSubKey((e.subjects||[])[0]); return '<label class="mp-chk"><input type="checkbox" '+(_mpA.sel[e.id]?'checked':'')+' onchange="mpaTogEx(\''+e.id+'\',this.checked)"><span>'+mpE(e.title)+'</span> <span class="mp-sub">· '+mpE(mpSubLabel(k||'ko'))+' '+mpExamDuration(e)+'분'+(e.examSource?' · '+mpE(mpSrcLabel(e.examSource)):'')+' · 배정 학생 '+((e.assignedTo||[]).length)+'명</span></label>'; }).join('')||'<div class="mp-sub" style="padding:10px">검색 결과가 없어요</div>'; }
+window.mpaTogEx=function(id,on){ _mpA.sel[id]=!!on; mpaCnt(); };
+window.mpaAllEx=function(on){ mpaVisibleExams().forEach(function(e){ _mpA.sel[e.id]=!!on; }); document.getElementById('mpa-exl').innerHTML=mpaExRows(mpaVisibleExams()); mpaCnt(); };
+window.mpaSearch=function(v){ _mpA.q=v; document.getElementById('mpa-exl').innerHTML=mpaExRows(mpaVisibleExams()); };
+function mpaCnt(){ var n=Object.keys(_mpA.sel).filter(function(k){return _mpA.sel[k];}).length, el=document.querySelector('#mpa-root .mp-lbl .mp-sub'); if(el) el.textContent='(선택 '+n+'개)'; }
+/* 2. 기간 */
+function mpaS2(){
+  var A=_mpA, n=Object.keys(A.sel).filter(function(k){return A.sel[k];}).length;
+  var h='<div class="mp-sub" style="margin-bottom:10px">선택한 시험 <b>'+n+'개</b>를 아래 기간 안에 가장 효율적으로 나눠요.</div>'
+   +'<div class="mp-filter-grid"><div><div class="mp-lbl">시작일</div><input type="date" class="mp-in sm" id="mpa-s" value="'+A.start+'"></div><div><div class="mp-lbl">마감일</div><input type="date" class="mp-in sm" id="mpa-e" value="'+A.end+'"></div></div>'
+   +'<div class="mp-lbl" style="margin-top:12px">제외할 날짜 <span class="mp-sub">(휴무일·학교 행사 등)</span></div>'
+   +'<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><input type="date" class="mp-in sm" id="mpa-x" style="width:auto"><button type="button" class="mp-pill" onclick="mpaAddX()"><i class="mpi mpi-check"></i>추가</button></div>'
+   +'<div class="mp-chips" id="mpa-xs">'+mpaXChips()+'</div>'
+   +'<div class="mp-filter-grid" style="margin-top:12px"><div><div class="mp-lbl">중·고등학생 평일 시작 가능 시각</div><input type="time" step="600" class="mp-in sm" id="mpa-ss" value="'+A.schoolStart+'"></div><div><div class="mp-lbl">시험 종료 제한 시각</div><input type="time" step="600" class="mp-in sm" id="mpa-late" value="'+A.late+'"></div></div>'
+   +'<div class="mp-filter-grid" style="margin-top:12px"><div><div class="mp-lbl">하루 최대 시험 수 <span class="mp-sub">(주말·N수·방학)</span></div><select class="mp-in sm" id="mpa-mp">'+mpaCapOpts(A.maxPer)+'</select></div>'
+   +'<div><div class="mp-lbl">배치 방식</div><select class="mp-in sm" id="mpa-pace" onchange="mpaPaceInfo()">'+['even','ramp','front','weekend','set'].map(function(k){ return '<option value="'+k+'"'+(A.pace===k?' selected':'')+'>'+MPC.PACE_INFO[k].name+(k==='even'?' (기본)':'')+'</option>'; }).join('')+'</select></div></div>'
+   +'<div class="mp-filter-grid" style="margin-top:12px"><div><div class="mp-lbl">순서 기준</div><select class="mp-in sm" id="mpa-order" onchange="mpaPaceInfo()">'+['chrono','recent','title'].map(function(k){ return '<option value="'+k+'"'+(A.order===k?' selected':'')+'>'+MPC.ORDER_INFO[k].name+(k==='chrono'?' (추천)':'')+'</option>'; }).join('')+'</select></div><div></div></div>'
+   +'<div class="mp-pinfo" id="mpa-pinfo" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(184,132,26,.08);font-size:12.5px;line-height:1.7">'+mpaPaceInfoHtml(A.pace,A.order)+'</div>'
+   +'<div class="mp-filter-grid" style="margin-top:12px"><div><div class="mp-lbl">학교 가는 평일 하루 최대 <span class="mp-sub">(중·고등학생)</span></div><select class="mp-in sm" id="mpa-ms">'+mpaCapOpts(A.maxSchool)+'</select></div><div></div></div>'
+   +'<label class="mp-chk" style="margin-top:10px"><input type="checkbox" id="mpa-vac" '+(A.vacation?'checked':'')+'>방학 기간이에요 (중·고등학생도 평일에 학교 안 감)</label>'
+   +'<div class="mp-sub" style="margin-top:10px;line-height:1.7"><b>배정 원칙</b> · 같은 과목은 서로 멀리, 과목은 번갈아 · 하루 시험 수는 설정한 한도 안에서 가급적 적게 · 시험 시각은 수능 시간대(국어 08:40, 수학 10:30, 영어 13:10, 한국사 14:50, 탐구 15:35) · 학교 가는 평일은 하교 후만 사용, 긴 시험은 주말 우선 · 마감일 당일은 복기용으로 비움 · 같은 과목은 시행 시점·회차 순서를 지킴</div>';
+  return mpaFrame(h,'<button class="mp-btn" onclick="mpaPrev()">이전</button><button class="mp-btn pri" onclick="mpaNext()">자동 배정안 만들기</button>');
+}
+function mpaPaceInfoHtml(pace, order){
+  var P=MPC.PACE_INFO[pace]||MPC.PACE_INFO.even, O=MPC.ORDER_INFO[order]||MPC.ORDER_INFO.chrono;
+  return '<div><b>'+mpE(P.name)+'</b> — <span class="mp-sub">이럴 때: '+mpE(P.when)+'</span></div><div>'+mpE(P.why)+'</div>'
+    +'<div style="margin-top:6px"><b>'+mpE(O.name)+'</b> — '+mpE(O.why)+'</div>';
+}
+window.mpaPaceInfo=function(){ var p=(document.getElementById('mpa-pace')||{}).value, o=(document.getElementById('mpa-order')||{}).value, el=document.getElementById('mpa-pinfo'); if(el) el.innerHTML=mpaPaceInfoHtml(p,o); };
+function mpaCapOpts(cur){ var o=''; for(var i=1;i<=6;i++) o+='<option value="'+i+'"'+(+cur===i?' selected':'')+'>'+i+'개</option>'; o+='<option value="9"'+(+cur===9?' selected':'')+'>제한 없음 (시간이 되는 만큼)</option>'; return o; }
+function mpaXChips(){ return _mpA.excluded.map(function(d){ return '<span class="mp-chip">'+mpE(mpDateLabel(d))+'<button type="button" onclick="mpaDelX(\''+d+'\')"><i class="mpi mpi-x"></i></button></span>'; }).join('')||'<span class="mp-sub">없음</span>'; }
+window.mpaAddX=function(){ var v=document.getElementById('mpa-x').value; if(v&&_mpA.excluded.indexOf(v)<0){ _mpA.excluded.push(v); _mpA.excluded.sort(); } document.getElementById('mpa-xs').innerHTML=mpaXChips(); document.getElementById('mpa-x').value=''; };
+window.mpaDelX=function(d){ _mpA.excluded=_mpA.excluded.filter(function(x){return x!==d;}); document.getElementById('mpa-xs').innerHTML=mpaXChips(); };
+function mpaReadS2(){
+  var A=_mpA, g=function(i){var e=document.getElementById(i); return e?e.value:null;};
+  A.start=g('mpa-s')||A.start; A.end=g('mpa-e')||A.end; A.schoolStart=g('mpa-ss')||A.schoolStart; A.late=g('mpa-late')||A.late;
+  A.maxPer=+g('mpa-mp')||2; A.maxSchool=+g('mpa-ms')||1; A.pace=g('mpa-pace')||'even'; A.order=g('mpa-order')||'chrono'; A.vacation=!!(document.getElementById('mpa-vac')||{}).checked;
+}
+function mpaOpt(extra){
+  var A=_mpA, n=mpNow(), exams=_mpT.exams.filter(function(e){return A.sel[e.id];}).map(mpaInfo);
+  return Object.assign({exams:exams,start:A.start,end:A.end,today:n.today,nowMin:n.nowMin>=1440?1439:n.nowMin,schoolStart:MPC.hhmmToMin(A.schoolStart),late:MPC.hhmmToMin(A.late),excluded:A.excluded,maxPerDay:A.maxPer,maxPerDaySchool:A.maxSchool,vacation:A.vacation,pace:A.pace,order:A.order,school:false,existing:[],prefer:null},extra||{});
+}
+function mpaMakeBase(){ var r=MPC.autoPlan(mpaOpt()); _mpA.base=r.items; _mpA.unplaced=r.unplaced; _mpA.days=r.days; }
+/* 3. 기본안 */
+function mpaS3(){
+  var A=_mpA, byId={}; _mpT.exams.forEach(function(e){byId[e.id]=e;});
+  var h='<div class="mp-sub" style="margin-bottom:8px">평일에도 자유롭게 올 수 있는 학생(N수) 기준 <b>기본 배정안</b>이에요. 날짜·시간은 직접 고칠 수 있고, 학교 가는 학생과 기존 일정은 다음 단계에서 학생별로 자동 반영돼요.</div>';
+  if(A.unplaced.length) h+='<div class="mp-warn"><b>배정하지 못한 시험 '+A.unplaced.length+'개</b><br>'+A.unplaced.map(function(u){return mpE((byId[u.examId]||{}).title)+' — '+mpE(u.reason);}).join('<br>')+'</div>';
+  h+='<div id="mpa-sum">'+mpaSummary(A.base)+'</div>'+mpaOrderHtml(A.base, byId)+mpaViewToggle();
+  if(A.view==='cal') h+='<div class="mp-sub" style="margin:6px 0">시험을 누른 뒤 옮길 날짜를 누르거나, 끌어다 놓으면 날짜를 바꿀 수 있어요. 시간은 아래 칸에서 고쳐요.</div><div id="mpa-cal-base">'+mpaCalHtml('base')+'</div>'+mpaCalLegend(false);
+  else h+='<div class="mp-aplist">'+A.base.map(function(it,i){ var e=byId[it.examId]||{}; var k=mpSubKey((e.subjects||[])[0]);
+    return '<div class="mp-ar"><div class="dt"><input type="date" class="mp-in sm" value="'+it.date+'" onchange="mpaBaseSet('+i+',\'date\',this.value)"><input type="time" step="600" class="mp-in sm" value="'+MPC.minToHHMM(it.startMin)+'" onchange="mpaBaseSet('+i+',\'startMin\',this.value)"><span class="dw">'+MPC.dowKo(it.date)+'</span></div>'
+      +'<div class="nm"><b>'+mpE(e.title)+'</b> <span class="mp-sub">'+mpE(mpSubLabel(k||'ko'))+' · '+mpExamDuration(e)+'분</span><div class="mp-sub">'+mpE(it.notes.join(' · '))+'</div></div></div>'; }).join('')+'</div>';
+  return mpaFrame(h,'<button class="mp-btn" onclick="mpaPrev()">이전</button><button type="button" class="mp-pill" onclick="mpaRegen()"><i class="mpi mpi-refresh"></i>다시 자동 배정</button><button class="mp-btn pri" onclick="mpaNext()">다음 · 학생 선택</button>');
+}
+/* 인식한 순서 보여 주기: 과목별로 날짜순, 시행 시점·회차 표시, 인식 못 한 시험은 표시 */
+function mpaOrderHtml(items, byId){
+  var by={}, miss=0;
+  items.forEach(function(it){ (by[it._subj]=by[it._subj]||[]).push(it); });
+  var rows=Object.keys(by).map(function(k){
+    var L=by[k].slice().sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:a.startMin-b.startMin; });
+    return '<div style="margin:3px 0"><b>'+mpE(mpSubLabel(k))+'</b> '+L.map(function(it){
+      var e=byId[it.examId]||{}, tm=MPC.examTime(e.title,e.examSource), rd=tm?null:MPC.examRound(e.title);
+      var tag=tm?(tm.kind==='M'?tm.ym:tm.ym+' 시행'):(rd?rd.round+'회':'');
+      if(!tag) miss++;
+      return '<span class="mp-sub">'+mpE(MPC.mdLabel?MPC.mdLabel(it.date):it.date.slice(5))+'</span> '+mpE(e.title||'')+(tag?' <span class="mp-sub">('+mpE(tag)+')</span>':' <span style="color:#B45309">(순서 정보 없음)</span>');
+    }).join(' → ')+'</div>';
+  }).join('');
+  return '<details class="mp-ord" style="margin:6px 0 4px"><summary style="cursor:pointer;font-size:12.5px"><b>배정 순서 확인</b> <span class="mp-sub">· '+mpE((MPC.ORDER_INFO[_mpA.order]||{}).name||'')+' · '+mpE((MPC.PACE_INFO[_mpA.pace]||{}).name||'')+(miss?' · 순서 정보 없는 시험 '+miss+'개(이름 순으로 배치)':'')+'</span></summary><div style="font-size:12px;line-height:1.7;margin-top:4px">'+rows+'</div></details>';
+}
+function mpaSummary(items){
+  var by={}; items.forEach(function(it){ (by[it._subj]=by[it._subj]||[]).push(it.date); });
+  var parts=Object.keys(by).map(function(k){ var d=by[k].sort(); if(d.length<2) return mpE(mpSubLabel(k))+' 1회'; var g=d.slice(1).map(function(x,i){return MPC.diffDays(d[i],x);}); return mpE(mpSubLabel(k))+' '+d.length+'회 · 간격 '+g.join('·')+'일'; });
+  return '<div class="mp-sumbar"><b>'+items.length+'개 배정</b> · '+(items.length?mpDateLabel(items[0].date)+' ~ '+mpDateLabel(items[items.length-1].date):'')+'<div class="mp-sub">'+parts.join(' / ')+'</div></div>';
+}
+window.mpaBaseSet=function(i,k,v){
+  var it=_mpA.base[i]; if(!it||!v) return;
+  if(k==='date') it.date=v; else { var m=MPC.hhmmToMin(v); if(m!=null) it.startMin=m; }
+  it.notes=['직접 수정'];
+  _mpA.base.sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:a.startMin-b.startMin; });
+  mpaDraw();
+};
+window.mpaRegen=function(){ mpaMakeBase(); mpaDraw(); };
+/* 4. 학생 선택 */
+function mpaGrKey(s){ var g=String(s.grade||''); if(g==='N수'||g==='성인') return g; if(g.indexOf('고등학교')===0) return '고'+g.replace(/[^0-9]/g,''); if(g.indexOf('중학교')===0) return '중'; return '기타'; }
+function mpaVisibleStu(){
+  var A=_mpA, q=(A.sq||'').trim().toLowerCase();
+  return _mpT.students.filter(function(s){
+    if(q&&(s.name||'').toLowerCase().indexOf(q)<0) return false;
+    if(A.fgr&&mpaGrKey(s)!==A.fgr) return false;
+    if(A.fsc){ var n=_mpT.sch.filter(function(x){return x.studentUid===s.uid&&x.date>=A.start&&x.date<=A.end;}).length; if(A.fsc==='has'&&!n) return false; if(A.fsc==='none'&&n) return false; }
+    return true; });
+}
+function mpaStuRows(list){
+  var A=_mpA;
+  return list.map(function(s){ var inRange=_mpT.sch.filter(function(x){return x.studentUid===s.uid&&x.date>=A.start&&x.date<=A.end;}).length;
+    var ids=Object.keys(A.sel).filter(function(k){return A.sel[k];}), mine=ids.filter(function(id){ var e=_mpT.examsById[id]; return e&&(e.assignedTo||[]).indexOf(s.uid)>=0; }).length;
+    return '<label class="mp-chk mp-cs-chip'+(!A.incUn&&!mine?' dim':'')+'"><input type="checkbox" '+(A.ssel[s.uid]?'checked':'')+' onchange="mpaTogStu(\''+s.uid+'\',this.checked)">'+mpE(s.name)+' '+mpaGradeTag(s)+'<span class="mp-sub">해당 시험 '+mine+'/'+ids.length+(inRange?' · 기존 '+inRange+'건':'')+'</span></label>'; }).join('')||'<div class="mp-sub">학생이 없어요</div>';
+}
+function mpaS4(){
+  var A=_mpA, n=Object.keys(A.ssel).filter(function(k){return A.ssel[k];}).length;
+  var h='<div class="mp-lblrow"><div class="mp-lbl">배정할 학생 <span class="mp-sub" id="mpa-scnt">(선택 '+n+'명)</span></div><div class="acts"><button type="button" class="mp-pill" onclick="mpaAllStu(true)"><i class="mpi mpi-check"></i>보이는 학생 전체</button><button type="button" class="mp-pill" onclick="mpaAllStu(false)">전체 해제</button></div></div>'
+   +'<div class="mp-filter-grid" style="margin-bottom:8px"><input class="mp-in sm mp-search" placeholder="학생 이름 검색" value="'+mpE(A.sq)+'" oninput="mpaStuSearch(this.value)">'
+   +'<select class="mp-in sm" onchange="mpaFx(\'fgr\',this.value)">'+[['','학년 전체'],['고3','고3'],['고2','고2'],['고1','고1'],['중','중학생'],['N수','N수'],['성인','성인'],['기타','기타']].map(function(o){return '<option value="'+o[0]+'"'+(A.fgr===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select>'
+   +'<select class="mp-in sm" onchange="mpaFx(\'fsc\',this.value)"><option value="">기존 일정 전체</option><option value="has"'+(A.fsc==='has'?' selected':'')+'>기간 내 기존 일정 있는 학생</option><option value="none"'+(A.fsc==='none'?' selected':'')+'>기존 일정 없는 학생</option></select></div>'
+   +'<div class="mp-chips" id="mpa-stul">'+mpaStuRows(mpaVisibleStu())+'</div>'
+   +'<label class="mp-chk" style="margin-top:10px"><input type="checkbox" '+(A.incUn?'checked':'')+' onchange="mpaIncUn(this.checked)">시험 탭에서 배정되지 않은 학생에게도 자동으로 배정해서 포함</label>'
+   +'<div class="mp-sub" style="margin-top:4px">기본은 꺼짐이에요. 꺼 두면 시험 탭에서 그 시험에 배정해 둔 학생에게만 일정을 만들고, 배정하지 않은 과목은 건너뛰어요. (칩의 "해당 시험 N/M" = 선택한 M개 중 그 학생에게 배정된 시험 수)</div>'
+   +'<div class="mp-sub" style="margin-top:8px">중·고등학생은 평일 학교(하교 후 시간대만 사용), N수·성인은 평일도 자유롭게 사용해요. 선택한 학생의 기존 일정은 다음 단계에서 자동으로 피해서 배정돼요.</div>';
+  return mpaFrame(h,'<button class="mp-btn" onclick="mpaPrev()">이전</button><button class="mp-btn pri" onclick="mpaNext()">학생별 조정안 만들기</button>');
+}
+window.mpaIncUn=function(on){ _mpA.incUn=!!on; var s=document.getElementById('mpa-stul'); if(s) s.innerHTML=mpaStuRows(mpaVisibleStu()); };
+function mpaScnt(){ var n=Object.keys(_mpA.ssel).filter(function(k){return _mpA.ssel[k];}).length, e=document.getElementById('mpa-scnt'); if(e) e.textContent='(선택 '+n+'명)'; }
+window.mpaTogStu=function(u,on){ _mpA.ssel[u]=!!on; mpaScnt(); };
+window.mpaAllStu=function(on){ mpaVisibleStu().forEach(function(s){ _mpA.ssel[s.uid]=!!on; }); document.getElementById('mpa-stul').innerHTML=mpaStuRows(mpaVisibleStu()); mpaScnt(); };
+window.mpaStuSearch=function(v){ _mpA.sq=v; document.getElementById('mpa-stul').innerHTML=mpaStuRows(mpaVisibleStu()); };
+/* 학생별 조정 */
+function mpaPlanFor(uid){
+  var A=_mpA, s=mpaStu(uid), selIds=A.base.map(function(b){return b.examId;});
+  var skipped=[], examsAll=_mpT.exams.filter(function(e){return A.sel[e.id];});
+  var exams=[], planned={};
+  examsAll.forEach(function(e){
+    if(mpaStarted(uid,e.id)) skipped.push({examId:e.id,title:e.title,reason:'이미 응시를 시작했거나 완료해서 제외'});
+    else if(!A.incUn&&(e.assignedTo||[]).indexOf(uid)<0) skipped.push({examId:e.id,title:e.title,reason:'이 학생에게 배정되지 않은 시험이라 제외 (시험 탭 배정 기준)'});
+    else { exams.push(mpaInfo(e)); planned[e.id]=1; } });
+  var existing=_mpT.sch.filter(function(x){ return x.studentUid===uid && !planned[x.examId]; }).map(function(x){ return {date:x.date,startMin:MPC.effStart(x),durationMin:x.durationMin||60,subj:x.subjectKey,title:x.examTitle||''}; });
+  var overwrite={}; _mpT.sch.forEach(function(x){ if(x.studentUid===uid&&planned[x.examId]) overwrite[x.examId]=x; });
+  var prefer={}; A.base.forEach(function(b){ prefer[b.examId]=b.date; });
+  var r=MPC.autoPlan(mpaOpt({exams:exams,school:MPC.isSchoolGrade(s.grade),existing:existing,prefer:prefer}));
+  var bm={}; A.base.forEach(function(b){ bm[b.examId]=b; });
+  var school=MPC.isSchoolGrade(s.grade)&&!A.vacation;
+  r.items.forEach(function(it){
+    var b=bm[it.examId]; it.from=b?{date:b.date,startMin:b.startMin}:null; it.changed=!b||b.date!==it.date||b.startMin!==it.startMin;
+    var why=[];
+    if(it.changed&&b){
+      var w=MPC.dow(b.date), wk=(w===0||w===6);
+      if(school&&!wk) why.push('평일 학교 일정');
+      var clash=existing.some(function(x){ return x.date===b.date&&x.startMin!=null&&b.startMin<x.startMin+x.durationMin+20&&x.startMin<b.startMin+it._dur+20; });
+      if(clash) why.push('기존 일정과 겹침');
+      else if(existing.some(function(x){return x.date===b.date;})) why.push('기존 일정이 있는 날');
+      if(existing.some(function(x){return x.subj===it._subj&&Math.abs(MPC.diffDays(x.date,b.date))<3;})) why.push('같은 과목 기존 일정과 가까움');
+      if(!why.length) why.push(b.date===it.date?'시간대 조정':'전체 균형 재조정');
+    }
+    it.why=why; it.ow=overwrite[it.examId]||null;
+  });
+  r.skipped=skipped; r.existing=existing; r.uid=uid; r.dropped=[]; return r;
+}
+function mpaS5(){
+  var A=_mpA, byId={}; _mpT.exams.forEach(function(e){byId[e.id]=e;});
+  var uids=Object.keys(A.ssel).filter(function(k){return A.ssel[k];}), tot=0, chg=0;
+  var h='<div class="mp-sub" style="margin-bottom:8px">학생마다 학교 일정과 기존 일정을 반영해 자동 조정한 결과예요. 바뀐 항목에는 이유가 표시되고, 날짜·시간은 직접 고칠 수 있어요.</div>'+mpaViewToggle()+(A.view==='cal'?mpaCalLegend(true):'');
+  h+=mpaDropMatrix(uids);
+  h+=uids.map(function(uid,ui){
+    var P=A.plans[uid], s=mpaStu(uid), c=P.items.filter(function(x){return x.changed;}).length; tot+=P.items.length; chg+=c;
+    var rows=P.items.map(function(it,i){ var e=byId[it.examId]||{}, k=mpSubKey((e.subjects||[])[0]);
+      return '<div class="mp-ar'+(it.changed?' chg':'')+'"><div class="dt"><input type="date" class="mp-in sm" value="'+it.date+'" onchange="mpaPlanSet(\''+uid+'\','+i+',\'date\',this.value)"><input type="time" step="600" class="mp-in sm" value="'+MPC.minToHHMM(it.startMin)+'" onchange="mpaPlanSet(\''+uid+'\','+i+',\'startMin\',this.value)"><span class="dw">'+MPC.dowKo(it.date)+'</span></div>'
+        +'<div class="nm"><b>'+mpE(e.title)+'</b> <span class="mp-sub">'+mpE(mpSubLabel(k||'ko'))+'</span>'
+        +(it.changed?'<div class="why"><i class="mpi mpi-refresh"></i>'+(it.from?'기본안 '+mpDateLabel(it.from.date)+' '+MPC.minToHHMM(it.from.startMin)+' → ':'')+'조정 · '+mpE(it.why.join(' · ')||'직접 수정')+'</div>':'<div class="mp-sub">기본안 그대로</div>')
+        +(it.ow?'<div class="mp-sub">기존 일정('+mpDateLabel(it.ow.date)+')을 덮어써요</div>':'')+'<div class="mp-sub cf" id="mpa-cf-'+uid+'-'+i+'"></div></div></div>'; }).join('');
+    var sk=P.skipped.map(function(x){return '<div class="mp-sub">· '+mpE(x.title)+' — '+mpE(x.reason)+'</div>';}).join('');
+    var un=P.unplaced.map(function(u){return '<div class="mp-warn">'+mpE((byId[u.examId]||{}).title)+' — '+mpE(u.reason)+'</div>';}).join('');
+    return '<details class="mp-pcard" '+(ui<3||c?'open':'')+'><summary><span class="nmx">'+mpE(s.name)+'</span> '+mpaGradeTag(s)+'<span class="mp-sub">'+(c?c+'건 조정':'기본안 그대로')+' · 기존 일정 '+P.existing.length+'건 반영'+(P.dropped.length?' · <b style="color:#9a3412">'+P.dropped.length+'건 제외함</b>':'')+'</span></summary><div class="mp-pbody">'+un+(A.view==='cal'?'<div id="mpa-cal-'+uid+'">'+mpaCalHtml(uid)+'</div>':rows)+sk+'</div></details>';
+  }).join('');
+  h+='<label class="mp-chk" style="margin-top:10px"><input type="checkbox" id="mpa-lock" '+(A.lock?'checked':'')+' onchange="_mpA.lock=this.checked">학생이 시간을 바꾸지 못하게 고정</label>'
+   +'<div class="mp-sub" style="margin-top:4px">'+(A.incUn?'배정되지 않았던 시험은 이번에 학생에게 새로 배정되고, ':'시험 탭에서 이미 배정된 시험만 ')+'일정표에 등록돼요. (총 '+tot+'건 · 조정 '+chg+'건)</div>';
+  return mpaFrame(h,'<button class="mp-btn" onclick="mpaPrev()">이전</button><button class="mp-btn pri" id="mpa-go" onclick="mpaSave()"'+(tot?'':' disabled')+'>'+tot+'건 배정하기</button>');
+}
+/* ── 달력 보기 ── */
+var MPA_COL={ko:['#7B1D1D','#f6e3e3'],ma:['#1d2a4a','#e4e8f3'],en:['#8a5f0d','#f8ecd0'],hi:['#5a4a3a','#ece6df'],sc:['#2f6b4f','#e2f0e8'],so:['#5b2a86','#efe6f5']};
+function mpaCol(s){ return MPA_COL[s]||['#555','#eee']; }
+function mpaViewToggle(){ var v=_mpA.view; return '<div class="mp-seg" style="margin:4px 0 8px"><button class="'+(v==='cal'?'on':'')+'" onclick="mpaView(\'cal\')"><i class="mpi mpi-calendar"></i>달력</button><button class="'+(v==='list'?'on':'')+'" onclick="mpaView(\'list\')"><i class="mpi mpi-doc"></i>목록</button></div>'; }
+window.mpaView=function(v){ _mpA.view=v; mpaDraw(); };
+function mpaCalLegend(school){ var seen={}; (_mpA.base||[]).forEach(function(i){seen[i._subj]=1;}); return '<div class="mp-legend">'+Object.keys(seen).map(function(k){ var c=mpaCol(k); return '<span><i style="background:'+c[0]+'"></i>'+mpE(mpSubLabel(k))+'</span>'; }).join('')+'<span><i class="ex"></i>기존 일정</span>'+(school?'<span><i class="sc"></i>학교(평일)</span>':'')+'<span><i class="xx"></i>제외 날짜</span></div>'; }
+function mpaItemsOf(scope){ return scope==='base'?_mpA.base:_mpA.plans[scope].items; }
+function mpaTitle(id){ return (_mpT.examsById[id]||{}).title||id; }
+function mpaCalHtml(scope){
+  var A=_mpA, items=mpaItemsOf(scope), P=scope==='base'?null:A.plans[scope], stu=P?mpaStu(scope):null;
+  var school=!!(stu&&MPC.isSchoolGrade(stu.grade)&&!A.vacation), ex={}; A.excluded.forEach(function(d){ex[d]=1;});
+  var by={}; items.forEach(function(it){ (by[it.date]=by[it.date]||[]).push({k:'p',it:it}); });
+  if(P) P.existing.forEach(function(x){ (by[x.date]=by[x.date]||[]).push({k:'e',x:x}); });
+  var all=items.map(function(i){return i.date;}).concat(P?P.existing.map(function(x){return x.date;}):[]).concat([A.start,A.end]).sort();
+  var first=all[0]<A.start?A.start:all[0], last=all[all.length-1]; first=A.start<first?A.start:first;
+  var today=mpNow().today, h='', m=first.slice(0,7);
+  var lastM=last.slice(0,7), guard=0;
+  while(m<=lastM&&guard++<8){
+    var ms=m+'-01', me=MPC.monthEnd(ms), gs=MPC.weekStart(ms<first?first:ms), ge=MPC.addDays(MPC.weekStart(me>last?last:me),6);
+    h+='<div class="mp-cal"><div class="mp-cal-h">'+m.slice(0,4)+'년 '+(+m.slice(5,7))+'월</div><div class="mp-cal-g"><div class="w">월</div><div class="w">화</div><div class="w">수</div><div class="w">목</div><div class="w">금</div><div class="w we">토</div><div class="w we">일</div>';
+    MPC.rangeDates(gs,ge).forEach(function(d){
+      var inM=d.slice(0,7)===m, inR=d>=A.start&&d<=A.end, w=MPC.dow(d), we=(w===0||w===6);
+      if(!inM){ h+='<div class="c o"></div>'; return; }
+      var cls='c'+(inR&&!ex[d]?' ok':' off')+(we?' we':'')+(ex[d]?' xx':'')+(d===today?' td':'')+((school&&!we&&inR&&!ex[d])?' sch':'');
+      var chips=(by[d]||[]).sort(function(a,b){ var sa=a.k==='p'?a.it.startMin:a.x.startMin, sb=b.k==='p'?b.it.startMin:b.x.startMin; return (sa||0)-(sb||0); }).map(function(o){
+        if(o.k==='e'){ return '<div class="cc ex" title="기존 일정"><b>'+(o.x.startMin!=null?MPC.minToHHMM(o.x.startMin):'')+'</b> '+mpE(o.x.title||'기존 일정')+'</div>'; }
+        var c=mpaCol(o.it._subj), pk=A.pick&&A.pick.scope===scope&&A.pick.examId===o.it.examId;
+        return '<div class="cc'+(o.it.changed&&P?' chg':'')+(pk?' pk':'')+'" draggable="true" style="background:'+c[1]+';color:'+c[0]+';border-color:'+c[0]+'" ondragstart="event.dataTransfer.setData(\'text/plain\',\''+o.it.examId+'\')" onclick="event.stopPropagation();mpaCalPick(\''+scope+'\',\''+o.it.examId+'\')"><b>'+MPC.minToHHMM(o.it.startMin)+'</b> '+mpE(mpaTitle(o.it.examId))+'</div>'; }).join('');
+      h+='<div class="'+cls+'" ondragover="event.preventDefault()" ondrop="event.preventDefault();mpaCalDrop(\''+scope+'\',event,\''+d+'\')" onclick="mpaCalDay(\''+scope+'\',\''+d+'\')"><div class="n">'+(+d.slice(8,10))+(ex[d]?'<em>제외</em>':(school&&!we&&inR?'<em>학교</em>':''))+'</div>'+chips+'</div>';
+    });
+    h+='</div></div>';
+    m=MPC.addDays(me,1).slice(0,7);
+  }
+  return h+mpaPickPanel(scope);
+}
+function mpaPickPanel(scope){
+  var A=_mpA, p=A.pick; if(!p||p.scope!==scope) return '';
+  var it=mpaItemsOf(scope).find(function(x){return x.examId===p.examId;}); if(!it) return '';
+  var e=_mpT.examsById[it.examId]||{}, k=mpSubKey((e.subjects||[])[0]);
+  var cf=scope==='base'?'':mpaConflictText(scope,it);
+  return '<div class="mp-pick"><div class="t"><b>'+mpE(e.title)+'</b> <span class="mp-sub">'+mpE(mpSubLabel(k||'ko'))+' · '+mpExamDuration(e)+'분</span></div>'
+   +'<div class="r"><input type="date" class="mp-in sm" value="'+it.date+'" onchange="mpaCalSet(\''+scope+'\',\''+it.examId+'\',\'date\',this.value)"><input type="time" step="600" class="mp-in sm" value="'+MPC.minToHHMM(it.startMin)+'" onchange="mpaCalSet(\''+scope+'\',\''+it.examId+'\',\'startMin\',this.value)"><button type="button" class="mp-pill" onclick="mpaCalPick(\''+scope+'\',null)">닫기</button></div>'
+   +'<div class="mp-sub">'+(it.why&&it.why.length&&scope!=='base'?'조정 이유: '+mpE(it.why.join(' · '))+' · ':'')+'옮길 날짜를 누르거나 끌어다 놓으세요.</div>'+(cf?'<div class="mp-sub" style="color:#9a3412">'+cf+'</div>':'')+'</div>';
+}
+function mpaConflictText(uid,it){
+  var P=_mpA.plans[uid], pool=P.existing.map(function(x){return {studentUid:uid,date:x.date,startMin:x.startMin,durationMin:x.durationMin};})
+    .concat(P.items.filter(function(o){return o!==it;}).map(function(o){return {studentUid:uid,date:o.date,startMin:o.startMin,durationMin:o._dur};}));
+  var cand={id:'c',studentUid:uid,date:it.date,startMin:it.startMin,durationMin:it._dur};
+  if(MPC.findCollisions(pool,cand).length) return '⚠ 같은 날 다른 시험과 시간이 겹쳐요';
+  return MPC.sameDayOthers(pool,cand).length?'같은 날 다른 시험이 있어요':'';
+}
+function mpaCalRefresh(scope){
+  var host=document.getElementById('mpa-cal-'+scope); if(host) host.innerHTML=mpaCalHtml(scope);
+  if(scope==='base'){ var s=document.getElementById('mpa-sum'); if(s) s.innerHTML=mpaSummary(_mpA.base); }
+}
+window.mpaCalPick=function(scope,id){ var A=_mpA, prev=A.pick; A.pick=id?{scope:scope,examId:id}:null; if(prev&&prev.scope!==scope) mpaCalRefresh(prev.scope); mpaCalRefresh(scope); };
+function mpaEdit(scope,id,date,startMin){
+  var it=mpaItemsOf(scope).find(function(x){return x.examId===id;}); if(!it) return;
+  if(date) it.date=date; if(startMin!=null) it.startMin=startMin;
+  if(scope==='base'){ it.notes=['직접 수정']; _mpA.base.sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:a.startMin-b.startMin; }); }
+  else { it.changed=true; it.why=['직접 수정']; }
+  mpaCalRefresh(scope);
+}
+window.mpaCalDay=function(scope,d){ var p=_mpA.pick; if(!p||p.scope!==scope) return; var A=_mpA; if(d<A.start||d>A.end||A.excluded.indexOf(d)>=0) return; mpaEdit(scope,p.examId,d,null); };
+window.mpaCalDrop=function(scope,ev,d){ var id=ev.dataTransfer.getData('text/plain'); var A=_mpA; if(!id||d<A.start||d>A.end||A.excluded.indexOf(d)>=0) return; A.pick={scope:scope,examId:id}; mpaEdit(scope,id,d,null); };
+window.mpaCalSet=function(scope,id,k,v){ if(!v) return; if(k==='date') mpaEdit(scope,id,v,null); else { var m=MPC.hhmmToMin(v); if(m!=null) mpaEdit(scope,id,null,m); } };
+/* 과목별 일괄 제외(이번 배정에서만 빼기) */
+function mpaDropMatrix(uids){
+  var A=_mpA, subs={}, any=false;
+  uids.forEach(function(u){ var P=A.plans[u]; P.items.concat(P.dropped).forEach(function(i){ subs[i._subj]=1; any=true; }); });
+  var keys=Object.keys(subs); if(!any) return '';
+  var cell=function(P,k){ var kept=P.items.filter(function(i){return i._subj===k;}).length, dr=P.dropped.filter(function(i){return i._subj===k;}).length, n=kept+dr; return {kept:kept,dr:dr,n:n}; };
+  var totalDrop=0; uids.forEach(function(u){ totalDrop+=A.plans[u].dropped.length; });
+  var h='<details class="mp-pcard mp-dropbox" open><summary><i class="mpi mpi-x-c"></i>과목별 일괄 제외 <span class="mp-sub">'+(totalDrop?totalDrop+'건 제외 중':'칸을 누르면 그 학생의 그 과목을 이번 배정에서 뺄 수 있어요')+'</span></summary><div class="mp-pbody"><div class="mp-scroll"><table class="mp-tbl mp-dm"><tr><th>학생</th>'
+   +keys.map(function(k){ return '<th><button type="button" class="mp-pill" onclick="mpaDropCol(\''+k+'\')">'+mpE(mpSubLabel(k))+' 전체</button></th>'; }).join('')+'</tr>';
+  uids.forEach(function(u){ var P=A.plans[u], s=mpaStu(u);
+    h+='<tr><td class="l">'+mpE(s.name)+' '+mpaGradeTag(s)+'</td>'+keys.map(function(k){ var c=cell(P,k);
+      if(!c.n) return '<td class="na">-</td>';
+      var st=c.kept===0?'off':(c.dr?'part':'on');
+      return '<td><button type="button" class="mp-dc '+st+'" onclick="mpaDropCell(\''+u+'\',\''+k+'\')">'+(st==='off'?'제외됨':c.kept+'건')+(st==='off'?'':'')+'</button></td>'; }).join('')+'</tr>'; });
+  return h+'</table></div><div class="mp-sub" style="margin-top:6px">제외한 시험은 이번 배정에서 일정이 만들어지지 않고 시험 배정도 하지 않아요. (이미 등록된 일정·배정은 건드리지 않아요) 다시 누르면 되돌려요.</div></div></details>';
+}
+function mpaRedraw5(){ var sh=document.querySelector('#mpa-root'); sh=sh&&sh.closest('.mp-sheet'); var st=sh?sh.scrollTop:0; mpaDraw(); if(sh) sh.scrollTop=st; }
+function mpaDropToggle(uid,k,forceDrop){
+  var P=_mpA.plans[uid], kept=P.items.filter(function(i){return i._subj===k;}), dr=P.dropped.filter(function(i){return i._subj===k;});
+  var drop=forceDrop!=null?forceDrop:!!kept.length;
+  if(drop&&kept.length){ P.items=P.items.filter(function(i){return i._subj!==k;}); P.dropped=P.dropped.concat(kept); }
+  else if(!drop&&dr.length){ P.dropped=P.dropped.filter(function(i){return i._subj!==k;}); P.items=P.items.concat(dr).sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:a.startMin-b.startMin; }); }
+  if(_mpA.pick&&_mpA.pick.scope===uid) _mpA.pick=null;
+}
+window.mpaDropCell=function(uid,k){ mpaDropToggle(uid,k,null); mpaRedraw5(); };
+window.mpaDropCol=function(k){
+  var uids=Object.keys(_mpA.plans), anyKept=uids.some(function(u){ return _mpA.plans[u].items.some(function(i){return i._subj===k;}); });
+  uids.forEach(function(u){ mpaDropToggle(u,k,anyKept); }); mpaRedraw5();
+};
+window.mpaPlanSet=function(uid,i,k,v){
+  var it=_mpA.plans[uid].items[i]; if(!it||!v) return;
+  if(k==='date') it.date=v; else { var m=MPC.hhmmToMin(v); if(m!=null) it.startMin=m; }
+  it.changed=true; it.why=['직접 수정'];
+  var P=_mpA.plans[uid], pool=P.existing.map(function(x){return {studentUid:uid,date:x.date,startMin:x.startMin,durationMin:x.durationMin};});
+  P.items.forEach(function(o,j){ var el=document.getElementById('mpa-cf-'+uid+'-'+j); if(!el) return; var cand={id:'p'+j,studentUid:uid,date:o.date,startMin:o.startMin,durationMin:o._dur};
+    var others=pool.concat(P.items.filter(function(_,q){return q!==j;}).map(function(x,q){return {id:'q'+q,studentUid:uid,date:x.date,startMin:x.startMin,durationMin:x._dur};}));
+    var col=MPC.findCollisions(others,cand); el.innerHTML=col.length?'<span style="color:#9a3412">⚠ 같은 날 다른 시험과 시간이 겹쳐요</span>':(MPC.sameDayOthers(others,cand).length?'같은 날 다른 시험이 있어요':''); });
+};
+/* 이동 */
+window.mpaPrev=function(){ if(_mpA.step>1){ if(_mpA.step===2) mpaReadS2(); _mpA.step--; mpaDraw(); } };
+window.mpaNext=function(){
+  var A=_mpA;
+  if(A.step===1){ if(!Object.keys(A.sel).some(function(k){return A.sel[k];})){ alert('시험을 1개 이상 선택해 주세요.'); return; } A.step=2; }
+  else if(A.step===2){ mpaReadS2();
+    if(!A.start||!A.end||A.end<A.start){ alert('시작일과 마감일을 확인해 주세요.'); return; }
+    if(MPC.hhmmToMin(A.late)<=MPC.hhmmToMin(A.schoolStart)){ alert('종료 제한 시각이 시작 가능 시각보다 늦어야 해요.'); return; }
+    mpaMakeBase(); if(!A.base.length){ A.step=3; mpaDraw(); return; } A.step=3; }
+  else if(A.step===3){ if(!A.base.length){ alert('배정된 시험이 없어요. 기간을 늘려 보세요.'); return; } A.step=4; }
+  else if(A.step===4){ var uids=Object.keys(A.ssel).filter(function(k){return A.ssel[k];}); if(!uids.length){ alert('학생을 1명 이상 선택해 주세요.'); return; }
+    A.plans={}; uids.forEach(function(u){ A.plans[u]=mpaPlanFor(u); }); A.step=5; }
+  mpaDraw();
+};
+/* 5. 저장 */
+window.mpaSave=async function(){
+  var A=_mpA, uids=Object.keys(A.plans), jobs=[], warns=[];
+  uids.forEach(function(uid){ var P=A.plans[uid], pool=P.existing.map(function(x){return {studentUid:uid,date:x.date,startMin:x.startMin,durationMin:x.durationMin};});
+    P.items.forEach(function(it){ var cand={id:it.examId+'_'+uid,studentUid:uid,date:it.date,startMin:it.startMin,durationMin:it._dur};
+      var col=MPC.findCollisions(pool,cand); if(col.length) warns.push(mpaStu(uid).name+' '+MPC.mdKo(it.date)+' '+(_mpT.examsById[it.examId]||{}).title);
+      pool.push(cand); jobs.push({uid:uid,it:it}); }); });
+  if(!jobs.length){ alert('저장할 일정이 없어요.'); return; }
+  if(warns.length&&!confirm('⚠️ 시간이 겹치는 일정이 '+warns.length+'건 있어요.\n\n'+warns.slice(0,8).join('\n')+'\n\n그래도 배정할까요?')) return;
+  var btn=document.getElementById('mpa-go'); if(btn){ btn.disabled=true; btn.textContent='배정 중... 0/'+jobs.length; }
+  var existing={}; _mpT.sch.forEach(function(s){existing[s.id]=s;});
+  try{
+    for(var i=0;i<jobs.length;i++){
+      var j=jobs[i], ex=_mpT.examsById[j.it.examId], id=ex.id+'_'+j.uid, old=existing[id], st=mpaStu(j.uid);
+      var f={studentUid:j.uid,studentName:st.name||'',branch:getBranch(),examId:ex.id,examTitle:ex.title,durationMin:mpExamDuration(ex),subjectKey:mpSubjectKey(ex),date:j.it.date,startMin:j.it.startMin,timeLocked:!!A.lock,updatedAt:serverTimestamp(),createdBy:currentUser.uid,autoPlanned:true};
+      if(!old){ f.status='planned'; f.studentStartMin=null; f.createdAt=serverTimestamp(); }
+      else if(old.date!==j.it.date||old.startMin!==j.it.startMin){ f.studentStartMin=null; f.status='planned'; }
+      await setDoc(doc(db,'examSchedules',id),f,{merge:true});
+      await mpEnsureAssigned(ex,j.uid);
+      if(btn) btn.textContent='배정 중... '+(i+1)+'/'+jobs.length;
+    }
+    alert('학생 '+uids.length+'명, 일정 '+jobs.length+'건을 배정했어요.');
+    mpCloseSheets(); invalidateTeacherTabCache(9); mpTeacherSchedInit();
+  }catch(e){ alert('배정 중 오류: '+e.message+'\n\n(Firestore 규칙에 examSchedules 컬렉션 허용이 되어 있는지 확인해 주세요)'); if(btn){ btn.disabled=false; btn.textContent='다시 시도'; } }
+};
+
+/* ======================================================================
+   MONO PLANNER 추가 기능 G — 등록된 일정 일괄 취소
+   ====================================================================== */
+var _mpC=null; Object.defineProperty(window,'_mpC',{get:function(){return _mpC;},set:function(v){_mpC=v;},configurable:true});
+var MPC_OK={upcoming:1,today:1,late:1,overdue:1};
+function mpcRows(){
+  var n=mpNow(), A=_mpC, q=(A.q||'').trim().toLowerCase(), sq=(A.sq||'').trim().toLowerCase(), rows=[], blocked=0;
+  _mpT.sch.forEach(function(s){
+    var se=_mpT.sess[mpSessKey(s.examId,s.studentUid)]||null, st=MPC.scheduleStatus(s,se,n.today,n.nowMin);
+    var stu=_mpT.students.find(function(x){return x.uid===s.studentUid;})||{};
+    var ex=_mpT.examsById[s.examId]||{};
+    var ok=!!MPC_OK[st.key];
+    if(A.q&&(s.examTitle||ex.title||'').toLowerCase().indexOf(q)<0) return;
+    if(A.sub&&s.subjectKey!==A.sub) return;
+    if(A.stu&&s.studentUid!==A.stu) return;
+    if(sq&&(s.studentName||stu.name||'').toLowerCase().indexOf(sq)<0) return;
+    if(A.gr&&mpaGrKey(stu)!==A.gr) return;
+    if(A.from&&s.date<A.from) return; if(A.to&&s.date>A.to) return;
+    if(A.st==='future'&&['upcoming','today'].indexOf(st.key)<0) return;
+    if(A.st==='past'&&['late','overdue'].indexOf(st.key)<0) return;
+    if(!ok){ blocked++; return; }
+    rows.push({s:s,st:st,stu:stu});
+  });
+  rows.sort(function(a,b){ return a.s.date<b.s.date?-1:a.s.date>b.s.date?1:(MPC.effStart(a.s)||0)-(MPC.effStart(b.s)||0); });
+  return {rows:rows,blocked:blocked};
+}
+window.mpOpenCancel=function(){
+  _mpC={q:'',sq:'',sub:'',stu:'',gr:'',from:'',to:'',st:'',sel:{},un:false};
+  var ov=mpSheet('<div id="mpc-root"></div>'); ov.firstChild.classList.add('mp-wide'); mpcDraw();
+};
+function mpcFilterHtml(){
+  var A=_mpC, subs={}, stus={}; _mpT.sch.forEach(function(s){ if(s.subjectKey) subs[s.subjectKey]=1; stus[s.studentUid]=s.studentName||''; });
+  var op=function(v,l,c){ return '<option value="'+mpE(v)+'"'+(c===v?' selected':'')+'>'+mpE(l)+'</option>'; };
+  return '<div class="mp-filter-grid" style="margin-bottom:8px">'
+   +'<input class="mp-in sm mp-search" placeholder="시험 이름 검색" value="'+mpE(A.q)+'" oninput="mpcF(\'q\',this.value,1)">'
+   +'<input class="mp-in sm mp-search" placeholder="학생 이름 검색" value="'+mpE(A.sq)+'" oninput="mpcF(\'sq\',this.value,1)">'
+   +'<select class="mp-in sm" onchange="mpcF(\'sub\',this.value)">'+op('','과목 전체',A.sub)+Object.keys(subs).map(function(k){return op(k,mpSubLabel(k),A.sub);}).join('')+'</select>'
+   +'<select class="mp-in sm" onchange="mpcF(\'stu\',this.value)">'+op('','학생 전체',A.stu)+Object.keys(stus).sort(function(a,b){return String(stus[a]).localeCompare(String(stus[b]),'ko');}).map(function(u){return op(u,stus[u]||u,A.stu);}).join('')+'</select>'
+   +'<select class="mp-in sm" onchange="mpcF(\'gr\',this.value)">'+[['','학년 전체'],['고3','고3'],['고2','고2'],['고1','고1'],['중','중학생'],['N수','N수'],['성인','성인']].map(function(o){return op(o[0],o[1],A.gr);}).join('')+'</select>'
+   +'<select class="mp-in sm" onchange="mpcF(\'st\',this.value)">'+op('','상태 전체(취소 가능)',A.st)+op('future','앞으로 예정된 일정',A.st)+op('past','기한·시간이 지난 미응시',A.st)+'</select>'
+   +'<div><div class="mp-sub">시작일 이후</div><input type="date" class="mp-in sm" value="'+A.from+'" onchange="mpcF(\'from\',this.value)"></div>'
+   +'<div><div class="mp-sub">종료일 이전</div><input type="date" class="mp-in sm" value="'+A.to+'" onchange="mpcF(\'to\',this.value)"></div></div>';
+}
+function mpcDraw(){
+  var r=document.getElementById('mpc-root'); if(!r) return;
+  var A=_mpC, R=mpcRows(), n=Object.keys(A.sel).filter(function(k){return A.sel[k];}).length;
+  r.innerHTML='<h3><i class="mpi mpi-trash"></i>등록된 일정 일괄 취소</h3>'
+   +'<div class="mp-sub" style="margin-bottom:8px">응시 전인 일정만 취소할 수 있어요. 응시 중·응시 완료한 일정은 목록에 나오지 않아요.</div>'
+   +mpcFilterHtml()
+   +'<div class="mp-lblrow"><div class="mp-lbl">취소할 일정 <span class="mp-sub" id="mpc-cnt">(선택 '+n+'건 · 표시 '+R.rows.length+'건)</span></div><div class="acts"><button type="button" class="mp-pill" onclick="mpcAll(true)"><i class="mpi mpi-check"></i>보이는 일정 전체</button><button type="button" class="mp-pill" onclick="mpcAll(false)">전체 해제</button></div></div>'
+   +'<div class="mp-exlist" id="mpc-list">'+mpcRowsHtml(R.rows)+'</div>'
+   +(R.blocked?'<div class="mp-sub" style="margin-top:6px">조건에 맞지만 응시 중이거나 완료한 일정 '+R.blocked+'건은 취소 대상에서 제외돼요.</div>':'')
+   +'<label class="mp-chk" style="margin-top:10px"><input type="checkbox" '+(A.un?'checked':'')+' onchange="_mpC.un=this.checked">시험 배정도 함께 해제 <span class="mp-sub">(아직 응시를 시작하지 않은 학생만 · 학생 앱에서 시험이 사라져요)</span></label>'
+   +'<div class="mp-foot"><button class="mp-btn" onclick="mpCloseSheets()">닫기</button><button class="mp-btn pri" id="mpc-go" onclick="mpcRun()"'+(n?'':' disabled')+'>선택한 '+n+'건 취소</button></div>';
+}
+function mpcRowsHtml(rows){
+  return rows.map(function(o){ var s=o.s, id=s.id;
+    return '<label class="mp-chk"><input type="checkbox" class="mpc-c" '+(_mpC.sel[id]?'checked':'')+' onchange="mpcTog(\''+id+'\',this.checked)"><span><b>'+mpE(s.studentName||o.stu.name||'')+'</b> '+(o.stu.grade?mpaGradeTag(o.stu):'')+' · '+mpE(s.examTitle||'')+'</span> <span class="mp-sub">· '+mpDateLabel(s.date)+(MPC.effStart(s)!=null?' '+MPC.minToHHMM(MPC.effStart(s)):'')+' · '+mpE(o.st.label)+'</span></label>'; }).join('')||'<div class="mp-sub" style="padding:10px">조건에 맞는 일정이 없어요</div>';
+}
+window.mpcF=function(k,v,keep){ _mpC[k]=v; if(keep){ var R=mpcRows(); document.getElementById('mpc-list').innerHTML=mpcRowsHtml(R.rows); mpcCnt(R.rows.length); } else mpcDraw(); };
+function mpcCnt(shown){ var n=Object.keys(_mpC.sel).filter(function(k){return _mpC.sel[k];}).length; var e=document.getElementById('mpc-cnt'); if(e) e.textContent='(선택 '+n+'건 · 표시 '+(shown!=null?shown:mpcRows().rows.length)+'건)'; var b=document.getElementById('mpc-go'); if(b){ b.disabled=!n; b.textContent='선택한 '+n+'건 취소'; } }
+window.mpcTog=function(id,on){ if(on) _mpC.sel[id]=1; else delete _mpC.sel[id]; mpcCnt(); };
+window.mpcAll=function(on){ mpcRows().rows.forEach(function(o){ if(on) _mpC.sel[o.s.id]=1; else delete _mpC.sel[o.s.id]; }); document.getElementById('mpc-list').innerHTML=mpcRowsHtml(mpcRows().rows); mpcCnt(); };
+window.mpcRun=async function(){
+  var A=_mpC, ids=Object.keys(A.sel).filter(function(k){return A.sel[k];}); if(!ids.length) return;
+  var byId={}; _mpT.sch.forEach(function(s){byId[s.id]=s;});
+  var names={}; ids.forEach(function(id){ var s=byId[id]; if(s) names[s.studentName||s.studentUid]=1; });
+  if(!confirm(ids.length+'건의 일정을 취소할까요?\n\n대상 학생: '+Object.keys(names).slice(0,10).join(', ')+(Object.keys(names).length>10?' 외':'')+(A.un?'\n\n※ 시험 배정도 함께 해제돼요.':'\n\n※ 시험 배정은 그대로 유지돼요.')+'\n\n되돌릴 수 없어요.')) return;
+  var btn=document.getElementById('mpc-go'); if(btn){ btn.disabled=true; btn.textContent='취소 중... 0/'+ids.length; }
+  var failed=0, done=0, unCount=0;
+  try{
+    for(var i=0;i<ids.length;i++){
+      var s=byId[ids[i]]; if(!s) continue;
+      try{
+        await deleteDoc(doc(db,'examSchedules',s.id));
+        if(A.un){
+          var se=_mpT.sess[mpSessKey(s.examId,s.studentUid)];
+          if(!se||se.status==='not_started'){
+            var sn=await getDocs(query(collection(db,'examSessions'),where('examId','==',s.examId),where('studentUid','==',s.studentUid)));
+            var okDel=sn.docs.every(function(d){ return (d.data().status||'not_started')==='not_started'; });
+            if(okDel){
+              for(var j=0;j<sn.docs.length;j++) await deleteDoc(doc(db,'examSessions',sn.docs[j].id));
+              var ed=await getDoc(doc(db,'exams',s.examId)); if(ed.exists()){ var cur=ed.data().assignedTo||[]; if(cur.indexOf(s.studentUid)>=0){ await updateDoc(doc(db,'exams',s.examId),{assignedTo:cur.filter(function(u){return u!==s.studentUid;})}); unCount++; if(_mpT.examsById[s.examId]) _mpT.examsById[s.examId].assignedTo=cur.filter(function(u){return u!==s.studentUid;}); } }
+            }
+          }
+        }
+        done++;
+      }catch(e){ failed++; }
+      if(btn) btn.textContent='취소 중... '+(i+1)+'/'+ids.length;
+    }
+  }finally{
+    alert(done+'건 취소했어요.'+(A.un?' (시험 배정 해제 '+unCount+'건)':'')+(failed?'\n\n실패 '+failed+'건 — 권한(Firestore 규칙)을 확인해 주세요.':''));
+    mpCloseSheets(); invalidateTeacherTabCache(9); mpTeacherSchedInit();
+  }
+};
+
+
+// [등불] 현재 사용자/지점 정보와 공용 함수 노출 (deungbul.js에서 사용)
+window.MP_DB_CTX = function(){ return { user: currentUser, profile: currentProfile, branch: getBranch() }; };
+window.MP_push = _sendPushNotification;
+window.MP_loadStudentList = loadStudentList;
+window.MP_nowSynced = _nowSynced;
