@@ -1373,3 +1373,42 @@
 })();
 /* 스크립트가 홈 화면보다 늦게 실렸을 때 한 번 그려 줌 */
 setTimeout(function () { try { var pin = document.getElementById('wt-home-pin'); if (pin && window.MP_FB && window.MP_FB.me && window.MP_FB.me().uid && !pin.innerHTML) window.WT.studentHomePin(pin); } catch (e) { } }, 0);
+/* 링크로 단어 Test 일괄 등록: https://…/?wtimport=<key>  (data/wtimport-<key>.json) — 선생님·원장만 */
+(function () {
+  var key = (location.search.match(/[?&]wtimport=([\w-]+)/) || [])[1]; if (!key) return;
+  var WT = window.WT, U = WT && WT._u;
+  function clearParam() { try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) { } }
+  var tries = 0;
+  (function wait() {
+    var me = null; try { me = window.MP_FB && window.MP_FB.me && window.MP_FB.me(); } catch (e) { }
+    if (!me || !me.uid || !me.profile) { if (++tries < 120) return setTimeout(wait, 500); return; }
+    if (['teacher', 'master'].indexOf(me.profile.role) < 0) { clearParam(); U.toast('선생님 계정에서만 등록할 수 있어요'); return; }
+    fetch('/data/wtimport-' + key + '.json', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('파일 없음'); return r.json(); }).then(function (pack) {
+      return Promise.all([WT.DB.folders(), WT.DB.tests()]).then(function (r) {
+        var folders = r[0], tests = r[1], n = 0, dup = 0;
+        pack.forEach(function (f) { var fo = folders.filter(function (x) { return x.name === f.folder; })[0]; f.tests.forEach(function (t) { if (fo && tests.some(function (x) { return x.folderId === fo.id && x.title === t.title; })) dup++; else n++; }); });
+        var m = U.modal({ title: '단어 Test 일괄 등록', eyebrow: 'IMPORT', width: 560 });
+        m.body.innerHTML = '<div class="col" style="gap:10px;font-size:13.5px;line-height:1.7">' + pack.map(function (f) { return '<div class="card" style="padding:12px 14px"><b style="color:#7B1D1D">' + U.esc(f.folder) + '</b><div style="font-size:12px;color:#6A5A5A;margin-top:4px">' + f.tests.map(function (t) { return U.esc(t.title) + ' · ' + t.words.length + '단어'; }).join('<br>') + '</div></div>'; }).join('')
+          + '<div>새로 등록 <b>' + n + '개</b>' + (dup ? ' · 이미 있는 ' + dup + '개는 건너뛰어요' : '') + ' · 주관식 · 커트 80%</div></div>';
+        m.foot.innerHTML = '<button type="button" class="s" data-n style="height:42px;padding:0 18px">취소</button><button type="button" class="p" data-y style="height:42px;padding:0 22px"' + (n ? '' : ' disabled') + '>등록하기</button>';
+        m.foot.querySelector('[data-n]').onclick = function () { m.close(); clearParam(); };
+        m.foot.querySelector('[data-y]').onclick = function () {
+          var btn = this; btn.disabled = true; btn.textContent = '등록 중…';
+          var chain = Promise.resolve(), base = Date.now();
+          pack.forEach(function (f, fi) {
+            chain = chain.then(function () {
+              var fo = folders.filter(function (x) { return x.name === f.folder; })[0];
+              return (fo ? Promise.resolve(fo.id) : WT.DB.add('wordFolders', { name: f.folder, grade: f.grade || '고2', order: base + fi }).then(function (ref) { return ref.id; })).then(function (fid) {
+                var list = f.tests.filter(function (t) { return !tests.some(function (x) { return x.folderId === fid && x.title === t.title; }); })
+                  .map(function (t, i) { return { title: t.title, words: t.words, folderId: fid, type: t.type || 'sa', cutPct: t.cutPct || 80, order: base + fi * 100 + i, kind: 'normal', createdBy: me.uid }; });
+                return list.length ? WT.DB.batchAdd('wordTests', list) : null;
+              });
+            });
+          });
+          chain.then(function () { m.close(); clearParam(); U.toast(n + '개를 등록했어요. 암기 Test → 시험 목록에서 볼 수 있어요'); try { if (window.teacherTab) window.teacherTab(14); } catch (e) { } })
+            .catch(function (e) { btn.disabled = false; btn.textContent = '다시 시도'; U.toast('등록하지 못했어요: ' + (e.message || e)); });
+        };
+      });
+    }).catch(function (e) { clearParam(); U.toast('등록 파일을 불러오지 못했어요'); });
+  })();
+})();
