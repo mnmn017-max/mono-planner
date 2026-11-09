@@ -308,7 +308,7 @@
     if (o.mode === 'class') {
       var t = ctx.testById(o.testId); if (!t) return { html: '', n: 0 };
       var f = ctx.folderById(t.folderId);
-      pages.push(S4({ c: c, rows: classOfTest(ctx, o.testId), test: t, title: t.title, sub: f ? f.name : '', cut: Math.ceil((t.words || []).length * (t.cutPct != null ? t.cutPct : 80) / 100) }));
+      pages.push(S4({ c: c, rows: classOfTest(ctx, o.testId), test: t, title: t.title, sub: f ? f.name : '', cut: WT.cutCount((t.words || []).length, t) }));
     } else {
       var uids = preview ? o.uids.slice(0, 1) : o.uids;
       uids.forEach(function (uid) {

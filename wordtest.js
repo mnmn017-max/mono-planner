@@ -189,6 +189,13 @@
     return b.commit().then(function () { return refs; });
   };
   WT.DB = DB;
+  /* 통과 기준: cutWrong(틀려도 되는 개수)이 있으면 그것을, 없으면 cutN · cutPct(%) 순서로 */
+  WT.cutCount = function (n, o) {
+    o = o || {};
+    if (o.cutWrong != null && o.cutWrong !== '') return Math.max(0, n - (+o.cutWrong));
+    if (o.cutN) return o.cutN;
+    return Math.ceil(n * (o.cutPct != null ? o.cutPct : 80) / 100);
+  };
 
   /* ------------------------------------------------------------------ 모달 */
   function modal(opts) {
@@ -227,7 +234,8 @@
   var D = { folders: [], tests: [], assigns: [], results: [], students: [], series: [] };
   var root = null;
 
-  function cutOf(t, total) { var pct = t.cutPct != null ? t.cutPct : 80; return Math.ceil((total || (t.words || []).length) * pct / 100); }
+  function cutOf(t, total) { return WT.cutCount(total || (t.words || []).length, t); }
+  function cutLabel(t) { return t.cutWrong != null ? '오답 ' + t.cutWrong + '개까지' : (t.cutPct != null ? t.cutPct : 80) + '%'; }
   WT.cutOf = cutOf;
   function testById(id) { for (var i = 0; i < D.tests.length; i++) if (D.tests[i].id === id) return D.tests[i]; return null; }
   function folderById(id) { for (var i = 0; i < D.folders.length; i++) if (D.folders[i].id === id) return D.folders[i]; return null; }
@@ -393,28 +401,29 @@
 
   function editTest(t) {
     var m = U.modal({ title: '시험 수정', eyebrow: 'EDIT', width: 640 });
-    var type = t.type || 'mc', pct = t.cutPct != null ? t.cutPct : 80;
+    var type = t.type || 'mc', pct = t.cutPct != null ? t.cutPct : 80, cmode = t.cutWrong != null ? 'w' : 'p', wrong = t.cutWrong != null ? t.cutWrong : 2;
     var wordsTxt = (t.words || []).map(function (w) { return w.en + '\t' + w.ko; }).join('\n');
     m.body.innerHTML = '<div class="col" style="gap:14px">'
       + '<label class="col" style="gap:6px"><span style="font-size:12px;font-weight:800;color:#5A4848">시험 이름</span><input class="inp" id="wt-et" value="' + esc(t.title) + '" style="height:44px;padding:0 14px;font-size:14px;font-weight:700"></label>'
       + '<div class="row" style="gap:12px;flex-wrap:wrap"><div class="col" style="gap:6px"><span style="font-size:12px;font-weight:800;color:#5A4848">유형</span><div class="well seg"><button type="button" data-ty="mc" class="' + (type === 'mc' ? 'on' : '') + '">객관식 5지선다</button><button type="button" data-ty="sa" class="' + (type === 'sa' ? 'on' : '') + '">주관식</button></div></div>'
-      + '<div class="col" style="gap:6px"><span style="font-size:12px;font-weight:800;color:#5A4848">커트라인</span><div class="row"><input class="inp" id="wt-ep" type="number" min="0" max="100" value="' + pct + '" style="width:80px;height:42px;padding:0 10px;font-size:14px;font-weight:800;text-align:center"><span style="font-size:13px">% 이상 통과</span></div></div>'
+      + '<div class="col" style="gap:6px"><span style="font-size:12px;font-weight:800;color:#5A4848">커트라인</span><div class="row" style="gap:8px;flex-wrap:wrap"><div class="well seg"><button type="button" data-cm="w" class="' + (cmode === 'w' ? 'on' : '') + '">오답 개수</button><button type="button" data-cm="p" class="' + (cmode === 'p' ? 'on' : '') + '">% 기준</button></div><span class="row" data-cmw style="gap:6px;' + (cmode === 'w' ? '' : 'display:none') + '"><span style="font-size:13px">오답</span><input class="inp" id="wt-ew2" type="number" min="0" max="50" value="' + wrong + '" style="width:64px;height:42px;padding:0 8px;font-size:14px;font-weight:800;text-align:center"><span style="font-size:13px">개까지 통과</span></span><span class="row" data-cmp style="gap:6px;' + (cmode === 'p' ? '' : 'display:none') + '"><input class="inp" id="wt-ep" type="number" min="0" max="100" value="' + pct + '" style="width:80px;height:42px;padding:0 10px;font-size:14px;font-weight:800;text-align:center"><span style="font-size:13px">% 이상 통과</span></span></div></div>'
       + '<div class="col" style="gap:6px"><span style="font-size:12px;font-weight:800;color:#5A4848">폴더</span><select class="inp" id="wt-ef" style="height:42px;padding:0 10px;font-size:13px">' + D.folders.map(function (f) { return '<option value="' + f.id + '"' + (f.id === t.folderId ? ' selected' : '') + '>' + esc((f.grade ? f.grade + ' · ' : '') + f.name) + '</option>'; }).join('') + '</select></div></div>'
       + '<label class="col" style="gap:6px"><span style="font-size:12px;font-weight:800;color:#5A4848">단어 (한 줄에 하나 · 영어 뜻)</span><textarea class="inp" id="wt-ew" style="height:240px;padding:12px;font:13px/1.7 \'JetBrains Mono\',monospace;resize:vertical">' + esc(wordsTxt) + '</textarea></label></div>';
     m.body.querySelectorAll('[data-ty]').forEach(function (b) { b.onclick = function () { type = b.dataset.ty; m.body.querySelectorAll('[data-ty]').forEach(function (x) { x.classList.toggle('on', x === b); }); }; });
+    m.body.querySelectorAll('[data-cm]').forEach(function (b) { b.onclick = function () { cmode = b.dataset.cm; m.body.querySelectorAll('[data-cm]').forEach(function (x) { x.classList.toggle('on', x === b); }); m.body.querySelector('[data-cmw]').style.display = cmode === 'w' ? '' : 'none'; m.body.querySelector('[data-cmp]').style.display = cmode === 'p' ? '' : 'none'; }; });
     m.foot.innerHTML = '<button type="button" class="s" data-n style="height:44px;padding:0 16px">취소</button><button type="button" class="p" data-y style="height:44px;padding:0 20px">저장</button>';
     m.foot.querySelector('[data-n]').onclick = m.close;
     m.foot.querySelector('[data-y]').onclick = function () {
       var pw = WT.parseWords(m.body.querySelector('#wt-ew').value);
       if (!pw.words.length) { U.toast('단어가 없어요'); return; }
-      DB.upd('wordTests', t.id, { title: m.body.querySelector('#wt-et').value.trim() || t.title, type: type, cutPct: Math.max(0, Math.min(100, +m.body.querySelector('#wt-ep').value || 80)), folderId: m.body.querySelector('#wt-ef').value || t.folderId || null, words: pw.words })
+      DB.upd('wordTests', t.id, { title: m.body.querySelector('#wt-et').value.trim() || t.title, type: type, cutPct: Math.max(0, Math.min(100, +m.body.querySelector('#wt-ep').value || 80)), cutWrong: cmode === 'w' ? Math.max(0, Math.min(50, Math.round(+m.body.querySelector('#wt-ew2').value || 0))) : null, folderId: m.body.querySelector('#wt-ef').value || t.folderId || null, words: pw.words })
         .then(function () { m.close(); U.toast('저장했어요'); refresh(); });
     };
   }
 
   /* -------------------------------------------------------- 새 단어 Test (붙여넣기 → 회차 나누기) */
   function openWizard(folderId) {
-    var st = { step: 0, text: '', parsed: { words: [], dup: 0, noMeaning: 0 }, per: 30, order: 'seq', rule: '', start: 1, folderId: folderId || (S.folderId !== 'all' ? S.folderId : (D.folders[0] && D.folders[0].id)) || '', type: 'mc', pct: 80, names: {} };
+    var st = { step: 0, text: '', parsed: { words: [], dup: 0, noMeaning: 0 }, per: 30, order: 'seq', rule: '', start: 1, folderId: folderId || (S.folderId !== 'all' ? S.folderId : (D.folders[0] && D.folders[0].id)) || '', type: 'mc', pct: 80, cmode: 'w', wrong: 2, names: {} };
     var f0 = folderById(st.folderId); st.rule = (f0 ? f0.name.replace(/\s*\d{3,4}$/, '') : '단어') + ' {회차}일차';
     var m = U.modal({ title: '새 단어 Test', eyebrow: 'NEW TEST', width: 920, dismissable: false });
     function rounds() {
@@ -461,7 +470,9 @@
         h += '<div class="col" style="gap:14px;max-width:620px">'
           + '<div class="card" style="padding:18px;display:flex;flex-direction:column;gap:12px"><span style="font-size:13px;font-weight:800">시험 유형</span><div class="row" style="gap:10px;flex-wrap:wrap">'
           + [['mc', '객관식 5지선다', '영어 단어를 보고 알맞은 뜻 고르기'], ['sa', '주관식', '영어 단어를 보고 뜻 직접 쓰기 · 띄어쓰기 무시']].map(function (o) { var on = st.type === o[0]; return '<button type="button" data-type="' + o[0] + '" class="' + (on ? 'p' : 's') + '" style="flex:1;min-width:200px;height:auto;padding:14px 16px;flex-direction:column;align-items:flex-start;gap:3px;text-align:left"><span style="font-size:14px">' + o[1] + '</span><span style="font-size:11.5px;font-weight:500;opacity:.8;white-space:normal">' + o[2] + '</span></button>'; }).join('') + '</div></div>'
-          + '<div class="card" style="padding:18px;display:flex;flex-direction:column;gap:12px"><span style="font-size:13px;font-weight:800">커트라인 (통과 기준)</span><div class="row" style="gap:12px;flex-wrap:wrap"><input type="range" id="wt-pct" min="50" max="100" step="5" value="' + st.pct + '" style="flex:1;accent-color:#7B1D1D"><span class="serif" id="wt-pctv" style="font-size:20px;color:#7B1D1D;min-width:150px">' + st.pct + '% · ' + Math.ceil(n0 * st.pct / 100) + ' / ' + n0 + '</span></div><span style="font-size:11.5px;color:#8A7B7B">못 넘으면 담당 선생님께 바로 알림이 가고, 틀린 단어로 재시험이 자동으로 배정돼요.</span></div>'
+          + '<div class="card" style="padding:18px;display:flex;flex-direction:column;gap:12px"><div class="row" style="justify-content:space-between;gap:10px;flex-wrap:wrap"><span style="font-size:13px;font-weight:800">커트라인 (통과 기준)</span><div class="well seg"><button type="button" data-cm="w" class="' + (st.cmode === 'w' ? 'on' : '') + '">오답 개수</button><button type="button" data-cm="p" class="' + (st.cmode === 'p' ? 'on' : '') + '">% 기준</button></div></div>'
+            + (st.cmode === 'w' ? '<div class="row" style="gap:12px;flex-wrap:wrap"><input type="range" id="wt-wr" min="0" max="10" step="1" value="' + st.wrong + '" style="flex:1;accent-color:#7B1D1D"><span class="serif" id="wt-wrv" style="font-size:20px;color:#7B1D1D;min-width:170px">오답 ' + st.wrong + '개까지 · ' + Math.max(0, n0 - st.wrong) + ' / ' + n0 + '</span></div>'
+            : '<div class="row" style="gap:12px;flex-wrap:wrap"><input type="range" id="wt-pct" min="50" max="100" step="5" value="' + st.pct + '" style="flex:1;accent-color:#7B1D1D"><span class="serif" id="wt-pctv" style="font-size:20px;color:#7B1D1D;min-width:150px">' + st.pct + '% · ' + Math.ceil(n0 * st.pct / 100) + ' / ' + n0 + '</span></div>') + '<span style="font-size:11.5px;color:#8A7B7B">못 넘으면 담당 선생님께 바로 알림이 가고, 틀린 단어로 재시험이 자동으로 배정돼요.</span></div>'
           + '<div class="card" style="padding:14px 18px;font-size:13px;line-height:1.7;color:#3D2B2B">' + rs2.length + '개 시험이 <b>' + esc((folderById(st.folderId) || {}).name || '폴더 없음') + '</b> 폴더에 만들어져요. 만든 뒤 <b>예약 · 배정</b>에서 학생에게 하루 하나씩 내줄 수 있어요.</div>'
           + '</div>';
       }
@@ -501,13 +512,16 @@
         };
       }
       b.querySelectorAll('[data-type]').forEach(function (x) { x.onclick = function () { st.type = x.dataset.type; draw(); }; });
+      b.querySelectorAll('[data-cm]').forEach(function (x) { x.onclick = function () { st.cmode = x.dataset.cm; draw(); }; });
+      var wr = b.querySelector('#wt-wr');
+      if (wr) wr.oninput = function () { st.wrong = +wr.value; var n0 = (rounds()[0] || { words: [] }).words.length; b.querySelector('#wt-wrv').textContent = '오답 ' + st.wrong + '개까지 · ' + Math.max(0, n0 - st.wrong) + ' / ' + n0; };
       var pct = b.querySelector('#wt-pct');
       if (pct) pct.oninput = function () { st.pct = +pct.value; var n0 = (rounds()[0] || { words: [] }).words.length; b.querySelector('#wt-pctv').textContent = st.pct + '% · ' + Math.ceil(n0 * st.pct / 100) + ' / ' + n0; };
     }
     function create(btn) {
       btn.disabled = true; btn.textContent = '만드는 중...';
       var rs = rounds(), base = Date.now();
-      var list = rs.map(function (r, i) { return { title: r.title.trim() || ('단어 ' + (i + 1)), words: r.words, folderId: st.folderId, type: st.type, cutPct: st.pct, order: base + i, kind: 'normal', createdBy: ME().uid, createdByName: (ME().profile || {}).name || '' }; });
+      var list = rs.map(function (r, i) { return { title: r.title.trim() || ('단어 ' + (i + 1)), words: r.words, folderId: st.folderId, type: st.type, cutPct: st.pct, cutWrong: st.cmode === 'w' ? st.wrong : null, order: base + i, kind: 'normal', createdBy: ME().uid, createdByName: (ME().profile || {}).name || '' }; });
       var chunks = []; for (var i = 0; i < list.length; i += 400) chunks.push(list.slice(i, i + 400));
       chunks.reduce(function (pr, ch) { return pr.then(function () { return DB.batchAdd('wordTests', ch); }); }, Promise.resolve()).then(function () {
         m.close(); U.toast(list.length + '개 시험을 만들었어요'); S.view = 'list'; S.folderId = st.folderId; refresh();
@@ -535,7 +549,7 @@
       if (SC.days.indexOf(dow) >= 0) {
         if (SC.review5 && sinceReview.length >= 5) {
           var src = sinceReview.splice(0);
-          out.push({ date: d, kind: 'review', title: '오답 모음 (' + shortNo(src[0]) + '~' + shortNo(src[src.length - 1]) + ')', sourceTestIds: src.map(function (t) { return t.id; }), type: src[0].type, cutPct: src[0].cutPct });
+          out.push({ date: d, kind: 'review', title: '오답 모음 (' + shortNo(src[0]) + '~' + shortNo(src[src.length - 1]) + ')', sourceTestIds: src.map(function (t) { return t.id; }), type: src[0].type, cutPct: src[0].cutPct, cutWrong: src[0].cutWrong != null ? src[0].cutWrong : null });
         } else {
           for (var n = 0; n < SC.perDay && k < tests.length; n++) { var t = tests[k++]; out.push({ date: d, kind: 'normal', test: t, title: t.title }); sinceReview.push(t); }
         }
@@ -630,7 +644,7 @@
       SC.students.forEach(function (uid) {
         pl.forEach(function (x, i) {
           var t = x.test || {};
-          list.push({ studentUid: uid, studentName: stuName(uid), testId: x.kind === 'normal' ? t.id : null, sourceTestIds: x.sourceTestIds || null, title: x.title, folderId: SC.folderId, type: (x.kind === 'normal' ? t.type : x.type) || 'mc', cutPct: (x.kind === 'normal' ? t.cutPct : x.cutPct) || 80, total: x.kind === 'normal' ? (t.words || []).length : null, date: x.date, openAt: U.kstMs(x.date, SC.hour), dueAt: U.kstMs(x.date, 23, 59), status: 'assigned', kind: x.kind, seriesId: ref.id, seq: i, retestFirst: SC.retestFirst, teacherUid: me.uid, teacherName: (me.profile || {}).name || '', attempts: 0 });
+          list.push({ studentUid: uid, studentName: stuName(uid), testId: x.kind === 'normal' ? t.id : null, sourceTestIds: x.sourceTestIds || null, title: x.title, folderId: SC.folderId, type: (x.kind === 'normal' ? t.type : x.type) || 'mc', cutPct: (x.kind === 'normal' ? t.cutPct : x.cutPct) || 80, cutWrong: (x.kind === 'normal' ? t.cutWrong : x.cutWrong) != null ? (x.kind === 'normal' ? t.cutWrong : x.cutWrong) : null, total: x.kind === 'normal' ? (t.words || []).length : null, date: x.date, openAt: U.kstMs(x.date, SC.hour), dueAt: U.kstMs(x.date, 23, 59), status: 'assigned', kind: x.kind, seriesId: ref.id, seq: i, retestFirst: SC.retestFirst, teacherUid: me.uid, teacherName: (me.profile || {}).name || '', attempts: 0 });
         });
       });
       var chunks = []; for (var i = 0; i < list.length; i += 400) chunks.push(list.slice(i, i + 400));
@@ -1033,7 +1047,7 @@
     });
   }
   function totalOf(a) { return a.total || (a.words ? a.words.length : ((MY.tests[a.testId] || {}).words || []).length) || 0; }
-  function cutOfA(a) { var n = totalOf(a); return a.cutN || Math.ceil(n * (a.cutPct != null ? a.cutPct : 80) / 100); }
+  function cutOfA(a) { return WT.cutCount(totalOf(a), a); }
   // 오늘 해야 할 것
   function todayTasks() {
     var now = Date.now(), today = U.todayStr();
@@ -1226,7 +1240,7 @@
   window.addEventListener('popstate', function () { if (full && T) { saveSess(); closeRunner(); refreshHome(); } });
 
   function submit() {
-    var a = T.a, n = T.qs.length, cut = a.cutN || Math.ceil(n * (a.cutPct != null ? a.cutPct : 80) / 100);
+    var a = T.a, n = T.qs.length, cut = WT.cutCount(n, a);
     var answers = T.qs.map(function (q) { var ok = !q.unknown && (T.type === 'mc' ? q.ans === q.ko : WT.gradeSA(q.ans, q.ko)); return { en: q.en, ko: q.ko, given: q.unknown ? '' : (q.ans || ''), ok: ok, unknown: !!q.unknown }; });
     var score = answers.filter(function (x) { return x.ok; }).length, passed = score >= cut, sec = Math.round((Date.now() - T.start) / 1000);
     var me = ME(), prof = me.profile || {}, today = U.todayStr();
@@ -1239,7 +1253,7 @@
       var retest = null;
       if (!passed && (a.kind !== 'retest' || a.autoNext !== false)) {
         var d = a.kind === 'retest' ? U.addDays(today, 1) : today;
-        retest = { studentUid: me.uid, studentName: res.studentName, testId: a.testId || null, title: String(a.title).replace(/\s*재시험$/, '') + ' 재시험', folderId: a.folderId || null, words: wrong, total: wrong.length, cutPct: a.cutPct != null ? a.cutPct : 80, type: a.type || 'mc', date: d, openAt: a.kind === 'retest' ? U.kstMs(d, 0) : Date.now(), dueAt: U.kstMs(d, 23, 59), status: 'assigned', kind: 'retest', parentResultId: ref.id, parentAssignId: a.id, teacherUid: a.teacherUid || null, teacherName: a.teacherName || '', autoNext: true, auto: true, attempts: 0 };
+        retest = { studentUid: me.uid, studentName: res.studentName, testId: a.testId || null, title: String(a.title).replace(/\s*재시험$/, '') + ' 재시험', folderId: a.folderId || null, words: wrong, total: wrong.length, cutPct: a.cutPct != null ? a.cutPct : 80, cutWrong: a.cutWrong != null ? a.cutWrong : null, type: a.type || 'mc', date: d, openAt: a.kind === 'retest' ? U.kstMs(d, 0) : Date.now(), dueAt: U.kstMs(d, 23, 59), status: 'assigned', kind: 'retest', parentResultId: ref.id, parentAssignId: a.id, teacherUid: a.teacherUid || null, teacherName: a.teacherName || '', autoNext: true, auto: true, attempts: 0 };
         jobs.push(DB.add('wordAssign', retest));
       }
       if (!passed && a.teacherUid) F().push([a.teacherUid], '🔔 단어 Test 미통과', res.studentName + ' · ' + a.title + ' ' + score + '/' + n + ' (커트 ' + cut + ')', { type: 'wordtest' });
@@ -1400,7 +1414,7 @@ setTimeout(function () { try { var pin = document.getElementById('wt-home-pin');
               var fo = folders.filter(function (x) { return x.name === f.folder; })[0];
               return (fo ? Promise.resolve(fo.id) : WT.DB.add('wordFolders', { name: f.folder, grade: f.grade || '고2', order: base + fi }).then(function (ref) { return ref.id; })).then(function (fid) {
                 var list = f.tests.filter(function (t) { return !tests.some(function (x) { return x.folderId === fid && x.title === t.title; }); })
-                  .map(function (t, i) { return { title: t.title, words: t.words, folderId: fid, type: t.type || 'sa', cutPct: t.cutPct || 80, order: base + fi * 100 + i, kind: 'normal', createdBy: me.uid }; });
+                  .map(function (t, i) { return { title: t.title, words: t.words, folderId: fid, type: t.type || 'sa', cutPct: t.cutPct || 80, cutWrong: t.cutWrong != null ? t.cutWrong : 2, order: base + fi * 100 + i, kind: 'normal', createdBy: me.uid }; });
                 return list.length ? WT.DB.batchAdd('wordTests', list) : null;
               });
             });

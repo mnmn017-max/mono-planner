@@ -311,7 +311,7 @@
     if (!document.getElementById('wt-pr-css')) { var cs = document.createElement('style'); cs.id = 'wt-pr-css'; cs.textContent = '@media (max-width:900px){.wt-pr-grid{grid-template-columns:minmax(0,1fr)!important}.wt-pr-grid>div:last-child{position:static!important;align-items:center}}'; document.head.appendChild(cs); }
     var m = U.modal({ title: '시험지 인쇄 · ' + t.title, eyebrow: 'PRINT', width: 1060 });
     var SC = 0.42;
-    function cutN() { return Math.ceil(words.length * (t.cutPct != null ? t.cutPct : 80) / 100); }
+    function cutN() { return WT.cutCount ? WT.cutCount(words.length, t) : Math.ceil(words.length * (t.cutPct != null ? t.cutPct : 80) / 100); }
     function names() { return st.sel.map(function (u) { var s = (opts.students || []).filter(function (x) { return x.uid === u; })[0]; return s ? s.name : ''; }).filter(Boolean); }
     function docOpts(preview) {
       return { design: st.design, pal: st.pal, type: st.type, title: t.title, sub: opts.folderName || '', num: numOf(t.title), date: st.date, cut: cutN(), words: words, testId: t.id, shuffle: st.shuffle, withKey: preview ? false : st.withKey, perStudent: st.perStudent, names: preview ? names().slice(0, 1) : names(), copies: preview ? 1 : st.copies, extraPool: opts.extraPool || [] };
