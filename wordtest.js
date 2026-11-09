@@ -1430,7 +1430,7 @@ setTimeout(function () { try { var pin = document.getElementById('wt-home-pin');
         pack.forEach(function (f) { var fo = folders.filter(function (x) { return x.name === f.folder; })[0]; f.tests.forEach(function (t) { if (fo && tests.some(function (x) { return x.folderId === fo.id && x.title === t.title; })) dup++; else n++; }); });
         var m = U.modal({ title: '단어 Test 일괄 등록', eyebrow: 'IMPORT', width: 560 });
         m.body.innerHTML = '<div class="col" style="gap:10px;font-size:13.5px;line-height:1.7">' + pack.map(function (f) { return '<div class="card" style="padding:12px 14px"><b style="color:#7B1D1D">' + U.esc(f.folder) + '</b><div style="font-size:12px;color:#6A5A5A;margin-top:4px">' + f.tests.map(function (t) { return U.esc(t.title) + ' · ' + t.words.length + '단어'; }).join('<br>') + '</div></div>'; }).join('')
-          + '<div>새로 등록 <b>' + n + '개</b>' + (dup ? ' · 이미 있는 ' + dup + '개는 건너뛰어요' : '') + ' · 주관식 · 커트 80%</div></div>';
+          + '<div>새로 등록 <b>' + n + '개</b>' + (dup ? ' · 이미 있는 ' + dup + '개는 건너뛰어요' : '') + ' · 주관식 · 오답 2개까지 통과</div></div>';
         m.foot.innerHTML = '<button type="button" class="s" data-n style="height:42px;padding:0 18px">취소</button><button type="button" class="p" data-y style="height:42px;padding:0 22px"' + (n ? '' : ' disabled') + '>등록하기</button>';
         m.foot.querySelector('[data-n]').onclick = function () { m.close(); clearParam(); };
         m.foot.querySelector('[data-y]').onclick = function () {
