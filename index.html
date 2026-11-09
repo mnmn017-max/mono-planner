@@ -4679,7 +4679,7 @@ if(typeof module!=='undefined'&&module.exports) module.exports=R;
 
 </script>
 <script src="/deungbul.js?v=23" defer></script>
-<script src="/wordtest.js?v=6" defer></script>
+<script src="/wordtest.js?v=7" defer></script>
 <script src="/wordprint.js?v=2" defer></script>
 <script src="/wordreport.js?v=1" defer></script>
 <script type="module">
@@ -5415,11 +5415,7 @@ function buildTExamManage(){
       var active = c === (_currentExamMgmtCategory||'전체');
       return '<button onclick="switchExamMgmtCategory(\''+escapeHtml(c).replace(/'/g,"\\'")+'\')" class="exam-mgmt-cat-btn'+(active?' active':'')+'">'+escapeHtml(c)+'</button>';
     }).join('') + '<button onclick="openAddExamSourceOption()" class="exam-mgmt-cat-btn exam-mgmt-cat-add">+ 분류 추가</button>' + '<button onclick="openManageExamSourceOptions()" class="exam-mgmt-cat-btn" style="color:var(--tx3);">🔧 관리</button>';
-    var wtCard = '<div class="card" role="button" tabindex="0" onclick="teacherTab(14)" onkeydown="if(event.key===\'Enter\')teacherTab(14)" style="cursor:pointer;display:flex;align-items:center;gap:14px;padding:14px 16px;background:linear-gradient(135deg,#FBF4F1,#F6EEDF);border:1px solid #EAD9CF">'
-      +'<span style="width:44px;height:44px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#922B2B,#6E1818);box-shadow:0 1px 0 rgba(255,255,255,.25) inset,0 4px 10px rgba(110,24,24,.25)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M8 7h8M8 11h6"/></svg></span>'
-      +'<span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><b style="font-size:15px;color:#3A0E0E">암기 Test · 단어 Test</b><span style="font-size:12px;color:#8A6E68;line-height:1.5">단어 시험 만들기 · 예약 · 결과 · 시험지/성적표 인쇄</span></span>'
-      +'<span style="flex:none;font-size:12.5px;font-weight:800;color:#7B1D1D;white-space:nowrap">열기 →</span></div>';
-    return safetyCard + wtCard + '<div class="card">'
+    return safetyCard + '<div class="card">'
       +'<div class="card-h"><div class="card-title">📝 시험 관리</div><div class="ex-hdr-actions"><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;background:#fef2f2;color:#dc2626;" onclick="openLiveExamStatusModal()">🔴 실시간 응시 현황</button><button class="modal-btn cancel ex-sec" style="margin:0;width:auto;padding:8px 14px;font-size:12px;background:var(--gold-l);color:var(--gold);" onclick="openMissingGradesRecoveryModal()">🔧 누락 성적 검사</button><button id="exam-merge-toggle-btn" class="modal-btn cancel ex-sec" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="_toggleExamMergeMode()">🔗 시험 묶기</button><button id="exam-merge-confirm-btn" class="modal-btn primary" style="display:none;margin:0;width:auto;padding:8px 16px;font-size:12px;background:var(--gold);" onclick="openMergeExamsModal()">선택한 시험 묶기</button><button class="modal-btn cancel ex-sec" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openExamMergeGroupsModal()">📋 묶음 목록</button><button class="modal-btn cancel ex-sec" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openElectiveManageModal()">🔧 선택과목 관리</button><button class="modal-btn primary" style="margin:0;width:auto;padding:8px 16px;font-size:12px;" onclick="openCreateExamModal()">+ 새 시험 만들기</button><button class="mp-btn ex-more-btn" onclick="mpToggleExMore(this)">⋯ 더보기</button></div></div>'
       +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;" id="exam-mgmt-cat-tabs">'+catTabs+'</div>'
       +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">'
@@ -12820,7 +12816,8 @@ function _tickDisplay() {
   if (!el || !TimerEngine.todoId) return;
   var elapsedMs = getElapsedMs();
   if (elapsedMs >= TIMER_MAX_MS) { stopTimer(); return; }
-  el.textContent = formatElapsedMs(elapsedMs);
+  var _t = formatElapsedMs(elapsedMs);
+  if (el.textContent !== _t) el.textContent = _t;   // 같은 글자를 다시 쓰지 않음(0.5초마다 화면 재계산 방지)
 }
 
 function _startAutoSave() {
@@ -19860,9 +19857,11 @@ window._egcCopyToAll=function(si,ei){
   function inRoot(n){ var e=n.nodeType===1?n:n.parentElement; return !!(e&&e.closest&&e.closest(ROOTS)); }
   function conv(root){
     if(!root||root.nodeType!==1&&root.nodeType!==3) return;
+    // 빠른 거르기: 이모지가 하나도 없으면 하위 노드를 훑지 않음 (큰 화면을 그릴 때마다 전체를 훑던 부담 제거)
+    if(!TEST.test(root.nodeType===3?root.nodeValue:root.textContent)) return;
     var list=[];
     if(root.nodeType===3){ list.push(root); }
-    else { var w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:function(n){ var p=n.parentElement; if(!p||SKIP[p.tagName]||p.closest('svg,script,style,textarea,option,select,.mpi-no')) return NodeFilter.FILTER_REJECT; return TEST.test(n.nodeValue)?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT; }}); var n; while((n=w.nextNode())) list.push(n); }
+    else { var w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:function(n){ if(!TEST.test(n.nodeValue)) return NodeFilter.FILTER_REJECT; var p=n.parentElement; if(!p||SKIP[p.tagName]||p.closest('svg,script,style,textarea,option,select,.mpi-no')) return NodeFilter.FILTER_REJECT; return NodeFilter.FILTER_ACCEPT; }}); var n; while((n=w.nextNode())) list.push(n); }
     list.forEach(function(t){
       if(!t.parentNode||!TEST.test(t.nodeValue)||!inRoot(t)) return;
       var p=t.parentElement; if(p&&(SKIP[p.tagName]||p.closest('svg,textarea,option,select,.mpi-no'))) return;
@@ -19885,7 +19884,7 @@ window._egcCopyToAll=function(si,ei){
   var mo=new MutationObserver(function(ms){
     if(busy) return;
     ms.forEach(function(m){
-      if(m.type==='characterData') q.push(m.target);
+      if(m.type==='characterData'){ if(TEST.test(m.target.nodeValue)) q.push(m.target); }
       else m.addedNodes.forEach(function(n){ if(n.nodeType===1||n.nodeType===3) q.push(n); });
     });
     if(q.length&&!sched){ sched=true; (window.requestAnimationFrame||setTimeout)(flush); }

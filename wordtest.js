@@ -233,11 +233,13 @@
   function folderById(id) { for (var i = 0; i < D.folders.length; i++) if (D.folders[i].id === id) return D.folders[i]; return null; }
   function stuName(uid) { for (var i = 0; i < D.students.length; i++) if (D.students[i].uid === uid) return D.students[i].name; return ''; }
 
-  function loadAll() {
+  var loadedAt = 0;
+  function loadAll(force) {
+    if (!force && loadedAt && Date.now() - loadedAt < 60000) return Promise.resolve();   // 탭을 다시 열 때 1분 안이면 다시 받지 않음
     return Promise.all([DB.folders(), DB.tests(), DB.assignsAll(), DB.resultsAll(), F().loadStudents(), DB.series()]).then(function (r) {
       D.folders = r[0]; D.tests = r[1]; D.assigns = r[2]; D.results = r[3].sort(function (a, b) { return U.tsMs(b.createdAt) - U.tsMs(a.createdAt); });
       D.students = (r[4] || []).map(function (s) { return { uid: s.uid || s.id, name: s.name || '', grade: s.grade || '', school: s.school || '' }; }).sort(function (a, b) { return a.name.localeCompare(b.name, 'ko'); });
-      D.series = r[5];
+      D.series = r[5]; loadedAt = Date.now();
     });
   }
 
@@ -246,7 +248,7 @@
     root.innerHTML = '<div style="padding:30px;color:#8A7B7B;font-size:13px">불러오는 중...</div>';
     loadAll().then(render).catch(function (e) { console.error(e); root.innerHTML = '<div style="padding:30px;color:#9C2F2F">불러오지 못했어요: ' + esc(e.message || e) + '</div>'; });
   };
-  function refresh() { return loadAll().then(render); }
+  function refresh() { return loadAll(true).then(render); }
 
   function render() {
     var tabs = [['list', '시험 목록'], ['sched', '예약 · 배정'], ['result', '결과 · 성적'], ['review', '오답 시험']];
