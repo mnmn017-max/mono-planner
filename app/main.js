@@ -686,6 +686,14 @@ function _autoAssignGroupColor(usedColors){
   return unused ? unused.hex : EXAM_GROUP_COLOR_PALETTE[usedColors.length % EXAM_GROUP_COLOR_PALETTE.length].hex;
 }
 
+// 시험관리 화면: 기본은 새 화면(examhub.js · 폴더/자동 보기), '기존 목록으로 보기'를 누르면 예전 카드 목록
+var _exMgmtClassic = false;
+window.MP_EX = {
+  subjName: function(s){ return _resolveSubjDisplayName(s); },
+  sourceLabel: function(v){ return examSourceLabel(v); },
+  setClassic: function(on){ _exMgmtClassic = !!on; invalidateTeacherTabCache(7); renderTeacher(7); },
+  invalidate: function(){ invalidateTeacherTabCache(7); }
+};
 function buildTExamManage(){
   return Promise.all([
     getDocs(query(collection(db,'exams'), where('branch','==',getBranch()))),
@@ -732,7 +740,7 @@ function buildTExamManage(){
       return '<button onclick="switchExamMgmtCategory(\''+escapeHtml(c).replace(/'/g,"\\'")+'\')" class="exam-mgmt-cat-btn'+(active?' active':'')+'">'+escapeHtml(c)+'</button>';
     }).join('') + '<button onclick="openAddExamSourceOption()" class="exam-mgmt-cat-btn exam-mgmt-cat-add">+ 분류 추가</button>' + '<button onclick="openManageExamSourceOptions()" class="exam-mgmt-cat-btn" style="color:var(--tx3);">🔧 관리</button>';
     return safetyCard + '<div class="card">'
-      +'<div class="card-h"><div class="card-title">📝 시험 관리</div><div class="ex-hdr-actions"><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;background:#fef2f2;color:#dc2626;" onclick="openLiveExamStatusModal()">🔴 실시간 응시 현황</button><button class="modal-btn cancel ex-sec" style="margin:0;width:auto;padding:8px 14px;font-size:12px;background:var(--gold-l);color:var(--gold);" onclick="openMissingGradesRecoveryModal()">🔧 누락 성적 검사</button><button id="exam-merge-toggle-btn" class="modal-btn cancel ex-sec" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="_toggleExamMergeMode()">🔗 시험 묶기</button><button id="exam-merge-confirm-btn" class="modal-btn primary" style="display:none;margin:0;width:auto;padding:8px 16px;font-size:12px;background:var(--gold);" onclick="openMergeExamsModal()">선택한 시험 묶기</button><button class="modal-btn cancel ex-sec" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openExamMergeGroupsModal()">📋 묶음 목록</button><button class="modal-btn cancel ex-sec" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openElectiveManageModal()">🔧 선택과목 관리</button><button class="modal-btn primary" style="margin:0;width:auto;padding:8px 16px;font-size:12px;" onclick="openCreateExamModal()">+ 새 시험 만들기</button><button class="mp-btn ex-more-btn" onclick="mpToggleExMore(this)">⋯ 더보기</button></div></div>'
+      +'<div class="card-h"><div class="card-title">📝 시험 관리 <span style="font-size:11px;color:var(--tx3);font-weight:500;">(기존 목록)</span></div><div class="ex-hdr-actions"><button class="modal-btn primary" style="margin:0;width:auto;padding:8px 14px;font-size:12px;background:var(--gold);" onclick="MP_EX.setClassic(false)">← 새 화면으로</button><button class="modal-btn cancel" style="margin:0;width:auto;padding:8px 14px;font-size:12px;background:#fef2f2;color:#dc2626;" onclick="openLiveExamStatusModal()">🔴 실시간 응시 현황</button><button class="modal-btn cancel ex-sec" style="margin:0;width:auto;padding:8px 14px;font-size:12px;background:var(--gold-l);color:var(--gold);" onclick="openMissingGradesRecoveryModal()">🔧 누락 성적 검사</button><button id="exam-merge-toggle-btn" class="modal-btn cancel ex-sec" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="_toggleExamMergeMode()">🔗 시험 묶기</button><button id="exam-merge-confirm-btn" class="modal-btn primary" style="display:none;margin:0;width:auto;padding:8px 16px;font-size:12px;background:var(--gold);" onclick="openMergeExamsModal()">선택한 시험 묶기</button><button class="modal-btn cancel ex-sec" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openExamMergeGroupsModal()">📋 묶음 목록</button><button class="modal-btn cancel ex-sec" style="margin:0;width:auto;padding:8px 14px;font-size:12px;" onclick="openElectiveManageModal()">🔧 선택과목 관리</button><button class="modal-btn primary" style="margin:0;width:auto;padding:8px 16px;font-size:12px;" onclick="openCreateExamModal()">+ 새 시험 만들기</button><button class="mp-btn ex-more-btn" onclick="mpToggleExMore(this)">⋯ 더보기</button></div></div>'
       +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;" id="exam-mgmt-cat-tabs">'+catTabs+'</div>'
       +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">'
       +  '<span style="font-size:12px;color:var(--tx3);">정렬</span>'
@@ -2918,10 +2926,7 @@ window.openExamMonitor = function(examId){
 
 function buildExamListPage(){
   var __dt_h = '<div class="dt-header dt-only"><div><div class="dt-header-title">나의 시험</div></div></div>';
-  return __dt_h+'<div class="dt-main-grid"><div style="grid-column:1/3;"><div id="wt-exam-sec"></div><div id="mp-sched-host"></div><div id="mp-rep-host"></div><div id="db-review-host"></div><div class="card"><div class="card-h"><div class="card-title">📝 나의 시험</div></div>'
-    +'<div id="exam-list-cat-tabs" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;"></div>'
-    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;"><span style="font-size:12px;color:var(--tx3);">정렬</span><select class="modal-select" id="exam-list-sort-select" onchange="switchExamListSort(this.value)" style="margin:0;width:auto;padding:6px 10px;font-size:12px;"><option value="date_desc">최신순</option><option value="date_asc">오래된순</option><option value="name_asc">이름순</option></select></div>'
-    +'<div id="exam-list-student">불러오는 중...</div></div></div></div>';
+  return __dt_h+'<div class="dt-main-grid"><div style="grid-column:1/3;"><div id="wt-exam-sec"></div><div id="mp-sched-host"></div><div id="mp-rep-host"></div><div id="db-review-host"></div><div id="exh-student"></div></div></div>';
 }
 
 var _currentExamListCategory = '전체', _currentExamListSort = 'date_desc';
@@ -2948,6 +2953,11 @@ function loadExamList(){
   if (!currentUser) return;
   // [등불] 시험탭 상단에 「등불 복습」 카드 표시
   try { if (window.DB_renderStudentReviews) window.DB_renderStudentReviews(); } catch(e) {}
+  // 새 시험 탭(examhub.js): 지금 볼 시험 → 아직 안 본 시험 → 시리즈 진도 → 응시 완료
+  if (document.getElementById('exh-student')) {
+    (function mountS(n){ var el = document.getElementById('exh-student'); if (!el) return; if (window.EXH && EXH.studentMount && window.WT && WT._u) EXH.studentMount(el); else if (n < 50) setTimeout(function(){ mountS(n+1); }, 100); })(0);
+    return;
+  }
   getDocs(query(collection(db,'examSessions'), where('studentUid','==',currentUser.uid))).then(function(snap){
     var sessions = snap.docs.map(function(d){return Object.assign({id:d.id}, d.data());});
     if (!sessions.length) {
@@ -10063,6 +10073,11 @@ window.renderTeacher=function(i){
     else if (idx===13) mpTtTabInit();
   }
 
+  if (i===7 && !_exMgmtClassic) {
+    c.innerHTML = wrap(7, '<div id="exh-teacher"></div>');
+    (function mountEXH(n){ if (window.EXH && EXH.teacherMount && window.WT && WT._u) EXH.teacherMount(document.getElementById('exh-teacher')); else if (n < 50) setTimeout(function(){ if(!isStale()) mountEXH(n+1); }, 100); })(0);
+    return;
+  }
   if (i===14) {
     c.innerHTML = wrap(14, '<div id="wt-teacher"></div>');
     (function mountWT(n){ if (window.WT && WT.teacherMount) WT.teacherMount(document.getElementById('wt-teacher')); else if (n < 50) setTimeout(function(){ if(!isStale()) mountWT(n+1); }, 100); })(0);
@@ -10107,6 +10122,7 @@ window.renderTeacher=function(i){
 // 데이터가 실제로 바뀌는 조작(성적 저장, 학생 추가, 시험 생성 등)을 하고 나면
 // 그 탭의 캐시는 즉시 무효화해서, 다음에 봤을 때 오래된 화면이 보이지 않게 함
 function invalidateTeacherTabCache(idx){
+  if ((idx == null || idx === 7) && window.EXH && EXH.invalidate) EXH.invalidate();
   if (idx == null) { _teacherTabCache = {}; return; }
   delete _teacherTabCache[idx];
 }
