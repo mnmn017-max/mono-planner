@@ -948,7 +948,7 @@
         var clips = (r[1] && r[1].exists && r[1].exists() && r[1].data().clips) || {};
         var voice = clips[P.voiceMin];
         var studs = (r[2] || []).filter(function (s) { return (!s.role || s.role === 'student'); });
-        var gOk = function (s) { var g = String(s.grade || ''); return P.grades.some(function (x) { return g.indexOf(x) !== -1 || (x === 'N수' && /n수|재수|성인|졸업/i.test(g)); }); };
+        var gOk = function (s) { var g = String(s.grade || ''); return P.grades.some(function (x) { var hm = x.match(/^(초|중|고)(\d)$/); if (hm && g.indexOf({ 초: '초등', 중: '중학', 고: '고등' }[hm[1]]) !== -1 && g.indexOf(hm[2] + '학년') !== -1) return true; return g.indexOf(x) !== -1 || (x === 'N수' && /n수|재수|성인|졸업/i.test(g)); }); };
         studs.sort(function (a, b) { return (gOk(b) ? 1 : 0) - (gOk(a) ? 1 : 0) || String(a.grade || '').localeCompare(String(b.grade || '')) || String(a.name).localeCompare(String(b.name)); });
         var ts = tpl && tpl.subjects && tpl.subjects[0];
         var dur = ts ? ts.durationMin : 40;
