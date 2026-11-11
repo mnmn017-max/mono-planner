@@ -1,0 +1,12 @@
+{
+  "title": "문학 나침반 모의고사 36회",
+  "templateLike": "문학 나침반",
+  "startAt": "2026-11-11T18:40:00+09:00",
+  "warnMinutes": [5],
+  "voiceMin": "5",
+  "grades": ["고3", "N수"],
+  "gradeCutoffs": false,
+  "choices": 5,
+  "answers": [3,5,2,2,1,2,4,4,1,4,3,5,4,2,3,2,1],
+  "points":  [2,2,2,3,2,2,2,3,2,2,2,2,2,3,2,2,3]
+}

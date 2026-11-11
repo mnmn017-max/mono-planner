@@ -921,3 +921,86 @@
   }
   EXH._dbg = { roundInfo: roundInfo, seriesName: seriesName, T: T, get D() { return D; }, get SD() { return SD; } };
 })();
+
+/* 링크로 시험 등록: https://…/?eximport=<key>  (data/eximport-<key>.json) — 선생님·원장만
+   같은 시리즈의 가장 최근 시험(templateLike)에서 과목·시간·분류·구분을 그대로 가져오고,
+   정답·배점·시작 시각·종료 알림(녹음 목소리)·배정 학생(학년)만 파일 값으로 채움 */
+(function () {
+  var key = (location.search.match(/[?&]eximport=([\w-]+)/) || [])[1]; if (!key) return;
+  function clearParam() { try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) { } }
+  var tries = 0;
+  (function wait() {
+    var me = null; try { me = window.MP_FB && MP_FB.me && MP_FB.me(); } catch (e) { }
+    var U = window.WT && WT._u;
+    if (!me || !me.uid || !me.profile || !U) { if (++tries < 120) return setTimeout(wait, 500); return; }
+    if (['teacher', 'master'].indexOf(me.profile.role) < 0) { clearParam(); U.toast('선생님 계정에서만 등록할 수 있어요'); return; }
+    var fb = MP_FB, esc = U.esc, br = me.branch;
+    fetch('/data/eximport-' + key + '.json', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('파일 없음'); return r.json(); }).then(function (P) {
+      return Promise.all([
+        fb.getDocs(fb.query(fb.collection(fb.db, 'exams'), fb.where('branch', '==', br))),
+        fb.getDoc(fb.doc(fb.db, 'ttsCustomAudioLibrary', br)).catch(function () { return null; }),
+        fb.loadStudents()
+      ]).then(function (r) {
+        var exams = r[0].docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+        var dup = exams.filter(function (e) { return e.title === P.title; })[0];
+        var tpl = exams.filter(function (e) { return (e.title || '').indexOf(P.templateLike) !== -1; })
+          .sort(function (a, b) { return ((b.createdAt && b.createdAt.toMillis && b.createdAt.toMillis()) || 0) - ((a.createdAt && a.createdAt.toMillis && a.createdAt.toMillis()) || 0); })[0];
+        var clips = (r[1] && r[1].exists && r[1].exists() && r[1].data().clips) || {};
+        var voice = clips[P.voiceMin];
+        var studs = (r[2] || []).filter(function (s) { return (!s.role || s.role === 'student'); });
+        var gOk = function (s) { var g = String(s.grade || ''); return P.grades.some(function (x) { return g.indexOf(x) !== -1 || (x === 'N수' && /n수|재수|성인|졸업/i.test(g)); }); };
+        studs.sort(function (a, b) { return (gOk(b) ? 1 : 0) - (gOk(a) ? 1 : 0) || String(a.grade || '').localeCompare(String(b.grade || '')) || String(a.name).localeCompare(String(b.name)); });
+        var ts = tpl && tpl.subjects && tpl.subjects[0];
+        var dur = ts ? ts.durationMin : 40;
+        var startMs = new Date(P.startAt).getTime();
+        var total = P.points.reduce(function (a, b) { return a + b; }, 0);
+        var m = U.modal({ title: '시험 등록 · ' + P.title, eyebrow: 'IMPORT EXAM', width: 600 });
+        m.body.innerHTML = '<div class="col" style="gap:12px;font-size:13.5px;line-height:1.7">'
+          + (dup ? '<div class="card" style="padding:12px 14px;color:#9C2F2F;font-weight:700">⚠️ 같은 이름의 시험이 이미 있어요. 그래도 등록하면 하나 더 만들어져요.</div>' : '')
+          + '<div class="card" style="padding:12px 14px"><b style="color:#7B1D1D">' + esc(P.title) + '</b><div style="font-size:12.5px;color:#6A5A5A;margin-top:4px">'
+          + P.answers.length + '문항 · ' + total + '점 만점 · 객관식 ' + P.choices + '지선다<br>'
+          + '시간 <b>' + dur + '분</b>' + (tpl ? ' (「' + esc(tpl.title) + '」과 같은 설정)' : ' (기본값)') + '<br>'
+          + '시작 <b>' + new Date(startMs).toLocaleString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short', hour: 'numeric', minute: '2-digit' }) + '</b> 일괄 시작<br>'
+          + '종료 알림 <b>' + P.warnMinutes.join('·') + '분 전</b> · ' + (voice ? '녹음된 목소리' : '<span style="color:#9C2F2F">녹음 파일 없음 → 기본 음성</span>') + '<br>'
+          + '등급 <b>' + (P.gradeCutoffs ? '사용' : '없음') + '</b></div>'
+          + '<div style="font-size:12px;color:#8A7B7B;margin-top:6px">정답 ' + P.answers.map(function (a, i) { return (i + 1) + ':' + a; }).join(' ') + '</div></div>'
+          + '<div><b>배정 학생</b> <span style="font-size:12px;color:#8A7B7B">(' + P.grades.join('·') + ' 자동 선택)</span><div class="card" style="padding:6px;margin-top:6px;max-height:34vh;overflow:auto">'
+          + studs.map(function (s) { return '<label style="display:flex;align-items:center;gap:10px;min-height:40px;padding:4px 10px;cursor:pointer"><input type="checkbox" value="' + s.uid + '"' + (gOk(s) ? ' checked' : '') + ' style="width:18px;height:18px;accent-color:#7B1D1D"><b style="font-weight:700">' + esc(s.name) + '</b><span style="font-size:12px;color:#8A7B7B">' + esc(s.grade || '') + '</span></label>'; }).join('')
+          + '</div></div></div>';
+        m.foot.innerHTML = '<span data-cnt style="margin-right:auto;align-self:center;font-size:12.5px;color:#8A7B7B"></span><button type="button" class="s" data-n style="height:42px;padding:0 18px">취소</button><button type="button" class="p" data-y style="height:42px;padding:0 22px">등록하고 배정</button>';
+        var cnt = m.foot.querySelector('[data-cnt]'), sync = function () { cnt.textContent = m.body.querySelectorAll('input:checked').length + '명 배정'; };
+        m.body.onchange = sync; sync();
+        m.foot.querySelector('[data-n]').onclick = function () { m.close(); clearParam(); };
+        m.foot.querySelector('[data-y]').onclick = function () {
+          var uids = Array.from(m.body.querySelectorAll('input:checked')).map(function (i) { return i.value; });
+          var btn = this; btn.disabled = true; btn.textContent = '등록 중…';
+          var subj = {
+            subject: ts ? ts.subject : 'ko', exCategory: ts ? (ts.exCategory || null) : null, electiveOptions: [], questionsByElective: {},
+            order: 1, durationMin: dur, breakAfterMin: 0, listeningUrl: null, listeningDurationSec: null,
+            gradeCutoffsEnabled: !!P.gradeCutoffs, gradeCutoffs: null, gradeCutoffsByElective: null,
+            questions: P.answers.map(function (a, i) { return { no: i + 1, type: 'mc', choices: P.choices, answer: a, point: P.points[i] }; })
+          };
+          if (ts && ts.questions && ts.questions[0]) { /* 기존 시험 문항 필드 모양을 그대로 따름 */
+            var q0 = ts.questions[0]; subj.questions = subj.questions.map(function (q) { var o = {}; Object.keys(q0).forEach(function (k) { o[k] = q0[k]; }); return Object.assign(o, q); });
+          }
+          var ex = {
+            title: P.title, type: (tpl && tpl.type) || 'single', examSource: tpl ? (tpl.examSource || null) : null, gradeType: (tpl && tpl.gradeType) || 'mock',
+            warnMinutesList: P.warnMinutes, ttsEnabled: true, ttsVoiceURI: (tpl && tpl.ttsVoiceURI) || null, ttsVolume: (tpl && tpl.ttsVolume != null) ? tpl.ttsVolume : 1,
+            ttsProvider: voice ? 'custom' : ((tpl && tpl.ttsProvider) || 'browser'), ttsCloudVoiceName: (tpl && tpl.ttsCloudVoiceName) || null,
+            ttsCustomAudio: voice ? (function () { var o = {}; o[P.voiceMin] = voice; return o; })() : {},
+            startAtMs: startMs, subjects: [subj], branch: br, createdBy: me.uid, createdAt: fb.serverTimestamp(), assignedTo: uids
+          };
+          fb.addDoc(fb.collection(fb.db, 'exams'), ex).then(function (ref) {
+            var b = fb.writeBatch(fb.db);
+            uids.forEach(function (u) { b.set(fb.doc(fb.collection(fb.db, 'examSessions')), { examId: ref.id, studentUid: u, branch: br, status: 'not_started', currentSubjectIndex: 0, subjectResults: [], createdAt: fb.serverTimestamp() }); });
+            return b.commit().then(function () {
+              try { if (uids.length && fb.push) fb.push(uids, '📝 새 시험이 배정됐어요', P.title + ' · 오늘 ' + new Date(startMs).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' }) + ' 시작', { tab: 'exam' }); } catch (e) { }
+              m.close(); clearParam(); U.toast('등록했어요 · ' + uids.length + '명 배정');
+              try { if (window.MP_EX && MP_EX.invalidate) MP_EX.invalidate(); if (window.teacherTab) window.teacherTab(7); } catch (e) { }
+            });
+          }).catch(function (e) { btn.disabled = false; btn.textContent = '다시 시도'; U.toast('등록하지 못했어요: ' + (e.message || e)); });
+        };
+      });
+    }).catch(function (e) { clearParam(); (window.WT && WT._u ? WT._u.toast : alert)('시험 등록 파일을 불러오지 못했어요'); });
+  })();
+})();
