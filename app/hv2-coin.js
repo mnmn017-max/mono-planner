@@ -74,14 +74,17 @@ const MOTIONS = {
   front: (g, t) => { g.rotation.set(0, 0, 0); }
 };
 
-export async function mountCoin(el, mode, colorKey) {
+export async function mountCoin(el, mode, colorKey, opts) {
+  opts = opts || {};
   const t = document.createElement('canvas');
   if (!(t.getContext('webgl2') || t.getContext('webgl'))) throw new Error('WebGL 없음');
   await loadSvgs();
   geos();
   const size = el.clientWidth || 90;
   const r = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  // 작은 크기(상단 미니 타이머 등)는 크게 그려서 줄여야 선명함
+  const dpr = window.devicePixelRatio || 1;
+  r.setPixelRatio(opts.minRender ? Math.min(6, Math.max(dpr, opts.minRender / size)) : Math.min(2, dpr));
   r.setSize(size, size);
   r.outputColorSpace = THREE.SRGBColorSpace;
   r.toneMapping = THREE.ACESFilmicToneMapping;

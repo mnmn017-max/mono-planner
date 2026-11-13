@@ -15703,7 +15703,7 @@ window.MP_nowSynced = _nowSynced;
    - 선생님: 코멘트 메뉴(받은편지함) — 확인 여부·새 답장을 한눈에
    ====================================================================== */
 var HV2 = { on:false, submitted:null, submittedAt:null, subj:null, todos:[], base:null, baseLabel:'', baseDate:'', tick:null, ask:null, coin:null, coinTried:false, cmts:[], cmtIdx:0, lastBlockKey:null };
-var HV2_COIN_SRC = '/app/hv2-coin.js?v=2efa874643';
+var HV2_COIN_SRC = '/app/hv2-coin.js?v=c03b51e988';
 var HV2_SUBJ_COLOR = {ko:['#6F93D6','#2F5D9E'],en:['#5FAE82','#1F6B3E'],ma:['#F2AE6A','#C2671A'],hi:['#D6B25E','#9A7420'],sc:['#A383D6','#6B3FA0'],so:['#D8736C','#A8322D']};
 var HV2_FALLBACK = [['#D8736C','#9B2D2D'],['#6F93D6','#2F5D9E'],['#5FAE82','#1F6B3E'],['#F2AE6A','#C2671A'],['#A383D6','#6B3FA0'],['#D6B25E','#9A7420']];
 function hv2Col(key){
@@ -16546,7 +16546,7 @@ function hvmMountCoin(el){
   var slot=el.querySelector('.hvm-coin'); if(!slot) return;
   slot.querySelectorAll('canvas').forEach(function(c){ c.remove(); });
   slot.classList.remove('ok');
-  import(HV2_COIN_SRC).then(function(m){ return m.mountCoin(slot,'tiltfloat','rose'); })
+  import(HV2_COIN_SRC).then(function(m){ return m.mountCoin(slot,'tiltfloat','rose',{minRender:160}); })
     .then(function(c){ if(c) slot.classList.add('ok'); })
     .catch(function(){ slot.classList.add('m-glint'); });
 }
