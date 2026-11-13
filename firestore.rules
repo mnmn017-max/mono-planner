@@ -96,7 +96,7 @@ service cloud.firestore {
     match /comments/{id} {
       allow read: if isStaff() || owns('studentUid');
       allow create, delete: if isStaff();
-      allow update: if isStaff() || (owns('studentUid') && onlyChanges(['read', 'readAt']));
+      allow update: if isStaff() || (owns('studentUid') && onlyChanges(['read', 'readAt', 'ackAt', 'replies', 'lastReplyAt', 'replyUnread']));
     }
     match /studentReports/{id} {
       allow read: if isStaff() || owns('uid');
