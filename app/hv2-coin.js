@@ -107,7 +107,7 @@ export async function mountCoin(el, mode, colorKey) {
   (function loop() {
     const t = (performance.now() - t0) / 1000;
     (reduce ? MOTIONS.still : MOTIONS[state.mode])(root, t);
-    if (!el.isConnected) { r.dispose(); return; }
+    if (!el.isConnected || !el.contains(r.domElement)) { r.dispose(); return; }
     if (!document.hidden) r.render(scene, cam);
     requestAnimationFrame(loop);
   })();

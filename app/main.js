@@ -15703,7 +15703,7 @@ window.MP_nowSynced = _nowSynced;
    - 선생님: 코멘트 메뉴(받은편지함) — 확인 여부·새 답장을 한눈에
    ====================================================================== */
 var HV2 = { on:false, submitted:null, submittedAt:null, subj:null, todos:[], base:null, baseLabel:'', baseDate:'', tick:null, ask:null, coin:null, coinTried:false, cmts:[], cmtIdx:0, lastBlockKey:null };
-var HV2_COIN_SRC = '/app/hv2-coin.js?v=60b858d47d';
+var HV2_COIN_SRC = '/app/hv2-coin.js?v=2efa874643';
 var HV2_SUBJ_COLOR = {ko:['#6F93D6','#2F5D9E'],en:['#5FAE82','#1F6B3E'],ma:['#F2AE6A','#C2671A'],hi:['#D6B25E','#9A7420'],sc:['#A383D6','#6B3FA0'],so:['#D8736C','#A8322D']};
 var HV2_FALLBACK = [['#D8736C','#9B2D2D'],['#6F93D6','#2F5D9E'],['#5FAE82','#1F6B3E'],['#F2AE6A','#C2671A'],['#A383D6','#6B3FA0'],['#D6B25E','#9A7420']];
 function hv2Col(key){
@@ -16529,7 +16529,7 @@ function hvmBuild(desk){
   el.innerHTML='<span class="hvm-ring" style="width:'+sz+'px;height:'+sz+'px"><svg width="'+sz+'" height="'+sz+'" viewBox="0 0 '+sz+' '+sz+'" aria-hidden="true"><defs><linearGradient id="hvmG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#EFC6AE"/><stop offset=".55" stop-color="#C98A6B"/><stop offset="1" stop-color="#9E3B33"/></linearGradient></defs>'
     +'<circle cx="'+sz/2+'" cy="'+sz/2+'" r="'+r+'" fill="none" stroke="#F1E6DE" stroke-width="'+w+'"/>'
     +'<circle class="hvm-arc" cx="'+sz/2+'" cy="'+sz/2+'" r="'+r+'" fill="none" stroke="url(#hvmG)" stroke-width="'+w+'" stroke-linecap="round" stroke-dasharray="0 '+c+'" data-c="'+c+'"/></svg>'
-    +'<img src="/assets/hv2/mentors-logo.png" alt=""><i class="hvm-dot"></i></span>'
+    +'<span class="hvm-coin"><img class="hvm-flat" src="/assets/hv2/mentors-logo.png" alt=""></span><i class="hvm-dot"></i></span>'
     +'<span class="hvm-tx"><b class="hvm-t"></b><span><em class="hvm-sub"></em><span class="hvm-cap"></span></span></span>'
     +'<span class="hvm-time"></span>'
     +'<button type="button" class="hvm-b hvm-pa" aria-label="일시정지"></button>'
@@ -16538,7 +16538,17 @@ function hvmBuild(desk){
   el.onkeydown=function(ev){ if ((ev.key==='Enter'||ev.key===' ') && ev.target===el){ ev.preventDefault(); studentTab(0); } };
   el.querySelector('.hvm-pa').onclick=function(){ if (TimerEngine.todoId) togglePause().then(hvmPaint); };
   var dn=el.querySelector('.hvm-dn'); if (dn) dn.onclick=function(){ if (TimerEngine.todoId) stopTimer().then(hvmPaint); };
+  hvmMountCoin(el);
   return el;
+}
+/* 홈 타이머와 같은 3D 로고(로즈 · 흔들리며 떠 있기). WebGL이 안 되면 평면 로고가 홈과 같이 살짝 떠다님 */
+function hvmMountCoin(el){
+  var slot=el.querySelector('.hvm-coin'); if(!slot) return;
+  slot.querySelectorAll('canvas').forEach(function(c){ c.remove(); });
+  slot.classList.remove('ok');
+  import(HV2_COIN_SRC).then(function(m){ return m.mountCoin(slot,'tiltfloat','rose'); })
+    .then(function(c){ if(c) slot.classList.add('ok'); })
+    .catch(function(){ slot.classList.add('m-glint'); });
 }
 function hvmPaint(){
   var el=document.getElementById('hvMini');
@@ -16551,8 +16561,11 @@ function hvmPaint(){
   else { var tb=scr.querySelector('.topbar'); if(!tb){ if(el) el.remove(); return; } host=tb.parentNode; before=tb.nextSibling; }
   if (el && el.classList.contains(desk?'hvm-m':'hvm-d')){ el.remove(); el=null; }
   if (!el) el=hvmBuild(desk);
+  var wasOff=!el.isConnected;
   if (desk){ if (el.parentNode!==host){ host.classList.add('hvm-host'); host.appendChild(el); } }
   else if (el.previousElementSibling!==scr.querySelector('.topbar')) host.insertBefore(el, before);
+  if (wasOff && el.dataset.built) hvmMountCoin(el);
+  el.dataset.built='1';
   var st=hvmState(), run=TimerEngine.status==='running';
   el.classList.toggle('paused', !run);
   var arc=el.querySelector('.hvm-arc'), c=+arc.getAttribute('data-c'), da=(c*st.p).toFixed(2)+' '+c; if (arc.getAttribute('stroke-dasharray')!==da) arc.setAttribute('stroke-dasharray', da);
