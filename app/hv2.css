@@ -89,7 +89,12 @@
 .hv2t .aic svg{width:23px;height:23px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.35))}
 .hv2t .atx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .hv2t .atx b{font-size:14px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hv2t .atx span{font-size:11.5px;color:rgba(255,236,214,.65);white-space:nowrap}
+.hv2t .atx span{font-size:11.5px;color:rgba(255,236,214,.65);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 두 줄 캡슐: 질문이 길 때(자리 비운 사이 쉬는 시간) 버튼을 아래 줄로 */
+.hv2t .askA.wide{flex-wrap:wrap;border-radius:24px;padding:10px 10px 10px 8px;row-gap:9px}
+.hv2t .askA.wide .atx{flex:1 1 calc(100% - 60px)}
+.hv2t .askA.wide .atx b{white-space:normal}
+.hv2t .askA.wide .aN,.hv2t .askA.wide .aY{flex:1 1 0;height:38px}
 .hv2t .aN,.hv2t .aY{flex:none;height:40px;border:0;border-radius:999px;font:inherit;font-weight:800;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
 .hv2t .aN{padding:0 14px;color:rgba(255,236,214,.8);background:rgba(255,255,255,.1)}
 .hv2t .aY{padding:0 16px;color:#3A1012;background:linear-gradient(180deg,#F8D9A0,#E2AE5C);box-shadow:inset 0 1px 0 rgba(255,255,255,.6)}

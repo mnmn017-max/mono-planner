@@ -15729,20 +15729,61 @@ function hv2Key(label, kind, icon, attrs, size){
 }
 
 /* ---------------- 공부 구간 기록 (오늘 실제로 측정된 시간대) ----------------
-   타이머가 도는 동안 1초마다 [시작,끝,과목]을 이어 붙여 저장 → 이번 교시 순공 · 유리관 타임라인에 사용 */
-function hv2SegKey(){ return 'mp_seg_'+(currentUser?currentUser.uid:'x')+'_'+getPlannerDate(); }
-function hv2Segs(){ try{ return JSON.parse(localStorage.getItem(hv2SegKey())||'[]'); }catch(e){ return []; } }
-function hv2SaveSegs(a){ try{ localStorage.setItem(hv2SegKey(), JSON.stringify(a.slice(-400))); }catch(e){} }
+   타이머를 '시작한 시각'을 기억해 두고, 볼 때마다 [시작, 지금]으로 구간을 채움.
+   → 앱을 내리거나 완전히 닫아도(인강 등) 다시 열면 그 사이가 빠짐없이 공부 구간으로 채워짐.
+   빼기로 한 시간(쉬는 시간·식사)은 별도 목록(segx)으로 두고 읽을 때 잘라냄. */
+function hv2Uid(){ return currentUser?currentUser.uid:'x'; }
+function hv2SegKey(){ return 'mp_seg_'+hv2Uid()+'_'+getPlannerDate(); }
+function hv2SegxKey(){ return 'mp_segx_'+hv2Uid()+'_'+getPlannerDate(); }
+function hv2RunKey(){ return 'mp_run_'+hv2Uid(); }
+function hv2LsGet(k, d){ try{ var v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch(e){ return d; } }
+function hv2LsSet(k, v){ try{ if (v==null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+function hv2SegsRaw(){ return hv2LsGet(hv2SegKey(), []); }
+function hv2SaveSegs(a){ hv2LsSet(hv2SegKey(), a.slice(-400)); }
+function hv2Excl(){ return hv2LsGet(hv2SegxKey(), []); }
+function hv2AddExcl(a0, a1){ if (!(a1>a0)) return; var x=hv2Excl(); x.push([a0, a1]); hv2LsSet(hv2SegxKey(), x.slice(-100)); }
+/* 읽기용: 빼기로 한 시간을 잘라낸 구간 */
+function hv2Segs(){
+  var out=hv2SegsRaw().map(function(g){ return [g[0], g[1], g[2]]; });
+  hv2Excl().forEach(function(x){
+    var nx=[]; out.forEach(function(g){
+      if (x[1]<=g[0] || x[0]>=g[1]) { nx.push(g); return; }
+      if (x[0]>g[0]) nx.push([g[0], x[0], g[2]]);
+      if (x[1]<g[1]) nx.push([x[1], g[1], g[2]]);
+    }); out=nx;
+  });
+  return out;
+}
+function hv2Run(){ return hv2LsGet(hv2RunKey(), null); }
 function hv2LogSeg(){
-  if (TimerEngine.status!=='running' || !TimerEngine.todoId) return;
-  var now=Date.now(), a=hv2Segs(), last=a[a.length-1], sub=TimerEngine.subject||'';
-  var since = TimerEngine.startedAtMs || now;
-  if (last && last[2]===sub && now-last[1] < 5000 && last[1] >= since-1000) last[1]=now;
-  else a.push([Math.max(since, now-1000), now, sub]);
+  var now=Date.now(), run=hv2Run();
+  if (TimerEngine.status!=='running' || !TimerEngine.todoId){
+    // 앱을 막 다시 연 직후(이전 타이머 복구 전)에는 기억을 지우지 않음
+    if (run && (HV2.resumed || TimerEngine.todoId)) hv2LsSet(hv2RunKey(), null);
+    return;
+  }
+  var sub=TimerEngine.subject||'', started=TimerEngine.startedAtMs||now;
+  var ok = run && run.todo===TimerEngine.todoId && run.sub===sub
+        && run.since <= started + 2000                       // 복구 시 startedAtMs가 '지금'으로 바뀌어도 원래 시작 시각 유지
+        && run.since >= now - getElapsedMs(now) - (run.cut||0) - 5000;   // 다른 기기에서 멈춘 뒤 남은 오래된 기억은 버림 (뺀 시간 감안)
+  if (!ok){ run={todo:TimerEngine.todoId, sub:sub, since:started}; hv2LsSet(hv2RunKey(), run); }
+  var a=hv2SegsRaw(), seg=null;
+  for (var i=0;i<a.length;i++) if (a[i][3]===run.since) seg=a[i];
+  if (seg) seg[1]=now;
+  else { a=a.filter(function(g){ return !(g[3]==null && g[0]>=run.since); }); a.push([run.since, now, sub, run.since]); }
   hv2SaveSegs(a);
 }
 function hv2Overlap(a0,a1){ var s=0; hv2Segs().forEach(function(g){ var x=Math.max(a0,g[0]), y=Math.min(a1,g[1]); if(y>x) s+=y-x; }); return s; }
-function hv2TrimSegsAfter(ms){ var a=hv2Segs().filter(function(g){ return g[0] < ms; }).map(function(g){ return [g[0], Math.min(g[1], ms), g[2]]; }); hv2SaveSegs(a); }
+function hv2TrimSegsAfter(ms){
+  var a=hv2SegsRaw().filter(function(g){ return g[0] < ms; }).map(function(g){ return [g[0], Math.min(g[1], ms), g[2], g[3]]; });
+  hv2SaveSegs(a); hv2LsSet(hv2RunKey(), null);
+}
+/* 이전 타이머 복구가 끝난 뒤에야 '멈춤' 판정을 함 */
+(function(){
+  var _orig=resumeActiveTimer;
+  resumeActiveTimer = async function(){ try{ return await _orig.apply(this, arguments); } finally { HV2.resumed=true; } };
+  setTimeout(function(){ HV2.resumed=true; }, 20000);
+})();
 
 /* ---------------- 오늘 순공 / 기준(지난주 같은 요일) ---------------- */
 function hv2TodayStudySec(){
@@ -16050,19 +16091,21 @@ var HV2_ASK_ICON = {
   lock:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#F0C27C" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2" fill="rgba(240,194,124,.18)"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>'
 };
 function hv2AskOpen(o){ HV2.ask=o; hv2AskPaint(true); }
-function hv2AskClose(){ HV2.ask=null; var c=document.getElementById('hvT'); if(c) c.classList.remove('asking'); }
+function hv2AskClose(){ HV2.ask=null; var c=document.getElementById('hvT'); if(c) c.classList.remove('asking'); ['hvAskN','hvAskY'].forEach(function(id){ var b=document.getElementById(id); if(b) b.onclick=null; }); }
 function hv2AskPaint(force){
   var c=document.getElementById('hvT'); if(!c) return;
   var o=HV2.ask; if(!o){ c.classList.remove('asking'); return; }
   c.classList.add('asking');
   var line=o.sub;
-  if (o.kind==='brk' && !o.done){ var r=Math.max(0, 300-(Date.now()-o.startMs)/1000); line=Math.floor(r/60)+':'+hv2Pad(Math.floor(r%60))+' 뒤 자동 멈춤'+(o.extra?' · '+o.extra:''); c.style.setProperty('--cd',(r/300).toFixed(4)); }
+  if ((o.kind==='brk' || o.kind==='retro') && !o.done){ var r=Math.max(0, (o.left==null?300000:o.left)/1000); line=(o.kind==='retro'?(o.extra+' · '+Math.floor(r/60)+':'+hv2Pad(Math.floor(r%60))+' 뒤 쉰 걸로'):(Math.floor(r/60)+':'+hv2Pad(Math.floor(r%60))+' 뒤 자동 멈춤'+(o.extra?' · '+o.extra:''))); c.style.setProperty('--cd',(r/300).toFixed(4)); }
   else c.style.setProperty('--cd','0');
+  var box=c.querySelector('.askA'); if (box) box.classList.toggle('wide', o.kind==='retro' || o.kind==='note');
   var ic=document.getElementById('hvAskIc'), t=document.getElementById('hvAskT'), s=document.getElementById('hvAskS'), n=document.getElementById('hvAskN'), y=document.getElementById('hvAskY');
   if (force || (ic && ic.dataset.k!==o.icon)){ ic.innerHTML=HV2_ASK_ICON[o.icon]||''; ic.dataset.k=o.icon; }
   if (t.textContent!==o.title) t.textContent=o.title;
   if (s.textContent!==line) s.textContent=line;
   if (n.textContent!==o.no) n.textContent=o.no;
+  n.style.display=o.no?'':'none';
   if (y.textContent!==o.yes) y.textContent=o.yes;
   n.onclick=function(){ var f=o.onNo; hv2AskClose(); if(f) f(); };
   y.onclick=function(){ var f=o.onYes; hv2AskClose(); if(f) f(); };
@@ -16073,17 +16116,94 @@ window.hv2PreNudge = function(){
   try{ document.getElementById('hvT').scrollIntoView({behavior:'smooth', block:'nearest'}); }catch(e){}
 };
 function hv2ToastPlain(msg){ try{ if (typeof mpToast==='function') mpToast(msg); }catch(e){} }
-/* 쉬는 시간 · 식사 감시 (1초마다) */
+/* 쉬는 시간 · 식사 감시 (1초마다)
+   · 앱이 화면에 보일 때: 쉬는 시간이면 "계속 공부할까요?" (화면에 보이는 동안 5분 대답 없으면 멈추고 쉬는 시간부터 뺌), 식사면 바로 멈춤
+   · 앱을 내려둔 사이(인강 등) 지나간 쉬는 시간: 돌아오면 "공부했어요 / 쉬었어요"로 물어봄
+   · 앱을 내려둔 사이 지나간 식사 시간: 식사 시간만 빼고 이어서 측정 */
+function hv2Visible(){ return document.visibilityState!=='hidden'; }
+function hv2BrkKey(key){ return 'mp_brk_'+hv2Uid()+'_'+key; }
+function hv2Decided(key){ try{ return localStorage.getItem(hv2BrkKey(key)); }catch(e){ return null; } }
+function hv2Decide(key, v){ try{ localStorage.setItem(hv2BrkKey(key), v); }catch(e){} }
+function hv2Mins(ms){ return Math.max(1, Math.round(ms/60000)); }
+/* 지금 측정 중인 타이머에서 ms만큼 빼기 (누적 → 시작 시각 순으로 조정) */
+function hv2SubtractMs(ms){
+  if (!(ms>0) || !TimerEngine.todoId) return;
+  var run=hv2Run(); if (run){ run.cut=(run.cut||0)+ms; hv2LsSet(hv2RunKey(), run); }
+  var fromAcc=Math.min(ms, Math.max(0, TimerEngine.accumMs)); TimerEngine.accumMs-=fromAcc; ms-=fromAcc;
+  if (ms>0 && TimerEngine.status==='running' && TimerEngine.startedAtMs) TimerEngine.startedAtMs=Math.min(Date.now(), TimerEngine.startedAtMs+ms);
+  saveAllTimerLocalState(); try{ persistTimerCheckpoint().catch(function(){}); }catch(e){}
+  try{ _renderTimerBanner(true); }catch(e){}
+}
+/* 화면에 보이는 동안만 줄어드는 5분 카운트다운 */
+function hv2AskCount(o, now){
+  if (o.left==null) o.left=300000;
+  var dt=Math.min(1500, Math.max(0, now-(o.lastT||now))); o.lastT=now;
+  var card=document.getElementById('hvT');
+  if (hv2Visible() && card) o.left-=dt;      // 학생이 질문을 실제로 볼 수 있을 때만 줄어듦
+  else if (!card && !o.toasted){ o.toasted=true; try{ mpToast('⏸ '+o.title+' · 눌러서 답하기', function(){ studentTab(0); }); }catch(e){} }
+  return o.left<=0;
+}
+/* 앱을 내려둔 사이 지나간 쉬는 시간·식사 시간 */
+function hv2Away(now){
+  var run=hv2Run(); if (!run || TimerEngine.status!=='running' || !MP_TT || !MP_TT.blocks) return [];
+  var d0=hv2DayStartMs(), out=[];
+  MP_TT.blocks.forEach(function(b){
+    if (b.type!=='break' && b.type!=='meal') return;
+    var bs=d0+MPC.ttMin(b.s)*60000, be=d0+MPC.ttMin(b.e)*60000, key=getPlannerDate()+'|'+b.s;
+    if (be>now || bs < run.since+3000) return;        // 아직 안 끝났거나, 쉬는 시간에 직접 시작한 공부
+    if (hv2Decided(key)) return;
+    out.push({b:b, key:key, a0:Math.max(bs, run.since), a1:be});
+  });
+  return out;
+}
+function hv2ApplyRest(list){
+  var tot=0;
+  list.forEach(function(x){ var ms=Math.max(0, x.a1-x.a0); tot+=ms; hv2AddExcl(x.a0, x.a1); hv2Decide(x.key, 'rest'); });
+  hv2SubtractMs(tot); hv2Paint(); hv2RenderTodosAgain();
+  return tot;
+}
 function hv2Watch(){
-  var ph=hv2Phase(), running=TimerEngine.status==='running' && !!TimerEngine.todoId, now=Date.now();
+  var now=Date.now(), running=TimerEngine.status==='running' && !!TimerEngine.todoId, vis=hv2Visible();
+  /* 1) 자리를 비운 사이 지나간 시간 정리 (화면에 돌아왔을 때) */
+  if (running && vis){
+    var away=hv2Away(now);
+    var meals=away.filter(function(x){ return x.b.type==='meal'; });
+    if (meals.length){
+      var mt=0; meals.forEach(function(x){ mt+=x.a1-x.a0; hv2AddExcl(x.a0, x.a1); hv2Decide(x.key, 'auto'); });
+      hv2SubtractMs(mt);
+      hv2AskOpen({kind:'note', icon:'meal', title:meals.map(function(x){return x.b.label;}).join('·')+' '+hv2Mins(mt)+'분은 뺐어요', sub:'식사 시간만 빼고 나머지 공부는 그대로예요', no:'', yes:'확인'});
+      return;
+    }
+    var brks=away.filter(function(x){ return x.b.type==='break'; });
+    if (brks.length && !(HV2.ask && /^(retro|note|auto|meal)$/.test(HV2.ask.kind))){
+      var bt=0; brks.forEach(function(x){ bt+=x.a1-x.a0; });
+      hv2AskOpen({kind:'retro', icon:'cup', list:brks,
+        title:'쉬는 시간 '+hv2Mins(bt)+'분, 공부했나요?',
+        extra:'앱 밖에 있던 '+(brks.length>1?brks.length+'번':'시간'), sub:'', no:'쉬었어요', yes:'공부했어요',
+        onNo:function(){ var m=hv2ApplyRest(brks); hv2ToastPlain('쉬는 시간 '+hv2Mins(m)+'분을 순공에서 뺐어요'); },
+        onYes:function(){ brks.forEach(function(x){ hv2Decide(x.key,'ok'); }); hv2ToastPlain('쉬는 시간도 순공에 넣었어요'); }});
+    }
+  }
+  if (HV2.ask && HV2.ask.kind==='retro'){
+    if (!running){ hv2AskClose(); }
+    else if (hv2AskCount(HV2.ask, now)){
+      var L=HV2.ask.list; hv2AskClose(); var mm=hv2ApplyRest(L);
+      hv2AskOpen({kind:'note', icon:'cup', title:'대답이 없어 쉰 걸로 했어요', sub:hv2Mins(mm)+'분을 뺐어요 · 타이머는 계속 돌아요', no:'', yes:'확인'});
+    }
+    return;
+  }
+
+  /* 2) 지금 쉬는 시간·식사 시간 (화면에 보일 때만 판단) */
+  var ph=hv2Phase();
   if (ph.kind==='break' || ph.kind==='meal'){
-    var k='mp_brk_'+(currentUser?currentUser.uid:'')+'_'+ph.key, decided=null;
-    try{ decided=localStorage.getItem(k); }catch(e){}
+    var decided=hv2Decided(ph.key);
     if (!running || decided) { if (HV2.ask && (HV2.ask.kind==='brk') && !running) hv2AskClose(); return; }
-    var startedBefore = (TimerEngine.startedAtMs||now) < ph.startMs + 3000;
-    if (!startedBefore){ try{ localStorage.setItem(k,'ok'); }catch(e){} return; }   // 쉬는 시간에 직접 시작한 공부는 그대로
+    var startedBefore = (hv2Run()||{since:TimerEngine.startedAtMs||now}).since < ph.startMs + 3000;
+    if (!startedBefore){ hv2Decide(ph.key,'ok'); return; }   // 쉬는 시간에 직접 시작한 공부는 그대로
+    if (!vis) return;                                       // 앱을 내려둔 동안은 멈추지 않음 (돌아오면 물어봄)
     function cutBack(){   // 쉬는 시간 시작 시각으로 되돌림 (그동안 켜져 있던 시간은 순공에서 뺌)
-      var cut=Math.max(0, now - Math.max(ph.startMs, TimerEngine.startedAtMs||ph.startMs));
+      var since=(hv2Run()||{}).since||TimerEngine.startedAtMs||ph.startMs;
+      var cut=Math.max(0, now - Math.max(ph.startMs, since));
       TimerEngine.accumMs = Math.max(0, getElapsedMs(now) - cut);
       TimerEngine.startedAtMs = null; TimerEngine.status='paused';
       if (timerInterval){ clearInterval(timerInterval); timerInterval=null; } _stopAutoSave(); saveAllTimerLocalState();
@@ -16091,26 +16211,37 @@ function hv2Watch(){
       return Math.round(cut/60000);
     }
     var pName=(function(){ var L=MPC.ttState(MP_TT.blocks, ttNowSec()-ph.elapsed-1).cur; return L?L.label:''; })();
-    var studied=pName? Math.round(hv2Overlap(ph.startMs-3600000*3, ph.startMs)/60000) : 0;
     if (ph.kind==='meal'){
-      try{ localStorage.setItem(k,'auto'); }catch(e){}
+      hv2Decide(ph.key,'auto');
       cutBack();
       hv2AskOpen({kind:'meal', icon:'meal', title:ph.block.label+'이라 멈췄어요', sub:'맛있게 먹고 와요 · 계속하려면 다시 시작', no:'확인', yes:'이어서', onYes:function(){ togglePause(); }});
       return;
     }
-    // 쉬는 시간: 5분 동안 묻고, 대답이 없으면 자동 멈춤
+    // 쉬는 시간: 화면에 보이는 동안 5분 묻고, 대답이 없으면 자동 멈춤
     if (!HV2.ask || HV2.ask.kind!=='brk' || HV2.ask.key!==ph.key){
-      hv2AskOpen({kind:'brk', key:ph.key, icon:'cup', startMs:ph.startMs, title:'쉬는 시간 · 계속 공부할까요?', extra:(pName?pName+' 끝':''), sub:'', no:'쉬기', yes:'계속',
-        onNo:function(){ try{ localStorage.setItem(k,'rest'); }catch(e){} if (TimerEngine.status==='running') togglePause(); },
-        onYes:function(){ try{ localStorage.setItem(k,'ok'); }catch(e){} }});
+      hv2AskOpen({kind:'brk', key:ph.key, icon:'cup', title:'쉬는 시간 · 계속 공부할까요?', extra:(pName?pName+' 끝':''), sub:'', no:'쉬기', yes:'계속',
+        onNo:function(){ hv2Decide(ph.key,'rest'); if (TimerEngine.status==='running') togglePause(); },
+        onYes:function(){ hv2Decide(ph.key,'ok'); }});
     }
-    if (now - ph.startMs >= 300000){
-      try{ localStorage.setItem(k,'auto'); }catch(e){}
+    if (hv2AskCount(HV2.ask, now)){
+      hv2Decide(ph.key,'auto');
       var mins=cutBack();
       hv2AskOpen({kind:'auto', icon:'cup', title:'대답이 없어서 멈췄어요', sub:'켜져 있던 '+mins+'분은 순공에서 뺐어요', no:'확인', yes:'다시 공부', onYes:function(){ togglePause(); }});
     }
   } else if (HV2.ask && HV2.ask.kind==='brk'){ hv2AskClose(); }
 }
+/* 쉬는 시간 질문에 답하기 전에는 완료 대신 질문을 먼저 보여줌 */
+(function(){
+  var _st=window.stopTimer;
+  window.stopTimer = async function(){
+    if (HV2.ask && HV2.ask.kind==='retro'){
+      hv2ToastPlain('먼저 쉬는 시간에 공부했는지 알려 주세요');
+      try{ if (!document.getElementById('hvT')) studentTab(0); setTimeout(function(){ hv2AskPaint(true); var c=document.getElementById('hvT'); if(c) c.scrollIntoView({behavior:'smooth',block:'nearest'}); }, 300); }catch(e){}
+      return;
+    }
+    return _st.apply(this, arguments);
+  };
+})();
 function hv2BindTimer(){
   var mb=document.getElementById('hvMain'); if(!mb) return;
   mb.onclick=function(){
