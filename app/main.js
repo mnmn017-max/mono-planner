@@ -16509,3 +16509,65 @@ function tcmBackground(){
 })();
 /* 점검용 (콘솔에서 상태 확인) */
 window.__hv2 = { hv2:HV2, tt:MP_TT, te:function(){ return TimerEngine; }, el:function(){ return getElapsedMs(); } };
+
+/* ---------------- 다른 탭 미니 타이머 (헤더 알약 · 휴대폰은 상단바 아래 띠) ---------------- */
+var HVM_DESK = (function(){ try{ return matchMedia('(min-width:600px) and (orientation:landscape)'); }catch(e){ return {matches:innerWidth>=600&&innerWidth>innerHeight}; } })();
+function hvmState(){
+  var ph=hv2Phase(), now=Date.now(), e=getElapsedMs()/1000, p=0, cap='';
+  if (ph.kind==='class' || ph.kind==='break' || ph.kind==='meal'){
+    p=Math.min(1, (hv2Overlap(ph.startMs, now)/1000)/ph.lenSec);
+    var rm=ph.remain; cap=ph.block.label+' · '+(rm>=3600?Math.floor(rm/3600)+'시간 '+Math.floor(rm%3600/60)+'분':Math.max(1,Math.ceil(rm/60))+'분')+' 남음';
+  } else { p=(e%3600)/3600; cap='자율 학습 · '+Math.floor((e%3600)/60)+'분째'; }
+  var h=Math.floor(e/3600), m=Math.floor(e%3600/60), s=Math.floor(e%60);
+  return {p:p, cap:cap, time:h+':'+hv2Pad(m)+'<small>:'+hv2Pad(s)+'</small>'};
+}
+function hvmBuild(desk){
+  var sz=desk?38:34, w=desk?3.5:3, r=(sz-w)/2-1, c=(2*Math.PI*r).toFixed(2);
+  var el=document.createElement('div');
+  el.id='hvMini'; el.className='hvm '+(desk?'hvm-d':'hvm-m');
+  el.setAttribute('role','button'); el.setAttribute('tabindex','0'); el.setAttribute('aria-label','홈 타이머로 가기');
+  el.innerHTML='<span class="hvm-ring" style="width:'+sz+'px;height:'+sz+'px"><svg width="'+sz+'" height="'+sz+'" viewBox="0 0 '+sz+' '+sz+'" aria-hidden="true"><defs><linearGradient id="hvmG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#EFC6AE"/><stop offset=".55" stop-color="#C98A6B"/><stop offset="1" stop-color="#9E3B33"/></linearGradient></defs>'
+    +'<circle cx="'+sz/2+'" cy="'+sz/2+'" r="'+r+'" fill="none" stroke="#F1E6DE" stroke-width="'+w+'"/>'
+    +'<circle class="hvm-arc" cx="'+sz/2+'" cy="'+sz/2+'" r="'+r+'" fill="none" stroke="url(#hvmG)" stroke-width="'+w+'" stroke-linecap="round" stroke-dasharray="0 '+c+'" data-c="'+c+'"/></svg>'
+    +'<img src="/assets/hv2/mentors-logo.png" alt=""><i class="hvm-dot"></i></span>'
+    +'<span class="hvm-tx"><b class="hvm-t"></b><span><em class="hvm-sub"></em><span class="hvm-cap"></span></span></span>'
+    +'<span class="hvm-time"></span>'
+    +'<button type="button" class="hvm-b hvm-pa" aria-label="일시정지"></button>'
+    +(desk?'<button type="button" class="hvm-b hvm-dn" aria-label="완료">'+hv2Ico('check',15,'currentColor',2.6)+'</button>':'');
+  el.onclick=function(ev){ if (ev.target.closest('.hvm-b')) return; studentTab(0); };
+  el.onkeydown=function(ev){ if ((ev.key==='Enter'||ev.key===' ') && ev.target===el){ ev.preventDefault(); studentTab(0); } };
+  el.querySelector('.hvm-pa').onclick=function(){ if (TimerEngine.todoId) togglePause().then(hvmPaint); };
+  var dn=el.querySelector('.hvm-dn'); if (dn) dn.onclick=function(){ if (TimerEngine.todoId) stopTimer().then(hvmPaint); };
+  return el;
+}
+function hvmPaint(){
+  var el=document.getElementById('hvMini');
+  var scr=document.getElementById('screen-student');
+  var show = currentProfile && currentProfile.role==='student' && scr && !scr.classList.contains('hv2-home')
+           && !!TimerEngine.todoId && (TimerEngine.status==='running' || TimerEngine.status==='paused') && !document.getElementById('hvT');
+  if (!show){ if (el) el.remove(); return; }
+  var desk=HVM_DESK.matches, host, before=null;
+  if (desk){ host=document.querySelector('#student-content > .dt-header'); if(!host){ if(el) el.remove(); return; } }
+  else { var tb=scr.querySelector('.topbar'); if(!tb){ if(el) el.remove(); return; } host=tb.parentNode; before=tb.nextSibling; }
+  if (el && el.classList.contains(desk?'hvm-m':'hvm-d')){ el.remove(); el=null; }
+  if (!el) el=hvmBuild(desk);
+  if (desk){ if (el.parentNode!==host){ host.classList.add('hvm-host'); host.appendChild(el); } }
+  else if (el.previousElementSibling!==scr.querySelector('.topbar')) host.insertBefore(el, before);
+  var st=hvmState(), run=TimerEngine.status==='running';
+  el.classList.toggle('paused', !run);
+  var arc=el.querySelector('.hvm-arc'), c=+arc.getAttribute('data-c'), da=(c*st.p).toFixed(2)+' '+c; if (arc.getAttribute('stroke-dasharray')!==da) arc.setAttribute('stroke-dasharray', da);
+  var set=function(sel,v,html){ var n=el.querySelector(sel); if(!n) return; if(html){ if(n.innerHTML!==v) n.innerHTML=v; } else if(n.textContent!==v) n.textContent=v; };
+  set('.hvm-t', TimerEngine.title||'진행 중인 할 일');
+  set('.hvm-sub', TimerEngine.subject?(subjectNames[TimerEngine.subject]||TimerEngine.subject):'');
+  set('.hvm-cap', run?st.cap:'일시정지 중');
+  set('.hvm-time', st.time, true);
+  var pa=el.querySelector('.hvm-pa'), ph=run?hv2Ico('pause',15,'currentColor'):hv2Ico('play',15,'currentColor');
+  if (pa.dataset.k!==String(run)){ pa.dataset.k=String(run); pa.innerHTML=ph; pa.setAttribute('aria-label', run?'일시정지':'다시 시작'); }
+  el.querySelector('.hvm-sub').style.display=TimerEngine.subject?'':'none';
+}
+setInterval(function(){ try{ hvmPaint(); }catch(e){ console.warn('[미니 타이머]', e); } }, 1000);
+(function(){
+  var _st2=window.studentTab;
+  window.studentTab=function(){ var r=_st2.apply(this, arguments); try{ hvmPaint(); }catch(e){} return r; };
+  try{ HVM_DESK.addEventListener('change', function(){ try{ hvmPaint(); }catch(e){} }); }catch(e){}
+})();
