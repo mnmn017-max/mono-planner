@@ -16522,7 +16522,7 @@ function hvmState(){
   return {p:p, cap:cap, time:h+':'+hv2Pad(m)+'<small>:'+hv2Pad(s)+'</small>'};
 }
 function hvmBuild(desk){
-  var sz=desk?38:34, w=desk?3.5:3, r=(sz-w)/2-1, c=(2*Math.PI*r).toFixed(2);
+  var sz=desk?48:42, w=desk?4:3.5, r=(sz-w)/2-1, c=(2*Math.PI*r).toFixed(2);
   var el=document.createElement('div');
   el.id='hvMini'; el.className='hvm '+(desk?'hvm-d':'hvm-m');
   el.setAttribute('role','button'); el.setAttribute('tabindex','0'); el.setAttribute('aria-label','홈 타이머로 가기');
